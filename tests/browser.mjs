@@ -148,6 +148,20 @@ try {
     await whenIdle();
     return plainClick.apply(this, args);
   };
+  // Guides are drawn a frame or two after the live edit. Reading an outline
+  // ('d') that is not drawn yet waits briefly for it instead of returning null.
+  const plainAttribute = Locator.getAttribute;
+  Locator.getAttribute = async function (name, options) {
+    const value = await plainAttribute.call(this, name, options);
+    if (name !== 'd' || value !== null) return value;
+    const end = Date.now() + 10000;
+    while (Date.now() < end) {
+      await page.waitForTimeout(100);
+      const later = await plainAttribute.call(this, name, options);
+      if (later !== null) return later;
+    }
+    return null;
+  };
   const action = (k) => page.locator('[data-action="' + k + '"]').first();
   const tab = (k) => page.locator('[data-tab="' + k + '"]');
   const input = (name) => page.locator('#settings-form [name="' + name + '"]');
