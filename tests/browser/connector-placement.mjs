@@ -79,7 +79,8 @@ export async function checkConnectorPlacement({
   await dialog.locator('[data-cp-kind="tab"]').click();
   placed = 0;
   await click(0.29);
-  await click(0.72);
+  // Well clear of the clip at 84%, which a smaller dialog would otherwise pick.
+  await click(0.62);
   assert.equal(await find('count').inputValue(), '2');
   await find('scope').selectOption('innerSide');
   assert.equal(await find('count').inputValue(), '0');

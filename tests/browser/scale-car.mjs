@@ -115,8 +115,8 @@ export async function checkScaleCar({
   }
   assert.notEqual(clickedLanes[0], clickedLanes[1],
     'clicking the other lane must move the guide across the road');
-  await lane.press('Home');
-  if (await lane.inputValue() === clickedLanes[1]) await lane.press('End');
+  // Choose the first lane again (Home/End do not change a select on macOS).
+  await lane.selectOption(clickedLanes[0]);
   assert.equal(await lane.inputValue(), clickedLanes[0]);
   const priorStation = Number(await station.inputValue());
   await station.press('ArrowRight');

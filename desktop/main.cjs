@@ -16,6 +16,14 @@ const HOMEPAGE = require('../package.json').homepage;
 const where = location.resolve({ packaged: app.isPackaged });
 if (where.profile) app.setPath('userData', where.profile);
 app.setAppUserModelId('nl.slotforge.foundry');
+// Test machines without a usable GPU (a CI virtual display): draw WebGL in
+// software with Chromium's SwiftShader. Never set for normal use.
+if (process.env.SLOTFORGE_SOFTWARE_GL) {
+  app.commandLine.appendSwitch('use-gl', 'angle');
+  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+}
 const logFile = () => path.join(app.getPath('userData'), 'desktop.log');
 
 function log(message) {
