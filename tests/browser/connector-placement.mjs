@@ -96,9 +96,11 @@ export async function checkConnectorPlacement({
   await find('scope').selectOption('outerSide');
   assert.equal(await find('count').inputValue(), '3');
   // Move the middle clip directly; the two outer marks stay pinned.
+  // Let the live fit check finish first: it redraws the map, which would drop a drag.
+  await page.waitForFunction(() => document.querySelector('#live-status')?.dataset.state !== 'updating');
   const middle = dialog.locator('[data-cp-type=clip][data-cp-index="1"]');
   const box = await middle.boundingBox(),
-    target = await point(0.57);
+    target = await point(0.43); // clear of the tabs at 29% and 62%
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(...target, { steps: 8 });
