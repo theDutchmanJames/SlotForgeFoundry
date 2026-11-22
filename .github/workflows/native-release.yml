@@ -97,6 +97,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
           # Ubuntu 24.04 needs Chromium's setuid sandbox helper owned by root (CI copy only).
+          # Electron downloads its program on first use, so fetch it first.
+          node node_modules/electron/install.js
           sandbox=node_modules/electron/dist/chrome-sandbox
           test -f "$sandbox"
           sudo chown root:root "$sandbox"

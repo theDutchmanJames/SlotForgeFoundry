@@ -23,9 +23,19 @@ export async function checkTrackLibrary({
   const basic = 'SlotForge Basic';
   const collection = 'Club test collection';
   async function library(group) {
-    await action('mode-library').click();
-  await action('packs-dialog').click();
-    await dialog.waitFor();
+    // Foundry ignores clicks while it is still building, so slower machines
+    // try again until the Library dialog opens.
+    for (let attempt = 0; ; attempt++) {
+      await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') !== 'true');
+      await action('mode-library').click();
+      await action('packs-dialog').click();
+      try {
+        await dialog.waitFor({ timeout: 3000 });
+        break;
+      } catch (e) {
+        if (attempt >= 5) throw e;
+      }
+    }
     await setting('collection').selectOption({ label: group });
   }
   async function openMember(name) {

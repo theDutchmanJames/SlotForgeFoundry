@@ -106,6 +106,12 @@ try {
   });
   const page = context.pages()[0] || (await context.newPage());
   page.setDefaultTimeout(15000);
+  // SLOT_FORGE_CPU_SLOWDOWN=4 runs the page four times slower, like a small CI machine.
+  const slowdown = Number(process.env.SLOT_FORGE_CPU_SLOWDOWN);
+  if (slowdown > 1) {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: slowdown });
+  }
   const failures = [],
     externalRequests = [],
     consoleErrors = [];
