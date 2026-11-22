@@ -96,9 +96,17 @@ jobs:
           SLOTFORGE_NO_UPDATE_CHECK: '1'
           # The runner's virtual display has no usable GPU; Chromium's software WebGL draws instead.
           SLOTFORGE_SOFTWARE_GL: '1'
+          SLOTFORGE_ELECTRON_ARGS: --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader
           # If it still cannot draw 3D, the start-up test allows only that error.
           SLOTFORGE_NO_WEBGL_OK: '1'
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
+          # The app is the release tag's code; the two desktop test scripts come from
+          # this workflow's commit, so a re-run of an older tag gets the fixed tests.
+          if [ "$WORKFLOW_SHA" != "$(git rev-parse HEAD)" ]; then
+            git fetch --depth 1 origin "$WORKFLOW_SHA"
+            git checkout FETCH_HEAD -- desktop/smoke.cjs desktop/ui-test-runner.cjs
+          fi
           sudo apt-get update && sudo apt-get install -y xvfb
           # Ubuntu 24.04 needs Chromium's setuid sandbox helper owned by root (CI copy only).
           # Electron downloads its program on first use, so fetch it first.
