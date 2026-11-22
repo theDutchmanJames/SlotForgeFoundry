@@ -96,6 +96,11 @@ jobs:
           SLOTFORGE_NO_UPDATE_CHECK: '1'
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
+          # Ubuntu 24.04 needs Chromium's setuid sandbox helper owned by root (CI copy only).
+          sandbox=node_modules/electron/dist/chrome-sandbox
+          test -f "$sandbox"
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
           xvfb-run -a npm run test:desktop
           xvfb-run -a npm run test:desktop-ui
       - name: Package
@@ -179,6 +184,11 @@ jobs:
           });
           assert.equal(names.length,2,'Expected two downloads');
           const files=[...names,sums];
+          // A re-run keeps what an earlier run attached for this platform.
+          if(files.every(name=>release.assets.some(a=>a.name===name&&a.state==='uploaded'))){
+            console.log(`The ${platform} ${arch} downloads are already attached to ${tag}.`);
+            process.exit(0);
+          }
           for(const name of files){
             const old=release.assets.find(a=>a.name===name);
             if(old)assert.ok(old.state==='uploaded'&&old.size===fs.statSync(name).size&&old.digest===`sha256:${hash(name)}`,`A different ${name} is already attached`);

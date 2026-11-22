@@ -103,7 +103,15 @@ export async function checkRoundedCorner({
   const wholeArc = await guide.getAttribute('d');
   await input('edgeScope').selectOption('picked');
   await live();
-  assert.ok((await guide.getAttribute('d')).length < wholeArc.length / 2);
+  // The guide is redrawn after the live edit; slower machines need a moment.
+  await page.waitForFunction(
+    (whole) => {
+      const d = document.querySelector('[data-guide="finish-edge"] path')?.getAttribute('d');
+      return !!d && d.length < whole / 2;
+    },
+    wholeArc.length,
+    { timeout: 15000 },
+  );
   await input('edgeScope').selectOption('corner');
   await live();
   await action('iso').click();
