@@ -1,0 +1,81 @@
+.solid-move-handle {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 2;
+  pointer-events: none;
+  touch-action: none;
+  --ax: #a43e35;
+  --ay: #25683c;
+  --az: #236daa;
+}
+.solid-move-handle [data-solid-move='0'] {
+  color: var(--ax);
+}
+.solid-move-handle [data-solid-move='1'] {
+  color: var(--ay);
+}
+.solid-move-handle [data-solid-move='2'] {
+  color: var(--az);
+}
+.solid-move-handle button {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  display: grid;
+  place-content: center;
+  background: var(--panel);
+  font: 600 12px/1 system-ui;
+  cursor: grab;
+  touch-action: none;
+}
+.solid-move-handle button[data-solid-move='plane'] {
+  color: var(--accent-text);
+  font-size: 16px;
+  width: 21px;
+  height: 21px;
+}
+.move-axis-shaft {
+  position: absolute;
+  height: 3px;
+  top: -1.5px;
+  left: 0;
+  transform-origin: 0 50%;
+  background: currentColor;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.move-axis-shaft::before {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.move-axis-shaft::after {
+  content: '';
+  position: absolute;
+  right: 11px;
+  top: -3.5px;
+  border-left: 7px solid;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+.solid-moving,
+.solid-moving canvas,
+.solid-moving [data-solid-move] {
+  cursor: grabbing;
+}
+@media (pointer: coarse) {
+  .solid-move-handle button::before {
+    content: '';
+    position: absolute;
+    inset: -9px;
+  }
+}

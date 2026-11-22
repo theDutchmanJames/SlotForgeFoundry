@@ -1,0 +1,107 @@
+#canvas-wrap {
+  container: model-viewport / inline-size;
+}
+.view-selector {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 1px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  box-shadow: 0 2px 7px rgba(37, 60, 50, 0.078);
+}
+.view-selector button {
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  border: 0;
+  border-radius: 4px;
+}
+.view-selector button[data-action='look-at-face'] {
+  grid-column: span 2;
+}
+.view-selector button:hover:enabled {
+  background: var(--box);
+}
+.view-selector button[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--ink);
+}
+.view-selector button:disabled {
+  color: var(--muted);
+}
+#canvas-wrap:has(#face-actions:not([hidden])) .view-selector {
+  top: auto;
+  bottom: 55px;
+}
+#canvas-wrap:has(#face-actions:not([hidden])) .view-style {
+  bottom: 65px;
+}
+#canvas-wrap:has(:is(.section-controls, #workplane-grid):not([hidden])):has(
+    #face-actions:not([hidden])
+  )
+  .view-selector {
+  right: auto;
+  left: 14px;
+  bottom: 100px;
+}
+@container model-viewport (max-width: 445px) {
+  /* A short phone viewport has room for one editing palette at a time. */
+  #canvas-wrap:has(:is(.section-controls, #workplane-grid):not([hidden]))
+    #face-actions {
+    display: none;
+  }
+  #canvas-wrap:has(:is(.section-controls, #workplane-grid):not([hidden])):has(
+      #face-actions:not([hidden])
+    )
+    .view-selector {
+    bottom: auto;
+    top: 8px;
+    left: 8px;
+  }
+  #canvas-wrap #workplane-grid,
+  #canvas-wrap .section-controls {
+    max-height: calc(100% - 134px);
+    overflow: auto;
+  }
+}
+.camera-axes {
+  width: 50px;
+  height: 45px;
+  overflow: visible;
+}
+.camera-axes line {
+  stroke: currentColor;
+  stroke-width: 1.6px;
+}
+.camera-axes text {
+  fill: currentColor;
+  font: 600 10px system-ui,
+    sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.camera-axes [data-axis='X'] {
+  color: var(--accent-text);
+}
+.camera-axes [data-axis='Y'] {
+  color: var(--good);
+}
+.camera-axes [data-axis='Z'] {
+  color: var(--focus);
+}
+@media (max-width: 800px) {
+  .view-selector {
+    right: 7px;
+    top: 7px;
+  }
+  .view-selector button {
+    padding: 4px;
+  }
+}

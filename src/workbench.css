@@ -1,0 +1,482 @@
+/* Application navigation, the assembly rail and the document toolbar. */
+.appbar {
+  height: 58px;
+  gap: 30px;
+  padding-inline: 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+/* SlotForge family brand: app icon beside the wordmark, whose width is set
+   by the slogan underneath it (as in Circuit and Telemetry). */
+.appbar .brand { gap: 10px; letter-spacing: normal; flex: none; }
+.appbar .brand .brand-icon { width: 42px; height: 42px; margin: 0; flex: none; }
+.appbar .brand-copy {
+  display: grid;
+  grid-template-columns: max-content;
+  align-content: center;
+  gap: 4px;
+  height: 42px;
+}
+.appbar .brand-copy .brand-wordmark {
+  display: block;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 589.88 / 88.74;
+}
+.appbar .brand-copy .brand-wordmark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+.appbar .brand-copy small {
+  margin: 0;
+  font-size: 8px;
+  line-height: 10px;
+  /* Spaced so the short slogan sets a wordmark as tall as its siblings'. */
+  letter-spacing: 2.6px;
+  margin-right: -2.6px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.appbar nav {
+  align-self: stretch;
+  gap: 3px;
+  padding: 0 0 0 15px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.appbar nav button {
+  position: relative;
+  gap: 7px;
+  height: 100%;
+  padding-inline: 13px;
+  font-size: 13px;
+  border-radius: 0;
+  color: var(--muted);
+}
+.appbar nav button.active,
+body:has(.track-library[open]) .appbar [data-action='track-library'] {
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: inset 0 -3px var(--accent);
+}
+body:has(.track-library[open]) .appbar nav .active {
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+}
+.app-actions { gap: 5px; }
+.app-actions .quiet { color: var(--ink); }
+.appbar .primary { background: var(--accent-fill); }
+.appbar .primary:hover { background: var(--accent-fill); }
+.workspace {
+  grid-template-columns: clamp(210px, 17vw, 260px) minmax(0, 1fr) 320px;
+}
+.sidebar { background: var(--panel); padding: 0 13px 12px; }
+.creation-panel { padding: 16px 0 17px; }
+.side-header { height: auto; min-height: 25px; margin-bottom: 9px; }
+.side-header h2,
+.parts-heading {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.3;
+  letter-spacing: -.12px;
+  text-transform: none;
+  font-weight: 700;
+}
+.creation-actions { display: grid; gap: 6px; }
+.creation-actions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 35px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.creation-actions button:hover { border-color: color-mix(in srgb,var(--ink) 25%,var(--line)); background: var(--box); }
+.creation-actions button:first-child:not([hidden]) .i,
+.creation-actions button[data-action='new-design'] .i { color: var(--accent-text); }
+.parts-heading { padding: 16px 2px 10px; align-items: center; }
+.parts-heading #part-count {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.sidebar #workspace-nav { border-top: 1px solid var(--line); }
+.plate-card { border-radius: 7px; padding: 9px; background: var(--panel); }
+.stage-head { gap: 12px; padding: 12px 20px; min-height: 58px; }
+.stage-heading { display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.stage h1 { font-size: 23px; line-height: 1.2; font-weight: 700; letter-spacing: -.8px; }
+#rename-project {
+  min-width: 0;
+  max-width: 42%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+#rename-project:hover,
+.history-actions button:hover:enabled { color: var(--ink); background: var(--box); }
+#rename-project .i { width: 14px; height: 14px; }
+#rename-project #project-name {
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#rename-project.name-repeated #project-name { display: none; }
+.history-actions { display: flex; gap: 2px; color: var(--muted); }
+.history-actions .icon-button { height: 29px; width: 29px; }
+.stage-head:has(+ #track-sections:not([hidden])) { border-bottom: 0; padding-bottom: 5px; }
+/* The six sections of a piece are the main controls of Track Set: one bar of
+   equal buttons, icon above label, the open one filled in SlotForge red. */
+#track-sections {
+  flex: none;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+#track-sections .component-nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  padding: 0;
+}
+#track-sections .component-nav button {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 54px;
+  gap: 4px;
+  padding: 7px 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--box);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+/* A narrow bar breaks "Cross-section" at its hyphen instead of cutting it. */
+#track-sections .component-nav button span {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.15;
+}
+#track-sections .component-nav button .i {
+  width: 20px;
+  height: 20px;
+}
+#track-sections .component-nav button:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+  background: var(--sel);
+}
+#track-sections .component-nav button.active {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.track-selection {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  display: flex;
+  gap: 7px;
+  z-index: 2;
+  max-width: calc(100% - 184px);
+}
+.track-selection button {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 33px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  box-shadow: 0 2px 5px rgba(32, 62, 55, 0.063);
+}
+.track-selection button:hover:enabled { background: var(--box); border-color: var(--line); }
+.track-selection .part-transfer {
+  flex: none;
+  border-color: var(--line);
+  color: var(--ink);
+  font-weight: 650;
+}
+.part-location #track-name-slot {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.part-location .i:last-child { width: 13px; }
+.workspace[data-mode='track'] .view-style { display: none; }
+.workspace[data-mode='track'] .view-style:has(button:not([hidden])) {
+  display: flex;
+  top: 54px;
+  left: 14px;
+}
+.part-summary { min-height: 43px; gap: 12px; padding: 7px 17px; }
+#editor-selection-meta,
+.part-summary .dimensions { display: flex; align-items: center; gap: 8px; }
+#editor-selection-meta { overflow: hidden; }
+#editor-selection-meta strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.part-summary .dimensions { padding: 0; margin: 0; border: 0; }
+.part-summary .dimensions small { margin: 0; font-size: 11px; color: var(--muted); }
+.part-summary .dimensions strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+.part-summary .fit-result { margin-left: auto; font-size: 11px; }
+.statusbar { min-height: 23px; background: var(--box); color: var(--muted); }
+
+@media (max-width: 1080px) {
+  .workspace { grid-template-columns: 180px minmax(0, 1fr) 268px; }
+  .appbar { gap: 14px; padding-inline: 13px; }
+  .appbar nav { padding-left: 8px; }
+  .appbar nav button { padding-inline: 9px; }
+  .stage-head { padding-inline: 12px; }
+  #track-sections { padding-inline: 8px; }
+  #track-sections .component-nav { gap: 4px; }
+  #track-sections .component-nav button { padding-inline: 3px; font-size: 11px; }
+  .part-summary { padding-inline: 10px; }
+}
+@media (max-width: 830px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 268px; }
+  .appbar { gap: 10px; }
+  .track-selection { left: 8px; max-width: calc(100% - 153px); gap: 4px; }
+  .track-selection button { padding-inline: 7px; }
+  .sidebar.project-open { background: var(--panel); }
+  .sidebar .creation-panel { padding-top: 10px; }
+  .stage h1 { font-size: 19px; }
+  .stage-head { gap: 7px; }
+  .history-actions { gap: 0; }
+  .part-summary .dimensions { align-items: flex-start; flex-direction: column; gap: 1px; }
+}
+@media (max-width: 610px) {
+  .appbar { height: auto; padding: 6px 9px 0; gap: 4px 9px; }
+  .appbar nav {
+    justify-content: flex-start;
+    gap: 3px;
+    padding: 0;
+    border: 0;
+    height: 37px;
+  }
+  .appbar nav button { padding-inline: 9px; font-size: 12px; }
+  .appbar .app-actions { gap: 3px; }
+  .appbar .app-actions button { padding-inline: 7px; }
+  .stage { min-height: 380px; height: 54dvh; }
+  .stage-head { min-height: 44px; padding: 6px 9px; }
+  #track-sections { padding-bottom: 8px; }
+  #track-sections .component-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  #track-sections .component-nav button { flex-direction: row; min-height: 36px; gap: 5px; font-size: 11px; }
+  #track-sections .component-nav button .i { width: 15px; height: 15px; }
+  .part-summary { min-height: 40px; gap: 6px; }
+}
+@container model-viewport (max-width: 425px) {
+  .track-selection { left: 7px; top: 7px; max-width: calc(100% - 147px); gap: 3px; }
+  .track-selection button { padding-inline: 6px; gap: 3px; font-size: 11px; }
+  .track-selection .part-location > .i:first-child { display: none; }
+}
+@media (max-width: 380px) {
+  .appbar nav button { flex: 1; white-space: nowrap; }
+  .appbar nav button .i { display: none; }
+}
+
+/* The slogan needs the full bar; narrower windows keep a compact wordmark. */
+@media (max-width: 1010px) {
+  .appbar .brand .brand-copy small { display: none; }
+  .appbar .brand .brand-copy { grid-template-columns: 120px; }
+}
+@media (max-width: 720px) {
+  .appbar .brand .brand-copy { display: none; }
+}
+
+/* Pack rail: the pack of the piece being edited, and its pieces. */
+#pack-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+#pack-rail[hidden] {
+  display: none;
+}
+.pack-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.pack-head span:last-child {
+  min-width: 0;
+}
+.pack-head b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.pack-head small {
+  color: var(--muted);
+  font: 500 11px var(--font-mono);
+}
+.pack-tile {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font: 700 10px var(--font-ui);
+}
+.pack-pieces {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 38vh;
+  overflow: auto;
+}
+.pack-piece {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--box);
+  text-align: left;
+}
+.pack-piece:hover {
+  background: var(--hover);
+}
+.pack-piece.active {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: var(--sel);
+}
+.pack-piece .lib-thumb {
+  width: 54px;
+  height: 30px;
+  flex: none;
+}
+.pack-piece span {
+  min-width: 0;
+}
+.pack-piece b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.pack-piece small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 500 10.5px var(--font-mono);
+}
+.pack-tools {
+  display: flex;
+  gap: 6px;
+}
+.pack-tools button {
+  flex: 1;
+}
+.stl-link {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--focus) 14%, var(--panel));
+  color: color-mix(in srgb, var(--focus) 70%, var(--ink));
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.stage-head [data-action='save-stl-part'] {
+  margin-left: 8px;
+}
+.pack-piece small.used-in {
+  color: color-mix(in srgb, var(--focus) 70%, var(--ink));
+  font-family: var(--font-ui);
+}
+
+/* Track Set's specials shelf: every special the pack can have, two a row. */
+.pack-specials h3 {
+  margin: 4px 0 6px;
+  color: var(--muted);
+  font: 700 10.5px var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pack-special-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.pack-special {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 4px 5px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 22%, var(--line));
+  border-radius: 8px;
+  background: transparent;
+  text-align: center;
+}
+.pack-special.owned {
+  border-style: solid;
+  border-color: var(--line);
+  background: var(--box);
+}
+.pack-special:hover {
+  background: var(--hover);
+}
+.pack-special.active {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: var(--sel);
+}
+.pack-special .lib-thumb {
+  width: 100%;
+  height: 28px;
+}
+.pack-special b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pack-special small {
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.pack-special.owned small {
+  color: var(--muted);
+  font-weight: 500;
+}

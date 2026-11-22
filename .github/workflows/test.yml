@@ -1,0 +1,33 @@
+name: Test and build
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Install test browser
+        run: npx playwright-core install --with-deps chromium
+      - name: Exercise offline app with WebGL
+        env:
+          SLOT_FORGE_RENDERER: webgl
+        run: npm run test:ui
+      - name: Exercise offline app with software rendering
+        env:
+          SLOT_FORGE_RENDERER: software
+        run: npm run test:ui

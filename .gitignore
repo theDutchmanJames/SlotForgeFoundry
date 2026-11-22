@@ -1,0 +1,13 @@
+node_modules/
+dist/
+test-results/
+.qa/
+
+# Local agent workspace, previews and backups
+.claude/
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+

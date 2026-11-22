@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#171b21" />
+    <script>
+      // The SlotForge theme before the first paint; src/app-theme.js owns it.
+      (function () {
+        var root = document.documentElement,
+          theme = 'dark',
+          custom = null,
+          legacy = null;
+        try {
+          legacy = localStorage.getItem('foundry.theme');
+          var saved = JSON.parse(localStorage.getItem('slotforge.appearance.v1') || 'null');
+          theme = (saved && saved.theme) || (legacy === 'light' ? 'light' : 'dark');
+          custom = saved && saved.customColors;
+        } catch (e) {}
+        try {
+          theme = new URL(location.href).searchParams.get('sfTheme') || theme;
+        } catch (e) {}
+        root.dataset.theme = theme;
+        root.dataset.tone =
+          theme === 'light' || theme === 'ocean' || (theme === 'custom' && legacy === 'light')
+            ? 'light'
+            : 'dark';
+        if (theme === 'custom' && custom)
+          for (var k in custom)
+            if (/^#[0-9a-f]{6}$/i.test(custom[k])) root.style.setProperty('--' + k, custom[k]);
+      })();
+    </script>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/assets/slotforge-foundry.svg?inline"
+    />
+    <title>SlotForge Foundry</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>Enable JavaScript to open SlotForge Foundry.</noscript>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

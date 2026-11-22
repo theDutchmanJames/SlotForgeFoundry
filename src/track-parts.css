@@ -1,0 +1,105 @@
+#parts .track-part-group {
+  margin-block: 2px;
+}
+#parts .part-group-head,
+#parts .part-disclosure {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+#parts .part-group-head {
+  border-radius: 6px;
+  padding-inline-end: 3px;
+  gap: 2px;
+}
+#parts .part-group-head:hover {
+  background: var(--box);
+}
+#parts [data-contains-selected='true'] > .part-group-head {
+  background: var(--sel);
+}
+#parts .part-disclosure {
+  flex: 1;
+  gap: 7px;
+  padding: 8px 4px;
+  min-height: 34px;
+  text-align: left;
+  color: var(--ink);
+}
+#parts .part-disclosure > .i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--muted);
+  transform: rotate(-90deg);
+}
+#parts .part-disclosure[aria-expanded='true'] > .i {
+  transform: none;
+}
+#parts .part-disclosure strong {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.28;
+}
+#parts .part-disclosure .swatch {
+  width: 8px;
+  height: 8px;
+}
+#parts .part-quantity {
+  margin-inline-start: auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--sel);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+#parts .group-visibility {
+  width: 25px;
+  height: 28px;
+  color: var(--muted);
+}
+#parts .group-visibility .i {
+  width: 14px;
+  height: 14px;
+}
+#parts .group-visibility[aria-pressed='mixed'] {
+  border-bottom: 2px dotted currentColor;
+}
+#parts .part-members {
+  margin: 2px 2px 6px 12px;
+  padding: 0 0 0 8px;
+  border-inline-start: 1px solid var(--line);
+  list-style: none;
+}
+#parts .part-members[hidden] {
+  display: none;
+}
+#parts .part-members .part-row {
+  margin-block: 1px;
+}
+#parts .part-members .part-row > button:first-child {
+  padding-block: 6px;
+}
+#parts .part-members .part-row strong {
+  font-weight: 500;
+}
+#parts .part-members .part-row.selected {
+  box-shadow: inset 2px 0 var(--accent);
+  background: var(--sel);
+  color: var(--ink);
+}
+#parts [data-part-shown='false'] strong {
+  color: var(--muted);
+}
+@media (pointer: coarse) {
+  #parts .part-members button,
+  #parts .part-group-head button {
+    min-height: 42px;
+  }
+  #parts .group-visibility,
+  #parts .part-members .icon-button {
+    min-width: 40px;
+  }
+}

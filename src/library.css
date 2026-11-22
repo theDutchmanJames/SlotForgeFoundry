@@ -1,0 +1,177 @@
+dialog.track-library {
+  width: min(760px, 94vw);
+  max-height: 90dvh;
+  overflow-y: auto;
+  background: var(--paper, var(--panel));
+}
+.track-library header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.track-library h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.track-library small,
+.track-library .hint {
+  color: var(--muted);
+}
+.track-library p {
+  line-height: 1.5;
+}
+.lib-controls,
+.lib-footer,
+.lib-section-head,
+.lib-footer > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lib-controls {
+  margin-block: 12px;
+}
+.lib-collection,
+.lib-name {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lib-collection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lib-collection select {
+  max-width: 100%;
+  padding: 6px 28px 6px 9px;
+  min-height: 33px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background-color: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+.lib-section-head,
+.lib-footer {
+  justify-content: space-between;
+}
+.lib-section-head {
+  margin: 24px 0 12px;
+}
+.lib-section-head small {
+  display: block;
+  margin-top: 4px;
+}
+.lib-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.lib-card {
+  display: flex;
+  flex-flow: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 12px 12px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+.lib-card:is(:hover, :focus-visible) {
+  border-color: var(--teal);
+  background: var(--box);
+}
+.lib-card strong {
+  font-size: 14px;
+}
+.lib-card small {
+  font-size: 11px;
+}
+.lib-thumb {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+/* Pieces drawn in graphite like the 3D view, the same in both themes. */
+.lib-road {
+  fill: var(--d-track);
+  stroke: var(--d-track-edge);
+  stroke-width: 0.6;
+}
+.lib-lanes {
+  fill: none;
+  stroke: var(--d-slot);
+  stroke-width: 1.4;
+}
+.lib-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.track-library fieldset {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  margin: 10px 0;
+  padding: 8px 12px;
+  min-width: 0;
+}
+.lib-fields fieldset {
+  margin: 0;
+}
+.track-library legend {
+  font-weight: 600;
+  font-size: 13px;
+}
+.track-library .field {
+  gap: 6px;
+}
+.lib-name input {
+  min-height: 34px;
+}
+.lib-rule-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 4px 20px;
+}
+.lib-radio {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.lib-footer {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.lib-status {
+  font-size: 13px;
+  color: var(--teal);
+}
+.lib-status:empty {
+  display: none;
+}
+.lib-error {
+  color: var(--accent-text);
+}
+@media (max-width: 660px) {
+  dialog.track-library {
+    padding: 15px;
+  }
+  .lib-fields {
+    grid-template-columns: 1fr;
+  }
+  .lib-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.lib-thumb .lib-border { fill: var(--d-border); stroke: var(--d-track-edge); stroke-width: .6; }
+.lib-thumb .lib-detail { fill: none; stroke: var(--warn-text); stroke-width: 1; }

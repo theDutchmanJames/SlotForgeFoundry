@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>SlotForge Foundry — Layer by layer</title>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="#e5484d"/>
+  <rect x="84" y="34" width="88" height="54" rx="13" fill="#fff"/>
+  <path d="M102 95H154L140 124H116Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+  <g fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round">
+    <path d="M60 154H104M152 154H196"/>
+    <path d="M60 180H196"/>
+    <path d="M60 206H196"/>
+  </g>
+</svg>

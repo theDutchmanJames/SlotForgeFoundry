@@ -1,0 +1,169 @@
+# SlotForge Foundry user guide
+
+The full tour of SlotForge Foundry, tool by tool. For downloads and a quick introduction, see the [README](../README.md).
+
+## Before you start
+
+Install the desktop app from the [latest release](https://github.com/theDutchmanJames/SlotForgeFoundry/releases/latest), or use the portable app. The browser edition is in the same release: extract **SlotForge-Foundry-X.Y.Z.zip** and open **SlotForge Foundry.html**. Everything runs on your computer, without a server or an internet connection. The ZIP's **examples** folder includes a real Circuit bend in both SVG and DXF.
+
+## Track Set
+
+In Track Set, choose **Scale car** in the lower-right viewport toolbar. Click a road to snap the car’s guide to the nearest slot, or use **Lane** and **Position**. Compare the same 4,600 × 1,900 × 1,200 mm GT body at **1:64**, **1:43**, **1:32**, or **1:24**. The car is a visual reference and stays out of print kits.
+
+Open a pack piece in Track Set and use the **Special pieces** shelf at the bottom of the left rail, or choose a picture tile in **Add track piece**. Choose a double-crossover hairpin, single-lane pit, flat diamond crossing, late-apex duel, bus-stop chicane or timing straight. Set the borders in the creator and refine them in Track Set. The bus stop has an overall length, lateral offset, first turn direction and independent entry and exit radii. A tighter radius needs room for the inside road shoulder and its border.
+
+On a **Single-lane pit**, use **Road → Flipper position** to switch between the main lane and pit entry. From above, the sheltered nose rises smoothly into a blade that sits flush with the road. Choose **Bottom** to see the crank move. Select the crank to see the pocket above its pushrod eye over the full swing. With the default linkage, a pin head up to 3 mm across can project 1 mm above the tab and still have 0.4 mm of clearance.
+
+Each pit entry comes with three printed parts for the switch. The **pivot bearing** exports with its broad face on the print bed. Glue its oblong peg into the road from above, then fit the **flipper blade**. The **actuator crank** carries the 4 mm pivot pin. Insert it from below and align the D-shaped tip with the blade. The kit’s **Assembly notes.txt** gives the M2 countersunk screw length for your track height and linkage.
+
+Choose **Pit lane divider** when creating a single-lane pit, or enable it later under **Road → Road white lines**. The long stripe beside the pit box lines up with the original road edge. Widening the pit offset leaves the stripe there. A narrow pit can bring it inward to clear the braids. Choose **Entry and exit → Dashed** to break up the two crossing sections while keeping the line beside the box solid. **Recess road markings** cuts an outline around the painted sections, including the ends of the dashes. Set stripe width, groove width and groove depth in **Shared line and groove dimensions**.
+
+Under **Road → Pit grid marker**, enable a stopping mark on the pit slot. Move it along the straight pit bay from entry (0%) to exit (100%). The initial position is 50%. Set the width to suit the car, choose a line thickness, and adjust the leg length. Zero gives a transverse line. Longer legs form an open box. Enable the outline recess to include the paint groove in the STL. On a piece with pits on both sides, the two markers can line up or sit at different positions.
+
+At pit entry and exit, the short braid runs can feed through the road. Open **Cross-section → Braid pass-throughs → Pit junction openings** and choose **Braid pass-throughs**. **Pit slot length** measures the opening along the braid. Its width follows **Width per strip**. The through-running braids use round wire holes underneath so each stays continuous. **Extra lane openings** adds feeds at positions you choose separately.
+
+Enable **Adjustable motor mount** to fit a rectangular push-pull actuator with a centred end plunger. Enter the body length along the shaft, width and height. Measure **Retracted plunger reach** from the front of the case to the linkage point, and **Usable stroke** between the two working positions. Enter your wire size and **Crank hole diameter**. Foundry accounts for the clearance between them when placing the hole. The live preview shows the motor outline and pushrod, and the print kit includes the slotted cradle. Use its adjustment slots to centre the real flipper between its stops.
+
+Special-piece print kits include individual STLs, a conductor map and assembly notes. The road and borders export driving-face down. For a hairpin or diamond, use **Export crossing test STL** to try the guide and braid clearances with your cars. For a timing straight, use the bottom camera view to inspect the sensor pockets or braid feeds and recessed cable exits.
+
+**Track Set** opens with an editable bend. Under **Create track**, choose **Track packs** or **Import Circuit**. Expand a family in **Assembly** to select or hide an individual part. The eye on a family controls all its instances. **Road** sets the path, lanes, road white lines and road segments. **Cross-section** sets the deck, guide slot and braid. Select a border in the model or parts list to open **Borders**, where its shape, kerbstones, white lines and grooves live together. **Connections** sets the hardware for both road and borders. Road and Borders each link their segment count to the print plate. Edit a field to see its guide and the proposed geometry in the viewport. **Apply changes** records the edit. **Restore** returns to the applied model, and the curved arrow beside a field restores just that value. Choose **Edit as STL** beside the selected part’s name above the model to open that part in the STL editor. Click the part name to locate its row in Assembly.
+
+Hollow roads and borders have crosswise ribs underneath. Under **Cross-section → Road body**, use **Target rib spacing** to set the distance between supports (50 mm by default). Each rib uses the selected **Wall thickness**. Foundry distributes ribs within each printable section and adjusts them around connectors and other hardware. Choose **View underside** to inspect the layout. Turn off **Reinforce roads and borders** for an open underside, or set reinforcement for a collection under **Shared print profile**.
+
+**Track packs → New track pack** sets road width, lane count, normal slot spacing, the R1 inner road radius and default sweep. Choose **Add track piece → Curve** for a matching R1–R8 bend or an independent inner radius. Use **Straight** for a measured length and **Freeform path** for a route drawn through points. The creator previews the outline and slots. **Add to pack** saves the recipe and opens it in Track Set. **Road → Lane layout** lets you squeeze or spread the slots and braid shelves at mid-piece while preserving their alignment at both ends.
+
+**Borders → Border ends** gives each side independent entry and exit finishes. Choose Rounded, Tapered or S-curve, select Short or Long, and drag the tip in the border diagram or enter its distance from the start along that road edge. Set the exit on the following straight to leave the remaining road bare. The full-width section accommodates the selected clips and keepers.
+
+**Library** stores editable pieces and their collections in SQLite on this device. Open **Library** in the top bar from any workspace. To update a piece, edit it in Track Set and choose **Library → Save current piece → Update saved piece**. Choose **New track pack** to start empty, copy an existing collection, or get a fresh copy of the starter pack. **Shared print profile** applies cross-section and connector settings to the collection after checking each piece. When saving a piece with different settings you can adopt the collection profile or apply the change to the other members. **Back up SQLite** downloads the entire library for safekeeping or transfer to another browser or computer. **Save** in the top bar downloads the current project as a separate .slotfab file.
+
+**SlotForge Basic** includes three 200 mm wide straights, 200, 100 and 50 mm long. Six 30° bends nest concentrically, with inner radii of 200, 400, 600, 800, 1,000 and 1,200 mm. The two lanes sit 100 mm apart on a 10 mm hollow road. The 3 mm wide, 8 mm deep guide slot leaves a 2 mm floor. Each braid recess is 5 mm wide and 0.5 mm deep, with a 0.6 mm wall between it and the guide slot. The starter bends use 2, 4, 5, 6, 7 and 9 print segments on a usable 200 × 200 mm plate. Check plate fit again after changing connectors or bed margins.
+
+**SlotForge Basic Single Lane** has the same straight lengths and 30° turns on a 100 mm road. Each slot sits 50 mm from either edge. The six inner radii run from 200 to 700 mm in 100 mm steps. For example, single-lane R1 and R2 together trace both lanes of the two-lane R1. Choose inside or outside borders, kerbs, markings and connectors in Track Set as you would for a two-lane piece.
+
+Both Basic packs include a 200 mm long **Starting grid** straight. The 100 mm wide single-lane piece has one mark centred on its slot. Open **Road → Starting grid** to set **Mark width** across the car, **Line thickness** and **Leg length**. Zero-length legs give a transverse line. Longer legs form an open box. On multi-lane straights, **Grid positions** and **Row offset** place the marks side by side or staggered. Enable **Recess the mark outline** to cut a painting guide into the STL. Its width and depth come from **Shared line and groove dimensions**. To create another grid piece in a pack, choose **Add track piece → Straight → Starting grid**.
+
+**Figure-eight tracks and bridge supports.** In **Add track piece → Freeform path**, choose **Flat pieces on supports** when a road crosses itself. Circuit SVG and DXF imports with identifiable crossing lane paths offer the same choice. Select which passage goes over. Under **Road → Bridge and supports**, enter the clear space above the lower running surface and the number of blocks per crossing. With approach blocks enabled, straight pieces rise and descend on graduated supports. A curved bridge deck stays level. At a change of slope the road has plain mitred ends. Integral tabs can join pieces on the same slope, and level sections accept your usual clips. The live side view shows the grade and clearance. Each support spans both road walls, and its full footprint clears the lower road, borders and hardware. If the requested blocks do not fit, the editor identifies the crossing and keeps the last valid build.
+
+**Export STLs → Bridge supports only** downloads the numbered block STLs. Select one block in Parts to export it individually, or choose **All printable parts** for the road, blocks, assembly map and parts list. Road and border STLs from a crossing lie driving surface down, including the approach pieces. The blocks print on their table-facing bases. The portable ZIP includes an editable figure eight with six blocks for a 200 × 200 mm print plate.
+
+**STL Edit** opens with a four-post enclosure. Choose **Open STL** to start with your own model. Click a surface to see its face tools, including **Trim**, **Push / pull**, **Tilt**, **Text**, **Hollow**, and **Add/Cut profile**. Use **Surface selection** to adjust how sharply the selection can turn across adjacent triangles.
+
+### Planning a track layout
+
+Open **Track Planner**, choose a pack and click a piece to place it. The selected open end is where the next piece snaps. Choose **Left** or **Right** before placing a corner. Click a section to **Reverse turn** or **Delete section**. If you remove a middle section, choose an open end and use **Snap disconnected runs** to rejoin the runs.
+
+Each placement starts with the piece’s saved cuts. The planner checks the generated parts against the current **Print plate** and adds cuts when needed. Every remaining section has its own selectable ends. **Specials** includes the pit, diamond crossing, hairpin, duel, chicane and timing straight. **3D** displays the generated track parts.
+
+Select the upper road at a crossing and open **Bridge & approaches**. Set the lift at each end in millimetres and choose a support count. Adjacent ends share the height, and straight approaches can slope. The crossings list reports the clearance above the lower track. Supports avoid lower roads and borders.
+
+**Save** downloads an editable `.slotplan` with the piece recipes. **Export STLs** downloads the placed sections, joining hardware, requested supports and a quantity list in `parts.csv`.
+
+### Creating from an empty workspace
+
+Choose **STL Edit → New design**. **Solid shape** starts a dimensioned box, cylinder, cone, sphere or tube. **Sketch** opens a drawing on the top, front or side workplane. Pick a flat face before starting a sketch to draw on the part. Set a plane offset for a parallel drawing. **Import outline** opens SVG or DXF geometry in the same sketch editor.
+
+To move a live solid shape, drag the box or the centre handle across its workplane. Drag an **X**, **Y** or **Z** arrow for one-axis travel, or enter an exact offset under **Placement**. **Undo move** restores the preceding position. After applying the shape as a separate part, select it in **Parts** and choose **Move** below the viewport. Its arrows now use world axes.
+
+Draw with the mouse or enter exact coordinates and dimensions. The sketch editor supports lines, three-point arcs, rectangles, circles, slots and an L-profile. Snap to the grid, centres, endpoints or the projected face. Select a saved sketch in the sidebar to see its outline and shape tools. Click its history entry to revise its dimensions.
+
+#### Drawing relative to an imported part
+
+1. Open the STL, click a flat face and choose **Look at face**. Open **Grid** in the viewport toolbar to change the square size directly on the model. Choose **Sketch on this grid** to start drawing.
+2. Set **Square size** in millimetres. On a 235 × 117 mm face, **Equal edge margins** fits 47 × 23 whole 5 mm squares with 1 mm at the top and bottom. At 10 mm, it fits 23 × 11 squares with 2.5 mm at each side and 3.5 mm at each end. **From lower-left corner** places the leftover space at the right and top. **Exact fit** finds the largest square that divides both measured extents at the supported precision. For this face, that gives 1 mm.
+3. For a drawing measured from a screw hole, choose **Set zero** and click its projected centre. Choose **Align X to edge** and click a straight edge. **Reverse X** switches the positive direction. You can now enter a point such as X = 20 mm, Y = 10 mm relative to that hole and edge. **Grid** controls visibility and **Snap** controls snapping.
+4. Finish the sketch and save the project to keep its grid settings. Select the sketch and choose **Look at face** to return to its drawing orientation. Zooming out hides closely spaced lines while the snap interval keeps its specified size.
+
+The viewport's **Top**, **Bottom**, **Left**, **Right**, **Front**, **Back** and **Isometric** buttons centre the visible selected parts. With no visible selection, they frame everything shown. **Fit all** frames every visible part from the current direction. The axis indicator shows how the world axes point on screen.
+
+| Tool | How to use it |
+| --- | --- |
+| Extrude | Select a closed profile, drag its distance handle or enter a dimension. Choose **New part**, **Join** or **Cut**. |
+| Revolve | Select a closed profile, place its horizontal or vertical axis and enter the angle. Use a full turn for a turned part or a partial turn for a segment. |
+| Sweep | Choose a closed profile and a sketch containing one connected open path. The section follows that planar path. |
+| Loft | Choose two separated section sketches. Their outer shapes can differ. For a hollow adapter draw the same number of inner openings in each section. |
+| Hole | Pick a flat face and click **Hole**. Choose a plain, counterbored or countersunk opening and set its centre from the face edges or centre. |
+| Finish edge | Click a rounded corner, straight edge or hole rim. Choose **Finish edge**, then set the round radius or chamfer distance. |
+| Mirror & pattern | Choose an earlier add or cut on the selected part. Mirror it across a plane, repeat it along an axis, or distribute copies around an axis. **Follow part centre** moves the centre with the part. |
+
+To make the shelf bracket, draw an L-profile on **XZ** with 40 and 30 mm legs and a 4 mm wall. Extrude it 24 mm. Pick the broad horizontal flange, place a 3 mm hole 8 mm from the outer end and mirror the hole across the part’s X centre. Change the first sketch’s width to 70 mm in history. Both hole centres stay 8 mm from the outside ends. Save the editable project to keep these relationships and export STL for printing.
+
+### Working with imported models
+
+**Edit existing holes.** Click the lip of a cylindrical hole where it meets a flat face. A tooltip distinguishes a hole rim from the adjacent face. Shift-click other rims on the same part, then choose **Countersink** above the model. In the inspector, choose **Countersink**, **Counterbore**, **Resize bore** or **Fill hole**. For example, select four different-sized bores, enter a 6 mm head diameter and an 82° included angle, then apply once. Each centre and original bore stays in place beneath its seat. A failed seat is marked on the model. Resize and fill work on a continuous cylindrical section with a flat end.
+
+**Finish a rounded corner.** Click anywhere along the curved lip of a corner to select the bend between its adjoining walls. Shift-click another corner to include it, or Shift-click a selected corner to remove it. Choose **Finish edge** and enter a round radius or chamfer distance. **Individual segment** gives you one straight span of the mesh. **Entire face perimeter** follows the picked loop, and **Tangent chain** continues through gently changing directions. Imported STLs keep their original outline. The finish follows the facets present in that file.
+
+To update an earlier chamfer made by picking segments, open it in the project history. Set **Selection** to **Edge or rounded corner** and click **Apply**. Segments on the same bend become one selection, and any straight edges you picked stay included.
+
+**Change a wall or remove a feature.** Select a flat wall and choose **Modify walls**. Shift-click more walls, then set an offset per side or a draft angle and fixed plane. To remove an isolated straight-sided boss or rib, click its flat top, choose **Remove feature** and check the highlighted landing. Picking the flat floor of a pocket fills it to the surrounding face.
+
+**Stretch part of a model.** Under **Edit part**, choose **Stretch section**. Place two planes across the part, choose which end stays fixed and enter the length change. A negative value shortens the interval. Everything beyond the two planes keeps its original dimensions. Pick a flat face first to make its normal available as a stretch direction.
+
+- **Add and combine models.** Choose **Add model** under **Parts** to bring another STL into the project. Select two parts there and choose **Align** to centre one on top of the other, match their centres, or snap two picked flat faces together. Use **Combine** to join selected parts, subtract cutters from the chosen target, or keep their shared volume. A negative placement gap lets two parts overlap before joining.
+- **Inspect and repair.** A damaged STL opens in **Inspect and repair STL** before it replaces or joins your project. **Mesh tools → Inspect STL file…** opens the same view for an STL you choose. Click an outlined opening to preview a patch, correct inconsistent winding, or isolate and remove a loose component. Once the result is a closed solid, choose **Open as new model** or, when using **Add model**, **Add to project**.
+- **Edit curved surfaces.** Under **Mesh tools → Brush & lasso**, paint a visible region or draw around it. Grow and shrink the selection along the mesh, then preview **Smooth** or **Remove and patch**. The selection and result appear side by side. **Protect sharp edges** helps preserve creases while smoothing.
+- **Hollow and label.** Pick a flat face, choose **Hollow**, and set the wall thickness. The face becomes the opening. To add lettering, pick a flat or curved surface, choose **Text**, enter the label, and drag it into position. Raised and engraved lettering become printable geometry. Enable **Keep addition as a separate part** to print raised letters on their own.
+- **Simplify a mesh.** Choose **Mesh tools → Simplify mesh**, set the allowed deviation and, if desired, a triangle target. Check the before/after triangle counts and silhouette before applying.
+- **Look inside.** Turn on **Section view** in the viewport toolbar. Pick X, Y, or Z, then drag the slider or enter a position in millimetres. **Flip side** reveals the other half. The cut is for viewing. Saving and exporting use the complete model.
+
+To adjust screw posts together, click one flat top and Shift-click the others. You can also turn on **Add to selection** and click each top. Click a highlighted top again in this mode to remove it. The tops can start at different heights on one part and must face the same direction. The editor can recognize the individual post area beside a round bore when the surrounding wall shape is identifiable. **Select whole face** switches that pick to the continuous rim.
+
+Choose **Push / pull**. To lower posts from 10, 12, 14 and 16 mm to 8, 10, 12 and 14 mm, move each by **−2 mm**. To make them level, set a common height of **12 mm**. The 10 mm post rises, the 12 mm post stays in place and the taller posts shorten. Height is measured from the opposite extent of the selected part along the face normal. For upward-facing posts, that is the underside of the part. Check the live outlines, then apply the group as one undoable edit.
+
+To shorten the whole enclosure, choose **Cut off top** in the sidebar. Set **Remove amount** to **3 mm** or **Finished height** to **13 mm**. The live dimensions and cut plane show how much material will remain. **Apply trim** records the cut in the editable history. For an angled cut, select a flat face and choose **Trim**. The cut runs parallel to the selected face. **Push / pull** changes material within the selected outline and can create a separately printable addition.
+
+Use **Add profile** or **Cut profile** with a face outline, rectangle, circle, round-ended slot or closed SVG/DXF. A round-ended slot takes a tip-to-tip length and width. Set its rotation under **Angle and placement**. Choose **Cut extent → Through part** for a hole or **Fixed distance** for a pocket. **Tilt** lets you position a hinge and raise or lower a face. **Split & rebuild** copies end details onto the cut pieces, and **Transform → Size by dimension** scales a part proportionally to a target width, length, or height. Use the ruler to calibrate against a known distance.
+
+Hold the scroll wheel and drag to pan in either workspace. Ctrl-drag and right-drag also pan. Left-drag to orbit and scroll to zoom. Use the ruler to pick two points on the same part. Click the print plate dimensions to set the usable area and edge margin. The check considers XY rotation, the whole finished footprint, and protruding connectors. For oversized generated parts, try a suggested segment count before changing the design.
+
+**Save** writes a portable .slotfab file with embedded source geometry and edit history. Local autosave records applied changes where browser storage is available. **Apply & save** records the live edit before saving. Exporting also applies the current edit.
+
+**Export STLs** offers the selected part, all border segments, or all printable parts. For a single border, select its segment in Assembly and choose **Export STLs → Selected part**. The borders ZIP contains one STL per border segment. The complete kit includes separate STLs, quantities, a numbered assembly map and the editable project. Under **Other STL outputs** you can export an assembled model or, in the editor, the additions or modified base. Hiding a part changes its visibility. STL dimensions are in millimetres.
+
+### Where tools belong
+
+Road and Borders each own the shape, surface markings and segmentation of that component. Cross-section owns the road's deck, guide slots and braid channels. Connections owns mating geometry and fit across components. Dimensions that intentionally link the road and its borders are labelled as shared. In the STL editor, commands that depend on a picked surface belong in the face toolbar. Commands that act on a whole part belong in the left navigation. Save, printing and camera controls are available across the workspaces.
+
+## Geometry supported in this release
+
+**Track Set → Connections → Project clip type** sets one clip family for road seams, border attachments and border ends. The **double-dovetail draw key** has a 26 × 10 mm footprint. Its tapered shoulders draw the pieces together, and one keeper locks it at the seam. The key grows with the track height, leaving a 2 mm roof above its pocket and 0.15 mm of vertical clearance. A 10 mm track takes a 4.20 mm key and a 12 mm track takes a 6.20 mm key. The minimum track height is 7.5 mm. The deck thickness setting controls the hollow deck away from the connector.
+
+**Carrera + two retainers** takes the original 60 × 14.8 × 4.5 mm fork and needs at least 9.5 mm of track height. A complete joint has two keepers, one on each piece, 15 mm from the seam. The fork seats from underneath while the two pieces are aligned.
+
+**Connections → Tab and socket** sets tab width, projection from the seam and thickness. Leave thickness empty to follow track height. The socket updates live, adding the gap on both sides, above and below, and once at the tip. For example, an 8 × 7 × 3 mm tab with a 0.15 mm gap gives a socket 8.30 mm wide, 7.15 mm deep and 3.30 mm high.
+
+Under **Track Set → Connections**, choose a joint type and the number of clips or tabs per joint. One goes in the middle, two form an outer pair, and three add a centre connector to that pair. **Tabs and clips** lets you choose each count, up to five total. Three clips and two tabs alternate across the joint, with a clip in the middle and at either end. Choosing three tabs and two clips reverses that pattern. Foundry checks the available space and shows the result live. **Apply changes** keeps the layout.
+
+Road ends can follow the segment seams or use their own settings. On borders, choose how many connectors attach each segment to the road and how many join neighbouring border ends. For an exact location, open the placement map and drag a mark or enter its position. Choosing an automatic count recalculates the row.
+
+When a connector cannot fit, **View warning** opens the joint’s diagnosis in the inspector. For a narrow border end, it shows the available width, the minimum for the selected connector and a suggested width. The edit button opens the relevant setting and keeps the rest of the draft. The viewport shows the last applied model until the edited joint fits.
+
+**Export fit samples** makes two mating racks, a tab, the main clip, the keepers for one joint and a reusable keeper tool. The racks let you try three lateral clearances with your track filament and print settings. The same angled tool fits the dovetail and Carrera keepers. Download it separately under **Connections → Project clip type → Download keeper tool STL**, or find it in a print kit containing keepers.
+
+Support the track with about 6 mm of space above the table to slide the bare tool underneath. Allow about 8 mm to carry a loose keeper on its tip. Align the track pieces, press the main clip into its underside pocket and insert each keeper with its wings across the seam. Engage the slotted centre, press toward the road surface and turn clockwise a quarter turn as viewed from underneath. To release, press inward about 0.5 mm, turn counter-clockwise a quarter turn and lower the keeper. The seated keeper clears the tabletop by 0.30 mm.
+
+Under **Cross-section → Braid recess**, **Braid offset from slot** sets the width of the road-surface wall between each edge of the guide slot and the adjacent braid recess. A 2 mm offset leaves a 2 mm wall on each side. At 0 mm each recess meets the slot directly. **Width per strip** sets the width of each recess independently. The feed slit follows its recess, and the slot and recesses open through each segment end. Under **Braid pass-throughs**, **Opening length** sets the length of the slit along the lane.
+
+**Clip design credit.** The Carrera fork uses *Carrera Slotcar Track Connector Clip* by URSUS, licensed CC BY-SA 4.0. Carrera exports include its attribution. The double-dovetail key and quarter-turn keeper are original SlotForge Foundry designs. [Original Carrera design](https://www.printables.com/model/1163344-carrera-slotcar-track-connector-clip) · [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
+Under **Road → Road white lines** and **Borders → Border white line**, choose the inside, outside, or both sides independently. Each piece carries the full stripe where it runs alone. Where both carry it, the line straddles their shared edge. For example, a 4 mm line has 2 mm on the road and 2 mm on its border. Use matching width and side settings on adjoining track pieces to continue the line through the joint.
+
+Choose **Centre line → Solid** or **Dashed** for a marking along the middle of the road. **Dash length** and **Gap between dashes** apply to the centre line and dashed pit crossings. Their pattern continues through the print seams of a piece. Slots and braid recesses interrupt the paint wherever they occupy the road centre. Use a pack’s **Shared print profile → Road markings** to apply a centre line and dash dimensions across its pieces.
+
+Under **Borders → Border width**, each side has its own apex. Drag the outside or inside apex handle along the road to set its position, or away from the road to increase its width. You can also enter each width and percentage directly. Both sides share the entry and exit widths. Projects saved with one apex use its values on both sides until you edit a side.
+
+Under **Road → Road kerbstones**, choose either road edge or both to place alternating red and cream blocks directly on the driving surface. They sit just inside any edge stripe and can be used on a road without borders. Under **Borders → Kerbstones**, choose the road-facing edge, free edge, or both on the active borders. Road and border blocks share their width, length and outline groove setting. The alternating colours continue across segment seams.
+
+For hand painting, enable the recess under **Borders → Kerbstones** and set the groove width and depth there. This cuts the outline of each block into its border STL, including the divide between colours. White lines have their own recess switches. Where a road and border share a stripe, the Road switch controls the groove on its driving side. Groove dimensions are shared with other enabled paint recesses. To print all border segments, choose **Export STLs → Borders only** for a ZIP of individual STLs, each centred on the print bed.
+
+- Generated flat straights and circular bends can include hollow decks, guide slots, braid recesses, braid pass-throughs, tapered borders, independent road and border seams, and configurable tabs, sockets and loose clips. Test joints use the selected connector dimensions and clearance.
+- For Circuit imports, export the slot centrelines and road surface edges. A single open centreline can use a supplied road width. Full-size DXF uses millimetres. The SVG importer understands Circuit's compact-scale metadata. Confirm the imported dimensions, especially for third-party drawings.
+- A flat panel without identifiable road ends can become a single deck. For a bridge, the importer needs continuous lane paths to follow each pass. A four-way junction made of unpaired strokes needs an ordered path for each through road. Parametric end connectors, borders and automatic segmentation require identifiable ends or a recovered crossing route. Guide-slot width and braid width are shared profile dimensions. Bridge approaches use straight planar sections. Freeform vertical profiles, banking and lane-changer mechanisms are outside this release.
+- STL edits operate on closed, consistently oriented geometry. The importer welds matching vertices and reports invalid meshes. It does not reconstruct arbitrarily damaged meshes. Surface grouping crosses adjacent triangles up to the selected angle; a curved selection accepts artwork in a tangent plane. Planar-face operations require a planar selection. Straight rebuilds need matching cross-sections. Radial STL rebuilds use the given XY centre and a sector of up to 180°.
+- Plate checks cover geometric fit in the chosen print orientation. Slicer supports, print settings, electrical contact and printed joint fit still need verification on the actual build. A short test joint is included for that purpose.
+
+## Development
+
+Use Node.js 24 and npm. Run `npm ci`, then `npm run dev` for a local development server. Run `npm test` for geometry, drawing-import and regression tests. Run `npm run build` to create the standalone HTML and portable ZIP. Third-party notices are embedded in the HTML and included in the ZIP.
+
+`npm run test:ui` runs the production HTML with networking disabled in a real Chromium browser. It can use installed Edge on Windows or Chrome/Chromium on macOS and Linux. Set `SLOT_FORGE_BROWSER` to select an executable. Set `SLOT_FORGE_RENDERER` to `webgl` or `software` to exercise a specific renderer. CI is configured to build and run both paths on all three operating systems.

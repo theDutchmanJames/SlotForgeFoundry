@@ -1,0 +1,221 @@
+dialog.create-sketch {
+  width: min(1060px, 96vw);
+  max-height: 94vh;
+  padding: 17px 19px;
+  overflow: auto;
+  color: var(--ink);
+}
+.create-sketch header,
+.create-sketch footer,
+.sk-setup,
+.sk-tools,
+.sk-viewtools,
+.sk-viewfooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.create-sketch header,
+.create-sketch footer,
+.sk-viewfooter {
+  justify-content: space-between;
+}
+.create-sketch header h2 {
+  margin: 0;
+}
+.create-sketch button {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+  min-height: 29px;
+}
+.create-sketch button:hover {
+  background: var(--box);
+}
+.create-sketch button[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.create-sketch button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.create-sketch .primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: color-mix(in srgb,var(--accent) 60%,var(--line));
+}
+.create-sketch .primary:hover {
+  background: var(--accent-fill);
+}
+.create-sketch label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+.create-sketch input:not([type='checkbox']),
+.create-sketch select {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: inherit;
+  min-width: 0;
+}
+.create-sketch [hidden] {
+  display: none;
+}
+.sk-setup,
+.sk-tools {
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.sk-setup {
+  gap: 8px 16px;
+}
+.sk-setup input[type='number'] {
+  width: 72px;
+}
+.sk-setup input:not([type]) {
+  width: 150px;
+}
+.sk-tools {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  gap: 5px;
+}
+.sk-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 15px;
+}
+.sk-view {
+  position: relative;
+  min-width: 0;
+  background: var(--box);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sk-view canvas {
+  display: block;
+  width: 100%;
+  height: clamp(275px, 47vh, 510px);
+  touch-action: none;
+}
+.sk-viewtools,
+.sk-viewfooter {
+  padding: 5px 9px;
+  flex-wrap: wrap;
+  background: var(--panel);
+}
+.sk-viewtools input[type='number'] {
+  width: 92px;
+}
+.sk-grid-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
+  padding: 5px 9px 7px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.sk-grid-tools button {
+  min-height: 26px;
+  font-size: 12px;
+}
+.sk-grid-info {
+  padding: 5px 9px 0;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  min-height: 20px;
+}
+.sk-viewtools button {
+  margin-left: auto;
+}
+.sk-viewfooter {
+  color: var(--muted);
+  min-height: 24px;
+  font-size: 11px;
+}
+.sk-layout aside {
+  min-width: 0;
+}
+.sk-element-list,
+.sk-number {
+  margin: 2px 0 8px;
+}
+.sk-element-list {
+  justify-content: space-between;
+}
+.sk-element-list select {
+  max-width: 145px;
+}
+.sk-layout h3 {
+  font-size: 16px;
+  margin: 14px 0 8px;
+}
+.sk-number span {
+  flex: 1;
+}
+.sk-number input {
+  width: 72px;
+}
+.sk-number small {
+  width: 23px;
+  color: var(--muted);
+}
+.sk-hint,
+.sk-status {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.sk-hint {
+  color: var(--muted);
+  margin: 10px 0;
+}
+.sk-status {
+  margin: 9px 0 5px;
+  color: var(--ink);
+  min-height: 19px;
+}
+.sk-status.sk-error {
+  color: var(--accent-text);
+}
+.create-sketch footer {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.create-sketch footer div {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 760px) {
+  .sk-layout {
+    grid-template-columns: minmax(0, 1fr) 165px;
+    gap: 7px;
+  }
+  .sk-layout aside {
+    max-height: 370px;
+    overflow: auto;
+  }
+  .sk-number input {
+    width: 61px;
+  }
+}
+@media (max-width: 540px) {
+  .sk-layout {
+    grid-template-columns: 1fr;
+  }
+  .sk-view canvas {
+    height: 220px;
+  }
+  .sk-layout aside {
+    max-height: 175px;
+  }
+}

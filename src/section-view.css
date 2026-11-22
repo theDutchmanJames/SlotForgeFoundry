@@ -1,0 +1,56 @@
+.section-controls {
+  position: absolute;
+  z-index: 4;
+  right: 14px;
+  bottom: 56px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 9px 12px;
+  align-items: center;
+  max-width: calc(100% - 28px);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 7px;
+  font: 12px system-ui,
+    sans-serif;
+  box-shadow: 0 3px 12px color-mix(in srgb,var(--accent) 10%,transparent);
+}
+.section-controls[hidden] {
+  display: none;
+}
+.section-controls strong {
+  font-size: 13px;
+}
+.section-controls [data-close] {
+  justify-self: end;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.section-controls label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.section-controls [type='number'] {
+  width: 74px;
+}
+.section-controls input[type='range'] {
+  grid-column: 1/-1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.section-controls output {
+  justify-self: end;
+  max-width: 170px;
+}
+.section-toggle[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--ink);
+}
+#canvas-wrap:has(.section-toggle[aria-pressed='true'])
+  .view-style:has([data-action='view-fit-warning'][hidden]) {
+  display: none;
+}
