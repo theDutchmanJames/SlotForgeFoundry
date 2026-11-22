@@ -96,6 +96,8 @@ jobs:
           SLOTFORGE_NO_UPDATE_CHECK: '1'
           # The runner's virtual display has no usable GPU; Chromium's software WebGL draws instead.
           SLOTFORGE_SOFTWARE_GL: '1'
+          # If it still cannot draw 3D, the start-up test allows only that error.
+          SLOTFORGE_NO_WEBGL_OK: '1'
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
           # Ubuntu 24.04 needs Chromium's setuid sandbox helper owned by root (CI copy only).

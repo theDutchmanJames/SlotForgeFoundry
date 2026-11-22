@@ -49,7 +49,13 @@ function launch() {
       assert.ok(r.page.packs >= 2, round + ': the starter packs are listed');
       assert.ok(r.page.desktop && r.page.updates, round + ': the desktop bridge and the update check are there');
       assert.match(r.page.href, /^file:/, round);
-      assert.deepEqual(r.errors, [], round + ': console errors');
+      // SLOTFORGE_NO_WEBGL_OK: a CI machine that cannot draw 3D at all (the Linux
+      // release runner) may report only that; every other console error still fails.
+      const errors = process.env.SLOTFORGE_NO_WEBGL_OK
+        ? r.errors.filter((e) => !/WebGL context|Error creating WebGL context/i.test(String(e)))
+        : r.errors;
+      if (errors.length < r.errors.length) console.log('  (this machine cannot draw 3D; that error is allowed here)');
+      assert.deepEqual(errors, [], round + ': console errors');
       assert.equal(r.page.starts, round === 'first start' ? 1 : 2, round + ': saved data is there after a restart');
       console.log('✓ ' + round + ': Foundry ' + r.version + ' opened from ' + r.page.href.split('/').slice(-2).join('/'));
     }
