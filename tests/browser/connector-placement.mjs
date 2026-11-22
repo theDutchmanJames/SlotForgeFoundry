@@ -59,7 +59,17 @@ export async function checkConnectorPlacement({
       return [p.x, p.y];
     }, f);
   }
-  const click = async (f) => page.mouse.click(...(await point(f)));
+  // Each click redraws the map, so wait for its count before the next one.
+  let placed = 0;
+  const click = async (f) => {
+    await page.mouse.click(...(await point(f)));
+    placed++;
+    await page.waitForFunction(
+      (n) => document.querySelector('dialog.connector-placement [data-cp-count]')?.value === String(n),
+      placed,
+      { timeout: 5000 },
+    );
+  };
   for (const f of [0.16, 0.4, 0.84]) await click(f);
   assert.equal(await find('count').inputValue(), '3');
   const markValues = () => find('pick').locator('option').allTextContents();
@@ -67,6 +77,7 @@ export async function checkConnectorPlacement({
     Number((await markValues())[2].split(' · ')[1].split(' ')[0]);
   assert.ok(Math.abs((await middlePercent()) - 50) < 0.6);
   await dialog.locator('[data-cp-kind="tab"]').click();
+  placed = 0;
   await click(0.29);
   await click(0.72);
   assert.equal(await find('count').inputValue(), '2');

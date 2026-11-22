@@ -12,7 +12,9 @@ const root = path.resolve(__dirname, '..');
 const data = fs.mkdtempSync(path.join(os.tmpdir(), 'foundry-ui-'));
 const result = path.join(data, 'result.json');
 // A show:false window still paints for screenshots when this is set.
-const args = [root, '--portable-data-dir=' + data, '--force-device-scale-factor=1'];
+// SLOTFORGE_ELECTRON_ARGS adds Chromium switches, such as software WebGL on a CI machine.
+const extra = (process.env.SLOTFORGE_ELECTRON_ARGS || '').split(/\s+/).filter(Boolean);
+const args = [...extra, root, '--portable-data-dir=' + data, '--force-device-scale-factor=1'];
 const child = spawn(electron, args, {
   env: { ...process.env, SLOTFORGE_UI_TESTS: result, SLOTFORGE_NO_UPDATE_CHECK: '1' },
   stdio: 'inherit',

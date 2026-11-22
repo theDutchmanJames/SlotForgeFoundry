@@ -100,7 +100,9 @@ export async function checkRoundedCorner({
   await live();
   await waitText('[data-guide="finish-edge"]', '1 rounded corner');
   const guide = page.locator('[data-guide="finish-edge"] path').first();
-  const wholeArc = await guide.getAttribute('d');
+  const guideOutline = () =>
+    page.waitForFunction(() => document.querySelector('[data-guide="finish-edge"] path')?.getAttribute('d'));
+  const wholeArc = await (await guideOutline()).jsonValue();
   await input('edgeScope').selectOption('picked');
   await live();
   // The guide is redrawn after the live edit; slower machines need a moment.

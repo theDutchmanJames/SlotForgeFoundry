@@ -17,7 +17,9 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), 'foundry-desktop-'));
 function launch() {
   const result = path.join(data, 'smoke-' + Date.now() + '.json');
   return new Promise((resolve, reject) => {
-    const child = spawn(electron, [root, '--portable-data-dir=' + data], {
+    // SLOTFORGE_ELECTRON_ARGS adds Chromium switches, such as software WebGL on a CI machine.
+    const extra = (process.env.SLOTFORGE_ELECTRON_ARGS || '').split(/\s+/).filter(Boolean);
+    const child = spawn(electron, [...extra, root, '--portable-data-dir=' + data], {
       env: { ...process.env, SLOTFORGE_DESKTOP_SMOKE: result, SLOTFORGE_NO_UPDATE_CHECK: '1' },
       stdio: 'inherit',
     });
