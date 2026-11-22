@@ -64,11 +64,18 @@ export async function checkConnectorPlacement({
   const click = async (f) => {
     await page.mouse.click(...(await point(f)));
     placed++;
-    await page.waitForFunction(
-      (n) => document.querySelector('dialog.connector-placement [data-cp-count]')?.value === String(n),
-      placed,
-      { timeout: 5000 },
-    );
+    await page
+      .waitForFunction(
+        (n) => document.querySelector('dialog.connector-placement [data-cp-count]')?.value === String(n),
+        placed,
+        { timeout: 10000 },
+      )
+      .catch(async () => {
+        throw Error(
+          `Click at ${f} did not add mark ${placed}: count ${await find('count').inputValue()}, ` +
+            `status "${await dialog.locator('[data-cp-status], .cp-status, [role=status]').first().textContent().catch(() => '?')}"`,
+        );
+      });
   };
   for (const f of [0.16, 0.4, 0.84]) await click(f);
   assert.equal(await find('count').inputValue(), '3');

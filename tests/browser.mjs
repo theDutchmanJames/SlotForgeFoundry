@@ -122,6 +122,32 @@ try {
   context.on('request', (req) => {
     if (/^https?:/.test(req.url())) externalRequests.push(req.url());
   });
+  // Foundry ignores clicks while it builds or runs an action (a person waits
+  // too). Every locator click therefore waits until Foundry is idle, unless a
+  // dialog is open: an action can be waiting for its answer. Slow CI machines
+  // otherwise lose clicks at random.
+  const whenIdle = () =>
+    page.waitForFunction(
+      () => {
+        if (document.querySelector('dialog[open]')) return true;
+        const app = document.querySelector('#app');
+        const planner = document.querySelector('#track-planner');
+        return (
+          !!app &&
+          app.getAttribute('aria-busy') !== 'true' &&
+          !app.hasAttribute('data-acting') &&
+          !(planner && !planner.hidden && planner.hasAttribute('aria-busy'))
+        );
+      },
+      null,
+      { timeout: 60000 },
+    );
+  const Locator = Object.getPrototypeOf(page.locator('body'));
+  const plainClick = Locator.click;
+  Locator.click = async function (...args) {
+    await whenIdle();
+    return plainClick.apply(this, args);
+  };
   const action = (k) => page.locator('[data-action="' + k + '"]').first();
   const tab = (k) => page.locator('[data-tab="' + k + '"]');
   const input = (name) => page.locator('#settings-form [name="' + name + '"]');
@@ -1544,6 +1570,22 @@ try {
     const panStart = await plane.getAttribute('d');
     const initialCoords = planeCoords(panStart);
     assert.ok(initialCoords.length >= 6);
+    // The view can settle over a few frames; wait for the guide to arrive.
+    const planeShifted = (dx, dy) =>
+      page
+        .waitForFunction(
+          ([start, dx, dy]) => {
+            const d = document.querySelector('[data-guide="cut-plane"] .surface')?.getAttribute('d');
+            const c = d?.match(/-?[\d.]+/g)?.map(Number);
+            return (
+              c?.length === start.length &&
+              c.every((v, i) => Math.abs(v - (start[i] + (i % 2 === 0 ? dx : dy))) < 0.25)
+            );
+          },
+          [initialCoords, dx, dy],
+          { timeout: 5000 },
+        )
+        .catch(() => {});
     function assertPlaneShift(path, dx, dy) {
       const coords = planeCoords(path);
       assert.equal(coords.length, initialCoords.length);
@@ -1562,6 +1604,7 @@ try {
     await page.mouse.move(panX + 48, panY - 24);
     await page.mouse.up({ button: 'middle' });
     await projectedPlaneMoved(panStart);
+    await planeShifted(48, -24);
     const panned = await plane.getAttribute('d');
     assertPlaneShift(panned, 48, -24);
     await page.keyboard.down('Control');
@@ -1570,6 +1613,7 @@ try {
     await page.mouse.up();
     await page.keyboard.up('Control');
     await projectedPlaneMoved(panned);
+    await planeShifted(0, 0);
     assertPlaneShift(await plane.getAttribute('d'), 0, 0);
     const beforeZoom = await plane.getAttribute('d');
     await page.mouse.wheel(0, -120);

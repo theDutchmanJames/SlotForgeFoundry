@@ -627,6 +627,12 @@ const draftKey = () =>
             ? [selected, activeSketchId].join(',')
             : selected)),
   ].join('|');
+// An action is running: other clicks and shortcuts wait their turn. The
+// attribute lets tests (and assistive tools) see that Foundry is not idle.
+function acting(v) {
+  inAction = v;
+  document.getElementById('app')?.toggleAttribute('data-acting', v);
+}
 function lock(v) {
   busy = v;
   $('#app').setAttribute('aria-busy', String(v));
@@ -2774,7 +2780,7 @@ async function openFile(file, intent) {
     notice('Finish the current operation before opening another file.');
     return;
   }
-  inAction = true;
+  acting(true);
   leaveHome();
   leaveLibraryPage();
   try {
@@ -2782,7 +2788,7 @@ async function openFile(file, intent) {
   } catch (e) {
     notice(e.message);
   } finally {
-    inAction = false;
+    acting(false);
   }
 }
 $('#file').addEventListener('change', () =>
@@ -5010,7 +5016,7 @@ document.addEventListener('click', async (e) => {
   if(el?.closest('#track-planner') || (planning && planner.busy))return;
   if (!el || el.disabled || busy || inAction || starting) return;
   const nextTab = el.dataset.tab ?? el.dataset.returnTab ?? el.dataset.openTool;
-  inAction = true;
+  acting(true);
   try {
     if (el.dataset.togglePartGroup) {
       setPartGroupOpen(
@@ -5142,7 +5148,7 @@ document.addEventListener('click', async (e) => {
   } catch (err) {
     reportActionError(err);
   } finally {
-    inAction = false;
+    acting(false);
   }
 });
 $('#inspector').addEventListener('click', (e) => {
@@ -5321,11 +5327,11 @@ document.addEventListener('keydown', (e) => {
     if (action) {
       e.preventDefault();
       // The same guard as a click: no other action runs alongside.
-      inAction = true;
+      acting(true);
       Promise.resolve()
         .then(() => actions[action]())
         .catch(reportActionError)
-        .finally(() => (inAction = false));
+        .finally(() => acting(false));
     }
   }
 });
