@@ -1581,7 +1581,18 @@ try {
     // Every projected vertex follows the pointer on a pan. Rotation or zoom
     // changes the distances between vertices, even if the guide also moves.
     const planeCoords = (d) => d.match(/-?[\d.]+/g).map(Number);
-    const panStart = await plane.getAttribute('d');
+    // The moved plane can take a few redraws to arrive: start from where it settles.
+    const settled = async () => {
+      let last = await plane.getAttribute('d');
+      for (let still = 0; still < 5; ) {
+        await page.waitForTimeout(100);
+        const now = await plane.getAttribute('d');
+        still = now === last ? still + 1 : 0;
+        last = now;
+      }
+      return last;
+    };
+    const panStart = await settled();
     const initialCoords = planeCoords(panStart);
     assert.ok(initialCoords.length >= 6);
     // The view can settle over a few frames; wait for the guide to arrive.
