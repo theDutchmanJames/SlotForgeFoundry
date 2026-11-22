@@ -61,9 +61,20 @@ export async function checkConnectorPlacement({
   }
   // Each click redraws the map, so wait for its count before the next one.
   let placed = 0;
+  const countIs = (n, timeout) =>
+    page
+      .waitForFunction(
+        (n) => document.querySelector('dialog.connector-placement [data-cp-count]')?.value === String(n),
+        n,
+        { timeout },
+      )
+      .then(() => true, () => false);
   const click = async (f) => {
     await page.mouse.click(...(await point(f)));
     placed++;
+    // A click that lands while the map redraws is lost: measure again and retry once.
+    if (!(await countIs(placed, 4000)) && (await find('count').inputValue()) === String(placed - 1))
+      await page.mouse.click(...(await point(f)));
     await page
       .waitForFunction(
         (n) => document.querySelector('dialog.connector-placement [data-cp-count]')?.value === String(n),

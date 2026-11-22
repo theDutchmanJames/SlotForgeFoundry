@@ -1592,6 +1592,10 @@ try {
       }
       return last;
     };
+    // Leave the position field first: on Linux a middle click pastes the
+    // selection, which would change the cut position during the pan.
+    await page.evaluate(() => document.activeElement?.blur());
+    const positionBefore = await input('position').inputValue();
     const panStart = await settled();
     const initialCoords = planeCoords(panStart);
     assert.ok(initialCoords.length >= 6);
@@ -1630,6 +1634,7 @@ try {
     await page.mouse.up({ button: 'middle' });
     await projectedPlaneMoved(panStart);
     await planeShifted(48, -24);
+    assert.equal(await input('position').inputValue(), positionBefore, 'the pan changed the cut position');
     const panned = await plane.getAttribute('d');
     assertPlaneShift(panned, 48, -24);
     await page.keyboard.down('Control');
