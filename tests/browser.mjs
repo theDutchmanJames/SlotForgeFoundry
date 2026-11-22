@@ -1593,7 +1593,7 @@ try {
         const expected = initialCoords[i] + (i % 2 === 0 ? dx : dy);
         assert.ok(
           Math.abs(value - expected) < 0.25,
-          `expected ${expected}, got ${value}`,
+          `expected ${expected}, got ${value} (shift ${dx}, ${dy}; start ${initialCoords.join(' ')}; now ${coords.join(' ')})`,
         );
       });
     }
