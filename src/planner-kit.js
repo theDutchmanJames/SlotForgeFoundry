@@ -1,5 +1,6 @@
 import { cleanName } from './project.js';
 import { slotTitle } from './slot-position.js';
+import { screwName } from './geometry/screw-clip.js';
 
 // The name each layout piece carries in the kit. Pieces that share a name and
 // differ in their slot positions say so, so their files and rows read apart:
@@ -98,9 +99,26 @@ export function laneLengths(sections) {
   return lanes;
 }
 
+// Bought hardware for the layout: one wood screw for each half of every side
+// screw clip at a joined end, sized by the piece that half belongs to.
+// ends as endsOf() gives them.
+export function screwHardware({ ends, joints }) {
+  const byName = new Map();
+  for (const end of ends) {
+    if (!joints.has(end.key)) continue;
+    const count = end.hardware.filter(
+      (g) => g.kind === 'Clip' && g.family?.startsWith('side-screw'),
+    ).length;
+    if (!count) continue;
+    const name = screwName(end.params);
+    byName.set(name, (byName.get(name) ?? 0) + count);
+  }
+  return [...byName].map(([name, count]) => ({ name, count }));
+}
+
 const m = (mm) => (mm / 1000).toFixed(2) + ' m';
 // Plain-text shopping list for the print kit.
-export function shoppingList({ name, groups, lanes, settings, material }) {
+export function shoppingList({ name, groups, lanes, settings, material, hardware = [] }) {
   const lines = ['SHOPPING LIST · ' + name, ''];
   const volume = groups.reduce((s, g) => s + g.volume * g.count, 0);
   const grams = (volume / 1000) * material.density * (settings.infill / 100);
@@ -119,6 +137,10 @@ export function shoppingList({ name, groups, lanes, settings, material }) {
     lines.push('  Lane ' + (i + 1) + ': slot ' + m(len) + ' → braid ' + m(need));
   });
   if (lanes.length) lines.push('  Total braid: ' + m(total) + ' (spare ' + settings.braidSpare + ' mm per strip included)');
+  if (hardware.length) {
+    lines.push('', 'Screws (one in each piece at every side screw clip; each cuts its thread into the clip)');
+    for (const { name: item, count } of hardware) lines.push('  ' + count + ' × ' + item);
+  }
   lines.push('', 'Weights are estimates from the part volumes; your slicer gives the real figure.');
   return lines.join('\r\n') + '\r\n';
 }

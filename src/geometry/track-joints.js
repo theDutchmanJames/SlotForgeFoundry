@@ -31,7 +31,19 @@ import {
   slotPocketWarning,
   slotPositionSetting,
 } from './connector-position-warnings.js';
-import { connectorWarning } from './connector-warning.js';
+import { connectorWarning, formatMm } from './connector-warning.js';
+import {
+  SCREW_CLIP_NAME,
+  isScrewClip,
+  screwClipGeometry,
+  screwClipPart,
+  screwClipSettings,
+  screwClipTools,
+  screwClipZones,
+  screwSides,
+  sideName,
+  tabsOnly,
+} from './screw-clip.js';
 import { endObstacleText, slotEndRequest, slotEndRow } from './slot-end-row.js';
 import { hasSlotPosition } from '../slot-position.js';
 import { apexPositionFor, borderApexStations } from './border-profile.js';
@@ -63,6 +75,7 @@ const obstacle = {
   channel: 'The support would intersect a guide slot, braid recess or existing pocket.',
   feed: 'The connector support would intersect a braid pass-through.',
   detector: 'The connector support would reach the timing equipment.',
+  screwClip: 'The tab support would meet a side screw clip pocket at the road edge.',
 };
 // The text for a blocking reason. A sweep on a piece with an off-centre slot
 // is the slot moving sideways; on any other piece it keeps its old words.
@@ -424,6 +437,193 @@ export function borderSlideDirection(p, path, index, edge, sign) {
   return direction;
 }
 
+const sideField = (sign) => (sign > 0 ? 'sideClipLeft' : 'sideClipRight');
+
+function screwClipWarning(p, { location, sign, reason, detail, lanes, edge, end, minWidth, minLength }) {
+  const wider = minWidth ? 'widen the road to at least ' + formatMm(minWidth) : 'widen the road';
+  const label = location + ' · ' + SCREW_CLIP_NAME + ', ' + sideName(sign);
+  const side = sideName(sign);
+  const switchOff =
+    'switch off the ' + side + ' clip under Connections → Road connections';
+  const sideSetting = {
+    tab: 'joints',
+    field: sideField(sign),
+    label: 'Edit ' + side + ' clip',
+  };
+  const shorter = 'use a shallower clip under Connections → Project clip type';
+  let advice, setting;
+  if (reason === 'narrow') {
+    advice = 'Switch off one side under Connections → Road connections, ' + shorter + ', or ' + wider + ' under Road → Road width.';
+    setting = { tab: 'geometry', field: 'width', label: 'Edit road width' };
+  } else if (reason === 'feed') {
+    advice = 'Move the braid pass-through under Cross-section → Braid pass-throughs, or ' + switchOff + '.';
+    setting = { tab: 'profile', field: 'feedPercent', label: 'Edit braid pass-throughs' };
+  } else if (reason === 'opposite') {
+    advice = (minLength
+      ? (p.kind === 'curve'
+        ? 'Increase Road → Sweep angle to at least ' + minLength.angle + '°'
+        : 'Increase Road → Road length to at least ' + formatMm(minLength.length))
+      : 'Lengthen the piece') +
+      (p.segments > 1 ? ', use fewer road segments, or ' : ', or ') + switchOff + '.';
+    setting = p.segments > 1
+      ? { tab: 'geometry', field: 'segments', label: 'Edit road segments' }
+      : p.kind === 'curve'
+        ? { tab: 'geometry', field: 'angle', label: 'Edit sweep angle' }
+        : { tab: 'geometry', field: 'length', label: 'Edit road length' };
+  } else if (hasSlotPosition(p) && ['lane', 'channel'].includes(reason)) {
+    advice = 'Move the slot away from this edge under Road → Slot position, ' + shorter + ', or ' + switchOff + '.';
+    setting = slotPositionSetting(p, lanes, edge, end);
+  } else {
+    advice = 'Switch off the ' + side + ' clip under Connections → Road connections, ' + shorter + ', or ' + wider + '.';
+    setting = sideSetting;
+  }
+  const error = connectorWarning(label, detail, advice, setting);
+  error.code = 'SCREW_CLIP_PLACE';
+  return error;
+}
+
+/**
+ * Side screw clips at every road joint with clips: one at each enabled road
+ * edge, centred on the seam. They never move; when the piece leaves no room
+ * the build stops with a warning that says what to change.
+ * Fills zones with the across-road room each joint's clips keep.
+ */
+function addScrewClips(work, p, path, lanes, roads, loose, modes, zones) {
+  const sides = screwSides(p);
+  if (!sides.length) return;
+  const s = screwClipSettings(p);
+  const g = screwClipGeometry(s, p.height);
+  const pointAt = path.atOffset ?? path.point;
+  const finishClips = clips(modes.at(-1));
+  const timing = [];
+  if (p.special?.type === 'timing') {
+    for (let n = 0; n < p.lanes; n++) for (const sign of [-1, 1]) {
+      const lane = (n - (p.lanes - 1) / 2) * p.laneSpacing;
+      timing.push(...timingContactFootprints(p, lane, sign));
+    }
+  }
+  let roadUnion;
+  const outsideRoad = (section) => {
+    roadUnion ??= work.own(work.wasm.CrossSection.union(roads.map((road) => road.section)));
+    return work.own(section.subtract(roadUnion));
+  };
+  for (let i = 0; i < modes.length; i++) {
+    if (!clips(modes[i])) continue;
+    const end = i === 0 ? 'start' : i === roads.length ? 'finish' : 'seam';
+    const t = i / roads.length,
+      first = roads[i - 1],
+      second = roads[i];
+    const width = path.widthAt?.(t) ?? p.width;
+    const seamLanes = path.laneOffsets?.(t) ?? lanes;
+    const dir = endDirection(p, path, t);
+    const location = 'Road ' + endName(i, roads.length);
+    const row = screwClipZones(p, width);
+    zones.set(i, row);
+    // The guide slot and its wall must stay clear of the pocket.
+    const reach = s.screwClipDepth + g.gap + p.slotWidth / 2 + p.wall;
+    // The narrowest road that takes these clips beside these slots.
+    let minWidth = row.length === 2 ? 2 * g.across + 0.2 : g.across + 1;
+    for (const { sign } of sides)
+      for (const lane of seamLanes) minWidth = Math.max(minWidth, 2 * (reach + sign * lane) + 0.01);
+    minWidth = Math.ceil(minWidth * 2 - 1e-9) / 2;
+    if (
+      width < g.across + 1 ||
+      (row.length === 2 && !separated([row[0]], row[1].position, row[1].half))
+    )
+      throw screwClipWarning(p, {
+        location, sign: row[0].sign, reason: 'narrow', end, minWidth,
+        detail: 'The road is ' + formatMm(width) + ' wide. ' +
+          (row.length === 2 ? 'Clips on both sides' : 'The clip') +
+          (seamLanes.length ? ' beside the guide ' + (seamLanes.length > 1 ? 'slots' : 'slot') : '') +
+          ' need' + (row.length === 2 ? '' : 's') + ' at least ' + formatMm(minWidth) + '.',
+      });
+    // Clips at both ends of one road segment need this much edge between them.
+    const segmentEdge = (sign) =>
+      p.kind === 'curve'
+        ? ((p.radius + (sign * width) / 2) * p.angle * Math.PI) / 180 / roads.length
+        : (path.segmentLengths?.[Math.max(0, i - 1)] ?? p.length / roads.length);
+    const endToEnd = 2 * (g.along + 1);
+    for (const { sign, direction } of sides) {
+      const index = sign > 0 ? 0 : 1;
+      const edgeOffset = (sign * width) / 2;
+      const warn = (reason, detail) =>
+        screwClipWarning(p, {
+          location, sign, reason, detail, lanes: seamLanes, edge: edgeOffset, end, minWidth,
+          minLength: reason === 'opposite' && {
+            length: Math.ceil(endToEnd * roads.length * 10) / 10,
+            angle: Math.ceil(((endToEnd * roads.length) / (p.radius + (sign * width) / 2)) * (1800 / Math.PI)) / 10,
+          },
+        });
+      const nearest = Math.min(...seamLanes.map((lane) => width / 2 - sign * lane));
+      if (seamLanes.length && nearest <= reach + 1e-9)
+        throw warn('lane',
+          'The nearest guide slot centre is ' + formatMm(nearest) + ' from the ' + sideName(sign).replace(' side', '') +
+            ' edge. The clip pocket and the slot wall need more than ' + formatMm(reach) + '.');
+      const tools = screwClipTools(work, p, {
+        edge: pointAt(t, edgeOffset),
+        dir,
+        sign,
+        directions: { first: first && direction, second: second && direction },
+      });
+      if (timing.some((rect) => pocketsOverlap(tools.plan, rect)))
+        throw warn('detector', 'The clip pocket would reach the timing equipment.');
+      const halves = [
+        [first, -1],
+        [second, 1],
+      ].filter(([part]) => part);
+      const guardBox = tools.guard.boundingBox();
+      for (const [part, side] of halves) {
+        const stock = screwStock(tools, side);
+        if (part.roadPocketStock?.some((other) => pocketsOverlap(stock, other)))
+          throw warn('opposite', 'The clip pocket meets a connector from the other end of this road segment. ' +
+            'Clips at both ends need at least ' + formatMm(endToEnd) + ' along the ' +
+            sideName(sign).replace(' side', '') + ' edge; this segment has ' + formatMm(Math.round(segmentEdge(sign) * 100) / 100) + '.');
+        for (const cut of part.cuts) {
+          const box = cut.boundingBox();
+          if ([0, 1, 2].some((k) => box.max[k] <= guardBox.min[k] || box.min[k] >= guardBox.max[k]))
+            continue;
+          if (work.and(cut, tools.guard).volume() > 0.001)
+            throw part.feedCuts?.includes(cut)
+              ? warn('feed', 'The clip pocket or a screw would cut into a braid pass-through.')
+              : warn('channel', 'The clip pocket or a screw would cut into a guide slot, a braid recess or another pocket.');
+        }
+      }
+      for (const [part, side] of halves) {
+        (part.roadPocketStock ??= []).push(screwStock(tools, side));
+        if (p.hollow) {
+          const limits = work.prism(part.section, 0, p.height);
+          part.additions.push(work.and(tools.support, limits));
+          if (p.reinforcement) (part.ribKeepouts ??= []).push(work.own(tools.support.project()));
+        }
+        part.cuts.push(tools.cut, tools.screws[side < 0 ? 'first' : 'second'].holes);
+        (part.jointGuides ??= []).push({ kind: 'Clip', point: [...tools.centre, 0] });
+      }
+      // Where the clip corners stand proud of a convex side face, a border on
+      // that side is relieved to clear them.
+      const proud = outsideRoad(tools.footprint);
+      if (proud.area() > 1e-3)
+        (roads[0].screwReliefs ??= []).push({
+          sign,
+          solid: work.prism(proud, g.floor, g.top),
+        });
+      const startOnly = i === 0 && !finishClips;
+      const id = (first || startOnly) && 'road-clip-' + i + (index ? '-' + (index + 1) : '');
+      if (id)
+        loose.push(screwClipPart(work, p, tools, {
+          id,
+          plannerJoint: work.planning && { xy: tools.centre.slice(), dir: dir.slice(), side: first ? -1 : 1 },
+        }));
+    }
+  }
+}
+
+// The plan one half of a side clip keeps from connectors at the other end.
+function screwStock(tools, side) {
+  const { along, across } = tools.geometry;
+  const [u0, u1] = side < 0 ? [-along - 1, 0] : [0, along + 1];
+  return [[u0, 0], [u1, 0], [u1, across], [u0, across]].map(([u, v]) => tools.at(u, v));
+}
+
 export function addRoadJoints(
   work,
   p,
@@ -479,6 +679,16 @@ export function addRoadJoints(
         clips(modeA) || clips(modeB) ? envelopes.clip.name : 'tab',
       );
   }
+  // Side screw clips sit at the road edges, fixed by the side faces. Fit them
+  // first; tabs at the same joints then keep clear of them.
+  const screwZones = new Map();
+  const screw = isScrewClip(p);
+  if (screw) {
+    addScrewClips(work, p, path, lanes, roads, loose, modes, screwZones);
+    for (let i = 0; i < modes.length; i++) modes[i] = tabsOnly(modes[i]);
+  }
+  const screwConflict = (i, x, envelope) =>
+    !separated(screwZones.get(i) ?? [], x, envelope.half);
   const startRequest = countedJoint(p, 'start', undefined, modes[0]);
   const matchExternalRows = !fixedEndRows && p.kind !== 'import' && startRequest &&
     JSON.stringify(startRequest) === JSON.stringify(countedJoint(p, 'finish', undefined, modes.at(-1)));
@@ -513,7 +723,7 @@ export function addRoadJoints(
         ? spread(manualClips ?? [0], 'clip', Boolean(manualClips))
         : []),
     ].sort(fixedFirst);
-    const occupied = [];
+    const occupied = [...(screwZones.get(i) ?? [])];
     const dir = endDirection(p, path, t);
     const pointAt = path.atOffset ?? path.point;
     const location = 'Road ' + endName(i, roads.length);
@@ -549,12 +759,16 @@ export function addRoadJoints(
     // A fit sample joins two mating ends at its seam: path.matingSeams.
     if (fixedEndRows && (end !== 'seam' || path.matingSeams)) {
       const { specs: row } = slotEndRow(
-        slotEndRequest(p, end, { width, lanes: seamLanes, mode, envelopes, location }),
+        slotEndRequest(p, end, {
+          width, lanes: seamLanes, mode, envelopes, location,
+          ...(screw && { screwZones: screwZones.get(i) ?? [] }),
+        }),
       );
       for (const spec of row) {
         const envelope = envelopes[spec.type],
           point = pointAt(t, spec.value);
         const reason =
+          (screwConflict(i, spec.value, envelope) ? 'screwClip' : null) ??
           roadPocketConflict(work, first, second, point, dir, envelope, false) ??
           checkStock(spec.type, point, dir, first, second, envelope);
         if (reason)
@@ -588,12 +802,14 @@ export function addRoadJoints(
       if (Math.abs(x) > width / 2 - envelope.half + 1e-8) return 'edge';
       const laneSpace = p.slotWidth / 2 + p.wall + envelope.half;
       if (seamLanes.some(lane => Math.abs(lane - x) <= laneSpace)) return 'lane';
+      if (screwConflict(i, x, envelope)) return 'screwClip';
       const reason = roadPocketConflict(work, first, second, pointAt(t, x), dir, envelope, false);
       const stock = reason ?? checkStock(type, pointAt(t, x), dir, first, second, envelope);
       if (stock || !match) return stock;
       const farWidth = path.widthAt?.(1) ?? p.width;
       if (Math.abs(x) > farWidth / 2 - envelope.half + 1e-8) return 'edge';
       if ((path.laneOffsets?.(1) ?? lanes).some(lane => Math.abs(lane - x) <= laneSpace)) return 'lane';
+      if (screwConflict(roads.length, x, envelope)) return 'screwClip';
       return roadPocketConflict(work, farPart, null, pointAt(1, x), farDir, envelope, false) ??
         checkStock(type, pointAt(1, x), farDir, farPart, null, envelope);
     }
@@ -625,7 +841,9 @@ export function addRoadJoints(
         if (Math.abs(x) > width / 2 - envelope.half + 1e-8) return 'edge';
         if (seamLanes.some((lane) => Math.abs(lane - x) <= laneSpace))
           return 'lane';
-        if (!separated(occupied, x, envelope.half)) return 'other';
+        if (!separated(occupied, x, envelope.half))
+          return screwConflict(i, x, envelope) ? 'screwClip' : 'other';
+        if (matchStart && screwConflict(roads.length, x, envelope)) return 'screwClip';
         if (finishOffset !== undefined) return null; // Already checked and reserved with its mate.
         const here = pointAt(t, x);
         const reason = roadPocketConflict(work, first, second, here, dir, envelope, false);
@@ -689,6 +907,10 @@ export function sideStationRules(
       ? p.length
       : ((p.radius + edge) * p.angle * Math.PI) / 180);
   const envelope = envelopes[type];
+  const screwReach =
+    isScrewClip(p) && screwSides(p).some((s) => s.sign === sign)
+      ? screwClipGeometry(screwClipSettings(p), p.height).along
+      : 0;
   const slideDirection =
     p.jointFitVersion === 2 && type === 'tab'
       ? borderSlideDirection(p, path, i, edge, sign)
@@ -748,6 +970,13 @@ export function sideStationRules(
       (Math.abs(t * p.segments - Math.round(t * p.segments)) * edgeLength) /
       p.segments;
     if (roadEndDistance <= half + 0.5) return 'roadEnd';
+    if (screwReach) {
+      // A side screw clip sits in this road edge at each road joint.
+      const k = Math.round(t * p.segments);
+      const scope = k === 0 ? 'start' : k === p.segments ? 'finish' : 'seam';
+      if (clips(activeJointMode(p, scope)) && roadEndDistance <= half + 0.5 + screwReach)
+        return 'screwClip';
+    }
     if (
       (t - a) * edgeLength <=
         half + 0.5 + (startDepth ? Math.max(8, startDepth) + 0.5 : 0) ||

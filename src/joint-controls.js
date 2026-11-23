@@ -1,6 +1,21 @@
 import { button, choice, details, field } from './ui.js';
-import { keeperToolAccess, lockRetainer, releaseRetainer } from './clip-instructions.js';
+import {
+  fitScrewClip,
+  keeperToolAccess,
+  lockRetainer,
+  releaseRetainer,
+  releaseScrewClip,
+} from './clip-instructions.js';
 import { clipSpec } from './geometry/clip-types.js';
+import {
+  SCREW_CLIP_LABELS,
+  SCREW_CLIP_LIMITS,
+  SCREW_CLIP_NAME,
+  SCREW_CLIP_TYPE,
+  screwClipSettings,
+  screwName,
+  validateScrewClip,
+} from './geometry/screw-clip.js';
 import { DRAW_KEY_ROOF } from './geometry/keeper-dimensions.js';
 import {
   CLIP_TABLE_CLEARANCE,
@@ -16,7 +31,85 @@ export function clipChoices() {
   return [
     ['draw-key', 'Double-dovetail draw key + retainer'],
     ['carrera-retained', 'Carrera + two retainers'],
+    [SCREW_CLIP_TYPE, 'Side screw clip + two screws'],
   ];
+}
+
+const screwField = (s, key, unit = 'mm') =>
+  field(key, SCREW_CLIP_LABELS[key], s[key], unit, {
+    min: SCREW_CLIP_LIMITS[key][0],
+    max: SCREW_CLIP_LIMITS[key][1],
+  });
+
+// The pack settings of the side screw clip, shown while it is the clip type.
+function screwClipControls(base) {
+  const s = screwClipSettings(base);
+  return (
+    '<div data-clip-family="screw"' + (base.clipType === SCREW_CLIP_TYPE ? '' : ' hidden') + '>' +
+    choice('screwDirection', SCREW_CLIP_LABELS.screwDirection, s.screwDirection, [
+      ['top', 'All from the top'],
+      ['bottom', 'All from the bottom'],
+      ['side', 'Per road side'],
+    ]) +
+    '<p class="hint">Per road side: choose the direction for the left and the right clips of each piece under Road connections.</p>' +
+    screwField(s, 'screwThread') +
+    field('screwLength', SCREW_CLIP_LABELS.screwLength, base.screwLength ?? '', 'mm', {
+      optional: true,
+      placeholder: 'Auto (' + s.screwLength + ')',
+      min: SCREW_CLIP_LIMITS.screwLength[0],
+      max: SCREW_CLIP_LIMITS.screwLength[1],
+    }) +
+    '<p class="hint">Leave Screw length empty to use the longest common length (6, 8, 10, 12 mm …) that fits the road height.</p>' +
+    screwField(s, 'screwPilot') +
+    screwField(s, 'screwClearance') +
+    screwField(s, 'screwHead') +
+    screwField(s, 'screwHeadAngle', '°') +
+    screwField(s, 'screwSeamDistance') +
+    screwField(s, 'screwInset') +
+    screwField(s, 'screwClipWidth') +
+    screwField(s, 'screwClipDepth') +
+    screwField(s, 'screwClipThickness') +
+    screwField(s, 'screwClipPlay') +
+    '<p class="hint">Play is the total clearance: the pocket is this much wider, deeper and thicker than the clip. The pocket sits halfway up the road, so a screw from the top or the bottom bites equally far.</p>' +
+    '</div>'
+  );
+}
+
+function screwClipDiagram(params) {
+  const s = screwClipSettings(params);
+  let g = null,
+    problem = '';
+  try {
+    g = validateScrewClip(params);
+  } catch (error) {
+    problem = error.warning?.reason ?? error.message;
+  }
+  const scale = Math.min(2.6, 56 / s.screwClipDepth, 120 / s.screwClipWidth);
+  const r = (s.screwClipWidth / 2) * scale;
+  const d = s.screwClipDepth * scale;
+  const hole = (s.screwPilot / 2) * scale;
+  const x = (u) => 132 + u * scale;
+  const y = (v) => 6 + v * scale;
+  const clip = `M${x(-s.screwClipWidth / 2)} ${y(0)}H${x(s.screwClipWidth / 2)}V${y(s.screwClipDepth) - r}A${r} ${r} 0 0 1 ${x(-s.screwClipWidth / 2)} ${y(s.screwClipDepth) - r}Z`;
+  const screws = [-1, 1].map((k) =>
+    `<circle cx="${x(k * s.screwSeamDistance)}" cy="${y(s.screwInset)}" r="${hole}" fill="var(--d-paper)" stroke="var(--d-hardware-edge)"/>`).join('');
+  const height = d + 14;
+  const caption =
+    SCREW_CLIP_NAME + ' · ' + s.screwClipWidth + ' × ' + s.screwClipDepth + ' × ' + s.screwClipThickness + ' mm. ' +
+    'Two ' + screwName(params) + 's, one in each piece, ' + s.screwSeamDistance + ' mm from the seam and ' +
+    s.screwInset + ' mm in from the side face.' +
+    (g ? ' The pocket sits halfway up the road. Each screw grips ' + mm(g.grip) + ' mm of thread: ' +
+      mm(g.thickness) + ' mm in the clip and ' + mm(g.bite) + ' mm in the road beyond it.' : '');
+  return `<figure class="joint-fit-diagram" data-clip-diagram>
+    <svg viewBox="0 0 264 ${height}" role="img" aria-label="${SCREW_CLIP_NAME} seen from above">
+    <path d="M8 ${y(0)}H256" stroke="var(--d-track-edge)"/>
+    <path d="M132 2V${height - 2}" stroke="var(--d-guide)" stroke-dasharray="3 3"/>
+    <path d="${clip}" fill="var(--d-hardware)" stroke="var(--d-hardware-edge)" stroke-width=".6"/>${screws}
+    <text x="10" y="${y(0) - 1}" font-size="7" fill="currentColor">Side face</text></svg>
+    <figcaption>${caption}</figcaption>
+    ${problem ? '<p class="hint">' + problem + '</p>' : ''}
+    <details class="retainer-help"><summary>Fit and release the clip</summary><p>${fitScrewClip(params)}</p><p>${releaseScrewClip}</p></details>
+    </figure>`;
 }
 
 
@@ -68,6 +161,7 @@ function drawKeySection(height, spec) {
 
 export function jointsClipDiagram(params) {
   params = currentJointSettings(params);
+  if (params.clipType === SCREW_CLIP_TYPE) return screwClipDiagram(params);
   const fit = resolveJointFit(params),
     spec = clipSpec(params);
   const carrera = spec.type === 'carrera-retained';
@@ -124,6 +218,7 @@ export function jointFitControls(p) {
       choice('clipType', 'Clip type', baseType, options) +
         '<p class="hint">Applies to every clip on roads and borders.</p>' +
         jointsClipDiagram(base) +
+        '<div data-clip-family="keeper"' + (baseType === SCREW_CLIP_TYPE ? ' hidden' : '') + '>' +
         button('export-keeper-tool', 'Download keeper tool STL', 'export', 'secondary full') +
         '<p class="hint">' + keeperToolAccess + '</p>' +
         field(
@@ -132,7 +227,8 @@ export function jointFitControls(p) {
           startingFit.clipClearance,
           'mm',
           { min: JOINT_FIT_LIMITS.clip[0], max: JOINT_FIT_LIMITS.clip[1] },
-        ),
+        ) + '</div>' +
+        screwClipControls(base),
       true, 'clip',
     ) +
     details(

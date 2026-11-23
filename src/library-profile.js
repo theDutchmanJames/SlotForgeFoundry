@@ -9,6 +9,11 @@ import {
 import { importedTrackPaths } from './geometry/import-track.js';
 import { JOINT_FIT_LIMITS, TAB_SIZE_LIMITS } from './geometry/joint-fit.js';
 import { clipSpec, currentClipType } from './geometry/clip-types.js';
+import {
+  SCREW_CLIP_LABELS,
+  SCREW_CLIP_LIMITS,
+  SCREW_DIRECTIONS,
+} from './geometry/screw-clip.js';
 import { checkProject, newProject } from './project.js';
 import { refreshCustomTrack } from './custom-track.js';
 import { defaultPackRules } from './track-pack-rules.js';
@@ -24,6 +29,9 @@ const sizes = {
   tabClearance: JOINT_FIT_LIMITS.tab,
   clipClearance: JOINT_FIT_LIMITS.tab, // Version one used the wider tab range.
 };
+// The side screw clip settings. A pack that never set them leaves them out.
+const screwSizes = SCREW_CLIP_LIMITS;
+export const SCREW_PROFILE_FIELDS = Object.freeze([...Object.keys(screwSizes), 'screwDirection']);
 export const SHARED_PROFILE_FIELDS = Object.freeze([
   ...Object.keys(sizes),
   'hollow',
@@ -32,6 +40,7 @@ export const SHARED_PROFILE_FIELDS = Object.freeze([
   'joint',
   'clipType',
   'jointFitVersion',
+  ...SCREW_PROFILE_FIELDS,
 ]);
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -54,6 +63,18 @@ export function validateLibraryProfile(profile) {
     if (!SHARED_PROFILE_FIELDS.includes(key))
       throw Error('Unknown collection profile setting: ' + key);
     if (key === 'tabThickness' && value === null) continue;
+    if (SCREW_PROFILE_FIELDS.includes(key)) {
+      if (value === null) continue;
+      if (key === 'screwDirection') {
+        if (!SCREW_DIRECTIONS.includes(value))
+          throw Error('Choose from the top, from the bottom or per road side for the screws.');
+        continue;
+      }
+      const [min, max] = screwSizes[key];
+      if (!Number.isFinite(value) || value < min || value > max)
+        throw Error(SCREW_CLIP_LABELS[key] + ' must be between ' + min + ' and ' + max + '.');
+      continue;
+    }
     if (key === 'hollow') {
       if (typeof value !== 'boolean')
         throw Error('Choose a hollow or solid track body.');
@@ -106,7 +127,9 @@ export function validateLibraryProfile(profile) {
 export function profileFromTrack(track) {
   const p = trackParameters(track.params);
   return Object.fromEntries(
-    SHARED_PROFILE_FIELDS.map((key) => [key, p[key] ?? null]),
+    SHARED_PROFILE_FIELDS.map((key) => [key, p[key] ?? null]).filter(
+      ([key, value]) => value !== null || !SCREW_PROFILE_FIELDS.includes(key),
+    ),
   );
 }
 

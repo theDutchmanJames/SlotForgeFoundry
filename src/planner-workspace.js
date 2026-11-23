@@ -27,6 +27,7 @@ import {
 import { slotTitle } from './slot-position.js';
 import { zipSync, strToU8 } from 'fflate';
 import { clipAttribution } from './geometry/clip-types.js';
+import { fitScrewClip, releaseScrewClip } from './clip-instructions.js';
 import { assemblyNotes, wiringDiagram } from './special-print.js';
 import './planner.css';
 import {
@@ -35,6 +36,7 @@ import {
   laneLengths,
   shoppingList,
   kitPieceNames,
+  screwHardware,
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
@@ -952,6 +954,10 @@ export function createPlanner({ host, call, download, current, promote }) {
       }
       const credit = clipAttribution(track.params);
       if (credit) files['notes/' + key + '-clip-credit.txt'] = strToU8(credit);
+      if (track.params.clipType === 'side-screw' && jobs.some((g) => g.role === 'clip'))
+        files['notes/' + key + '-side-screw-clips.txt'] = strToU8(
+          fitScrewClip(track.params) + '\r\n\r\n' + releaseScrewClip + '\r\n',
+        );
     }
     const groups = printGroups(prints);
     for (const group of groups) {
@@ -986,6 +992,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         ),
         settings,
         material: MATERIALS.find((m) => m.id === settings.material),
+        hardware: screwHardware(endsOf(layout, defs)),
       }),
     );
     for (const block of blocks) {

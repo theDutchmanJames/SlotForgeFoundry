@@ -5,9 +5,11 @@ import { MAX_LIBRARY_BYTES } from './library-database.js';
 import {
   profileFromTrack,
   starterPack,
+  SCREW_PROFILE_FIELDS,
   SHARED_PROFILE_FIELDS,
   trackWithProfile,
 } from './library-profile.js';
+import { SCREW_CLIP_DEFAULTS } from './geometry/screw-clip.js';
 import './library.css';
 import { defaultPackRules, validatePackRules } from './track-pack-rules.js';
 import { centreLineStyles } from './paint-controls.js';
@@ -82,6 +84,7 @@ const groups = [
       'clipClearance',
     ],
   ],
+  ['Side screw clip', SCREW_PROFILE_FIELDS],
 ];
 
 export async function showTrackLibrary({
@@ -262,6 +265,16 @@ export async function showTrackLibrary({
             ])
           : k === 'clipType'
             ? choice(k, sharedLabels[k], v[k] ?? '', clipChoices(v[k]))
+          : k === 'screwDirection'
+            ? choice(k, sharedLabels[k], v[k] ?? SCREW_CLIP_DEFAULTS[k], [
+                ['top', 'All from the top'],
+                ['bottom', 'All from the bottom'],
+                ['side', 'Per road side'],
+              ])
+          : k === 'screwLength'
+            ? field(k, sharedLabels[k], v[k] ?? '', 'mm', { optional: true, placeholder: 'Auto' })
+          : Object.hasOwn(SCREW_CLIP_DEFAULTS, k)
+            ? field(k, sharedLabels[k], v[k] ?? SCREW_CLIP_DEFAULTS[k], k === 'screwHeadAngle' ? '°' : 'mm')
             : field(k, sharedLabels[k], v[k] ?? '', 'mm', {
                 optional: k === 'tabThickness',
                 placeholder: 'Auto',
@@ -451,12 +464,22 @@ export async function showTrackLibrary({
       if (control.type === 'checkbox') next[control.name] = control.checked;
       else if (control.type === 'number') {
         if (control.value === '') {
-          if (control.name !== 'tabThickness')
+          if (control.name !== 'tabThickness' && control.name !== 'screwLength')
             throw Error('Enter ' + sharedLabels[control.name] + '.');
           next[control.name] = null;
         } else next[control.name] = control.valueAsNumber;
       } else if (control.value) next[control.name] = control.value;
       else next[control.name] = null;
+      // A screw clip setting the pack never set stays unset at its default.
+      // An empty screw length is automatic.
+      if (
+        Object.hasOwn(SCREW_CLIP_DEFAULTS, control.name) &&
+        c.profile[control.name] == null &&
+        (control.name === 'screwLength'
+          ? next[control.name] == null
+          : next[control.name] === SCREW_CLIP_DEFAULTS[control.name])
+      )
+        delete next[control.name];
     }
     if (
       different(next, c.profile).some((k) =>

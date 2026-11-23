@@ -17,6 +17,7 @@ import { borderPath } from './border-profile.js';
 import { borderEndProfile, borderSeam, insideBorderStock } from './border-ends.js';
 import { braidFeedOutlines } from './braid-feeds.js';
 import {
+  activeJointMode,
   countedJoint,
   countWarningSetting,
   configuredPositions,
@@ -24,7 +25,8 @@ import {
   positionKey,
   validatePlacements,
 } from './placements.js';
-import { planConnectorRow } from './connector-counts.js';
+import { planConnectorRow, separated, usesClips } from './connector-counts.js';
+import { isScrewClip, screwClipZones, tabsOnly } from './screw-clip.js';
 import {
   connectorEnvelopes,
   endDirection,
@@ -58,6 +60,7 @@ const sideMessages = {
   width: 'The border is too narrow for the pocket and its supporting wall.',
   finish: 'Move the connector into the full-width section, clear of the shaped end.',
   lane: 'The connector support would reach a guide slot.',
+  screwClip: 'The connector would meet a side screw clip at the road edge.',
 };
 
 function segmentDistanceSq(p, a, b) {
@@ -494,6 +497,14 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const env = connectorEnvelopes(p),
     spec = clipSpec(p),
     fit = resolveJointFit(p);
+  // Side screw clips sit at the road edges, centred on each road joint. They
+  // are shown on the joint but never placed by hand.
+  const screw = isScrewClip(p);
+  const screwRow =
+    screw && !border && usesClips(activeJointMode(p, scope)) ? screwClipZones(p, w) : [];
+  const screwLock = border
+    ? 'Side screw clips join road ends only. Use tabs on borders.'
+    : 'Side screw clips sit at the road edges, centred on the joint. Switch a side off under Connections → Road connections.';
   // Beside an off-centre slot an external end is laid out by the same rule as
   // the build, from that end alone (slot-end-row.js).
   const slotFace =
@@ -504,6 +515,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
           envelopes: env,
           slotWidth: p.slotWidth,
           wall: p.wall,
+          screwZones: screwRow,
         })
       : null;
   // The walls of a slot that moves sideways, which no pocket may reach.
@@ -609,6 +621,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
   function structural(type, value) {
     if (!Number.isFinite(value) || value < domain[0] || value > domain[1])
       return 'Place the connector on the selected joint.';
+    if (screw && type === 'clip') return screwLock;
     const descriptor = env[type],
       half = halfAt(type, value);
     if (type === 'clip' && spec && p.height < spec.minimumHeight)
@@ -625,7 +638,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
       const blocked = slotEndObstacle(slotFace, type, value, true);
       if (blocked === 'edge')
         return 'Leave more material between the connector and the edge.';
-      if (blocked) return sideMessages.lane;
+      if (blocked) return sideMessages[blocked === 'screwClip' ? 'screwClip' : 'lane'];
     } else {
       if (Math.min(value - domain[0], domain[1] - value) * mm < half - 1e-8)
         return 'Leave more material between the connector and the edge.';
@@ -634,6 +647,8 @@ export function connectorLayout(params, plan, scope, options = {}) {
         laneOffsets.some((n) => Math.abs(n - value) <= slot + p.wall + half)
       )
         return sideMessages.lane;
+      if (screwRow.length && !separated(screwRow, value, half))
+        return sideMessages.screwClip;
     }
     const point = pointAt(value),
       dir = sideMount
@@ -708,8 +723,14 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const key = (type) => positionKey(scope, type, border ? side : undefined);
   const configured = (type) =>
     configuredPositions(p, scope, type, border ? side : undefined);
+  // The row the user can arrange: without the side screw clips.
+  const rowMode = screw ? tabsOnly(mode) : mode;
   const enabled = (type) =>
-    (mode === 'both' || mode === type + 's') && configured(type)?.length !== 0;
+    (rowMode === 'both' || rowMode === type + 's') && configured(type)?.length !== 0;
+  const screwMarks = () => {
+    if (screwRow.length) positions.clip = screwRow.map((zone) => zone.position);
+  };
+  screwMarks();
   const both = types.every(enabled);
   const order = types
     .filter(enabled)
@@ -769,7 +790,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
     }
   }
   let placementWarning;
-  const request = countedJoint(p, scope, border ? side : undefined, mode);
+  const request = countedJoint(p, scope, border ? side : undefined, rowMode);
   if (slotFace) {
     const location = 'Road ' + scope;
     try {
@@ -825,6 +846,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
   } else {
     order.forEach(placeLegacyMarks);
   }
+  screwMarks();
   const even = (type, n, span) =>
     evenlySpaced(
       domain,
@@ -853,6 +875,8 @@ export function connectorLayout(params, plan, scope, options = {}) {
     placementWarning,
     // Automatic marks at this end are set by the off-centre slot alone.
     fixedRow: Boolean(slotFace),
+    // Side screw clips are shown but not placed by hand.
+    ...(screw && { lockedClips: screwLock }),
     reason,
     even,
   };

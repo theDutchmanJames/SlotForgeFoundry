@@ -1,6 +1,7 @@
 import { connectorWarning } from './connector-warning.js';
 import { resolveJointFit } from './joint-fit.js';
 import { clipSpec } from './clip-types.js';
+import { screwClipEnvelope } from './screw-clip.js';
 
 export const usesTabs = (mode) => mode === 'tabs' || mode === 'both';
 export const usesClips = (mode) => mode === 'clips' || mode === 'both';
@@ -8,20 +9,31 @@ export const spread = (numbers, type, custom = false) =>
   numbers.map((value, index) => ({ value, type, custom, index }));
 export const fixedFirst = (a, b) => Number(b.custom) - Number(a.custom);
 
+function tabEnvelope(fit) {
+  return {
+    name: 'tab',
+    half: fit.tabSupportHalfWidth,
+    root: fit.tabRootSupportDepth,
+    socket: fit.tabSocketSupportDepth,
+    checkOutline:
+      fit.version === 2 && (fit.tabWidth !== 6 || fit.tabLength !== 6),
+  };
+}
+
 // Reserve the keeper's turning space and the stock around each pocket.
 export function connectorEnvelopes(p) {
   const fit = resolveJointFit(p);
   const fork = clipSpec(p);
+  if (fork?.screw) {
+    // A side screw clip reaches in from a side face, not across the road.
+    return {
+      tab: tabEnvelope(fit),
+      clip: screwClipEnvelope(p),
+    };
+  }
   const clipDepth = fork ? fork.reach + fit.clipClearance + 1 : 8;
   return {
-    tab: {
-      name: 'tab',
-      half: fit.tabSupportHalfWidth,
-      root: fit.tabRootSupportDepth,
-      socket: fit.tabSocketSupportDepth,
-      checkOutline:
-        fit.version === 2 && (fit.tabWidth !== 6 || fit.tabLength !== 6),
-    },
+    tab: tabEnvelope(fit),
     clip: {
       name: fork?.clipName ?? 'clip',
       half: fork ? fork.pocketHalfWidth + fit.clipClearance + 1 : 5,

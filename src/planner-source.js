@@ -5,6 +5,7 @@ import { bridgeBlocks } from './geometry/bridge-supports.js';
 import { installPart } from './geometry/bridge-build.js';
 import { printableSTL } from './kit.js';
 import { encodeSTL } from './editor.js';
+import { isScrewClip, screwClipFamily } from './geometry/screw-clip.js';
 
 const middle = (a, b) => a.map((x, i) => (x + b[i]) / 2);
 function distanceToPath(q, line) {
@@ -106,7 +107,7 @@ function sectionsFor(parts, p) {
         .map((g) => ({
           kind: g.kind,
           xy: g.point.slice(0, 2),
-          family: g.kind === 'Clip' ? p.clipType : '',
+          family: g.kind === 'Clip' ? (isScrewClip(p) ? screwClipFamily(p) : p.clipType) : '',
         })),
     })),
   }));

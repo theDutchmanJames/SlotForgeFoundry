@@ -16,6 +16,7 @@ import {
 import { currentJointSettings } from './joint-fit.js';
 import { activeJointMode, countedJoint, countWarningSetting } from './placements.js';
 import { hasSlotPosition, slotDistances, slotForm } from '../slot-position.js';
+import { isScrewClip, screwClipZones, tabsOnly } from './screw-clip.js';
 
 // Connector rows at the two ends of a piece with an off-centre slot.
 //
@@ -37,6 +38,7 @@ const exact = (value) => (Math.sign(value) * Math.round(Math.abs(value) * 1e6)) 
 export const endObstacleText = {
   edge: 'Leave room for the supporting walls inside the edge.',
   lane: 'The pocket would reach a guide slot wall.',
+  screwClip: 'The tab support would meet a side screw clip pocket at the road edge.',
 };
 
 // Each slot with its mirror partner (outermost pair first), and the middle
@@ -54,7 +56,7 @@ function mirrorPairs(lanes) {
  * A face whose slots sit symmetrically about the centre is measured exactly
  * as the standard centred pieces are.
  */
-export function slotEndFace({ width, lanes, envelopes, slotWidth, wall }) {
+export function slotEndFace({ width, lanes, envelopes, slotWidth, wall, screwZones }) {
   const arriving = lanes.map(exact);
   const pairs = mirrorPairs(arriving);
   const lean = pairs.reduce((sum, pair) => sum + pair, 0);
@@ -71,6 +73,8 @@ export function slotEndFace({ width, lanes, envelopes, slotWidth, wall }) {
     envelopes,
     slotWidth,
     wall,
+    // Side screw clips at this end, which tabs keep clear of.
+    screwZones: screwZones ?? [],
   };
 }
 
@@ -99,7 +103,10 @@ export function slotEndKeepOut(face, type, byHand = false) {
 export function slotEndObstacle(face, type, x, byHand = false) {
   if (Math.abs(x) > face.width / 2 - face.envelopes[type].half + 1e-8) return 'edge';
   const keepOut = slotEndKeepOut(face, type, byHand) + (face.offCentre ? TIE : 0);
-  return face.lanes.some((lane) => Math.abs(lane - x) <= keepOut) ? 'lane' : null;
+  if (face.lanes.some((lane) => Math.abs(lane - x) <= keepOut)) return 'lane';
+  return face.screwZones?.length > 0 && !separated(face.screwZones, x, face.envelopes[type].half)
+    ? 'screwClip'
+    : null;
 }
 
 /** Collect everything the row at one end depends on. */
@@ -109,7 +116,13 @@ export function slotEndRequest(p, end, {
   mode = activeJointMode(p, end),
   envelopes = connectorEnvelopes(p),
   location = 'Road ' + end,
+  screwZones,
 } = {}) {
+  // Side screw clips sit at the edges, apart from the row: tabs keep clear.
+  if (isScrewClip(p)) {
+    screwZones ??= usesClips(activeJointMode(p, end)) ? screwClipZones(p, width) : [];
+    mode = tabsOnly(mode);
+  }
   return {
     end,
     kind: p.kind,
@@ -117,6 +130,7 @@ export function slotEndRequest(p, end, {
     lanes,
     mode,
     envelopes,
+    ...(screwZones && { screwZones }),
     slotWidth: p.slotWidth,
     wall: p.wall,
     request: countedJoint(p, end, undefined, mode),
@@ -312,7 +326,13 @@ export function slotEndRow(ask) {
   // Solve with the slots crowding the positive side, then turn the answer back.
   const { side } = face;
   const turn = (value) => side * value + 0;
-  const turnedFace = side < 0 ? { ...face, lanes: face.lanes.map(turn) } : face;
+  const turnedFace = side < 0
+    ? {
+        ...face,
+        lanes: face.lanes.map(turn),
+        screwZones: face.screwZones.map((zone) => ({ ...zone, position: turn(zone.position) })),
+      }
+    : face;
   const specs = ask.request
     ? countedRow(ask, turnedFace, turn)
     : legacyRow(ask, turnedFace, turn);

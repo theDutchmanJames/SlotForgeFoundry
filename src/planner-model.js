@@ -1,6 +1,7 @@
 import polygonClipping from 'polygon-clipping';
 import { sectionStations } from './geometry/bridge-sections.js';
 import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
+import { screwFamilyDifference } from './geometry/screw-clip.js';
 
 export const newLayout = () => ({
   format: 'slotforge-layout',
@@ -267,10 +268,20 @@ function mismatch(target, incoming) {
   if (!hardwareMatches(target, incoming))
     return fault(
       'connectors',
+      screwClipMismatch(target, incoming) ||
       mirroredRow(target, incoming) ||
         'The connector positions or clip families differ at this joint. Choose another end or match their settings in Track Set.',
     );
   return null;
+}
+// Side screw clips that differ in a setting that shapes the clip or its holes.
+function screwClipMismatch(target, incoming) {
+  const family = (end) => end.hardware.find((g) => g.kind === 'Clip')?.family;
+  const difference = screwFamilyDifference(family(target), family(incoming));
+  return difference
+    ? 'The side screw clips differ at this joint: ' + difference +
+        '. Give both pieces the same side screw clip settings in Track Set.'
+    : '';
 }
 // A piece placed mirrored carries its connectors mirrored too. Where the
 // slots meet and only that mirror keeps the rows apart (an off-centre clip

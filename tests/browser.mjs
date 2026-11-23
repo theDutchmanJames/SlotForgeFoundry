@@ -749,8 +749,19 @@ try {
       await input('clipType')
         .locator('option')
         .evaluateAll((options) => options.map((o) => o.value)),
-      ['draw-key', 'carrera-retained'],
+      ['draw-key', 'carrera-retained', 'side-screw'],
     );
+    // The side screw clip shows its own settings and diagram in place of the keepers.
+    await input('clipType').selectOption('side-screw');
+    await waitText('[data-clip-diagram]', 'Side screw clip · 30 × 30 × 3 mm');
+    assert.equal(await input('screwLength').isVisible(), true);
+    assert.equal(await input('clipClearance').isVisible(), false);
+    await input('screwLength').fill('8');
+    await waitText('[data-clip-diagram]', 'An 8 mm screw reaches only');
+    // Empty is automatic: the longest stock screw that fits the road.
+    await input('screwLength').fill('');
+    await waitText('[data-clip-diagram]', 'Each screw grips 5.35 mm of thread');
+    await live();
     await input('clipType').selectOption('carrera-retained');
     await waitText('[data-clip-diagram]', '60 × 14.8 × 4.5 mm');
     assert.equal(
@@ -786,7 +797,7 @@ try {
       });
     await tab('borders').click();
     console.log(
-      '✓ Exactly two clip families, live dovetail height, both Carrera keeper positions and Restore',
+      '✓ Three clip families, side screw clip settings, live dovetail height, both Carrera keeper positions and Restore',
     );
     const apex = page.getByRole('slider', { name: 'Outside apex width' });
     const originalWidth = Number(

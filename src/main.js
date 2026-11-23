@@ -61,6 +61,7 @@ import { jointFitDiagram, jointsClipDiagram } from './joint-controls.js';
 import { KEEPER_TOOL_FILENAME } from './keeper-tool-stl.js';
 import { resolveJointFit } from './geometry/joint-fit.js';
 import { clipTypeFromSTL } from './geometry/fork-clip.js';
+import { SCREW_SIDE_FIELDS } from './geometry/screw-clip.js';
 import { fitPlate } from './geometry/plate.js';
 import { defaultTrack, jointSampleChoices } from './track.js';
 import { openCustomTrackEditor } from './custom-track-editor.js';
@@ -3168,9 +3169,9 @@ function candidate(report = true) {
           if (Number(value) === 2 || params.jointFitVersion != null)
             params.jointFitVersion = Number(value);
         } else if (
-          (key === 'tabThickness' && !Number.isFinite(value)) ||
+          ((key === 'tabThickness' || key === 'screwLength') && !Number.isFinite(value)) ||
           (key === 'mutedPlacements' && !value.length) ||
-          (value === '' && ['jointStart', 'jointEnd', 'clipType'].includes(key))
+          (value === '' && ['jointStart', 'jointEnd', 'clipType', ...Object.keys(SCREW_SIDE_FIELDS)].includes(key))
         )
           delete params[key];
         else params[key] = value;

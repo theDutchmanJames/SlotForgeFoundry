@@ -1,6 +1,21 @@
 import { strToU8, zipSync } from 'fflate';
 import { encodeSTL } from './editor.js';
-import { fitRetainer, releaseRetainer } from './clip-instructions.js';
+import {
+  fitRetainer,
+  fitScrewClip,
+  releaseRetainer,
+  releaseScrewClip,
+} from './clip-instructions.js';
+import {
+  SCREW_CLIP_LIMITS,
+  SCREW_CLIP_NAME,
+  screwClipGeometry,
+  screwClipPart,
+  screwClipSettings,
+  screwClipTools,
+  screwName,
+  validateScrewClip,
+} from './geometry/screw-clip.js';
 import { keeperToolSTL, KEEPER_TOOL_FILENAME } from './keeper-tool-stl.js';
 import {
   JOINT_FIT_LIMITS,
@@ -128,6 +143,82 @@ function keyText(p, fit, clip, samples) {
   ].join('\n');
 }
 
+// The side screw clip play is tried 0.1 mm tighter and looser.
+function screwPlays(params) {
+  const { screwClipPlay: play } = screwClipSettings(params);
+  const [min, max] = SCREW_CLIP_LIMITS.screwClipPlay;
+  const plays = [];
+  for (const delta of [-0.1, 0, 0.1]) {
+    const value = Math.max(min, Math.min(max, Number((play + delta).toFixed(12))));
+    const previous = plays.at(-1);
+    if (previous?.play === value) previous.current ||= delta === 0;
+    else plays.push({ play: value, current: delta === 0 });
+  }
+  return plays;
+}
+
+// Pairs of short road ends, A and B, joined by one side screw clip at the
+// face where y = 0. Each pair has its own play, marked by its dot count.
+function screwSampleBlocks(work, params, loose) {
+  const direction = screwClipSettings(params).screwDirection === 'bottom' ? 'bottom' : 'top';
+  const blocks = [];
+  screwPlays(params).forEach(({ play }, i) => {
+    const p = { ...params, screwClipPlay: play };
+    const tools = screwClipTools(work, p, {
+      edge: [0, 0],
+      dir: [1, 0],
+      sign: -1,
+      directions: { first: direction, second: direction },
+    });
+    const { along, across } = tools.geometry;
+    const reach = along + 4;
+    // Room beyond the pocket walls for up to three dots 3.2 mm apart.
+    const deep = across + 11;
+    for (const [side, x0, x1, key] of [['A', -reach, 0, 'first'], ['B', 0, reach, 'second']]) {
+      const part = block(work, params, 'screw-sample-' + (i + 1) + '-' + side, x0, x1, 0, deep);
+      if (params.hollow) part.additions.push(work.and(tools.support, work.prism(part.section, 0, params.height)));
+      part.cuts.push(tools.cut, tools.screws[key].holes);
+      markStation(work, part, (x0 + x1) / 2, across + 5.5, i + 1, params);
+      blocks.push({ part, x: side === 'A' ? 0 : reach + 4 });
+    }
+    if (i === 0) loose.push(screwClipPart(work, p, tools, { id: 'side-screw-clip' }));
+  });
+  return blocks;
+}
+
+function screwKeyText(params, fit, samples) {
+  const s = screwClipSettings(params);
+  const g = screwClipGeometry(s, params.height);
+  const mm = (value) => String(Number(value.toFixed(3)));
+  return [
+    'SlotForge Foundry · Connector fit samples',
+    'Track height ' + mm(params.height) + ' mm',
+    'Clip type ' + SCREW_CLIP_NAME + ' · ' + mm(s.screwClipWidth) + ' × ' + mm(s.screwClipDepth) +
+      ' × ' + mm(s.screwClipThickness) + ' mm',
+    'Screws: ' + screwName(params) + ', two per clip. Pilot holes ' + mm(s.screwPilot) +
+      ' mm in the clip and the road, clearance hole ' + mm(s.screwClearance) + ' mm. Each screw grips ' +
+      mm(g.grip) + ' mm of thread: ' + mm(g.thickness) + ' mm in the clip and ' + mm(g.bite) + ' mm in the road.',
+    '',
+    'Dot markings | Play in pocket (total, mm)',
+    ...screwPlays(params).map(({ play, current }, i) =>
+      `${i + 1} ${i === 0 ? 'dot' : 'dots'} | ${mm(play)}` + (current ? '  (current)' : '')),
+    '',
+    'Tab clearance per side in millimetres, marked on rack B',
+    ...samples.map((t, i) => `${i + 1} ${i === 0 ? 'dot' : 'dots'} | ${mm(t.tabClearance)}` +
+      (t.current ? '  (current)' : '')),
+    '',
+    'Print one of each STL at 100% with your track material, layer height and slicer settings. Print the clip flat.',
+    '',
+    'For the clip, push the A and B ends with the same dots together. ' + fitScrewClip(params) +
+      ' Choose the play where the clip slides in by hand without rattling. ' + releaseScrewClip,
+    '',
+    'For tabs, slide the tab key into each socket on the outer edge of rack B. Choose the clearance that seats fully and pulls out by hand with the least side play.',
+    '',
+    'Enter the best play under Connections → Project clip type, and the tab clearance under Tab and socket.',
+    '',
+  ].join('\n');
+}
+
 /** Print the actual joint profiles without requiring an assembled seam or a Circuit drawing. */
 export function packFitSamples(wasm, rawParams) {
   rawParams = currentJointSettings(rawParams);
@@ -163,8 +254,10 @@ export function packFitSamples(wasm, rawParams) {
       'Choose valid track wall and deck thicknesses for the fit samples.',
     );
   validateTabSize(params);
+  const screw = Boolean(clip?.screw);
+  if (screw) validateScrewClip(params);
   const samples = candidateValues(fit);
-  const markerX = clip ? Math.ceil(clip.reach + 4) : 10;
+  const markerX = clip && !screw ? Math.ceil(clip.reach + 4) : 10;
   const rackDepth = markerX + 2;
   // Preserve material between the marks, adjacent sockets and clip pockets.
   // Compute the supporting stock using the loosest candidate for this print.
@@ -173,7 +266,7 @@ export function packFitSamples(wasm, rawParams) {
   const pitch = Math.max(
     14,
     2 * loosest.tabSupportHalfWidth + 4,
-    clip ? 2 * (clip.pocketHalfWidth + loosest.clipClearance) + 4 : 0,
+    clip && !screw ? 2 * (clip.pocketHalfWidth + loosest.clipClearance) + 4 : 0,
   );
   const keyHalfWidth = Math.max(6, loosest.tabSupportHalfWidth + 1);
   const keyDepth = Math.max(10, fit.tabRootSupportDepth + 2);
@@ -201,20 +294,23 @@ export function packFitSamples(wasm, rawParams) {
         tabClearance: s.tabClearance,
         clipClearance: s.clipClearance,
       };
-      clipPair(
-        work,
-        p,
-        [0, station],
-        [1, 0],
-        a,
-        b,
-        loose,
-        i === 0 ? clipId : null,
-      );
+      // A side screw clip enters from a side face; it has its own blocks.
+      if (!screw)
+        clipPair(
+          work,
+          p,
+          [0, station],
+          [1, 0],
+          a,
+          b,
+          loose,
+          i === 0 ? clipId : null,
+        );
       tabPair(work, p, [socketEdge, station], [-1, 0], null, b);
-      markStation(work, a, -markerX, station, i + 1, params);
+      if (!screw) markStation(work, a, -markerX, station, i + 1, params);
       markStation(work, b, markerX, station, i + 1, params);
     });
+    const screwBlocks = screw ? screwSampleBlocks(work, params, loose) : [];
     const files = {};
     function save(id, solid, x, y, stlHeader) {
       if (solid.status() !== 'NoError' || solid.isEmpty())
@@ -252,10 +348,22 @@ export function packFitSamples(wasm, rawParams) {
       );
     }
     save(key.id, finish(key), keyDepth, keyHalfWidth);
-    save(a.id, finish(a), rackDepth, rackY);
+    if (!screw) save(a.id, finish(a), rackDepth, rackY);
     save(b.id, finish(b), rackDepth + 4, rackY);
-    files[KEEPER_TOOL_FILENAME] = keeperToolSTL(wasm, [0, rackY + length + 4]);
-    files['fit-key.txt'] = strToU8(keyText(params, fit, clip, samples));
+    if (screw) {
+      // Each play sample is a pair of short road ends with one side clip.
+      let y = rackY + length + 4;
+      for (const { part, x } of screwBlocks) {
+        const solid = finish(part);
+        const { min, max } = solid.boundingBox();
+        save(part.id, solid, x - min[0], y - min[1]);
+        if (part.id.endsWith('-B')) y += max[1] - min[1] + 4;
+      }
+      files['fit-key.txt'] = strToU8(screwKeyText(params, fit, samples));
+    } else {
+      files[KEEPER_TOOL_FILENAME] = keeperToolSTL(wasm, [0, rackY + length + 4]);
+      files['fit-key.txt'] = strToU8(keyText(params, fit, clip, samples));
+    }
     const credit = clipAttribution(params);
     if (credit) files['clip-attribution.txt'] = strToU8(credit);
     return zipSync(files, { level: 3 });

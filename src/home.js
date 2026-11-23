@@ -24,6 +24,8 @@ function packFacts(pack, layouts) {
     specials ? plural(specials, 'special') : '',
     pack.profile?.clipType === 'carrera-retained'
       ? 'Carrera clips'
+      : pack.profile?.clipType === 'side-screw' && pack.profile?.joint !== 'none'
+        ? 'Side screw clips'
       : pack.profile?.joint === 'none'
         ? 'Plain joints'
         : 'Dovetail keys',

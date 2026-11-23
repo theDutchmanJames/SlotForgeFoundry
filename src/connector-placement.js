@@ -276,6 +276,12 @@ export function editConnectorPlacement({
         ? 'Position along joint (%)'
         : 'Offset from road centre (mm)';
     $('[data-cp-remove]').disabled = selected == null;
+    // Side screw clips sit at the road edges and are not placed by hand.
+    const locked = kind === 'clip' && layout?.lockedClips;
+    if (locked)
+      for (const control of [count, spacing, field, $('[data-cp-minus]'), $('[data-cp-plus]'),
+        $('[data-cp-spread]'), $('[data-cp-remove]')])
+        control.disabled = true;
     $('[data-cp-auto]').disabled =
       !layout ||
       (params.placements?.[layout.key(kind)] == null &&
@@ -297,7 +303,7 @@ export function editConnectorPlacement({
           : joinScope === 'seam'
             ? ' Positions repeat at each road seam.'
             : '';
-    $('[data-cp-hint]').textContent =
+    $('[data-cp-hint]').textContent = locked ? locked :
       'Click the highlighted joint to add a ' +
       kind +
       '. Drag a mark to move it.' +
@@ -340,6 +346,7 @@ export function editConnectorPlacement({
     }
   }
   function write(list) {
+    if (kind === 'clip' && layout.lockedClips) throw Error(layout.lockedClips);
     const key = layout.key(kind),
       [, scope, modeField, side] = scopes[selectScope.value],
       fields = { ['place_' + key]: formatConnectorPositions(key, list) };
@@ -361,6 +368,7 @@ export function editConnectorPlacement({
     syncLayout();
   }
   function add(value) {
+    if (kind === 'clip' && layout.lockedClips) throw Error(layout.lockedClips);
     const list = layout.positions[kind];
     if (list.length >= 8)
       throw Error('This joint already has eight ' + kind + 's.');
@@ -384,6 +392,7 @@ export function editConnectorPlacement({
       i = mark.index;
     const middle = i > 0 && i < list.length - 1;
     try {
+      if (kind === 'clip' && layout.lockedClips) throw Error(layout.lockedClips);
       const next = [...list];
       next[i] = value;
       const exact = spacing.value === 'exact' || middle || list.length < 2;

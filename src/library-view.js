@@ -6,6 +6,7 @@ import { hasSlotPosition, lanesVary, slotTitle } from './slot-position.js';
 import { specialPreview } from './special-pieces.js';
 import { specialName } from './special-piece-controls.js';
 import { startingGridLayout } from './geometry/starting-grid.js';
+import { SCREW_CLIP_LABELS } from './geometry/screw-clip.js';
 
 export const sharedLabels = {
   joint: 'Road joints',
@@ -30,6 +31,7 @@ export const sharedLabels = {
   clipType: 'Clip type',
   clipClearance: 'Clip gap per side',
   jointFitVersion: 'Connector fit version',
+  ...SCREW_CLIP_LABELS,
 };
 
 function sample(line, count = 54) {

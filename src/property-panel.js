@@ -43,7 +43,7 @@ const readouts = {
       : 'Mixed joints',
   placement: (f) =>
     value(f, 'connectorOffset') === '0' ? 'Automatic' : value(f, 'connectorOffset') + ' mm',
-  clip: (f) => value(f, 'clipType') === 'draw-key' ? 'Dovetail' : 'Carrera',
+  clip: (f) => ({ 'draw-key': 'Dovetail', 'side-screw': 'Side screw' })[value(f, 'clipType')] ?? 'Carrera',
   tab: (f) => size(f, 'tabWidth', 'tabLength'),
 };
 

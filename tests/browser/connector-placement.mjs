@@ -326,4 +326,53 @@ async function checkAutomaticCounts({ page, action, tab, openProject, openSectio
   assert.ok(Math.abs(curveClips[0] + 29) < 1 && Math.abs(curveClips[1] - 29) < 1,
     'the map must show the built pocket offsets on this curve, got ' + curveClips.join(', '));
   console.log('✓ Count dropdowns place centred, flanking and alternating connectors, persist road and border settings, and export matching hardware quantities');
+  await checkSideScrewClips({ page, tab, openProject, openSection, marks, markDialog, field });
+}
+
+// The side screw clip: its pack settings replace the keeper settings, the
+// road sides can be switched off, and the map shows the clips at the edges
+// without letting them be moved.
+async function checkSideScrewClips({ page, tab, openProject, openSection, marks, markDialog, field }) {
+  const project = newProject();
+  project.name = 'Side screw clips';
+  Object.assign(project.track.params, {
+    kind: 'straight', length: 300, width: 200, laneSpacing: 100, segments: 2,
+    borderSide: 'none', joint: 'both', jointStart: 'none', jointEnd: 'none',
+    clipType: 'side-screw', jointFitVersion: 2,
+  });
+  await openProject(Buffer.from(JSON.stringify(project)), 'side-screw-clips.slotfab');
+  await tab('joints').click();
+  const visible = (selector) => page.locator('#settings-form ' + selector).isVisible();
+  await openSection('Project clip type');
+  assert.equal(await visible('[data-clip-family="screw"]'), true);
+  assert.equal(await visible('[data-clip-family="keeper"]'), false);
+  const length = page.locator('#settings-form input[name="screwLength"]');
+  assert.equal(await length.inputValue(), '');
+  assert.equal(await length.getAttribute('placeholder'), 'Auto (10)');
+  assert.match(await page.locator('[data-clip-diagram] figcaption').innerText(),
+    /Two 2\.5 × 10 mm countersunk wood screws.*Each screw grips 5\.35 mm of thread: 3\.00 mm in the clip and 2\.35 mm in the road/);
+  await openSection('Road connections');
+  assert.equal(await visible('[data-screw-sides]'), true);
+  assert.equal(await visible('[data-count-row="clip"] select[name="count_seamClips"]'), false);
+  assert.equal(await visible('select[name="screwFromLeft"]'), false);
+  await field('screwDirection').selectOption('side');
+  assert.equal(await visible('select[name="screwFromLeft"]'), true);
+  const both = await marks('seam');
+  assert.deepEqual(both.clip, [-83.925, 83.925]);
+  assert.equal(both.tab.length, 2);
+  for (const x of both.tab) assert.ok(Math.abs(x) + 5.2 <= 100 - 32.15 + 1e-6, String(x));
+  await page.locator('[data-action="place-connectors"]').click();
+  await markDialog.locator('[data-cp-scope]').selectOption('seam');
+  await markDialog.locator('[data-cp-kind="clip"]').click();
+  assert.match(await markDialog.locator('[data-cp-hint]').innerText(), /Side screw clips sit at the road edges/);
+  assert.equal(await markDialog.locator('[data-cp-count]').isDisabled(), true);
+  await markDialog.locator('[data-cp-done]').click();
+  await field('sideClipLeft').selectOption('none');
+  await page.locator('#live-status[data-state="ready"]').waitFor();
+  assert.deepEqual((await marks('seam')).clip, [-83.925]);
+  // Back to the dovetail key: the keeper settings return.
+  await field('clipType').selectOption('draw-key');
+  assert.equal(await visible('[data-clip-family="keeper"]'), true);
+  assert.equal(await visible('[data-screw-sides]'), false);
+  console.log('✓ Side screw clips show their settings, sit at both road edges, switch off per side and stay fixed in the placement map');
 }

@@ -3,7 +3,13 @@ import { cleanName, isFlatCrossingProject } from './project.js';
 import { withPrintableSolid } from './geometry/joints.js';
 import { clipAttribution, clipSpec, clipSTLHeader } from './geometry/clip-types.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
-import { fitRetainer, releaseRetainer } from './clip-instructions.js';
+import {
+  fitRetainer,
+  fitScrewClip,
+  releaseRetainer,
+  releaseScrewClip,
+} from './clip-instructions.js';
+import { screwName } from './geometry/screw-clip.js';
 import { keeperToolSTL, KEEPER_TOOL_FILENAME } from './keeper-tool-stl.js';
 import { assemblyNotes, wiringDiagram } from './special-print.js';
 
@@ -344,6 +350,16 @@ export function packKit(
     .filter(Boolean);
   if (credits.length)
     files['Clip attribution.txt'] = strToU8([...new Set(credits)].join('\n\n'));
+  const screwClips = parts.filter((part) => part.role === 'clip' && part.clipType === 'side-screw').length;
+  if (screwClips) {
+    const params = project.track.params;
+    files['Fitting the clips.txt'] = strToU8(
+      'You need ' + 2 * screwClips + ' × ' + screwName(params) + ' for ' +
+        (screwClips === 1 ? 'this side screw clip' : 'these ' + screwClips + ' side screw clips') +
+        ': two per clip.\n\n' +
+        fitScrewClip(params) + '\n\n' + releaseScrewClip + '\n',
+    );
+  }
   if (parts.some((part) => part.role === 'retainer')) {
     const toolFile = 'tools/' + KEEPER_TOOL_FILENAME;
     files[toolFile] = keeperToolSTL(wasm);

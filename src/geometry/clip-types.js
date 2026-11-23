@@ -1,4 +1,5 @@
 import { drawKeySpec, retainedClipSpec } from './keeper-dimensions.js';
+import { SCREW_CLIP_TYPE, screwClipSpec } from './screw-clip.js';
 
 const clips = {
   'carrera-retained': {
@@ -19,7 +20,9 @@ export function clipSpec(p) {
   const spec =
     type === 'draw-key'
       ? drawKeySpec(p.height)
-      : Object.hasOwn(clips, type) && clips[type];
+      : type === SCREW_CLIP_TYPE
+        ? screwClipSpec(p)
+        : Object.hasOwn(clips, type) && clips[type];
   if (!spec)
     throw Error(
       'Choose a supported connector in the project clip type settings.',
