@@ -12,6 +12,7 @@ import { markingStations, whiteLineLayout } from './geometry/paint-guides.js';
 import { startingGridLayout } from './geometry/starting-grid.js';
 import { designGuides } from './design-guides.js';
 import { laneOffsetAt } from './lane-adjustment.js';
+import { hasSlotPosition, slotEdgeName, slotEnds, slotVaries } from './slot-position.js';
 import { SPECIAL_PIECES, specialPreview } from './special-pieces.js';
 import { featureGuides } from './create-feature-controls.js';
 import {
@@ -20,6 +21,14 @@ import {
 } from './wall-edge-modify-controls.js';
 import { holeModifyGuides, isHoleRim } from './hole-modify.js';
 import { healStretchGuides } from './heal-stretch.js';
+
+/** Inspector fields that show the slot and its distance from the road edge. */
+export const SLOT_POSITION_FIELDS = Object.freeze([
+  'slotPosition',
+  'slotEdge',
+  'slotStart',
+  'slotEnd',
+]);
 
 const radians = (d) => (d * Math.PI) / 180;
 const fmt = (n) => String(Number(n.toFixed(2)));
@@ -1001,7 +1010,26 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
           { dashed: true },
         ),
       );
-    if (['lanes','laneSpacing','laneMode','laneMiddle','laneAnchor'].includes(field)) {
+    const slotField = SLOT_POSITION_FIELDS.includes(field);
+    if (slotField && native && hasSlotPosition(p)) {
+      // Measure each end from the edge the distances were typed against.
+      const edge = p.slotPosition.edge, side = edge === 'outer' ? half : -half;
+      const ends = slotEnds(p), varies = slotVaries(p);
+      for (const [id, t, name, distance] of [
+        ['slot-start', 0, varies ? 'End A' : 'Slot', ends.start[edge]],
+        ...(varies ? [['slot-end', 1, 'End B', ends.end[edge]]] : []),
+      ])
+        guides.push(
+          dimension(
+            id,
+            'accent',
+            point(t, side),
+            point(t, offsets(t)[0]),
+            name + ' · ' + mm(distance) + ' from the ' + slotEdgeName(p) + ' edge',
+          ),
+        );
+    }
+    if (slotField || ['lanes','laneSpacing','laneMode','laneMiddle','laneAnchor'].includes(field)) {
       const o = offsets(0);
       guides.push({
         id: 'lanes',
@@ -1158,9 +1186,10 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
     if (['left', 'right', 'both'].includes(p.braidFeedSide)) {
       const markers = [];
       sourcePath ??= nativePath(p);
+      // The path knows where each lane leaves end A, moved slot included.
       const lanes =
         measuredLanes ??
-        offsets(0).map((offset) => nativeBraidLane(p, sourcePath, offset));
+        sourcePath.laneOffsets(0).map((offset) => nativeBraidLane(p, sourcePath, offset));
       const edge = p.slotWidth / 2 + p.braidGap + p.braidWidth / 2;
       for (const [i, lane] of lanes.entries()) {
         if (p.braidFeedLane && p.braidFeedLane !== i + 1) continue;

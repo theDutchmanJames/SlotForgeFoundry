@@ -461,6 +461,143 @@ test('Apply to collection updates the shared settings and every piece, or nothin
   assert.ok(unchanged.pieces.every((p) => p.track.params.width === 210));
 });
 
+test('an off-centre slot survives saving, copying and a backup, and keeps its edge distance when the pack changes width', (t) => {
+  const db = dbFor(t, true);
+  const pack = readCollections(db).find((c) => c.rules.lanes === 1);
+  const straight = pack.pieces.find((p) => p.name === 'Full straight').track;
+  const corner = pack.pieces.find((p) => p.track.params.kind === 'curve').track;
+  const withSlot = (track, slotPosition) => ({
+    ...track,
+    params: { ...track.params, slotPosition },
+  });
+  const moving = { version: 1, edge: 'outer', startMm: 20, endMm: 60 };
+  const constant = { version: 1, edge: 'inner', startMm: 20, endMm: 20 };
+  const s = saveRecipe(db, pack.id, { name: 'Lane change', track: withSlot(straight, moving) });
+  const c = saveRecipe(db, pack.id, { name: 'Inside corner', track: withSlot(corner, constant) });
+  const slots = (collection) =>
+    Object.fromEntries(
+      collection.pieces
+        .filter((p) => p.track.params.slotPosition)
+        .map((p) => [p.name, p.track.params.slotPosition]),
+    );
+  const stored = () => readCollections(db).find((row) => row.id === pack.id);
+  assert.deepEqual(slots(stored()), { 'Lane change': moving, 'Inside corner': constant });
+  // Every other piece of the pack stays centred: no key at all.
+  assert.equal(stored().pieces.filter((p) => 'slotPosition' in p.track.params).length, 2);
+
+  duplicatePiece(db, s);
+  assert.deepEqual(slots(stored())['Lane change (copy)'], moving);
+  const twinId = duplicateCollection(db, pack.id);
+  const twin = readCollections(db).find((row) => row.id === twinId);
+  assert.deepEqual(slots(twin)['Inside corner'], constant);
+  const copy = dbFor(t);
+  replaceLibrary(copy, inspectLibraryBytes(SQL, db.export()));
+  const restored = readCollections(copy).find((row) => row.id === pack.id);
+  assert.deepEqual(slots(restored), slots(stored()));
+  assert.deepEqual(
+    trackWithProfile(restored.pieces.find((p) => p.id === c).track, restored.profile).params.slotPosition,
+    constant,
+  );
+
+  // A wider road: 20 mm from the edge is still 20 mm from the edge.
+  let now = stored();
+  applyToCollection(db, pack.id, { values: { width: 120 } }, { expectedRevision: now.revision });
+  now = stored();
+  assert.ok(now.pieces.every((p) => p.track.params.width === 120));
+  assert.deepEqual(slots(now)['Lane change'], moving);
+  assert.deepEqual(slots(now)['Inside corner'], constant);
+  // A road too narrow for a typed distance names the piece and changes nothing.
+  deletePiece(db, now.pieces.find((p) => p.name === 'Starting grid').id);
+  now = stored();
+  assert.throws(
+    () => applyToCollection(db, pack.id, { values: { width: 62 } }, { expectedRevision: now.revision }),
+    /Lane change.*at end B is 60 mm from the left edge/,
+  );
+  assert.ok(stored().pieces.every((p) => p.track.params.width === 120));
+  assert.equal(stored().revision, now.revision);
+});
+
+test('giving a pack a second lane centres its pieces again', (t) => {
+  const db = dbFor(t);
+  const rules = { ...defaultPackRules(), width: 160, lanes: 1 };
+  const id = addCollection(db, 'One lane', {}, [], rules);
+  const track = newProject().track;
+  Object.assign(track.params, {
+    kind: 'straight', length: 200, width: 160, lanes: 1, laneSpacing: 80, borderSide: 'none',
+    slotPosition: { version: 1, edge: 'outer', startMm: 40, endMm: 40 },
+  });
+  saveRecipe(db, id, { name: 'Left slot', track });
+  const [before] = readCollections(db);
+  assert.equal(before.pieces[0].track.params.slotPosition.startMm, 40);
+  // Spacing alone is not a lane count: the slot stays.
+  applyToCollection(db, id, { values: { laneSpacing: 70 } }, { expectedRevision: before.revision });
+  assert.ok(readCollections(db)[0].pieces[0].track.params.slotPosition);
+  const result = applyToCollection(db, id, { values: { lanes: 2 } }, { expectedRevision: before.revision + 1 });
+  // The notice can say how many pieces lost their slot position.
+  assert.equal(result.centred, 1);
+  const [after] = readCollections(db);
+  assert.equal(after.rules.lanes, 2);
+  assert.equal(after.pieces[0].track.params.lanes, 2);
+  assert.equal('slotPosition' in after.pieces[0].track.params, false);
+});
+
+test('the open piece is checked as edited, so a narrower road and a moved slot apply together', (t) => {
+  const db = dbFor(t);
+  const rules = { ...defaultPackRules(), width: 200, lanes: 1 };
+  const id = addCollection(db, 'One lane', {}, [], rules);
+  const track = newProject().track;
+  Object.assign(track.params, {
+    kind: 'straight', length: 300, width: 200, lanes: 1, laneSpacing: 100, borderSide: 'none',
+    slotPosition: { version: 1, edge: 'outer', startMm: 150, endMm: 150 },
+  });
+  const pieceId = saveRecipe(db, id, { name: 'Right slot', track });
+  const edited = structuredClone(track);
+  Object.assign(edited.params, {
+    width: 100,
+    slotPosition: { version: 1, edge: 'outer', startMm: 40, endMm: 40 },
+  });
+  const revision = readCollections(db)[0].revision;
+  // As stored, 150 mm does not fit a 100 mm road.
+  assert.throws(
+    () => applyToCollection(db, id, { values: { width: 100 } }, { expectedRevision: revision }),
+    /150 mm from the left edge/,
+  );
+  const result = applyToCollection(
+    db, id,
+    { values: { width: 100 }, piece: { id: pieceId, track: edited } },
+    { expectedRevision: revision },
+  );
+  assert.equal(result.centred, 0);
+  const [after] = readCollections(db);
+  assert.equal(after.pieces[0].track.params.width, 100);
+  assert.deepEqual(after.pieces[0].track.params.slotPosition, edited.params.slotPosition);
+  // The edited track was copied, not kept.
+  edited.params.slotPosition.startMm = 45;
+  assert.equal(readCollections(db)[0].pieces[0].track.params.slotPosition.startMm, 40);
+});
+
+test('a pack width that puts a typed slot on the road centre stores a centred piece', (t) => {
+  const db = dbFor(t);
+  const rules = { ...defaultPackRules(), width: 160, lanes: 1 };
+  const id = addCollection(db, 'One lane', {}, [], rules);
+  const piece = (name, startMm, endMm) => {
+    const track = newProject().track;
+    Object.assign(track.params, {
+      kind: 'straight', length: 300, width: 160, lanes: 1, laneSpacing: 80, borderSide: 'none',
+      slotPosition: { version: 1, edge: 'outer', startMm, endMm },
+    });
+    saveRecipe(db, id, { name, track });
+  };
+  piece('Left slot', 40, 40);
+  piece('Lane change', 40, 60);
+  applyToCollection(db, id, { values: { width: 80 } }, { expectedRevision: readCollections(db)[0].revision });
+  const slots = Object.fromEntries(
+    readCollections(db)[0].pieces.map((p) => [p.name, p.track.params.slotPosition]),
+  );
+  assert.equal(slots['Left slot'], undefined);
+  assert.deepEqual(slots['Lane change'], { version: 1, edge: 'outer', startMm: 40, endMm: 60 });
+});
+
 test('a restored pack gets a revision no window can still hold, even after it was deleted', () => {
   const db = newLibraryDatabase(SQL, true);
   const [pack] = readCollections(db);

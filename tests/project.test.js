@@ -9,6 +9,7 @@ import {
   fromBase64,
   toBase64,
 } from '../src/project.js';
+import { validateTrack } from '../src/track.js';
 
 const duplicate = (id, target = 'body') => ({
   type: 'duplicate',
@@ -35,6 +36,19 @@ test('opening an old track selects a current clip while keeping the provenance o
     [fit.clipType, fit.jointFitVersion, fit.tabClearance, fit.clipClearance],
     ['draw-key', 2, 0.6, 0.4],
   );
+});
+
+test('an off-centre slot position is saved with the piece and opens unchanged', () => {
+  const project = newProject();
+  const slotPosition = { version: 1, edge: 'outer', startMm: 35, endMm: 145 };
+  Object.assign(project.track.params, {
+    kind: 'straight', length: 300, width: 200, lanes: 1, borderSide: 'none', slotPosition,
+  });
+  const reopened = checkProject(JSON.parse(JSON.stringify(project)));
+  assert.deepEqual(reopened.track.params.slotPosition, slotPosition);
+  validateTrack(reopened.track.params);
+  // A centred piece carries no slot position at all.
+  assert.equal('slotPosition' in checkProject(newProject()).track.params, false);
 });
 
 test('a fresh enclosure has a finer printed corner and saved edits keep their source mesh', async (t) => {

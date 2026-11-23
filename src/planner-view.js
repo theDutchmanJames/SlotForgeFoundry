@@ -2,6 +2,7 @@ import { Viewport } from './viewport.js';
 import { pitch, sourcePartMap, xyOf } from './planner-model.js';
 import { esc } from './ui.js';
 import { creaseLineIndices, isTrackSurface } from './surface-features.js';
+import { slotLabel } from './slot-position.js';
 
 const digits = (n) => Number(n.toFixed(3));
 const points = (path) =>
@@ -99,8 +100,11 @@ export function createPlanView(host, onPick) {
     fitted = true;
     if (mode === 'solid') viewport?.fit();
   }
-  function draw({ rows, ends, chosen, selected, defs, blocks }, refit = false) {
-    current = { rows, ends, chosen, selected, defs, blocks };
+  function draw(
+    { rows, ends, chosen, selected, defs, blocks, blocked = [] },
+    refit = false,
+  ) {
+    current = { rows, ends, chosen, selected, defs, blocks, blocked };
     if (mode === 'solid') {
       viewport ??= new Viewport(solid, (id) => onPick(id.split('/')[0]));
       const free = new Set(ends.map((e) => e.key));
@@ -148,7 +152,8 @@ export function createPlanView(host, onPick) {
           return known;
         }
         const s = def.sections[n.index],
-          map = sourcePartMap(def);
+          map = sourcePartMap(def),
+          slot = slotLabel(def.track.params);
         const path = (id) =>
           pathD(
             (map.get(id).outline ?? []).map((loop) =>
@@ -189,6 +194,7 @@ export function createPlanView(host, onPick) {
           esc(def.name) +
           ' · ' +
           esc(s.road) +
+          (slot && !def.name.includes('slot ' + slot) ? ' · slot ' + esc(slot) : '') +
           '</title>' +
           piece +
           lanes +
@@ -202,6 +208,40 @@ export function createPlanView(host, onPick) {
       2,
       Math.min(22, (box[2] / Math.max(200, svg.clientWidth)) * 6),
     );
+    // Ends that touch but do not join: a bar along the seam and a ring, and
+    // the reason as the tooltip of both ends. Clicks still reach the ends.
+    const reasons = new Map(
+      blocked.flatMap((j) => [j.a, j.b].map((e) => [e.key, j.text])),
+    );
+    // vector-effect is not inherited, so each shape carries the whole style.
+    const warning =
+      ' style="fill:none;stroke:var(--warn);stroke-width:3;stroke-linecap:round;vector-effect:non-scaling-stroke;pointer-events:none"/>';
+    const marks = blocked
+      .map(({ a }) => {
+        const [from, to] = [a.edges[0], a.edges.at(-1)];
+        return (
+          '<g class="pm-blocked"><line x1="' +
+          digits(from[0]) +
+          '" y1="' +
+          digits(-from[1]) +
+          '" x2="' +
+          digits(to[0]) +
+          '" y2="' +
+          digits(-to[1]) +
+          '"' +
+          warning +
+          '<circle cx="' +
+          a.xy[0] +
+          '" cy="' +
+          -a.xy[1] +
+          '" r="' +
+          radius * 1.9 +
+          '"' +
+          warning +
+          '</g>'
+        );
+      })
+      .join('');
     const ports = ends
       .map(
         (e) =>
@@ -209,7 +249,9 @@ export function createPlanView(host, onPick) {
           e.key +
           '" class="pm-end' +
           (chosen === e.key ? ' active' : '') +
-          '"><title>Build from this end</title><circle class="hit" cx="' +
+          '"><title>' +
+          esc(reasons.get(e.key) ?? 'Build from this end') +
+          '</title><circle class="hit" cx="' +
           e.xy[0] +
           '" cy="' +
           -e.xy[1] +
@@ -227,6 +269,7 @@ export function createPlanView(host, onPick) {
     svg.innerHTML =
       '<defs><pattern id="plan-grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M100 0H0V100" fill="none" stroke="var(--d-guide)" stroke-width="0.8" vector-effect="non-scaling-stroke"/></pattern></defs><rect x="-1000000" y="-1000000" width="2000000" height="2000000" fill="url(#plan-grid)"/>' +
       body +
+      marks +
       ports;
     if (refit || !fitted) fit();
     else update();

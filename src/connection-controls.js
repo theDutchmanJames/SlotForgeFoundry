@@ -1,5 +1,6 @@
 import { choice, details, esc, field } from './ui.js';
 import { braidSpan } from './geometry/solids.js';
+import { slotShiftAt, slotVaries } from './slot-position.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
 import {
   placementKeys,
@@ -335,9 +336,12 @@ export function profileDiagram(p) {
     lanes > 8
   )
     return '';
+  // The section is cut at end A, where an off-centre slot starts.
+  const moved = imported ? 0 : slotShiftAt(p, 0);
+  const shift = Number.isFinite(moved) && Math.abs(moved) < width / 2 ? moved : 0;
   const laneX = Array.from(
     { length: lanes },
-    (_, i) => (i - (lanes - 1) / 2) * p.laneSpacing,
+    (_, i) => (i - (lanes - 1) / 2) * p.laneSpacing + shift,
   );
   const xScale = 280 / width,
     zScale = 64 / height;
@@ -402,7 +406,7 @@ export function profileDiagram(p) {
     'Z" fill="var(--d-track)" stroke="var(--d-track-edge)" stroke-width="1.2"/>' +
     seats.join('') +
     '</svg><figcaption>' +
-    (imported ? 'One-lane profile detail · ' : '') +
+    (imported ? 'One-lane profile detail · ' : slotVaries(p) ? 'Seen at end A · ' : '') +
     'Height enlarged <span class="braid-legend">Braid</span></figcaption></figure>'
   );
 }

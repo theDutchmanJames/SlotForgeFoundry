@@ -5,6 +5,7 @@ import { readSpecialFields, syncSpecialControls } from './special-piece-controls
 import { pitLayout } from './geometry/special-junction-layout.js';
 import { readStartingGridFields, syncStartingGridControls } from './starting-grid-controls.js';
 import { syncRoadMarkingFields } from './paint-controls.js';
+import { consumeSlotFields, syncSlotPositionControls } from './slot-position-controls.js';
 
 export function laneLayoutControls(p) {
   const a = p.laneAdjustment;
@@ -146,11 +147,15 @@ export function syncTrackShapeControls(form) {
     ribs.hidden = ribs.disabled = !e.hollow.checked;
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
+  if (e.slotEdge)
+    syncSlotPositionControls(form, { kind: e.kind?.value, lanes: e.lanes?.value });
   if (e.laneSpacing) {
-    const centred = Number(e.lanes.value) === 1;
-    form.querySelector('[data-lane-spacing-controls]').hidden = centred;
-    form.querySelector('[data-centred-lane]').hidden = !centred;
-    e.laneSpacing.disabled = centred;
+    const single = Number(e.lanes.value) === 1;
+    form.querySelector('[data-lane-spacing-controls]').hidden = single;
+    // One lane runs down the centre unless Slot position moves it.
+    form.querySelector('[data-centred-lane]').hidden =
+      !single || (e.slotEdge?.value ?? 'centre') !== 'centre';
+    e.laneSpacing.disabled = single;
   }
   if (mode) {
     mode.disabled = Number(e.lanes.value) < 2;
@@ -169,6 +174,8 @@ export function readTrackShapeFields(page, track) {
   const fields = { ...page },
     p = track.params;
   readSpecialFields(fields,p);
+  // The slot comes first: a new grid mark is sized to the road beside it.
+  consumeSlotFields(fields, p);
   readStartingGridFields(fields,p);
   if (Number(fields.lanes) === 1 && !(fields.laneSpacing >= 0.1 && fields.laneSpacing <= 1000))
     delete fields.laneSpacing;

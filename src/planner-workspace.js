@@ -22,7 +22,9 @@ import {
   totalLength,
   tally,
   validateLayout,
+  blockedJoints,
 } from './planner-model.js';
+import { slotLabel } from './slot-position.js';
 import { zipSync, strToU8 } from 'fflate';
 import { clipAttribution } from './geometry/clip-types.js';
 import { assemblyNotes, wiringDiagram } from './special-print.js';
@@ -32,6 +34,7 @@ import {
   stlVolume,
   laneLengths,
   shoppingList,
+  kitPieceNames,
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
@@ -47,6 +50,13 @@ const btn = (key, label, symbol = '', style = '') =>
   label +
   '</button>';
 const checkedSelect = (val, current) => (val === current ? ' selected' : '');
+// ' · slot 35-145' for a piece with an off-centre slot, nothing otherwise,
+// and nothing after a name that already says it.
+const slotNote = (p, name = '') => {
+  const note = slotLabel(p) && 'slot ' + slotLabel(p);
+  return note && !name.includes(note) ? ' · ' + note : '';
+};
+const jointKey = (j) => [j.a.key, j.b.key].sort().join('|');
 
 const snapshot = (layout) => {
   const live = new Set(layout.nodes.map((n) => n.source));
@@ -129,6 +139,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   let rows = [],
     hits = [],
     net = { ends: [], open: [], joints: new Map() },
+    misfits = [],
     blocks = [],
     undo = [],
     redo = [],
@@ -348,7 +359,12 @@ export function createPlanner({ host, call, download, current, promote }) {
     const blocks = requests.length
       ? await call('plannerSupports', { requests, plate })
       : [];
-    return { rows, hits, blocks, net: endsOf(next, models) };
+    const net = endsOf(next, models);
+    // Ends that touch but stay apart because their slots are out of line.
+    const misfits = blockedJoints(net).filter((j) =>
+      j.reason.startsWith('slot'),
+    );
+    return { rows, hits, blocks, net, misfits };
   }
   async function mirrorMeshes(next, models) {
     for (const key of new Set(
@@ -368,7 +384,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   function adopt(next, models, computed, selection = {}, fit = true) {
     layout = next;
     defs = models;
-    ({ rows, hits, blocks, net } = computed);
+    ({ rows, hits, blocks, net, misfits } = computed);
     const end =
       net.open.find((e) => e.key === selection.end) ??
       net.open.findLast((e) => e.id === selection.selected) ??
@@ -386,8 +402,14 @@ export function createPlanner({ host, call, download, current, promote }) {
     undo.push({ data: layout, choice });
     if (undo.length > 60) undo.shift();
     redo = [];
+    const known = new Set(misfits.map(jointKey));
     adopt(next, models, computed, selectedNext);
     persist();
+    // An edit that leaves two ends touching with their slots out of line
+    // (closing a loop, say) is not refused, so say why they stay open.
+    const fresh = misfits.find((j) => !known.has(jointKey(j)));
+    if (fresh) message(fresh.text, true);
+    return fresh;
   }
   async function travel(from, to) {
     const prior = from.at(-1);
@@ -456,6 +478,7 @@ export function createPlanner({ host, call, download, current, promote }) {
               : p.kind === 'straight'
                 ? fmt(p.length) + ' × ' + fmt(p.width) + ' mm'
                 : 'Custom path';
+          const slot = esc(slotNote(p, card.name));
           return (
             '<button type="button" class="pl-card" data-place="' +
             i +
@@ -467,6 +490,7 @@ export function createPlanner({ host, call, download, current, promote }) {
             esc(card.name) +
             '</b><small>' +
             meta +
+            slot +
             '</small></button>'
           );
         })
@@ -507,7 +531,7 @@ export function createPlanner({ host, call, download, current, promote }) {
               revision: card.collection.revision,
             }
           : undefined;
-    await edit((next) => {
+    const fresh = await edit((next) => {
       next.sources[key] = {
         name: card.name,
         track: def.track,
@@ -515,7 +539,10 @@ export function createPlanner({ host, call, download, current, promote }) {
       };
       return placeSource(next, models, key, choice.end, hand);
     }, models);
-    message(def.warning || '');
+    message(
+      [def.warning, fresh?.text].filter(Boolean).join(' '),
+      Boolean(fresh),
+    );
   }
   function render(fit = false) {
     const n = selected(),
@@ -561,6 +588,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         (def.track.params.kind === 'curve'
           ? ' · ' + (n.pose.flip ? 'Left' : 'Right')
           : '') +
+        esc(slotNote(def.track.params, def.name)) +
         '</p><div class="pl-selection-actions">' +
         (def.track.params.kind === 'curve' ||
         def.track.params.special?.type === 'chicane'
@@ -612,6 +640,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       const label =
         g.role === 'road'
           ? layout.sources[g.source].name +
+            slotNote(layout.sources[g.source].track.params, layout.sources[g.source].name) +
             (layout.sources[g.source].track.params.kind === 'curve'
               ? ' · ' + (g.mirror ? 'L' : 'R')
               : '')
@@ -650,6 +679,27 @@ export function createPlanner({ host, call, download, current, promote }) {
           )
           .join('')
       : '';
+    if (misfits.length)
+      $('.pl-crossings').insertAdjacentHTML(
+        'beforeend',
+        '<h3>Slots out of line</h3>' +
+          misfits
+            .map(
+              (j, i) =>
+                '<button type="button" data-misfit="' +
+                i +
+                '">' +
+                icon('join') +
+                '<span>' +
+                esc(names.get(j.a.id)) +
+                ' / ' +
+                esc(names.get(j.b.id)) +
+                '<small>' +
+                esc(j.text) +
+                '</small></span></button>',
+            )
+            .join(''),
+      );
     const over = quantities.reduce(
       (sum, g) =>
         sum +
@@ -668,6 +718,12 @@ export function createPlanner({ host, call, download, current, promote }) {
         : layout.nodes.length
           ? 'Closed layout'
           : '0 open ends') +
+      (misfits.length
+        ? '   ·   ' +
+          misfits.length +
+          (misfits.length === 1 ? ' joint' : ' joints') +
+          ' with slots out of line'
+        : '') +
       (over ? '   ·   ' + over + ' over plate' : '');
     view.draw(
       {
@@ -677,6 +733,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         selected: n?.id,
         defs,
         blocks,
+        blocked: misfits,
       },
       fit,
     );
@@ -869,14 +926,14 @@ export function createPlanner({ host, call, download, current, promote }) {
       quantities = tally(layout, defs);
     const csv = [['Part', 'Print file', 'Quantity', 'Used in']];
     const prints = [];
-    for (const [key, { name, track }] of Object.entries(
-      snapshot(layout).sources,
-    )) {
+    const sources = snapshot(layout).sources,
+      pieceNames = kitPieceNames(sources);
+    for (const [key, { track }] of Object.entries(sources)) {
       const jobs = quantities.filter((g) => g.source === key),
         data = await call('plannerPrint', { track, items: jobs });
       jobs.forEach((g, i) =>
         prints.push({
-          piece: name,
+          piece: pieceNames[key],
           part: g.name,
           role: g.role,
           mirror: g.mirror,
@@ -1024,13 +1081,18 @@ export function createPlanner({ host, call, download, current, promote }) {
   host.addEventListener('click', (e) => {
     const card = e.target.closest('[data-place]'),
       action = e.target.closest('[data-pl]'),
-      cross = e.target.closest('[data-cross]');
+      cross = e.target.closest('[data-cross]'),
+      misfit = e.target.closest('[data-misfit]');
     if (card) run(() => place(cards[Number(card.dataset.place)]));
     if (action) run(() => perform(action.dataset.pl));
     if (cross && !busy) {
       const h = hits[Number(cross.dataset.cross)];
       select(choice.selected === h.b ? h.a : h.b);
       $('.pl-bridge').open = true;
+    }
+    if (misfit && !busy) {
+      const { a } = misfits[Number(misfit.dataset.misfit)];
+      select(a.id, a.key);
     }
   });
   host.addEventListener('change', (e) => {

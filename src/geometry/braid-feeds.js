@@ -1,3 +1,5 @@
+import { hasSlotPosition, slotEdgeName, slotShiftAt, slotShiftDerivatives } from '../slot-position.js';
+
 // The printable edges are chords between drawing stations. Interpolate on
 // those exact chords when an opening starts or ends between two vertices.
 export function interpolateStation(stations, t, pointAtIndex) {
@@ -51,6 +53,27 @@ export function braidFeedOutlines(p, path, laneIndex, joinGuide = false) {
   return cuts;
 }
 
+// From the slot centre to the far side of a pass-through.
+const feedReach = (p) => p.slotWidth / 2 + p.braidGap + p.braidWidth;
+
+// An off-centre slot can put a pass-through into the side wall. Name the road
+// edge that the opening numbered by braidFeedOutlines runs into, if any.
+function feedSideWall(p, lane, index) {
+  if (!hasSlotPosition(p)) return null;
+  const signs = p.braidFeedSide === 'both' ? [1, -1] : [p.braidFeedSide === 'left' ? 1 : -1];
+  const sign = signs[index % signs.length];
+  const station = p.braidFeedStations[Math.floor(index / signs.length)];
+  const half = p.braidFeedLength / (2 * lane.total);
+  for (let k = 0; k <= 8; k++) {
+    const t = station + half * (k / 4 - 1);
+    // Where the slot runs at an angle the opening reaches further sideways.
+    const slope = p.kind === 'straight' ? slotShiftDerivatives(p, t)[0] / p.length : 0;
+    if (sign * slotShiftAt(p, t) + feedReach(p) * Math.hypot(1, slope) > p.width / 2 - p.wall - 1e-6)
+      return slotEdgeName(p, sign > 0 ? 'outer' : 'inner');
+  }
+  return null;
+}
+
 export function attachBraidFeeds(work, p, roads, lanes) {
   const copies =
     (p.braidFeedLane ? 1 : lanes.length) *
@@ -75,10 +98,27 @@ export function attachBraidFeeds(work, p, roads, lanes) {
       const parent = interiors.findIndex(
         (area) => work.own(projection.subtract(area)).area() < 1e-5,
       );
-      if (parent < 0)
+      if (parent < 0) {
+        const edge = feedSideWall(p, line, i);
+        // Typed distances settle on half millimetres. A curve's faceted side
+        // wall needs a little more than the exact limit, so advise the next
+        // half millimetre above it there.
+        const limit = feedReach(p) + p.wall;
+        const advised =
+          p.kind === 'curve'
+            ? Math.floor(2 * limit + 1e-9) / 2 + 0.5
+            : Math.ceil(2 * limit - 1e-9) / 2;
+        if (edge)
+          throw new Error(
+            'The braid pass-through reaches the side wall of the road, because the slot is close to the ' +
+              edge + ' edge here. Under Slot position, keep the slot at least ' +
+              advised + ' mm from that edge' +
+              (p.braidFeedSide === 'both' ? '.' : ', or feed the strip on the other side.'),
+          );
         throw new Error(
           'The braid pass-through crosses an end wall or segment seam. Move its station away from the edge.',
         );
+      }
       const road = roads[parent];
       if (road.feedCuts.some((other) => work.and(cut, other).volume() > 0.001))
         throw new Error(

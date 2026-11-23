@@ -1,4 +1,20 @@
 import { cleanName } from './project.js';
+import { slotLabel } from './slot-position.js';
+
+// The name each layout piece carries in the kit. Pieces that share a name and
+// differ in their slot position say so, so their files and rows read apart:
+// "Straight slot 35" and "Straight slot 35-145".
+export function kitPieceNames(sources) {
+  const slots = new Map();
+  for (const { name, track } of Object.values(sources))
+    slots.set(name, (slots.get(name) ?? new Set()).add(slotLabel(track.params)));
+  return Object.fromEntries(
+    Object.entries(sources).map(([key, { name, track }]) => {
+      const slot = slotLabel(track.params);
+      return [key, slots.get(name).size > 1 && slot ? name + ' slot ' + slot : name];
+    }),
+  );
+}
 
 // The print kit holds every different part once, with its count in the file
 // name: an R2 road placed 36 times is one "R2-corner-Road-1-x36.stl". Parts

@@ -43,6 +43,7 @@ import { checkSolidMove } from './browser/solid-move.mjs';
 import { selectTrackPart } from './browser/part-outline.mjs';
 import { checkWorkspaceNavigation } from './browser/workspace-navigation.mjs';
 import { checkPlanner } from './browser/planner.mjs';
+import { checkSlotPosition } from './browser/slot-position.mjs';
 
 const artifact = new URL('../dist/index.html', import.meta.url);
 const fixture = fileURLToPath(
@@ -1251,6 +1252,7 @@ try {
     await checkPitGrid(creationChecks);
     await checkUndersideRibs(creationChecks);
     await checkRoadMarkings(creationChecks);
+    await checkSlotPosition(creationChecks);
     await openProject(originalEnclosure.bytes, 'enclosure.slotfab');
     console.log(
       '✓ Shift-click and additive picking lower four screw posts in one reversible edit, preserving wall and hole geometry in the exported STL',

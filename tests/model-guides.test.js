@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import Module from 'manifold-3d';
-import { toolGuides } from '../src/guide-geometry.js';
+import { SLOT_POSITION_FIELDS, toolGuides } from '../src/guide-geometry.js';
+import { laneOffsetAt } from '../src/lane-adjustment.js';
 import { defaultTrack, buildTrack } from '../src/track.js';
 import { parseDrawing } from '../src/imports.js';
 import { profileDiagram } from '../src/connection-controls.js';
@@ -601,6 +602,105 @@ test('a braid feed guide marks the middle of the actual shelf at a Circuit corne
     [left, [-d, d, z]],
   ])
     actual.forEach((value, i) => near(value, expected[i]));
+});
+
+const slotAt = (edge, startMm, endMm = startMm) => ({ version: 1, edge, startMm, endMm });
+const wideSingle = {
+  kind: 'straight', length: 300, width: 200, lanes: 1, height: 10,
+  slotWidth: 3, slotDepth: 8, braidWidth: 5, braidGap: 0.6, braidDepth: 0.5,
+};
+
+test('the section profile, feed markers, lane path and edge distances all follow an off-centre slot', () => {
+  // 35 mm from the left edge of a 200 mm road is 65 mm left of its centre.
+  const left = { ...wideSingle, slotPosition: slotAt('outer', 35), braidFeedSide: 'left', braidFeedStations: [0.25, 0.75] };
+  assert.deepEqual(find(track('profile', left), 'channel-profile').paths[0],
+    [[-150, 63.5, 10], [-150, 63.5, 2], [-150, 66.5, 2], [-150, 66.5, 10]]);
+  assert.deepEqual(find(track('profile', left, { field: 'braidWidth' }), 'channel-profile').paths.map(shelf => shelf[0][1]),
+    [65 - 7.1, 65 + 7.1]);
+  const dots = find(track('profile', left), 'braid-feed').dots;
+  assert.equal(dots.length, 2);
+  for (const [i, dot] of dots.entries()) [150 * i - 75, 65 + 4.6, 9.5].forEach((value, k) => near(dot[k], value));
+  near(find(track('profile', { ...left, braidFeedSide: 'right' }), 'braid-feed').dots[0][1], 65 - 4.6);
+
+  for (const field of SLOT_POSITION_FIELDS) {
+    const guides = track('geometry', left, { field });
+    const distance = find(guides, 'slot-start');
+    assert.equal(distance.text, 'Slot · 35 mm from the left edge');
+    assert.deepEqual(distance.paths, [[[-150, 100, 10], [-150, 65, 10]]]);
+    assert.equal(guides.some(g => g.id === 'slot-end'), false);
+    assert.ok(find(guides, 'lanes').paths[0].every(q => q[1] === 65));
+  }
+  // Other fields keep their own guides, and a centred piece has no distance to show.
+  assert.equal(track('geometry', left, { field: 'width' }).some(g => g.id === 'slot-start' || g.id === 'lanes'), false);
+  const centred = track('geometry', wideSingle, { field: 'slotStart' });
+  assert.equal(centred.some(g => g.id === 'slot-start'), false);
+  assert.ok(find(centred, 'lanes').paths[0].every(q => q[1] === 0));
+
+  // A slot that moves: both ends are measured from the chosen edge.
+  const moving = { ...wideSingle, slotPosition: slotAt('inner', 35, 145), braidFeedSide: 'both', braidFeedStations: [0.25, 0.75] };
+  const guides = track('geometry', moving, { field: 'slotEnd' });
+  assert.equal(find(guides, 'slot-start').text, 'End A · 35 mm from the right edge');
+  assert.deepEqual(find(guides, 'slot-start').paths, [[[-150, -100, 10], [-150, -65, 10]]]);
+  assert.equal(find(guides, 'slot-end').text, 'End B · 145 mm from the right edge');
+  assert.deepEqual(find(guides, 'slot-end').paths, [[[150, -100, 10], [150, 45, 10]]]);
+  const lane = find(guides, 'lanes').paths[0];
+  assert.equal(lane.length, 33);
+  for (const [x, y] of lane) near(y, laneOffsetAt({ ...defaultTrack(), ...moving }, 0, x / 300 + 0.5));
+  near(lane[16][1], -10);
+  // The section is drawn at end A, where the slot is 35 mm from the right edge.
+  assert.deepEqual(find(track('profile', moving), 'channel-profile').paths[0].map(q => q[1]), [-66.5, -66.5, -63.5, -63.5]);
+  // Each feed marker sits on the middle of a braid of the slanted slot.
+  const markers = find(track('profile', moving), 'braid-feed').dots;
+  assert.equal(markers.length, 4);
+  const fine = Array.from({ length: 6001 }, (_, i) => [i / 20 - 150, laneOffsetAt({ ...defaultTrack(), ...moving }, 0, i / 6000)]);
+  for (const [x, y, z] of markers) {
+    near(z, 9.5);
+    const gap = Math.min(...fine.map(q => Math.hypot(q[0] - x, q[1] - y)));
+    // The printed slot is a chain of chords within 0.015 mm of the curve.
+    assert.ok(Math.abs(gap - 4.6) < 0.03, 'marker ' + gap + ' mm from the slot');
+    assert.ok(Math.abs(y - (x < 0 ? -65 : 45)) > 8, 'not beside a slot that kept its end position');
+  }
+
+  // On a curve the distance runs along the joint from the inner edge.
+  const bend = { ...wideSingle, kind: 'curve', radius: 300, angle: 45, slotPosition: slotAt('inner', 35) };
+  const radial = find(track('geometry', bend, { field: 'slotEdge' }), 'slot-start');
+  assert.equal(radial.text, 'Slot · 35 mm from the inner edge');
+  near(Math.hypot(...radial.paths[0][0].map((v, i) => v - radial.paths[0][1][i])), 35);
+  for (const q of find(track('geometry', bend, { field: 'slotEdge' }), 'lanes').paths[0])
+    near(Math.hypot(q[0], q[1] + 300), 235);
+});
+
+test('a braid pass-through too close to the side wall names the slot position, not the end wall', async () => {
+  const wasm = await Module();
+  wasm.setup();
+  const feed = { ...wideSingle, braidFeedSide: 'both', braidFeedStations: [0.5], braidFeedLength: 12 };
+  const attempt = (params) => {
+    const parts = buildTrack(wasm, { ...defaultTrack(), ...feed, ...params });
+    const volume = parts[0].solid.volume();
+    parts.forEach((p) => p.solid.delete());
+    return volume;
+  };
+  // The opening reaches 7.1 mm from the slot and needs the 2 mm side wall beyond it.
+  const sideWall = (edge, tail) => new RegExp(
+    '^Error: The braid pass-through reaches the side wall of the road, because the slot is close to the ' + edge +
+    ' edge here\\. Under Slot position, keep the slot at least 9\\.5 mm from that edge' + tail + '$');
+  assert.throws(() => attempt({ slotPosition: slotAt('outer', 9) }), sideWall('left', '\\.'));
+  assert.throws(() => attempt({ slotPosition: slotAt('inner', 8.1) }), sideWall('right', '\\.'));
+  assert.throws(() => attempt({ slotPosition: slotAt('outer', 8.1), braidFeedSide: 'left' }),
+    sideWall('left', ', or feed the strip on the other side\\.'));
+  assert.throws(() => attempt({ kind: 'curve', radius: 300, angle: 45, slotPosition: slotAt('inner', 8.1) }), sideWall('inner', '\\.'));
+  // The advised distance is one that can be typed and that builds, on a curve too.
+  assert.ok(attempt({ kind: 'curve', radius: 300, angle: 45, slotPosition: slotAt('inner', 9.5) }) > 0);
+  // Only the end of the S that hugs the edge is affected.
+  assert.throws(() => attempt({ slotPosition: slotAt('outer', 8.1, 100), braidFeedStations: [0.1] }), sideWall('left', '\\.'));
+  assert.ok(attempt({ slotPosition: slotAt('outer', 8.1, 100), braidFeedStations: [0.9] }) > 0);
+  // With room for the wall, and on the strip facing the road, the opening is cut.
+  const plain = attempt({ braidFeedSide: 'none', slotPosition: slotAt('outer', 9.1) });
+  assert.ok(attempt({ slotPosition: slotAt('outer', 9.1) }) < plain - 100);
+  assert.ok(attempt({ slotPosition: slotAt('outer', 8.1), braidFeedSide: 'right' }) < plain - 50);
+  // A station at the joint is still an end-wall problem, with or without a slot position.
+  for (const slotPosition of [slotAt('outer', 35), undefined])
+    assert.throws(() => attempt({ slotPosition, braidFeedStations: [0.01] }), /crosses an end wall or segment seam/);
 });
 
 test('print plate guides account for optimal bed rotation, margin and raised geometry', () => {

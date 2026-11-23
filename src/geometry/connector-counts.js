@@ -1,4 +1,52 @@
 import { connectorWarning } from './connector-warning.js';
+import { resolveJointFit } from './joint-fit.js';
+import { clipSpec } from './clip-types.js';
+
+export const usesTabs = (mode) => mode === 'tabs' || mode === 'both';
+export const usesClips = (mode) => mode === 'clips' || mode === 'both';
+export const spread = (numbers, type, custom = false) =>
+  numbers.map((value, index) => ({ value, type, custom, index }));
+export const fixedFirst = (a, b) => Number(b.custom) - Number(a.custom);
+
+// Reserve the keeper's turning space and the stock around each pocket.
+export function connectorEnvelopes(p) {
+  const fit = resolveJointFit(p);
+  const fork = clipSpec(p);
+  const clipDepth = fork ? fork.reach + fit.clipClearance + 1 : 8;
+  return {
+    tab: {
+      name: 'tab',
+      half: fit.tabSupportHalfWidth,
+      root: fit.tabRootSupportDepth,
+      socket: fit.tabSocketSupportDepth,
+      checkOutline:
+        fit.version === 2 && (fit.tabWidth !== 6 || fit.tabLength !== 6),
+    },
+    clip: {
+      name: fork?.clipName ?? 'clip',
+      half: fork ? fork.pocketHalfWidth + fit.clipClearance + 1 : 5,
+      root: clipDepth,
+      socket: clipDepth,
+      checkOutline: Boolean(fork),
+    },
+  };
+}
+
+export function separated(occupied, position, half) {
+  return occupied.every(
+    (other) =>
+      Math.abs(other.position - position) >= other.half + half + 0.2 - 1e-8,
+  );
+}
+
+export function nearestOffset(suggested, maxRange, clear, makeError) {
+  if (clear(suggested)) return suggested;
+  for (let delta = 1; delta <= maxRange; delta++) {
+    if (clear(suggested + delta)) return suggested + delta;
+    if (clear(suggested - delta)) return suggested - delta;
+  }
+  throw makeError();
+}
 
 // Keep the more numerous type on the outside for a mixed odd row. At equal
 // counts the first clip consistently sits on the low-coordinate side.

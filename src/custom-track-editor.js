@@ -22,6 +22,9 @@ export function openCustomTrackEditor({
   const p = trackParameters({ ...track.params, kind: 'import' });
   delete p.special;
   delete p.startingGrid;
+  // A piece handed over from a plain straight or curve may carry an
+  // off-centre slot. A freeform path draws its lanes about the road centre.
+  delete p.slotPosition;
   if (packRules)
     Object.assign(p, {
       width: packRules.width,

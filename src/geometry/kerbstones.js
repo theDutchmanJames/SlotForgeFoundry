@@ -1,4 +1,5 @@
 import { connectorWarning, formatMm } from './connector-warning.js';
+import { hasSlotPosition } from '../slot-position.js';
 
 // SlotForge red and off-white, the same in both themes.
 const red = '#E5484D';
@@ -201,7 +202,8 @@ function applyKerbBands(work, p, side, parts, edges, reserved, road) {
         throw connectorWarning(
           sideName(side, true) + ' · ' + part.name,
           'The kerbstones reach a guide slot or braid strip.',
-          'Reduce the kerbstone width or the edge line width to leave room beside the lane.',
+          'Reduce the kerbstone width or the edge line width to leave room beside the lane' +
+            (hasSlotPosition(p) ? ', or move the slot away from this edge under Slot position.' : '.'),
           { tab: 'geometry', field: 'kerbWidth', label: 'Edit kerbstone width' },
         );
     }

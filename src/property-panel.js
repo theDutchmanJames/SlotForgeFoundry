@@ -19,7 +19,7 @@ const readouts = {
   },
   lanes: (form) =>
     value(form, 'lanes') === '1'
-      ? '1 lane'
+      ? '1 lane' + (['outer', 'inner'].includes(value(form, 'slotEdge')) ? ' · off-centre' : '')
       : value(form, 'lanes') + ' lanes · ' + value(form, 'laneSpacing') + ' mm',
   startingGrid: (form) =>
     form.elements.gridEnabled.checked ? value(form, 'gridWidth') + ' mm wide' : 'Off',

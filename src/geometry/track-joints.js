@@ -14,13 +14,25 @@ import {
   countedJoint,
   connectorCount,
 } from './placements.js';
-import { planConnectorRow } from './connector-counts.js';
+import {
+  connectorEnvelopes,
+  fixedFirst,
+  nearestOffset,
+  planConnectorRow,
+  separated,
+  spread,
+  usesClips as clips,
+  usesTabs as tabs,
+} from './connector-counts.js';
 import {
   roadLengthWarning,
   roadOffsetWarning,
   sideMountWarning,
+  slotPocketWarning,
 } from './connector-position-warnings.js';
 import { connectorWarning } from './connector-warning.js';
+import { endObstacleText, slotEndRequest, slotEndRow } from './slot-end-row.js';
+import { hasSlotPosition } from '../slot-position.js';
 import { apexPositionFor, borderApexStations } from './border-profile.js';
 import { borderSeam, insideBorderStock } from './border-ends.js';
 import {
@@ -29,20 +41,15 @@ import {
   borderEndWidthWarning,
 } from './border-fit-warning.js';
 
-const tabs = (mode) => mode === 'tabs' || mode === 'both';
-const clips = (mode) => mode === 'clips' || mode === 'both';
+export { connectorEnvelopes };
 export const integralJointMode = (mode) => (tabs(mode) ? 'tabs' : 'none');
 const connectorId = (base, ordinal) =>
   ordinal ? base + '-' + (ordinal + 1) : base;
-const spread = (numbers, type, custom = false) =>
-  numbers.map((value, index) => ({ value, type, custom, index }));
-const fixedFirst = (a, b) => Number(b.custom) - Number(a.custom);
 const countedSpecs = (row) => [
   ...spread(row.tab, 'tab', true), ...spread(row.clip, 'clip', true),
 ];
 const obstacle = {
-  edge: 'Leave room for the supporting walls inside the edge.',
-  lane: 'The pocket would reach a guide slot wall.',
+  ...endObstacleText,
   laneSweep: 'The pocket would reach a guide slot wall along the lane.',
   opposite: 'The pocket would meet another connector across the segment.',
   outline: 'The pocket and its supporting walls extend outside the part.',
@@ -51,10 +58,15 @@ const obstacle = {
   roadEnd: 'The support is too close to a road segment end.',
   borderEnd: 'The support is too close to a border segment end.',
   width: 'This section of the border is too narrow for the socket.',
+  slotSweep: 'The pocket would reach a guide slot wall where the slot moves sideways.',
   channel: 'The support would intersect a guide slot, braid recess or existing pocket.',
   feed: 'The connector support would intersect a braid pass-through.',
   detector: 'The connector support would reach the timing equipment.',
 };
+// The text for a blocking reason. A sweep on a piece with an off-centre slot
+// is the slot moving sideways; on any other piece it keeps its old words.
+const obstacleText = (reason, p) =>
+  obstacle[reason === 'laneSweep' && hasSlotPosition(p) ? 'slotSweep' : reason];
 const importedSlideDirections = new WeakMap();
 const wrappingBorderMessage = (index, sign) =>
   (sign > 0 ? 'Outside' : 'Inside') +
@@ -66,30 +78,6 @@ function borderExtrema(path, p, side, start, end) {
   return [...borderApexStations(path, p, side), path.borderProfileSeam].filter(
     (t) => t > start && t < end,
   );
-}
-
-// Reserve the keeper's turning space and the stock around each pocket.
-export function connectorEnvelopes(p) {
-  const fit = resolveJointFit(p);
-  const fork = clipSpec(p);
-  const clipDepth = fork ? fork.reach + fit.clipClearance + 1 : 8;
-  return {
-    tab: {
-      name: 'tab',
-      half: fit.tabSupportHalfWidth,
-      root: fit.tabRootSupportDepth,
-      socket: fit.tabSocketSupportDepth,
-      checkOutline:
-        fit.version === 2 && (fit.tabWidth !== 6 || fit.tabLength !== 6),
-    },
-    clip: {
-      name: fork?.clipName ?? 'clip',
-      half: fork ? fork.pocketHalfWidth + fit.clipClearance + 1 : 5,
-      root: clipDepth,
-      socket: clipDepth,
-      checkOutline: Boolean(fork),
-    },
-  };
 }
 
 function endReach(mode, envelopes, side) {
@@ -167,13 +155,6 @@ export function jointSampleLength(p, selected, mode) {
     }
   }
   return length;
-}
-
-function separated(occupied, position, half) {
-  return occupied.every(
-    (other) =>
-      Math.abs(other.position - position) >= other.half + half + 0.2 - 1e-8,
-  );
 }
 
 const borderName = (side) =>
@@ -442,15 +423,6 @@ export function borderSlideDirection(p, path, index, edge, sign) {
   return direction;
 }
 
-function nearestOffset(suggested, maxRange, clear, makeError) {
-  if (clear(suggested)) return suggested;
-  for (let delta = 1; delta <= maxRange; delta++) {
-    if (clear(suggested + delta)) return suggested + delta;
-    if (clear(suggested - delta)) return suggested - delta;
-  }
-  throw makeError();
-}
-
 export function addRoadJoints(
   work,
   p,
@@ -462,7 +434,11 @@ export function addRoadJoints(
 ) {
   const placements = p.placements ?? {};
   const matchedEnds = new Map();
-  const checkStock = p.connectorCounts && stockChecker(work, p);
+  // Beside an off-centre slot each external end takes its row from that end
+  // alone (slot-end-row.js). The piece is then checked against it, never bent
+  // around it, so that two ends with the same slot always fit together.
+  const fixedEndRows = hasSlotPosition(p);
+  const checkStock = (p.connectorCounts || fixedEndRows) && stockChecker(work, p);
   const envelopes = connectorEnvelopes(p);
   const pathLength =
     path.minLength ??
@@ -503,12 +479,15 @@ export function addRoadJoints(
       );
   }
   const startRequest = countedJoint(p, 'start', undefined, modes[0]);
-  const matchExternalRows = p.kind !== 'import' && startRequest &&
+  const matchExternalRows = !fixedEndRows && p.kind !== 'import' && startRequest &&
     JSON.stringify(startRequest) === JSON.stringify(countedJoint(p, 'finish', undefined, modes.at(-1)));
   const indices = Array.from(modes.keys());
   // Finish the internal seams first. Both external rows can then be tested
   // against the actual pockets already reserved in their respective parts.
-  const seamOrder = matchExternalRows ? [...indices.slice(1, -1), 0, roads.length] : indices;
+  // Fixed external rows go in first instead, and the seams make room for them.
+  const seamOrder = fixedEndRows
+    ? [0, roads.length, ...indices.slice(1, -1)]
+    : matchExternalRows ? [...indices.slice(1, -1), 0, roads.length] : indices;
   for (const i of seamOrder) {
     const end = i === 0 ? 'start' : i === roads.length ? 'finish' : 'seam';
     const mode = modes[i];
@@ -538,6 +517,64 @@ export function addRoadJoints(
     const pointAt = path.atOffset ?? path.point;
     const location = 'Road ' + endName(i, roads.length);
     const request = countedJoint(p, end, undefined, mode);
+    const connect = (type, index, offset, label, station) => {
+      // With two external ends, one set of loose clips usually serves
+      // repeating pieces. Include extra clips if the start has more stations.
+      const finishCount = clips(modes.at(-1))
+        ? connectorCount(p, 'finish', 'clip')
+        : 0;
+      const startOnly = i === 0 && index >= finishCount;
+      const stationId = connectorId('road-clip-' + i, index);
+      const id = (first || startOnly) && stationId;
+      const externalKeeper = !id && {
+        stationId,
+        parentClipId: connectorId('road-clip-' + roads.length, index),
+      };
+      addConnector(
+        work,
+        p,
+        type,
+        pointAt(t, offset),
+        dir,
+        first,
+        second,
+        loose,
+        id,
+        label,
+        externalKeeper,
+        station,
+      );
+    };
+    // A fit sample joins two mating ends at its seam: path.matingSeams.
+    if (fixedEndRows && (end !== 'seam' || path.matingSeams)) {
+      const { specs: row } = slotEndRow(
+        slotEndRequest(p, end, { width, lanes: seamLanes, mode, envelopes, location }),
+      );
+      for (const spec of row) {
+        const envelope = envelopes[spec.type],
+          point = pointAt(t, spec.value);
+        const reason =
+          roadPocketConflict(work, first, second, point, dir, envelope, false) ??
+          checkStock(spec.type, point, dir, first, second, envelope);
+        if (reason)
+          throw slotPocketWarning({
+            ...spec,
+            label: location + ' · ' + envelope.name,
+            kind: p.kind,
+            end,
+            reason,
+          });
+      }
+      for (const { type, value, index } of row) {
+        roadPocketConflict(work, first, second, pointAt(t, value), dir, envelopes[type], true);
+        connect(type, index, value, location + ' · ' + envelopes[type].name, {
+          key: positionKey(end, type),
+          index: i,
+          value,
+        });
+      }
+      continue;
+    }
     // Plan identical external joints together on a short bend so a repeated
     // piece always has matching sockets and both ends retain enough stock.
     const matchRow = matchExternalRows && end === 'start';
@@ -563,7 +600,7 @@ export function addRoadJoints(
         domain: [-width / 2, width / 2], length: width, location,
         settingFor: type => countWarningSetting(p, end, type),
         halfAt: type => envelopes[type].half,
-        blocked: (type, x) => obstacle[roadObstacle(type, x, matchRow)],
+        blocked: (type, x) => obstacleText(roadObstacle(type, x, matchRow), p),
         checkRow: matchRow && roads.length === 1 ? opposingRoadPockets(p, path, envelopes) : undefined,
       });
       specs = countedSpecs(row);
@@ -613,6 +650,7 @@ export function addRoadJoints(
           fixedTabOffset:
             type === 'tab' && !manualTabs && Boolean(p.connectorOffset),
           reason: blocking(value),
+          slotPosition: hasSlotPosition(p),
         });
       if (custom && !clear(value)) throw warning();
       const offset = finishOffset ?? (custom ? value : nearestOffset(value, width, clear, warning));
@@ -623,32 +661,8 @@ export function addRoadJoints(
         matchedEnds.set(matchKey, offset);
         roadPocketConflict(work, farPart, null, pointAt(1, offset), farDirection, envelope, true);
       }
-      // With two external ends, one set of loose clips usually serves
-      // repeating pieces. Include extra clips if the start has more stations.
-      const finishCount = clips(modes.at(-1))
-        ? connectorCount(p, 'finish', 'clip')
-        : 0;
-      const startOnly = i === 0 && index >= finishCount;
-      const stationId = connectorId('road-clip-' + i, index);
-      const id = (first || startOnly) && stationId;
-      const externalKeeper = !id && {
-        stationId,
-        parentClipId: connectorId('road-clip-' + roads.length, index),
-      };
-      addConnector(
-        work,
-        p,
-        type,
-        point,
-        dir,
-        first,
-        second,
-        loose,
-        id,
-        label,
-        externalKeeper,
-        request && { key: positionKey(end, type), index: i, value: offset },
-      );
+      connect(type, index, offset, label,
+        request && { key: positionKey(end, type), index: i, value: offset });
     }
   }
 }
@@ -788,7 +802,10 @@ export function addSideMounts(
     );
   }
   const request = countedJoint(p, 'side', side, mode);
-  const checkStock = request && stockChecker(work, p);
+  // A slot close to this edge brings its braid recess under the pocket. Find
+  // that here, where the warning can name the slot position.
+  const slotStock = hasSlotPosition(p);
+  const checkStock = (request || slotStock) && stockChecker(work, p);
   const tAt = v => a + (b - a) * v;
   const specs = request ? countedSpecs(planConnectorRow(request, {
     location: borderName(side) + ' attachment ' + (i + 1),
@@ -797,8 +814,8 @@ export function addSideMounts(
     halfAt: (type, v) => rulesFor(type).halfAlongEdge(tAt(v)),
     blocked: (type, v) => {
       const t = tAt(v);
-      return obstacle[physicalObstacle(type, t) ?? checkStock(type, path.point(t, edge),
-        rulesFor(type).directionAt(t), roadAt(t), part, envelopes[type])];
+      return obstacleText(physicalObstacle(type, t) ?? checkStock(type, path.point(t, edge),
+        rulesFor(type).directionAt(t), roadAt(t), part, envelopes[type]), p);
     },
   })) : [
     ...(tabs(mode)
@@ -817,7 +834,9 @@ export function addSideMounts(
     const { directionAt, halfAlongEdge, widthUnderSocket } = rulesFor(type);
     const blocking = (t) => {
       if (!separated(used, t * edgeLength, halfAlongEdge(t))) return 'other';
-      return physicalObstacle(type, t);
+      return physicalObstacle(type, t) ?? (slotStock
+        ? checkStock(type, path.point(t, edge), directionAt(t), roadAt(t), part, envelope)
+        : null);
     };
     let t = proposed;
     const reason = blocking(t);
@@ -854,6 +873,7 @@ export function addSideMounts(
                 ? Math.min(...path.laneOffsets(proposed).map(v => Math.abs(edge - v)))
                 : (p.width - (p.lanes - 1) * p.laneSpacing) / 2,
           laneMinimum: p.slotWidth / 2 + p.wall + Math.max(8, envelope.root),
+          slotPosition: hasSlotPosition(p),
         });
       if (custom) throw warning();
       const alternatives = Array.from(
@@ -986,9 +1006,9 @@ export function addBorderEndJoints(
         const env = envelopes[type];
         if (Math.min(v, 1 - v) * width < env.half - 1e-8) return obstacle.edge;
         const point = pointAt(v * width);
-        return obstacle[footprintConflict(work, first, second, point, dir,
+        return obstacleText(footprintConflict(work, first, second, point, dir,
           path.borderStock ? {...env, checkOutline: true} : env) ??
-          checkStock(type, point, dir, first, second, env)];
+          checkStock(type, point, dir, first, second, env), p);
       },
     })) : defaultSpecs;
     for (const { type, value, custom, index } of specs) {

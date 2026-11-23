@@ -32,9 +32,16 @@ import {
 } from './geometry/import-track.js';
 import {
   laneOffsetAt,
+  laneOffsetDerivatives,
   laneProfileSteps,
   validateLaneAdjustment,
 } from './lane-adjustment.js';
+import {
+  hasSlotPosition,
+  lanesVary,
+  slotShiftAt,
+  validateSlotPosition,
+} from './slot-position.js';
 import { finishBridges, prepareBridges } from './geometry/bridge-build.js';
 import { layOutKerbstones, layOutRoadKerbs, WHITE_LINE_COLOR } from './geometry/kerbstones.js';
 import { pitGridLayout, startingGridLayout } from './geometry/starting-grid.js';
@@ -286,11 +293,17 @@ export function validateTrack(p) {
     throw new Error(
       'The braid recess must stay within the deck and above the slot floor.',
     );
+  validateSlotPosition(p);
   if (p.kind !== 'import') {
     validateLaneAdjustment(p);
     const laneEnvelope = p.slotWidth + 2 * braidSpan(p);
+    // An off-centre slot reaches further towards one edge than its spacing tells.
+    const laneReach = hasSlotPosition(p)
+      ? 2 * Math.max(...[0, 1].flatMap((t) =>
+          [0, p.lanes - 1].map((i) => Math.abs(laneOffsetAt(p, i, t)))))
+      : (p.lanes - 1) * p.laneSpacing;
     if (
-      (p.lanes - 1) * p.laneSpacing + laneEnvelope >= p.width ||
+      laneReach + laneEnvelope >= p.width ||
       (p.lanes > 1 && laneEnvelope >= p.laneSpacing)
     )
       throw new Error(
@@ -435,8 +448,13 @@ export function nativePath(p, couponStation) {
         ? (t, offset) => analyticTrackPoint(p, t, offset)
         : undefined,
   };
-  if (p.laneAdjustment) {
+  // Every consumer reads the lanes from here, so an off-centre slot needs no
+  // second formula anywhere else.
+  path.laneOffsets = (t) =>
+    Array.from({ length: p.lanes }, (_, i) => laneOffsetAt(p, i, t));
+  if (lanesVary(p)) {
     validateLaneAdjustment(p);
+    validateSlotPosition(p);
     addAdjustedLanePaths(p, path, arcSteps, couponStation);
   }
   return path;
@@ -455,10 +473,8 @@ function addAdjustedLanePaths(p, path, arcSteps, couponStation) {
   // An offset edge folds back when the lane radius is less than its width.
   // Evaluate the curvature before the Boolean kernel can discard a folded loop.
   for (const i of couponStation ? [] : indices) {
-    const change = laneOffsetAt(p, i, 0.5) - laneOffsetAt(p, i, 0);
     for (const t of stations) {
-      const lateralSpeed = change * 192 * t ** 2 * (1 - t) ** 2 * (1 - 2 * t);
-      const lateralAcceleration = change * 384 * t * (1 - t) * (1 - 5 * t + 5 * t ** 2);
+      const [lateralSpeed, lateralAcceleration] = laneOffsetDerivatives(p, i, t);
       const advance = angle
         ? (p.radius + laneOffsetAt(p, i, t)) * angle
         : p.length;
@@ -489,10 +505,14 @@ function addAdjustedLanePaths(p, path, arcSteps, couponStation) {
   );
 }
 
+// offset is where the lane leaves end A, as path.laneOffsets(0) gives it.
 export function nativeBraidLane(p, path, offset) {
-  if ((p.laneAdjustment || isRacingPiece(p)) && path.measuredLanes) {
-    const index = Math.round(offset / p.laneSpacing + (p.lanes - 1) / 2);
-    return path.measuredLanes[index];
+  if ((lanesVary(p) || isRacingPiece(p)) && path.measuredLanes) {
+    // A lone lane is the only candidate, wherever its slot has been moved to.
+    const index = Math.round(
+      (offset - slotShiftAt(p, 0)) / p.laneSpacing + (p.lanes - 1) / 2,
+    );
+    return path.measuredLanes[Math.max(0, Math.min(p.lanes - 1, index))];
   }
   return {
     atOffset: (t, across) =>
@@ -517,15 +537,14 @@ function nativePieces(
   const pieces = [],
     roads = [],
     loose = [];
-  const lanes = Array.from(
-    { length: p.lanes },
-    (_, i) => (i - (p.lanes - 1) / 2) * p.laneSpacing,
-  );
+  // Where the lanes leave end A. A slot that keeps its distance from the edge
+  // is cut as a plain band below; one that moves arrives as path.laneCurves.
+  const lanes = Array.from({ length: p.lanes }, (_, i) => laneOffsetAt(p, i, 0));
   let laneSleeves;
   if (path.laneCurves)
     importedLanes = laneTools(work, p, { lanes: path.laneCurves, path, p });
   if (path.sites) insulatedHairpinShelves(work, p, path, importedLanes);
-  if (importedLanes && (p.laneAdjustment || path.laneCurves)) {
+  if (importedLanes && (lanesVary(p) || path.laneCurves)) {
     const channels = importedLanes.map(([slot, , , envelope]) => envelope ?? slot);
     for (let i = 1; i < channels.length; i++) {
       if (!path.sites && work.own(channels[i - 1].intersect(channels[i])).area() > 0.00001)
@@ -901,6 +920,23 @@ export function buildTestJoint(wasm, params, which = 'auto') {
       if (count !== undefined) coupon.connectorCounts['seam' + type] = count;
       else delete coupon.connectorCounts['seam' + type];
     }
+  // A sample is far too short to carry a sideways move of the slot. Give it
+  // the slot of its own joint, where the two mating ends agree. A piece in
+  // one segment has no seam of its own: its joint sample shows end A.
+  let matingEnds = false;
+  if (hasSlotPosition(p)) {
+    const { edge, startMm, endMm } = p.slotPosition;
+    const internal = selected === 'seam' && p.segments > 1;
+    const station = selected === 'finish' ? 1
+      : internal ? Math.floor(p.segments / 2) / p.segments
+      : road ? 0 : 0.5;
+    const mm = station === 0 ? startMm : station === 1 ? endMm
+      : p.width / 2 - (edge === 'outer' ? 1 : -1) * slotShiftAt(p, station);
+    coupon.slotPosition = { ...p.slotPosition, startMm: mm, endMm: mm };
+    // The seam of this sample stands for two mating ends, so its connectors
+    // take the row of a real end: slot-end-row.js.
+    matingEnds = road && !internal;
+  }
   const length = jointSampleLength(coupon, selected, mode);
   const racingSample = road && isRacingPiece(p)
     ? racingJointSamplePath(racingPath(p), p, selected, length)
@@ -938,7 +974,10 @@ export function buildTestJoint(wasm, params, which = 'auto') {
   let parts;
   while (!parts) {
     try {
-      parts = buildTrack(wasm, coupon, undefined, p.laneAdjustment ? couponStation : undefined, racingSample);
+      const samplePath = matingEnds
+        ? Object.assign(nativePath(coupon), { matingSeams: true })
+        : racingSample;
+      parts = buildTrack(wasm, coupon, undefined, p.laneAdjustment ? couponStation : undefined, samplePath);
     } catch (e) {
       if (
         selected !== 'border' ||

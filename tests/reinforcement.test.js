@@ -5,6 +5,7 @@ import { customTrackPlan } from '../src/custom-track.js';
 import { encodeSTL, parseSTL } from '../src/editor.js';
 import { SolidWorkshop } from '../src/geometry/solids.js';
 import { printableSTL } from '../src/kit.js';
+import { laneOffsetAt } from '../src/lane-adjustment.js';
 import { specialTrackParams } from '../src/special-pieces.js';
 import { buildTestJoint, buildTrack, defaultTrack, nativeTrackPoint } from '../src/track.js';
 
@@ -97,6 +98,31 @@ test('printable ribs span the road cavities and reinforce both independently seg
   const closeRows = straightRibs(closer, 12, -96, 96);
   assert.ok(closeRows.length > rows.length, 'smaller spacing adds ribs');
   for (const row of closeRows) near(row.thickness, denser.wall, 'ribs inherit the configured wall thickness');
+});
+
+test('ribs span the cavity either side of an off-centre slot and open only where the slot really runs', t => {
+  const work = workshop(t);
+  const single = straight({ lanes: 1, length: 300 });
+  const centred = straightRibs(installedSTL(work, build(work, single)[0], single), 12, -146, 146);
+  assert.ok(centred.length >= 4, centred.length + ' rib rows');
+  for (const [edge, startMm, endMm] of [['outer', 35, 35], ['inner', 35, 35], ['outer', 35, 145]]) {
+    const p = { ...single, slotPosition: { version: 1, edge, startMm, endMm } };
+    const road = installedSTL(work, build(work, p)[0], p);
+    // Measure in a strip of cavity that the slot never enters.
+    const rows = straightRibs(road, edge === 'outer' ? -80 : 80, -146, 146);
+    assert.deepEqual(rows.map(row => Math.round(row.centre * 1000)), centred.map(row => Math.round(row.centre * 1000)),
+      'rib rows are laid out along the road, wherever the slot is');
+    for (const { centre, thickness } of rows) {
+      near(thickness, p.wall, 'rib thickness');
+      const slot = laneOffsetAt(p, 0, centre / p.length + 0.5);
+      for (const y of [-97, slot - 14, slot + 14, 97].filter(y => Math.abs(y) < 98))
+        near(surface(road, [centre, y]), 0, 'rib reaches the table at ' + y);
+      near(surface(road, [centre, slot], false), p.height - p.slotDepth, 'guide floor across rib');
+      near(surface(road, [centre + 5, slot - 14]), p.height - p.deck, 'adjacent cavity remains hollow');
+      // Nothing is left behind where a centred slot would have been.
+      if (Math.abs(slot) > 20) near(surface(road, [centre, 0], false), p.height, 'plain deck on the road centre');
+    }
+  }
 });
 
 test('webs turn radially on a bend and follow a rotated imported straight', t => {
@@ -194,5 +220,26 @@ test('solid construction and short joint fit coupons keep their original shape',
     assert.deepEqual(after.map(part => part.id), before.map(part => part.id));
     for (const [i, part] of after.entries())
       assert.deepEqual(encodeSTL(part.solid), encodeSTL(before[i].solid));
+  }
+});
+
+test('hand-placed tabs on an off-centre slot curve keep the whole running surface', () => {
+  const base = {
+    ...defaultTrack(), kind: 'curve', width: 200, lanes: 1, radius: 185, angle: 60,
+    slotPosition: { version: 1, edge: 'outer', startMm: 180, endMm: 180 },
+  };
+  const road = (params) => buildTrack(wasm, { ...base, ...params });
+  const plain = road({ joint: 'none' });
+  const tabbed = road({ joint: 'tabs', placements: { startTabs: [-70], finishTabs: [-70] } });
+  try {
+    const deck = (parts) => parts.find((part) => part.role === 'road').solid;
+    for (const z of [11.95, 11.5, 11]) {
+      const lost = deck(plain).slice(z).subtract(deck(tabbed).slice(z));
+      // Merging the reinforcement in one step used to drop a strip across end A.
+      assert.ok(lost.area() < 0.5, 'deck area lost at z ' + z + ': ' + lost.area());
+      lost.delete();
+    }
+  } finally {
+    [...plain, ...tabbed].forEach((part) => part.solid.delete());
   }
 });

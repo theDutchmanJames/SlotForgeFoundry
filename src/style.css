@@ -757,6 +757,13 @@ details[open] summary .i {
   color: var(--muted);
   line-height: 1.55;
 }
+/* Remarks under Slot position: advice, never a blocked build. */
+.slot-note {
+  margin: 4px 0;
+}
+.slot-warning {
+  color: var(--warn-text);
+}
 .selection-note {
   padding: 10px 11px;
   border-radius: 6px;

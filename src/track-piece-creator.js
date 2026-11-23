@@ -6,6 +6,17 @@ import {
   bindCreatorLaneControls,
   creatorLaneControls,
 } from './creator-lane-controls.js';
+import {
+  applySlotMode,
+  readSlotPosition,
+  showSlotAdvice,
+  slotFieldNames,
+  slotFieldValues,
+  slotPositionControls,
+  snapSlotField,
+  syncSlotPositionControls,
+} from './slot-position-controls.js';
+import { slotLabel } from './slot-position.js';
 import { matchingFamilyPreview, piecePreview } from './track-piece-preview.js';
 import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { fitUneditedPitGrid } from './starting-grid-controls.js';
@@ -24,6 +35,7 @@ const radiusOptions = Array.from({ length: 8 }, (_, i) => [
   String(i + 1),
   'R' + (i + 1),
 ]);
+const slotFields = slotFieldNames('pc');
 
 export function openTrackPieceCreator({
   track,
@@ -36,6 +48,8 @@ export function openTrackPieceCreator({
   const base = trackParameters(track.params);
   delete base.special;
   delete base.startingGrid;
+  // A new piece starts with a centred slot, whatever it was started from.
+  delete base.slotPosition;
   const dialog = document.createElement('dialog');
   dialog.className = 'custom-track-editor piece-creator';
   dialog.setAttribute('aria-labelledby', 'piece-creator-title');
@@ -88,6 +102,7 @@ export function openTrackPieceCreator({
         ${field('pcSpacing', 'Lane spacing', dimensions.laneSpacing, 'mm', { min: 0.1, max: 1000 })}
         ${packRules ? '<p class="hint">Change road width, lanes, spacing and the R1 inner road edge in Pack rules.</p>' : ''}
         ${creatorLaneControls()}
+        ${slotPositionControls({ ...base, kind: 'curve', width: dimensions.width, lanes: dimensions.lanes }, slotFields)}
         <p class="hint" data-slot-lengths></p>
         <p class="hint" data-family-note></p>
       </div>
@@ -180,16 +195,6 @@ export function openTrackPieceCreator({
       }
       syncSpecialControls(dialog);
     }
-    if (!editingName)
-      name.value = special
-        ? specialName(template)
-        : curve
-          ? (family ? 'R' + index + ' corner' : 'Corner') +
-            (Number.isFinite(angle) ? ' · ' + angle + '°' : '')
-          : (grid ? 'Starting grid' : 'Straight') +
-            (Number.isFinite(number('pcLength'))
-              ? ' · ' + number('pcLength') + ' mm'
-              : '');
     const params = special ? templateParams : { ...source, kind: shape };
     delete params.curveGridRadius;
     if (curve) {
@@ -212,6 +217,25 @@ export function openTrackPieceCreator({
     if (special) get('[data-lane-editor]').hidden = true;
     if (adjustment) params.laneAdjustment = adjustment;
     else delete params.laneAdjustment;
+    syncSlotPositionControls(dialog, { kind: shape, lanes: params.lanes, special });
+    const slot = readSlotPosition(slotFieldValues(dialog, slotFields), params);
+    if (slot) params.slotPosition = slot;
+    else delete params.slotPosition;
+    showSlotAdvice(dialog, params);
+    if (!editingName)
+      name.value =
+        (special
+          ? specialName(template)
+          : curve
+            ? (family ? 'R' + index + ' corner' : 'Corner') +
+              (Number.isFinite(angle) ? ' · ' + angle + '°' : '')
+            : (grid ? 'Starting grid' : 'Straight') +
+              (Number.isFinite(number('pcLength'))
+                ? ' · ' + number('pcLength') + ' mm'
+                : '')) +
+        (slot && Number.isFinite(slot.startMm + slot.endMm)
+          ? ' · slot ' + slotLabel(params)
+          : '');
     try {
       if (
         [...dialog.querySelectorAll('input[type="number"]')].some(
@@ -243,7 +267,7 @@ export function openTrackPieceCreator({
             : '') +
           'Slot spacing across adjacent radii is ' +
           fmt(width - (params.lanes - 1) * params.laneSpacing) +
-          ' mm.';
+          (slot ? ' mm when every radius uses this slot position.' : ' mm.');
       } else get('[data-family-note]').textContent = '';
       status.textContent = recipe.sourceName
         ? ''
@@ -263,7 +287,11 @@ export function openTrackPieceCreator({
 
   dialog.addEventListener('input', (e) => {
     if (e.target === name) editingName = true;
-    refresh(e.target);
+    // The Centred / Off-centre switch sets the edge field it stands for.
+    refresh(applySlotMode(e.target) ?? e.target);
+  });
+  dialog.addEventListener('change', (e) => {
+    if (snapSlotField(e.target, slotFields)) refresh(e.target);
   });
   dialog.addEventListener('keydown', (e) => e.stopPropagation());
   dialog.addEventListener('cancel', (e) => {
@@ -280,6 +308,8 @@ export function openTrackPieceCreator({
       const params = { ...base, ...(recipe?.params || {}), kind: 'import' };
       delete params.special;
       delete params.curveGridRadius;
+      // A freeform path keeps its slot where it is drawn.
+      delete params.slotPosition;
       if (params.laneAdjustment)
         params.laneAdjustment = { ...params.laneAdjustment, anchor: 'centre' };
       dialog.close();

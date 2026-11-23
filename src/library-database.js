@@ -435,7 +435,7 @@ export const COLLECTION_RULE_FIELDS = Object.freeze(['width', 'lanes', 'laneSpac
 export function applyToCollection(
   db,
   id,
-  { profile, values = {} },
+  { profile, values = {}, piece },
   { expectedRevision } = {},
 ) {
   const row = collectionRow(db, id, expectedRevision);
@@ -451,13 +451,28 @@ export function applyToCollection(
     'SELECT id, name, track FROM pieces WHERE collection_id=?',
     [id],
   );
+  // Pieces whose off-centre slot this change takes away, for the notice.
+  let centred = 0;
   const updated = members.map((r) => {
-    const track = JSON.parse(r.track);
+    const stored = JSON.parse(r.track);
+    const hadSlot = Boolean(stored.params.slotPosition);
+    // The piece open in the editor is checked as edited, not as last saved:
+    // its new values and the new rules arrive together.
+    const track = piece && r.id === piece.id ? structuredClone(piece.track) : stored;
     // A single-lane piece of a two-lane pack (a pit lane, say) keeps its own
     // lane count; the road width and spacing still follow the pack.
     const own = { ...ruleValues };
     if (own.lanes !== undefined && track.params.special) delete own.lanes;
     track.params = { ...track.params, ...own };
+    // An off-centre slot is a single-lane setting: with more lanes the piece
+    // is centred again. A new road width keeps the typed edge distance.
+    if (own.lanes !== undefined && own.lanes !== 1) delete track.params.slotPosition;
+    // A distance that the new width puts on the road centre is a centred
+    // slot, and a centred slot is never stored.
+    const slot = track.params.slotPosition;
+    if (slot && slot.startMm === slot.endMm && slot.startMm === track.params.width / 2)
+      delete track.params.slotPosition;
+    if (hadSlot && !track.params.slotPosition) centred++;
     validateRecipe({ name: r.name, track }, chosen);
     return [r.id, track];
   });
@@ -474,7 +489,7 @@ export function applyToCollection(
     revision,
     id,
   ]);
-  return { revision, pieces: updated.length };
+  return { revision, pieces: updated.length, centred };
 }
 
 /* ---------- Managing packs and pieces ---------- */

@@ -21,6 +21,7 @@ import {
   roadLineFolder,
 } from './paint-controls.js';
 import { borderEndControls, laneLayoutControls } from './track-shape-controls.js';
+import { slotPositionControls } from './slot-position-controls.js';
 import { startingGridControls } from './starting-grid-controls.js';
 import { TRACK_PROFILE_LIMITS } from './track.js';
 import { specialControls, specialName } from './special-piece-controls.js';
@@ -183,6 +184,7 @@ const trackNotes = {
 const SECTION_OF_FIELD = [
   [/^(whiteLine|roadCentreLine|dash|roadKerb|kerb|groove|grid|roadLineGroove|borderLineGroove|spPitWhiteLine|spPitCrossingStyle|spPitGrid)/, 'markings'],
   [/^(segments|borderSegments)$/, 'print'],
+  [/^slot(Edge|Start|End)$/, 'geometry'],
 ];
 export function sectionForField(field, fallback) {
   return SECTION_OF_FIELD.find(([re]) => re.test(field ?? ''))?.[1] ?? fallback;
@@ -308,11 +310,14 @@ export function trackInspector(project, tab, draft = {}) {
       html += details(
         'Lane layout',
         num(p, 'lanes', 'Lane count', '', { min: 1, step: 1 }) +
-          '<p class="hint" data-centred-lane' + (p.lanes === 1 ? '' : ' hidden') +
+          '<p class="hint" data-centred-lane' + (p.lanes === 1 && !p.slotPosition ? '' : ' hidden') +
           '>Main slot on the road centreline.</p>' +
           '<div data-lane-spacing-controls' + (p.lanes === 1 ? ' hidden' : '') + '>' +
           num(p, 'laneSpacing', 'Lane spacing', 'mm', { min: 0.1, max: 1000 }) +
-          (p.special ? '' : laneLayoutControls(p)) + '</div>',
+          (p.special ? '' : laneLayoutControls(p)) + '</div>' +
+          // Plain straights and curves only: a special piece or a drawn
+          // path keeps its slots where its own shape puts them.
+          (p.special || p.kind === 'import' ? '' : slotPositionControls(p)),
         true, 'lanes',
       );
   } else if (tab === 'print') {

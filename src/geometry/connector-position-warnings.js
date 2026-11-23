@@ -72,6 +72,7 @@ export function roadOffsetWarning({
   lanes,
   fixedTabOffset,
   reason,
+  slotPosition = false,
 }) {
   const key = end + (type === 'tab' ? 'Tabs' : 'Clips');
   const positions = {
@@ -121,7 +122,11 @@ export function roadOffsetWarning({
       formatMm(laneSpace) +
       ' between centres.';
   } else if (reason === 'laneSweep') {
-    detail = at + 'the pocket reaches a guide slot wall as the lanes change spacing away from the seam.';
+    detail =
+      at +
+      (slotPosition
+        ? 'the pocket reaches a guide slot wall where the slot moves sideways away from the seam.'
+        : 'the pocket reaches a guide slot wall as the lanes change spacing away from the seam.');
   } else if (reason === 'edge') {
     const limit = width / 2 - envelope.half;
     detail =
@@ -188,7 +193,9 @@ export function sideMountWarning({
   side,
   nativeLaneGap,
   laneMinimum,
+  slotPosition = false,
 }) {
+  const moveSlot = 'move the slot away from this edge under Road → Slot position';
   const positions = {
     tab: 'joints',
     field: 'place_' + key,
@@ -235,8 +242,12 @@ export function sideMountWarning({
         ' from this road edge. The pocket and slot wall need more than ' +
         formatMm(laneMinimum) +
         '.',
-      'Increase Road → Road width to give the pocket more room beside the guide slot.',
-      { tab: 'geometry', field: 'width', label: 'Edit road width' },
+      slotPosition
+        ? 'Either ' + moveSlot + ', or increase Road → Road width.'
+        : 'Increase Road → Road width to give the pocket more room beside the guide slot.',
+      slotPosition
+        ? slotPositionSetting()
+        : { tab: 'geometry', field: 'width', label: 'Edit road width' },
     );
   const causes = {
     angle:
@@ -246,22 +257,103 @@ export function sideMountWarning({
     borderEnd:
       'the pocket is too close to the border end or its reserved connector space.',
     lane: 'the pocket reaches the clearance reserved for a guide slot and its wall.',
-    laneSweep: 'the pocket reaches the wall of a guide slot as the lanes change spacing.',
+    laneSweep: slotPosition
+      ? 'the pocket reaches the wall of a guide slot where the slot moves sideways.'
+      : 'the pocket reaches the wall of a guide slot as the lanes change spacing.',
+    channel: 'the pocket would cut into a guide slot or braid recess.',
+    feed: 'the pocket would cut into a braid pass-through.',
     other: 'the attachment is too close to another mount on this border.',
     outline:
       'the pocket or its support extends beyond the road or border outline.',
   };
   const detail = 'At ' + percentage + ' along this section, ' + causes[reason];
-  const advice =
-    'Move ' +
-    placementKeys[key] +
-    ' under Connections → Custom border connector positions.';
+  // An off-centre slot can crowd one road edge along its whole length.
+  const beside = slotPosition && ['lane', 'laneSweep', 'channel'].includes(reason);
+  const movePlaces =
+    placementKeys[key] + ' under Connections → Custom border connector positions.';
+  const advice = beside
+    ? 'Either ' + moveSlot + ', or move ' + movePlaces
+    : 'Move ' + movePlaces;
   return connectorWarning(
     label,
     custom
       ? detail
       : 'Automatic placement could not find a clear position. ' + detail,
     advice,
-    positions,
+    beside && !custom ? slotPositionSetting() : positions,
   );
+}
+
+/** The inspector field that holds the slot position of a piece. */
+export const slotPositionSetting = () => ({
+  tab: 'geometry',
+  field: 'slotStart',
+  label: 'Slot position',
+});
+
+/** A row beside an off-centre slot that cannot be laid out across the road. */
+export function slotRowWarning(source, counted) {
+  return connectorWarning(
+    source.warning.location,
+    source.warning.reason,
+    counted
+      ? 'Move the slot, change the number of connectors, or place the connectors by hand.'
+      : 'Move the slot, widen the road, or place the connectors by hand.',
+    slotPositionSetting(),
+  );
+}
+
+const slotPocketCauses = {
+  laneSweep: 'the slot moves sideways into the room this pocket needs.',
+  outline: 'the pocket or its supporting walls reach outside the road.',
+  opposite: 'the pocket meets a connector from the other end of the piece.',
+  channel: 'the pocket would cut into the guide slot or a braid recess.',
+  feed: 'the pocket would cut into a braid pass-through.',
+  detector: 'the pocket would reach the timing equipment.',
+};
+
+/**
+ * A connector at an end with an off-centre slot that the rest of the piece
+ * leaves no room for. Its place is fixed by the slot at that end alone, so
+ * the piece has to change, not the row.
+ */
+export function slotPocketWarning({ label, kind, end, type, value, custom, fixedTabOffset, reason }) {
+  const detail =
+    'At the ' + formatMm(value) + ' offset, ' + (slotPocketCauses[reason] ?? reason);
+  const roomier = slotRoomAdvice(kind, reason);
+  if (fixedTabOffset)
+    return connectorWarning(
+      label,
+      detail,
+      'Change Tab offset from centre in Connections, ' + roomier.toLowerCase() + ', or move the slot.',
+      { tab: 'joints', field: 'connectorOffset', label: 'Edit tab offset' },
+    );
+  const key = end + (type === 'tab' ? 'Tabs' : 'Clips');
+  if (custom)
+    return connectorWarning(
+      label,
+      detail,
+      'Move ' +
+        placementKeys[key] +
+        ' under Connections → Custom road connector positions, ' +
+        roomier.toLowerCase() + ', or move the slot.',
+      {
+        tab: 'joints',
+        field: 'place_' + key,
+        label: 'Edit ' + placementKeys[key].toLowerCase(),
+      },
+    );
+  return connectorWarning(
+    label,
+    detail +
+      ' On a piece with an off-centre slot the connectors keep fixed places, so that matching ends always fit together.',
+    roomier + ', move the slot, or place the connectors by hand.',
+    slotPositionSetting(),
+  );
+}
+
+/** The change to the piece itself that gives a refused pocket its room. */
+export function slotRoomAdvice(kind, reason) {
+  if (reason === 'feed') return 'Move the braid pass-through';
+  return kind === 'curve' ? 'Use a larger radius or sweep angle' : 'Use a longer piece';
 }

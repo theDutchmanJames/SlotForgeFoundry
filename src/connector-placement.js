@@ -301,7 +301,10 @@ export function editConnectorPlacement({
       'Click the highlighted joint to add a ' +
       kind +
       '. Drag a mark to move it.' +
-      repeated;
+      repeated +
+      (layout?.fixedRow
+        ? ' This piece has an off-centre slot, so automatic marks at its ends keep fixed places and matching ends always fit.'
+        : '');
     const names = (k) =>
       positions[k].length + ' ' + k + (positions[k].length === 1 ? '' : 's');
     const distance =

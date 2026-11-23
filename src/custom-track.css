@@ -201,6 +201,10 @@ dialog.custom-track-editor {
 .pc-footprint .ct-detail, .pc-footprint .ct-break { fill: none; stroke: var(--warn-text); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .pc-footprint .ct-flipper { fill: var(--accent-text); stroke: var(--warn-text); stroke-width: 1px; }
 .pc-footprint .ct-flipper-route { fill: none; stroke: var(--accent-text); stroke-linecap: round; stroke-width: 2px; }
+/* Off-centre slot: end letters, edge names and the direction of travel. */
+.pc-footprint .ct-end-label { fill: var(--ink); font-family: var(--font-ui); font-weight: 700; }
+.pc-footprint .ct-edge-label { fill: var(--muted); font-family: var(--font-ui); }
+.pc-footprint .ct-travel { stroke: var(--ink); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; }
 .pc-shapes [aria-pressed='true'] {
   color: var(--ink);
   background: var(--sel);
@@ -274,7 +278,8 @@ dialog.custom-track-editor {
 .pc-family tr.chosen {
   background: var(--sel);
 }
-.custom-track-editor [data-lane-editor] {
+.custom-track-editor [data-lane-editor],
+.custom-track-editor [data-slot-position] {
   margin: 8px 0;
 }
 .piece-creator .ct-controls .field {

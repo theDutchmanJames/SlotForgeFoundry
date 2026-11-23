@@ -306,6 +306,31 @@ test('preflight builds each recipe and catches a shared fit failure on a narrow 
   );
 });
 
+test('a single-lane pack piece keeps its off-centre slot under the shared profile, and new packs start centred', () => {
+  const pack = starterPack(1);
+  assert.ok(pack.pieces.every((piece) => !('slotPosition' in piece.track.params)));
+  // The slot position belongs to the piece: the shared profile never carries it.
+  assert.equal('slotPosition' in pack.profile, false);
+  assert.throws(
+    () => validateLibraryProfile({ ...pack.profile, slotPosition: null }),
+    /Unknown collection profile setting/,
+  );
+  const slotPosition = { version: 1, edge: 'outer', startMm: 20, endMm: 60 };
+  const track = structuredClone(pack.pieces[0].track);
+  track.params.slotPosition = slotPosition;
+  const recipe = trackWithProfile(track, { ...pack.profile, slotWidth: 3.2 });
+  assert.deepEqual(recipe.params.slotPosition, slotPosition);
+  assert.equal(recipe.params.slotWidth, 3.2);
+  assert.deepEqual(track.params.slotPosition, slotPosition, 'the stored recipe is not changed');
+  assert.equal('slotPosition' in profileFromTrack(recipe), false);
+  // A shared braid too wide for the typed distance is refused in plain words.
+  assert.throws(
+    () => trackWithProfile(track, { ...pack.profile, braidWidth: 20 }),
+    /at end A is 20 mm from the left edge\. Keep it between/,
+  );
+  assert.equal(validateLibraryTrack(wasm, recipe), true);
+});
+
 test('standalone imported lanes and editable custom paths retain their source geometry', () => {
   const source = starterPack().pieces[0].track;
   const imported = {

@@ -1,4 +1,5 @@
 import { laneOffsetAt } from './lane-adjustment.js';
+import { hasSlotPosition, lanesVary } from './slot-position.js';
 import { nativeTrackPoint } from './track.js';
 import { specialPreview } from './special-pieces.js';
 import { startingGridLayout } from './geometry/starting-grid.js';
@@ -12,7 +13,7 @@ export function piecePreview(p) {
   const steps = Math.max(
     1,
     p.kind === 'curve' ? Math.ceil(p.angle) : 1,
-    p.laneAdjustment ? 120 : 1,
+    lanesVary(p) ? 120 : 1,
   );
   const sample = (offset) =>
     Array.from({ length: steps + 1 }, (_, i) => {
@@ -33,7 +34,7 @@ export function piecePreview(p) {
   const lengths = [];
   const marks = Array.from({ length: p.lanes }, (_, lane) => {
     const path = sample((t) => laneOffsetAt(p, lane, t));
-    const length = p.laneAdjustment
+    const length = lanesVary(p)
       ? path
           .slice(1)
           .reduce(
@@ -59,9 +60,46 @@ export function piecePreview(p) {
       pointList(outline) +
       '"/>' +
       grid.map(loop => '<polygon class="ct-starting-grid" points="' + pointList(loop) + '"/>').join('') +
-      marks.join(''),
+      marks.join('') +
+      (hasSlotPosition(p) ? slotEndMarks(p, Math.max(width, height)) : ''),
     lengths,
   };
+}
+
+// A slot position is typed "from the left edge", so the picture says which
+// way the piece runs: letters at both ends and an arrowhead on the slot. The
+// preview plots -y, which puts the left edge of a straight at the top.
+function slotEndMarks(p, size) {
+  const centre = (t) => nativeTrackPoint(p, t, 0);
+  const slot = (t) => nativeTrackPoint(p, t, laneOffsetAt(p, 0, t));
+  const towards = (from, to) => {
+    const dx = to[0] - from[0],
+      dy = to[1] - from[1],
+      d = Math.hypot(dx, dy) || 1;
+    return [dx / d, dy / d];
+  };
+  const text = (cls, scale, label, [x, y], [dx, dy]) =>
+    '<text class="' + cls + '" font-size="' + digits(size * scale) +
+    '" text-anchor="middle" dominant-baseline="central" x="' + digits(x + dx * size * 0.05) +
+    '" y="' + digits(-(y + dy * size * 0.05)) + '">' + label + '</text>';
+  const travel = towards(slot(0.49), slot(0.51)),
+    tip = slot(0.5),
+    h = size * 0.035;
+  const wing = (side) => [
+    tip[0] - travel[0] * h - side * travel[1] * h * 0.6,
+    tip[1] - travel[1] * h + side * travel[0] * h * 0.6,
+  ];
+  return (
+    text('ct-end-label', 0.06, 'A', centre(0), towards(centre(0.001), centre(0))) +
+    text('ct-end-label', 0.06, 'B', centre(1), towards(centre(0.999), centre(1))) +
+    (p.kind === 'straight'
+      ? text('ct-edge-label', 0.042, 'left', nativeTrackPoint(p, 0.5, p.width / 2), [0, 1]) +
+        text('ct-edge-label', 0.042, 'right', nativeTrackPoint(p, 0.5, -p.width / 2), [0, -1])
+      : '') +
+    '<polyline class="ct-travel" fill="none" vector-effect="non-scaling-stroke" points="' +
+    pointList([wing(1), [tip[0] + travel[0] * h, tip[1] + travel[1] * h], wing(-1)]) +
+    '"/>'
+  );
 }
 
 function specialFootprint(p) {

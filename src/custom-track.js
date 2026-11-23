@@ -3,6 +3,7 @@
 import { flatCrossingPlan, MAX_CROSSINGS } from './flat-crossing.js';
 import { braidSpan } from './geometry/solids.js';
 import { laneOffsetAt, laneProfileSteps, validateLaneAdjustment, validateLaneBends } from './lane-adjustment.js';
+import { hasSlotPosition } from './slot-position.js';
 const EPS = 1e-7;
 const LIMIT = 20000;
 export const MAX_PATH_POINTS = 40;
@@ -87,8 +88,16 @@ export function assertSimpleOutline(outline) {
   }
 }
 
+// A drawn path keeps its lanes about the road centre. Refuse the key before a
+// squeeze could carry its shift into the lane paths.
+function refuseSlotPosition(p) {
+  if (hasSlotPosition(p))
+    throw Error('Slot position works on plain straights and curves only. Freeform pieces and imported drawings keep the slot where it is drawn.');
+}
+
 export function customTrackPlan(recipe, p) {
   validateCustomTrack(recipe);
+  refuseSlotPosition(p);
   validateLaneAdjustment(p);
   const { width, lanes, laneSpacing } = p;
   if (
@@ -293,6 +302,9 @@ export function customTrackPlan(recipe, p) {
 export function refreshCustomTrack(track) {
   if (!track.custom || track.params.kind !== 'import') return track;
   const p = track.params;
+  // The key below has no slot position: a plan cached for the centred piece
+  // must not answer for one that carries the key.
+  refuseSlotPosition(p);
   const key = JSON.stringify([
     track.custom,
     p.width,

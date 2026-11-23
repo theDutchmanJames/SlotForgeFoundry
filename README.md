@@ -62,6 +62,7 @@ Foundry has four workspaces: **Track Set** for designing a piece, **Track Planne
 Each piece opens in **Track Set**, with large buttons for each part of the design:
 
 - **Shape:** the road path, lanes and lane spacing. Squeeze or spread the lanes mid-piece while the ends stay aligned with the rest of the pack.
+- **Slot position:** on a single-lane straight or curve, set the guide slot a typed distance from a road edge. A straight can move the slot across in a smooth S, with one distance at end A and another at end B.
 - **Cross-section:** a solid or hollow deck with underside ribs, the guide slot, braid recesses and braid pass-throughs.
 - **Borders:** inside and outside borders with their own widths, apex and ends (rounded, tapered or S-curve).
 - **Markings:** white lines, centre lines, kerbstones, starting grids and pit markers, with optional paint grooves cut into the print.

@@ -1,5 +1,6 @@
 import clipping from 'polygon-clipping';
 import { laneOffsetAt, laneProfileSteps } from '../lane-adjustment.js';
+import { hasSlotPosition, lanesVary, slotEdgeName, slotVaries } from '../slot-position.js';
 import { vertexNormals } from './import-track.js';
 import { lineGrooves, whiteLineLayout } from './paint-guides.js';
 import { pitBayStart, pitSides } from './special-junction-paths.js';
@@ -14,9 +15,34 @@ export function defaultStartingGrid(p) {
   const laneSpan = (p.lanes - 1) * Math.max(middle, p.laneSpacing);
   const edgeSpace = Math.max(roadEdgeMarkWidth(p, 'inner'), roadEdgeMarkWidth(p, 'outer'));
   const laneWidth = Math.max(0.1, Math.min(rowSpacing, p.width - laneSpan - 2 * edgeSpace));
-  return { ...markDefaults(laneWidth, p.length, 2 * laneShoulder(p)),
-    stagger: p.lanes > 1 ? Math.min(45, 0.225 * p.length) : 0 };
+  const stagger = p.lanes > 1 ? Math.min(45, 0.225 * p.length) : 0;
+  if (!hasSlotPosition(p) || p.lanes !== 1)
+    return { ...markDefaults(laneWidth, p.length, 2 * laneShoulder(p)), stagger };
+  // An off-centre slot leaves less road on one side. Centre the box on the
+  // slot and size it to the narrow side.
+  const fitted = (legLength) => {
+    const room = 2 * laneRoom(p, 0, markStation(legLength, p.length));
+    const mark = markDefaults(Math.max(0.1, Math.min(laneWidth, room)), p.length, 2 * laneShoulder(p));
+    // The room is rarely a round number. Keep the fields readable, and the
+    // width inside the room.
+    return { ...mark, width: Math.floor(mark.width * 100 + 1e-7) / 100,
+      thickness: Number(mark.thickness.toFixed(2)), legLength, stagger };
+  };
+  const grid = fitted(defaultLegLength(p.length));
+  if (!slotVaries(p)) return grid;
+  // A slot that moves sideways runs at an angle under the legs. Shorten
+  // them until they clear it.
+  for (const legs of [1, 0.75, 0.5, 0.25, 0]) {
+    const shorter = fitted(legs * grid.legLength);
+    try {
+      startingGridLayout({ ...p, startingGrid: shorter });
+      return shorter;
+    } catch { /* Try shorter legs. */ }
+  }
+  return grid;
 }
+
+const defaultLegLength = (length) => Math.min(35, 0.175 * length);
 
 function markDefaults(laneWidth, length, clearWidth) {
   const thickness = Math.max(0.1, Math.min(3, 0.03 * laneWidth, 0.1 * length, (laneWidth - clearWidth) / 4));
@@ -24,9 +50,22 @@ function markDefaults(laneWidth, length, clearWidth) {
   return {
     width,
     thickness,
-    legLength: Math.min(35, 0.175 * length),
+    legLength: defaultLegLength(length),
     recessed: false,
   };
+}
+
+// Where along the road the middle of a single lane's transverse line sits.
+const markStation = (legLength, length) => legLength / (2 * length) + 0.5;
+
+// Clear road from a lane to the nearer edge, edge line or road kerb at one station.
+function laneRoom(p, lane, t) {
+  const y = laneOffsetAt(p, lane, t);
+  const kerb = (side) => (p.roadKerbSide === 'both' || p.roadKerbSide === side ? p.kerbWidth : 0);
+  return Math.min(
+    p.width / 2 - roadEdgeMarkWidth(p, 'outer') - kerb('outer') - y,
+    p.width / 2 - roadEdgeMarkWidth(p, 'inner') - kerb('inner') + y,
+  );
 }
 
 function roadEdgeMarkWidth(p, side) {
@@ -41,6 +80,12 @@ function laneShoulder(p) {
 
 function gridWarning(reason, advice, field, label) {
   return connectorWarning('Starting grid', reason, advice, { tab: 'geometry', field, label });
+}
+
+// The mark stays square to the road. Where a slot moves sideways it passes
+// under the mark at an angle, which the usual advice does not explain.
+function slantedSlotWarning(reason, advice, field, label) {
+  return gridWarning(reason, advice + ' The slot runs at an angle to the mark on this piece.', field, label);
 }
 
 function pitWarning(reason, advice, field, label) {
@@ -93,7 +138,8 @@ function mark(front, y, grid, pad = 0) {
 
 function laneClearance(p, lane, extra = 0) {
   const half = laneShoulder(p) + extra;
-  const count = p.laneAdjustment ? laneProfileSteps(p) : 1;
+  // A squeeze, a spread and a moving slot all leave both ends square.
+  const count = lanesVary(p) ? laneProfileSteps(p) : 1;
   const points = Array.from({ length: count + 1 }, (_, i) => [
     (i / count - 0.5) * p.length, laneOffsetAt(p, lane, i / count),
   ]);
@@ -145,12 +191,22 @@ export function startingGridLayout(p) {
     const row = (p.lanes - 1 - i) % 2 === 0 ? 1 : -1;
     const stagger = p.lanes > 1 ? row * grid.stagger / 2 : 0;
     const front = (grid.legLength + grid.thickness) / 2 + stagger;
-    const y = laneOffsetAt(p, i, (front - grid.thickness / 2) / p.length + 0.5);
-    if (y - grid.width / 2 - gap < low - 1e-8 || y + grid.width / 2 + gap > high + 1e-8)
-      throw gridWarning('Lane ' + (i + 1) + ' reaches the road edge or its white line.',
-        'Reduce Mark width or widen the road.', 'gridWidth', 'Edit mark width');
+    const station = (front - grid.thickness / 2) / p.length + 0.5;
+    const y = laneOffsetAt(p, i, station);
+    if (y - grid.width / 2 - gap < low - 1e-8 || y + grid.width / 2 + gap > high + 1e-8) {
+      if (!hasSlotPosition(p))
+        throw gridWarning('Lane ' + (i + 1) + ' reaches the road edge or its white line.',
+          'Reduce Mark width or widen the road.', 'gridWidth', 'Edit mark width');
+      // The mark is centred on the slot, so the nearer edge decides.
+      const edge = slotEdgeName(p, y > 0 ? 'outer' : 'inner');
+      throw gridWarning('The mark reaches the ' + edge + ' edge of the road or its white line.',
+        'Reduce Mark width to ' + formatMm(Math.max(0, 2 * (laneRoom(p, i, station) - gap))) +
+        ' or less, or move the slot away from the ' + edge + ' edge under Slot position.',
+        'gridWidth', 'Edit mark width');
+    }
     const channel = channels[i], paintChannel = gap ? laneClearance(p, i, gap) : channel;
-    const stroke = markAroundGuide(grid, front, y, gap, channel, paintChannel, gridWarning);
+    const stroke = markAroundGuide(grid, front, y, gap, channel, paintChannel,
+      slotVaries(p) ? slantedSlotWarning : gridWarning);
     const { surround } = stroke;
     if (occupied.some(other => clipping.intersection(other, surround).length) ||
         channels.some((channel, j) => j !== i && clipping.intersection(channel, surround).length))

@@ -264,6 +264,39 @@ test('paint settings reject a groove that opens a hollow deck, a line crossing t
     );
 });
 
+test('an edge line fits beside an off-centre slot where there is road for it, and points at Slot position where there is not', (t) => {
+  // 12 mm from the left edge leaves 4.9 mm of road outside the braid.
+  const p = {
+    borderSide: 'none', segments: 1, width: 200, braidGap: 0.6,
+    slotPosition: { version: 1, edge: 'outer', startMm: 12, endMm: 12 },
+  };
+  const [far] = build(t, { ...p, whiteLineRoad: 'inner', whiteLineWidth: 40 });
+  assert.equal(paintAt(far, 0, -61), '#FFFFFF');
+  assert.equal(paintAt(far, 0, -59), undefined);
+  const [near] = build(t, { ...p, whiteLineRoad: 'outer', whiteLineWidth: 4.5 });
+  assert.equal(paintAt(near, 0, 96), '#FFFFFF');
+  assert.equal(paintAt(near, 0, 95), undefined);
+  assert.throws(
+    () => buildTrack(wasm, { ...straight, ...p, whiteLineRoad: 'outer', whiteLineWidth: 5 }),
+    /The white line reaches a guide slot or braid strip\. Reduce White line width under Road → Shared line and groove dimensions, or move the slot away from this edge under Slot position\.$/,
+  );
+  assert.throws(
+    () => buildTrack(wasm, { ...straight, ...p, whiteLineRoad: 'outer', whiteLineWidth: 4.5, roadLineGroove: true }),
+    /The white line or its paint groove reaches a guide slot or braid strip\. .* or reduce Groove width, or move the slot away from this edge under Slot position\.$/,
+  );
+  // A slot that only reaches the edge at end B is caught as well.
+  assert.throws(
+    () => buildTrack(wasm, { ...straight, ...p, length: 300, whiteLineRoad: 'outer', whiteLineWidth: 5,
+      slotPosition: { ...p.slotPosition, startMm: 100 } }),
+    /reaches a guide slot or braid strip/,
+  );
+  // Without a slot position the advice is what it was.
+  assert.throws(
+    () => buildTrack(wasm, { ...straight, borderSide: 'none', whiteLineRoad: 'outer', whiteLineWidth: 36 }),
+    /The white line reaches a guide slot or braid strip\. Reduce White line width under Road → Shared line and groove dimensions\.$/,
+  );
+});
+
 test('a groove in the solid border rim may extend past the thickness of the hollow deck', (t) => {
   const parts = build(t, {
     whiteLineBorder: 'outer',

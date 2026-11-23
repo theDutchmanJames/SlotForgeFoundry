@@ -40,6 +40,35 @@ test('two different parts with the same name get their own files', () => {
   assert.deepEqual(groups.map((g) => g.file), ['track/Chicane-Road-1-x1.stl', 'track/Chicane-Road-1-2-x1.stl']);
 });
 
+import { kitPieceNames } from '../src/planner-kit.js';
+test('pieces that share a name are told apart by their slot position, and only then', () => {
+  const piece = (name, slotPosition) => ({ name, track: { params: { slotPosition } } });
+  const slot = (startMm, endMm = startMm) => ({ version: 1, edge: 'outer', startMm, endMm });
+  assert.deepEqual(
+    kitPieceNames({
+      s1: piece('Straight'),
+      s2: piece('Straight', slot(35)),
+      s3: piece('Straight', slot(35, 145.5)),
+      s4: piece('Corner', slot(35)),
+      s5: piece('Corner', slot(35)),
+      s6: piece('Chicane'),
+      // A piece and its mirror image: same distance, other edge.
+      s7: piece('Bend', slot(35)),
+      s8: piece('Bend', { ...slot(35), edge: 'inner' }),
+    }),
+    {
+      s1: 'Straight',
+      s2: 'Straight slot 35 from left',
+      s3: 'Straight slot 35-145.5 from left',
+      s4: 'Corner',
+      s5: 'Corner',
+      s6: 'Chicane',
+      s7: 'Bend slot 35 from left',
+      s8: 'Bend slot 35 from right',
+    },
+  );
+});
+
 import { stlVolume, laneLengths, shoppingList } from '../src/planner-kit.js';
 function cubeStl(size) {
   const v = [[0,0,0],[size,0,0],[size,size,0],[0,size,0],[0,0,size],[size,0,size],[size,size,size],[0,size,size]];

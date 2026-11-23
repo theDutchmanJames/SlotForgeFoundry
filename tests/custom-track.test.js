@@ -106,6 +106,29 @@ test('a drawn squeeze interpolates by road distance and regenerates after its mi
   }
 });
 
+test('a freeform path refuses a slot position before it can move a lane, and leaves the plan cache alone', () => {
+  const slotPosition = { version: 1, edge: 'outer', startMm: 35, endMm: 145 };
+  const refusal = /Slot position works on plain straights and curves only\. Freeform pieces and imported drawings keep the slot where it is drawn\./;
+  const single = { ...p, lanes: 1, width: 200, laneSpacing: 100 };
+  const squeezed = {
+    ...single, lanes: 2,
+    laneAdjustment: { version: 1, mode: 'squeeze', spacingMm: 40, anchor: 'centre' },
+  };
+  for (const params of [single, squeezed]) {
+    const track = { params, custom: line };
+    const { plan } = refreshCustomTrack(track);
+    // The drawn lanes sit about the road centre at both ends.
+    const ends = plan.lanes.flatMap((lane) => [lane[0][1], lane.at(-1)[1]]);
+    assert.deepEqual(ends, params.lanes === 1 ? [0, 0] : [-50, -50, 50, 50]);
+    const shifted = { ...track, params: { ...params, slotPosition } };
+    assert.throws(() => customTrackPlan(line, shifted.params), refusal);
+    assert.throws(() => refreshCustomTrack(shifted), refusal);
+    assert.throws(() => buildTrack(wasm, shifted.params, plan), refusal);
+    // The refusal neither replaced nor poisoned the plan kept for this recipe.
+    assert.equal(refreshCustomTrack(track).plan, plan);
+  }
+});
+
 test('closed and open figure eights keep two independent flat passages with matching cut faces and complete lane paths', () => {
   for (const closed of [true, false]) {
     const recipe = { ...eight, closed, upperPasses: ['first'] };

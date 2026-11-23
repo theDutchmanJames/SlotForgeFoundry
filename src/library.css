@@ -110,6 +110,18 @@ dialog.track-library {
   stroke: var(--d-slot);
   stroke-width: 1.4;
 }
+/* A piece with an off-centre slot names its ends and shows its direction. */
+.lib-thumb .lib-end {
+  fill: currentColor;
+  font: 700 8px var(--font-ui);
+}
+.lib-thumb .lib-travel {
+  fill: none;
+  stroke: var(--d-slot);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .lib-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

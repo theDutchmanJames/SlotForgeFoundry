@@ -1,6 +1,9 @@
 import { interpolateStation } from './braid-feeds.js';
 import { WHITE_LINE_COLOR } from './kerbstones.js';
-import { grooveClearOfDovetails, lineGrooves, markingStations } from './paint-guides.js';
+import { grooveClearOfDovetails, lineDimensions, lineGrooves, markingStations } from './paint-guides.js';
+import { braidSpan } from './solids.js';
+import { laneOffsetAt } from '../lane-adjustment.js';
+import { hasSlotPosition, lanesVary } from '../slot-position.js';
 
 // phase is the distance already travelled on this road when a new print
 // section starts. A dash crossing the join continues on the next section.
@@ -16,6 +19,29 @@ export function dashIntervals(length, dashLength, dashGap, phase = 0) {
     if (end > Math.max(0, x) + 1e-8) spans.push([Math.max(0, x), end]);
   }
   return spans;
+}
+
+/**
+ * How the guide slots meet a painted centre line, for the hint beside the
+ * control: 'centred' when a slot runs along it, 'beside' when an off-centre
+ * slot still takes part of the stripe all the way, 'crossing' when a slot
+ * passes over it part of the way, 'clear' when the whole stripe is on road.
+ */
+export function centreLineSlots(p) {
+  if (!hasSlotPosition(p)) return p.lanes % 2 ? 'centred' : 'clear';
+  // The stripe gives way to the slot, its braids and a small margin.
+  const reach = p.slotWidth / 2 + braidSpan(p) + 0.4 +
+    (p.whiteLineWidth ?? lineDimensions.whiteLineWidth) / 2;
+  const steps = lanesVary(p) ? 64 : 1;
+  let result = 'clear';
+  for (let i = 0; i < p.lanes; i++) {
+    let covered = 0;
+    for (let k = 0; k <= steps; k++)
+      if (Math.abs(laneOffsetAt(p, i, k / steps)) < reach) covered++;
+    if (covered > steps) return 'beside';
+    if (covered) result = 'crossing';
+  }
+  return result;
 }
 
 export function centreLinePaint(work, p, path, phase = 0) {

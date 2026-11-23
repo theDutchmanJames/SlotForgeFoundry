@@ -41,7 +41,7 @@ function ruleInputs(rules) {
       )
       .join('') +
     '</div>' +
-    '<p class="hint">Each successive radius adds one road width. A single lane runs down the centre. With multiple lanes, normal slot spacing applies at both ends.</p></fieldset>'
+    '<p class="hint">Each successive radius adds one road width. A single lane runs down the centre unless a piece sets its own Slot position. With multiple lanes, normal slot spacing applies at both ends.</p></fieldset>'
   );
 }
 
@@ -157,6 +157,10 @@ export async function showTrackLibrary({
       );
     const perPage = 24,
       start = page * perPage;
+    // "Centred" stays true only while no piece moves its slot.
+    const singleLane = c.pieces.some((piece) => piece.track.params.slotPosition)
+      ? '1 lane · some slots off-centre'
+      : '1 centred lane';
     return (
       '<div class="lib-controls">' +
       selectCollection() +
@@ -166,7 +170,7 @@ export async function showTrackLibrary({
       count(c.pieces.length) +
       '</h3><small>' +
       esc(c.rules.width) + ' mm wide · ' +
-      (c.rules.lanes === 1 ? '1 centred lane' : esc(c.rules.lanes) + ' lanes · ' + esc(c.rules.laneSpacing) + ' mm spacing') +
+      (c.rules.lanes === 1 ? singleLane : esc(c.rules.lanes) + ' lanes · ' + esc(c.rules.laneSpacing) + ' mm spacing') +
       '</small></div>' +
       (createPiece ? btn('create-piece', 'Add track piece', 'primary', 'plus') : '') +
       btn('rules', 'Pack rules', 'outline', 'settings') +

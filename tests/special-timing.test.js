@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
 import { unzipSync, strFromU8 } from 'fflate';
-import { defaultTrack, buildTrack, chooseSegmentation } from '../src/track.js';
+import { defaultTrack, buildTrack, chooseSegmentation, validateTrack } from '../src/track.js';
 import { checkProject, newProject } from '../src/project.js';
-import { specialTrackParams, SPECIAL_PIECES } from '../src/special-pieces.js';
+import { specialTrackParams, validateSpecialType, SPECIAL_PIECES } from '../src/special-pieces.js';
+import { packSpecialTrack, specialsFor } from '../src/pack-specials.js';
+import { isRacingPiece, racingPath, validateRacingPiece } from '../src/special-racing.js';
 import { encodeSTL, parseSTL } from '../src/editor.js';
 import { createEngine } from '../src/engine.js';
 
@@ -104,6 +106,86 @@ test('The automatic print layout can segment a timing straight without bisecting
   );
   assert.equal(fit.fits, true);
   assert.ok(fit.count > 1);
+});
+
+test('specials taken from a pack whose plain straight has an off-centre slot are centred, valid and the same as from a centred pack', () => {
+  const straight = { ...base, kind: 'straight', lanes: 1, length: 300, borderSide: 'none' };
+  const pack = (slotPosition) => ({
+    rules: { width: 200, lanes: 1, laneSpacing: 100 },
+    pieces: [{ track: { params: { ...straight, ...(slotPosition ? { slotPosition } : {}) } } }],
+  });
+  const centred = pack();
+  assert.deepEqual(specialsFor(1).map(([type]) => type), ['pit', 'diamond', 'chicane', 'timing']);
+  for (const slotPosition of [
+    { version: 1, edge: 'outer', startMm: 35, endMm: 35 },
+    { version: 1, edge: 'inner', startMm: 35, endMm: 145 },
+  ]) {
+    // The pack's own straight really is off-centre and builds that way.
+    assert.doesNotThrow(() => validateTrack(pack(slotPosition).pieces[0].track.params));
+    for (const [type] of specialsFor(1)) {
+      const { params: p } = packSpecialTrack(pack(slotPosition), type);
+      assert.equal('slotPosition' in p, false, type);
+      assert.deepEqual(p, packSpecialTrack(centred, type).params, type);
+      assert.doesNotThrow(() => validateTrack(p), type);
+    }
+  }
+  const timing = packSpecialTrack(pack({ version: 1, edge: 'outer', startMm: 35, endMm: 35 }), 'timing').params;
+  withParts(timing, (pieces) => {
+    const road = pieces.find((piece) => piece.role === 'road').solid;
+    for (const x of [-80, 80]) {
+      close(high(road, x, 0), timing.height - timing.slotDepth);
+      close(high(road, x, 65), timing.height);
+      close(high(road, x, -65), timing.height);
+    }
+  });
+});
+
+test('specials do not inherit road connectors placed by hand beside an off-centre slot', () => {
+  const straight = {
+    ...base, kind: 'straight', lanes: 1, length: 300, width: 100, borderSide: 'both', joint: 'clips',
+  };
+  delete straight.connectorCounts;
+  const road = { startClips: [10], finishClips: [10] },
+    border = { sideClips: [0.5] };
+  const pack = (params) => ({
+    rules: { width: 100, lanes: 1, laneSpacing: 100 },
+    pieces: [{ track: { params: { ...straight, ...params } } }],
+  });
+  // Beside a slot 25 mm from the left edge, a clip at 10 mm is clear; on a
+  // centred special's slot it would not be.
+  const offCentre = { slotPosition: { version: 1, edge: 'outer', startMm: 25, endMm: 25 } };
+  assert.doesNotThrow(() => validateTrack({ ...straight, ...offCentre, placements: road }));
+  for (const [type] of specialsFor(1)) {
+    const { params: p } = packSpecialTrack(pack({ ...offCentre, placements: { ...road, ...border } }), type);
+    // Road positions are dropped, border positions stay.
+    assert.deepEqual(p.placements, border, type);
+    const alone = packSpecialTrack(pack({ ...offCentre, placements: road }), type).params;
+    assert.equal('placements' in alone, false, type);
+    withParts(alone, (pieces) => assert.ok(pieces.length, type));
+    // A centred pack keeps every position, as before.
+    assert.deepEqual(packSpecialTrack(pack({ placements: road }), type).params.placements, road, type);
+  }
+});
+
+test('every special refuses a slot position in plain words, before any lane is laid out', () => {
+  const slotPosition = { version: 1, edge: 'outer', startMm: 35, endMm: 35 };
+  const refusal = /^Error: Special pieces define their own lanes\. Set Slot position to Centred\.$/;
+  for (const [type] of SPECIAL_PIECES) {
+    const p = { ...params(type), slotPosition };
+    assert.throws(() => validateSpecialType(p), refusal, type);
+    assert.throws(() => validateTrack(p), refusal, type);
+    assert.throws(() => checkProject({ ...newProject(), track: { params: p, plan: null, sourceName: type } }), refusal, type);
+    assert.doesNotThrow(() => validateSpecialType(params(type)), type);
+    // Racing lines are drawn straight from the recipe for previews and print maps.
+    if (isRacingPiece(p)) {
+      assert.throws(() => validateRacingPiece(p), refusal, type);
+      assert.throws(() => racingPath(p), refusal, type);
+    }
+    // One lane or two, the special made from these values drops the key.
+    assert.equal('slotPosition' in specialTrackParams(type, { ...base, slotPosition }), false, type);
+  }
+  // A plain piece is not this function's business.
+  assert.doesNotThrow(() => validateSpecialType({ ...base, kind: 'straight', lanes: 1, slotPosition }));
 });
 
 test('All six pack recipes round-trip and produce printable border STLs and route maps', () => {

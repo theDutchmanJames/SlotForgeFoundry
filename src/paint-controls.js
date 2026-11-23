@@ -4,6 +4,8 @@ import {
   lineGrooves,
   whiteLineLayout,
 } from './geometry/paint-guides.js';
+import { centreLineSlots } from './geometry/road-centre-line.js';
+import { hasSlotPosition } from './slot-position.js';
 
 const sides = [
   ['none', 'Off'],
@@ -55,7 +57,30 @@ export function syncRoadMarkingFields(form) {
     e.roadKerbSide.value === 'none' && (e.kerbEdge?.value ?? 'none') === 'none';
   const note = form.querySelector('[data-centre-slot-note]');
   const lanes = e.lanes ? Number(e.lanes.value) : Number(note.dataset.lanes);
-  note.hidden = e.roadCentreLine.value === 'none' || !(lanes % 2);
+  // An off-centre slot was measured against the stripe when the note was
+  // drawn. Without one, an odd lane count puts a slot on the centre line.
+  const slots = note.dataset.centreSlotNote || (lanes % 2 ? 'centred' : 'clear');
+  note.hidden = e.roadCentreLine.value === 'none' || slots === 'clear';
+}
+
+const centreSlotNotes = {
+  centred: 'A centred guide slot occupies the marking here. Paint appears only on clear road surface.',
+  beside: 'The off-centre guide slot takes part of the marking here. Paint appears only on clear road surface.',
+  crossing: 'The guide slot crosses the centre line on this piece. Paint appears only on clear road surface.',
+};
+
+/**
+ * Bring the note under Centre line up to date with a piece's slot position.
+ * The hint is drawn from the stored piece; call this with the edited one.
+ */
+export function syncCentreSlotNote(container, p) {
+  const note = container.querySelector('[data-centre-slot-note]');
+  if (!note) return;
+  const slots = centreLineSlots(p);
+  note.dataset.lanes = p.lanes;
+  note.dataset.centreSlotNote = hasSlotPosition(p) ? slots : '';
+  note.textContent = centreSlotNotes[slots] ?? centreSlotNotes.centred;
+  note.hidden = (p.roadCentreLine ?? 'none') === 'none' || slots === 'clear';
 }
 
 // The Markings section shows these folders in this order: lines on the road,
@@ -68,6 +93,7 @@ export function roadLineFolder(p) {
   const dimensions = { ...lineDimensions, ...p };
   const pit = p.special?.type === 'pit';
   const centre = p.roadCentreLine ?? 'none';
+  const slots = centreLineSlots(p);
   const dashes = centre === 'dashed' || (pit && p.special.pitWhiteLine && p.special.pitCrossingStyle === 'dashed');
   return (
     details(
@@ -78,8 +104,9 @@ export function roadLineFolder(p) {
         p.whiteLineRoad ?? 'none',
         sides,
       ) + choice('roadCentreLine', 'Centre line', centre, centreLineStyles) +
-        '<p class="hint" data-lanes="' + p.lanes + '" data-centre-slot-note' + (centre !== 'none' && p.lanes % 2 ? '>' : ' hidden>') +
-        'A centred guide slot occupies the marking here. Paint appears only on clear road surface.</p>' +
+        '<p class="hint" data-lanes="' + p.lanes + '" data-centre-slot-note' +
+        (hasSlotPosition(p) ? '="' + slots + '"' : '') + (centre !== 'none' && slots !== 'clear' ? '>' : ' hidden>') +
+        (centreSlotNotes[slots] ?? centreSlotNotes.centred) + '</p>' +
         (pit ? pitDividerControl(p) : '') +
         '<fieldset class="border-apex-fields" data-road-dashes' + (dashes ? '>' : ' hidden disabled>') +
         field('dashLength', 'Dash length', dimensions.dashLength, 'mm', { min: 1, max: 2000 }) +

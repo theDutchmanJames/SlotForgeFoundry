@@ -9,6 +9,7 @@ import { PIT_MOTOR_DEFAULTS } from './geometry/pit-motor-settings.js';
 import { pitActuatorSpec } from './geometry/pit-turnout.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
 import { pitGridLayout } from './geometry/starting-grid.js';
+import { hasSlotPosition } from './slot-position.js';
 
 export const SPECIAL_PIECES = Object.freeze([
   ['hairpin', 'Double-crossover hairpin'],
@@ -65,6 +66,17 @@ export function specialTrackParams(type, base) {
     borderSegments: 1,
   };
   delete p.laneAdjustment;
+  // The pack's plain straight may carry its slot off-centre. A special lays
+  // out its own lanes about the road centre, so road connectors placed by
+  // hand beside that slot do not carry over: the special gets standard rows.
+  if (p.slotPosition && p.placements) {
+    const placements = Object.fromEntries(
+      Object.entries(p.placements).filter(([key]) => !/^(start|seam|finish)(Tabs|Clips)$/.test(key)),
+    );
+    if (Object.keys(placements).length) p.placements = placements;
+    else delete p.placements;
+  }
+  delete p.slotPosition;
   delete p.startingGrid;
   delete p.curveGridRadius;
   if (type === 'hairpin' || type === 'duel') {
@@ -90,6 +102,8 @@ export function validateSpecialType(p) {
     throw Error(
       'Special pieces define their own lanes. Use the template controls to change their layout.',
     );
+  if (hasSlotPosition(p))
+    throw Error('Special pieces define their own lanes. Set Slot position to Centred.');
 }
 
 export function specialPreview(p) {

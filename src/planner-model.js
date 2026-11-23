@@ -1,5 +1,6 @@
 import polygonClipping from 'polygon-clipping';
 import { sectionStations } from './geometry/bridge-sections.js';
+import { hasSlotPosition, slotVaries } from './slot-position.js';
 
 export const newLayout = () => ({
   format: 'slotforge-layout',
@@ -30,6 +31,9 @@ export function frameFor(node, def) {
     angle: dirOf(node.pose, p.angle),
     edges: p.edges.map((q) => xyOf(node.pose, q)),
     slots: p.slots.map((q) => xyOf(node.pose, q)),
+    slotAngles: p.slotAngles.map((a) => dirOf(node.pose, a)),
+    flip: node.pose.flip,
+    params: def.track.params,
     hardware:
       p.hardware?.map((g) => ({ ...g, xy: xyOf(node.pose, g.xy) })) ?? [],
     z: node.h[i % 2] + (p.baseZ ?? 0) + def.track.params.height,
@@ -74,11 +78,31 @@ function uniquePoints(points) {
     (p, i) => !points.slice(0, i).some((q) => distance(p, q) < 0.18),
   );
 }
+// Slots that meet may be this far out of line, about one degree.
+const SLOT_KINK = 0.02;
+const near = (p, q) => distance(p, q) < 0.2;
 const matched = (a, b) =>
-  a.length === b.length && a.every((p) => b.some((q) => distance(p, q) < 0.2));
-const roadMatches = (a, b) =>
-  matched(a.edges, b.edges) &&
+  a.length === b.length && a.every((p) => b.some((q) => near(p, q)));
+const edgesMatch = (a, b) => matched(a.edges, b.edges);
+const slotsMeet = (a, b) =>
   matched(uniquePoints(a.slots), uniquePoints(b.slots));
+// Slots that meet must also run on in the same direction: half of a piece
+// whose slot moves sideways ends with the slot at an angle. Where lanes share
+// a point (a pit lane leaving its main lane), one pair in line is enough.
+const slotsInLine = (a, b) =>
+  uniquePoints(a.slots).every((at) =>
+    a.slots.some(
+      (p, i) =>
+        near(p, at) &&
+        b.slots.some(
+          (q, j) =>
+            near(q, at) &&
+            Math.abs(turn(a.slotAngles[i] - b.slotAngles[j] - pi)) < SLOT_KINK,
+        ),
+    ),
+  );
+const roadMatches = (a, b) =>
+  edgesMatch(a, b) && slotsMeet(a, b) && slotsInLine(a, b);
 const mateKind = { Tab: 'Socket', Socket: 'Tab', Clip: 'Clip' };
 function hardwareMatches(target, incoming) {
   return (
@@ -93,17 +117,221 @@ function hardwareMatches(target, incoming) {
     )
   );
 }
-function checkMate(target, incoming) {
-  if (!roadMatches(target, incoming))
-    throw Error(
-      'The road edges or guide slots do not line up at this end. Choose a matching piece or another open end.',
+const mm = (v) => String(Number(v.toFixed(2)));
+const listed = (values) =>
+  values.length > 1
+    ? values.slice(0, -1).map(mm).join(', ') + ' and ' + mm(values.at(-1))
+    : mm(values[0]);
+const slotCount = (values) =>
+  values.length + (values.length === 1 ? ' slot' : ' slots');
+// Where the slots of two touching ends lie, as someone driving through the
+// joint sees them: mm from the left or right road edge, looking from end A to
+// end B of the first piece. The edge is the one the off-centre slot was typed
+// from, so the numbers read like the ones entered in Track Set.
+function slotReading(target, incoming) {
+  const travel = target.angle + (target.i % 2 ? 0 : pi),
+    n = [-Math.sin(travel), Math.cos(travel)];
+  const across = (q) =>
+    (q[0] - target.xy[0]) * n[0] + (q[1] - target.xy[1]) * n[1];
+  const maker = [target, incoming].find((e) => hasSlotPosition(e.params));
+  // edges[1] is a piece's own outer (+offset) edge, wherever it lies as placed.
+  const from =
+    maker &&
+    across(maker.edges[maker.params.slotPosition.edge === 'outer' ? 1 : 0]) < 0
+      ? -1
+      : 1;
+  const read = (end) => {
+    const edge = Math.max(...end.edges.map((q) => from * across(q)));
+    return uniquePoints(end.slots)
+      .map((q) => edge - from * across(q))
+      .sort((x, y) => x - y);
+  };
+  return {
+    side: from > 0 ? 'left' : 'right',
+    here: read(target),
+    next: read(incoming),
+  };
+}
+// A corner placed as a left-hand turn is the mirrored print: its slot keeps
+// its distance from the outer or inner edge, which is now the other side of
+// the road. Recognise that, so the message can say what to make instead.
+function mirroredCorner(target, incoming) {
+  for (const [corner, other, name] of [
+    [incoming, target, 'This corner'],
+    [target, incoming, 'The corner at this joint'],
+  ]) {
+    const p = corner.params;
+    if (
+      !corner.flip ||
+      p?.kind !== 'curve' ||
+      !hasSlotPosition(p) ||
+      corner.slots.length !== 1 ||
+      other.slots.length !== 1
+    )
+      continue;
+    const [a, b] = corner.edges,
+      [x, y] = corner.slots[0];
+    if (!near([a[0] + b[0] - x, a[1] + b[1] - y], other.slots[0])) continue;
+    const { edge, startMm } = p.slotPosition;
+    return (
+      name +
+      ' is printed mirrored for a left-hand turn. Its slot is still ' +
+      mm(startMm) +
+      ' mm from its ' +
+      edge +
+      ' edge, but this turn puts that edge on the other side of the road. Make a corner with the slot measured from the ' +
+      (edge === 'outer' ? 'inner' : 'outer') +
+      ' edge instead.'
+    );
+  }
+  return '';
+}
+function slotText(target, incoming) {
+  const lead = 'The guide slots do not line up at this joint';
+  const { side, here, next } = slotReading(target, incoming);
+  if (here.length !== next.length)
+    return (
+      lead +
+      ': this piece has ' +
+      slotCount(here) +
+      ' and the next has ' +
+      slotCount(next) +
+      '.'
+    );
+  return (
+    lead +
+    ': the slot' +
+    (here.length === 1 ? ' is ' : 's are ') +
+    listed(here) +
+    ' mm from the ' +
+    side +
+    ' edge on this piece and ' +
+    listed(next) +
+    ' mm on the next.'
+  );
+}
+function edgeText(target, incoming) {
+  const [here, next] = [target, incoming].map((e) =>
+    distance(e.edges[0], e.edges.at(-1)),
+  );
+  return (
+    'The road edges do not line up at this joint' +
+    (Math.abs(here - next) < 0.2
+      ? '.'
+      : ': this piece is ' +
+        mm(here) +
+        ' mm wide and the next is ' +
+        mm(next) +
+        ' mm.') +
+    ' Choose a matching piece or another open end.'
+  );
+}
+// Why two ends that touch do not join, or null when they mate. The reason is
+// 'edges', 'slots' (not in the same place), 'slot-angle' (in the same place
+// but not in line), 'height' or 'connectors'. explained marks a text that
+// already says what to do.
+function mismatch(target, incoming) {
+  const fault = (reason, text) => ({ reason, text });
+  if (!edgesMatch(target, incoming))
+    return fault('edges', edgeText(target, incoming));
+  if (!slotsMeet(target, incoming)) {
+    const corner = mirroredCorner(target, incoming);
+    return corner
+      ? {
+          ...fault(
+            'slots',
+            'The guide slots do not line up at this joint. ' + corner,
+          ),
+          explained: true,
+        }
+      : fault('slots', slotText(target, incoming));
+  }
+  if (!slotsInLine(target, incoming))
+    return fault(
+      'slot-angle',
+      'The guide slots meet at an angle at this joint, so a guide would catch. A piece whose slot moves sideways only joins up with all of its own sections in place.',
     );
   if (Math.abs(target.z - incoming.z) > 0.05)
-    throw Error('These road surfaces meet at different heights.');
+    return fault('height', 'These road surfaces meet at different heights.');
   if (!hardwareMatches(target, incoming))
-    throw Error(
+    return fault(
+      'connectors',
       'The connector positions or clip families differ at this joint. Choose another end or match their settings in Track Set.',
     );
+  return null;
+}
+// advice (optional) adds what to do about slots that are in the wrong place.
+function checkMate(target, incoming, advice) {
+  const fault = mismatch(target, incoming);
+  if (!fault) return;
+  const more = fault.reason === 'slots' && !fault.explained ? advice?.() : '';
+  throw Error(fault.text + (more ? ' ' + more : ''));
+}
+// Ends that touch squarely and still do not join, with the reason: the last
+// joint of a loop whose slots are out of line, or a joint that came apart
+// when a pack changed. a is the end travel leaves from, where that is known.
+export function blockedJoints({ open }) {
+  const buckets = new Map(),
+    used = new Set(),
+    found = [];
+  for (const e of open) {
+    const [x, y] = e.xy.map(Math.round);
+    for (let i = -1; i <= 1 && !used.has(e.key); i++)
+      for (let j = -1; j <= 1; j++) {
+        const f = (buckets.get([x + i, y + j].join()) || []).find(
+          (f) =>
+            !used.has(f.key) &&
+            e.id !== f.id &&
+            distance(e.xy, f.xy) < 0.05 &&
+            Math.abs(turn(e.angle - f.angle - pi)) < 0.005,
+        );
+        if (!f) continue;
+        const [a, b] = f.i % 2 && !(e.i % 2) ? [f, e] : [e, f];
+        const fault = mismatch(a, b);
+        if (!fault) continue;
+        used.add(e.key).add(f.key);
+        found.push({ ...fault, a, b, xy: a.xy });
+        break;
+      }
+    const key = [x, y].join();
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(e);
+  }
+  return found;
+}
+// Why an off-centre straight that does not fit may have been expected to.
+function turnAdvice(target, def, node, far) {
+  const p = def.track.params;
+  if (p.kind !== 'straight' || !hasSlotPosition(p)) return '';
+  const tabbed = def.sections.some((s) =>
+    s.ports.some((port) => port.hardware?.some((g) => g.kind !== 'Clip')),
+  );
+  const farEnd = (pose) => frameFor({ ...node, pose }, def)[far.i];
+  // Turned end for end, its far end would meet this joint instead.
+  if (slotsMeet(target, farEnd(align(far, target, false))))
+    return (
+      'This piece would fit turned end for end, but ' +
+      (tabbed
+        ? 'it cannot be turned round with tab joints'
+        : 'the planner builds every piece from end A to end B') +
+      '. Make a second piece' +
+      (slotVaries(p)
+        ? ' for the way back, with the distances for end A and end B swapped and measured from the other edge.'
+        : ' with the slot measured from the other edge.')
+    );
+  // The slot it ends with is the one needed here: the piece for the way back.
+  const end = farEnd(node.pose);
+  const back = end.slots.map((q) => [
+    q[0] - end.xy[0] + target.xy[0],
+    q[1] - end.xy[1] + target.xy[1],
+  ]);
+  if (slotVaries(p) && matched(back, uniquePoints(target.slots)))
+    return (
+      'Turning this piece round does not bring the slot back' +
+      (tabbed ? ', and it cannot be turned round with tab joints' : '') +
+      '. Make a second piece for the way back, with the distances for end A and end B swapped.'
+    );
+  return '';
 }
 const emptyPose = () => ({ x: 0, y: 0, a: 0, flip: false });
 function align(port, target, flip) {
@@ -161,14 +389,12 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right') {
     node.pose = { ...pose };
     node.h = [Math.max(0, h), Math.max(0, h)];
   }
-  if (target)
-    checkMate(
-      target,
-      frameFor(
-        nodes.find((n) => n.id === incoming.id),
-        def,
-      )[incoming.i],
+  if (target) {
+    const nodeOf = (end) => nodes.find((n) => n.id === end.id);
+    checkMate(target, frameFor(nodeOf(incoming), def)[incoming.i], () =>
+      turnAdvice(target, def, nodeOf(exit), exit),
     );
+  }
   layout.nodes.push(...nodes);
   return { selected: exit.id, end: exit.key };
 }

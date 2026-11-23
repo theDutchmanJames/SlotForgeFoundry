@@ -1,15 +1,32 @@
 import { braidSpan } from './geometry/solids.js';
+import { slotShiftAt, slotShiftDerivatives } from './slot-position.js';
+
+// Sideways travel of one lane at the middle of a squeeze or spread.
+function squeezeTravel(p, index) {
+  const adjustment = p.laneAdjustment;
+  if (!adjustment) return 0;
+  const anchor = adjustment.anchor === 'inner' ? 0 : (p.lanes - 1) / 2;
+  return (index - anchor) * (adjustment.spacingMm - p.laneSpacing);
+}
 
 // The Circuit profile has zero first and second derivatives at both ends.
 // t is distance along the unadjusted road centreline, including print seams.
+// An off-centre slot moves every lane sideways by the same amount.
 export function laneOffsetAt(p, index, t) {
-  const midpoint = (p.lanes - 1) / 2;
-  const normal = (index - midpoint) * p.laneSpacing;
-  const adjustment = p.laneAdjustment;
-  if (!adjustment || t === 0 || t === 1) return normal;
-  const anchor = adjustment.anchor === 'inner' ? 0 : midpoint;
+  const normal = (index - (p.lanes - 1) / 2) * p.laneSpacing + slotShiftAt(p, t);
+  if (!p.laneAdjustment || t === 0 || t === 1) return normal;
   const blend = 64 * (t * (1 - t)) ** 3;
-  return normal + (index - anchor) * (adjustment.spacingMm - p.laneSpacing) * blend;
+  return normal + squeezeTravel(p, index) * blend;
+}
+
+/** First and second derivative of laneOffsetAt with respect to t. */
+export function laneOffsetDerivatives(p, index, t) {
+  const travel = squeezeTravel(p, index);
+  const [speed, acceleration] = slotShiftDerivatives(p, t);
+  return [
+    speed + travel * 192 * t ** 2 * (1 - t) ** 2 * (1 - 2 * t),
+    acceleration + travel * 384 * t * (1 - t) * (1 - 5 * t + 5 * t ** 2),
+  ];
 }
 
 export function validateLaneAdjustment(p) {
@@ -34,20 +51,23 @@ export function validateLaneAdjustment(p) {
   const half = p.slotWidth / 2 + braidSpan(p);
   if (Math.min(target, p.laneSpacing) <= half * 2)
     throw Error('The braid recesses and guide slots touch. Increase the middle or normal lane spacing.');
+  // A spread peaks mid-way and a moving slot at one end; together they can
+  // peak anywhere in between.
   for (const i of [0, p.lanes - 1]) {
-    for (const t of [0, 0.5]) {
-      if (Math.abs(laneOffsetAt(p, i, t)) + half >= p.width / 2)
+    for (let k = 0; k <= 16; k++) {
+      if (Math.abs(laneOffsetAt(p, i, k / 16)) + half >= p.width / 2)
         throw Error('The guide slot or braid recess reaches the edge of the road. Reduce the spread or widen the road.');
     }
   }
 }
 
-// Bound the lateral chord error on a straight. abs(blend'') is at most 24;
-// maxima at the middle and endpoints are sampled exactly.
+// Bound the lateral chord error on a straight. abs(blend'') is at most 24 and
+// the slot transition's second derivative at most 10 / sqrt(3) times its move.
 export function laneProfileSteps(p) {
-  const travel = Math.max(...[0, p.lanes - 1].map(i =>
-    Math.abs(laneOffsetAt(p, i, 0.5) - laneOffsetAt(p, i, 0))));
-  return 2 * Math.max(16, Math.ceil(Math.sqrt(24 * travel / (8 * 0.015)) / 2));
+  const travel = Math.max(...[0, p.lanes - 1].map(i => Math.abs(
+    laneOffsetAt(p, i, 0.5) - slotShiftAt(p, 0.5) - (laneOffsetAt(p, i, 0) - slotShiftAt(p, 0)))));
+  const move = Math.abs(slotShiftAt(p, 1) - slotShiftAt(p, 0));
+  return 2 * Math.max(16, Math.ceil(Math.sqrt((24 * travel + 5.7736 * move) / (8 * 0.015)) / 2));
 }
 
 export function validateLaneBends(p, points) {

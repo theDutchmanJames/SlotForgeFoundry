@@ -152,6 +152,11 @@ details[open] > summary > [data-property-readout] {
   margin: 3px 0;
 }
 
+/* The Centred / Off-centre switch has no restore button: keep its column. */
+.property-scroll [data-slot-position] > .field {
+  margin: 3px 22px 3px 0;
+}
+
 .property-scroll .input-wrap {
   width: 80px;
   max-width: 48%;

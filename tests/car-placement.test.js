@@ -25,6 +25,43 @@ test('the car follows squeezed guide slots continuously across print seams in re
   assert.equal(nearestCarRoute([first], [0, 0, 0], { role: 'support' }), null);
 });
 
+test('the car rides an off-centre slot, follows its S from end A to end B and stays square to both joints', () => {
+  const slot = (edge, startMm, endMm = startMm) => ({ version: 1, edge, startMm, endMm });
+  const single = { ...base, kind: 'straight', length: 300, lanes: 1 };
+  // 35 mm from the left edge of a 200 mm road is 65 mm left of its centre.
+  for (const [edge, y] of [['outer', 65], ['inner', -65]]) {
+    const [route, ...others] = buildCarRoutes({ params: { ...single, slotPosition: slot(edge, 35) } });
+    assert.deepEqual(others, []);
+    assert.equal(route.length, 300);
+    for (const t of [0, 0.3, 1])
+      assert.deepEqual(carPose(route, t), { position: [300 * t - 150, y, 10], forward: [1, 0, 0] });
+  }
+  const params = { ...single, segments: 2, slotPosition: slot('outer', 35, 145) };
+  const [route] = buildCarRoutes({ params });
+  assert.deepEqual(carPose(route, 0).position, [-150, 65, 10]);
+  assert.deepEqual(carPose(route, 1).position, [150, -45, 10]);
+  // The slot is longer than the road it crosses, and symmetric about its middle.
+  assert.ok(route.length > 326 && route.length < 327.5, String(route.length));
+  const middle = carPose(route, 0.5);
+  close(middle.position[0], 0, 1e-3);
+  close(middle.position[1], 10, 1e-3);
+  // Mid-way it runs to the right at 1.875 × 110 / 300 across the road.
+  close(middle.forward[1] / middle.forward[0], -1.875 * 110 / 300, 1e-3);
+  for (const t of [0, 1]) close(carPose(route, t).forward[0], 1, 1e-6);
+  // Every point of the route is on the slot, not on a chord between sparse stations.
+  for (const [x, y] of route.points) {
+    const u = x / 300 + 0.5;
+    close(y, 65 - 110 * u ** 3 * (10 - 15 * u + 6 * u * u), 1e-9);
+  }
+  assert.ok(route.points.length > 30);
+  const hit = nearestCarRoute([route], [0, 12, 5], { role: 'road' });
+  close(hit.t, 0.5, 0.01);
+  // On a curve the slot keeps its distance from the inner edge all the way round.
+  const [bend] = buildCarRoutes({ params: { ...single, kind: 'curve', radius: 300, angle: 90, slotPosition: slot('inner', 35) } });
+  close(bend.length, 235 * Math.PI / 2, 0.01);
+  for (const [x, y] of bend.points) close(Math.hypot(x, y + 300), 235, 1e-9);
+});
+
 test('both pit branches and crossing axes are individually available alongside other specials', () => {
   for (const [type] of SPECIAL_PIECES) {
     const params = specialTrackParams(type, base);

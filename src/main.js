@@ -76,6 +76,14 @@ import {
 import { packSpecialTrack, SPECIAL_SHORT_NAMES, specialsFor } from './pack-specials.js';
 import { specialName } from './special-piece-controls.js';
 import { borderRunLength, readTrackShapeFields, suggestedSpacing, syncTrackShapeControls } from './track-shape-controls.js';
+import {
+  applySlotMode,
+  showSlotAdvice,
+  slotFieldDependencies,
+  slotPositionAllowed,
+  slotRestoreValues,
+  snapSlotField,
+} from './slot-position-controls.js';
 import { gridRestoreValues, gridFieldDependencies, fitUneditedPitGrid } from './starting-grid-controls.js';
 import { showFlatImport } from './flat-import-dialog.js';
 import { refreshCustomTrack } from './custom-track.js';
@@ -113,7 +121,7 @@ import { createWorkerClient } from './worker-client.js';
 import { editSurface, reviewSTL } from './mesh-workbench.js';
 import { mountBorderHandles } from './border-handles.js';
 import { profileDiagram } from './connection-controls.js';
-import { sharedPaintFields, syncPaintControls } from './paint-controls.js';
+import { sharedPaintFields, syncCentreSlotNote, syncPaintControls } from './paint-controls.js';
 import { createLivePreview } from './live-preview.js';
 import { createModelGuides } from './model-guides.js';
 import { bindSizeControls } from './resize-part.js';
@@ -2770,6 +2778,7 @@ async function installPlan(drawing, name, dimensions = {}) {
   delete next.track.params.special;
   delete next.track.params.startingGrid;
   delete next.track.params.laneAdjustment;
+  delete next.track.params.slotPosition;
   if (await rebuild(next, { fit: true })) {
     trackTab = 'geometry';
     renderInspector();
@@ -3174,6 +3183,9 @@ function candidate(report = true) {
     }
     if (params.kind === 'import' && !nextTrack.custom)
       delete params.laneAdjustment;
+    // Drawn paths, drawings, special pieces and roads with several lanes
+    // keep a centred slot, whichever page changed the piece.
+    if (!slotPositionAllowed(params)) delete params.slotPosition;
     if (nextTrack.curveFamily) {
       const family = nextTrack.curveFamily;
       if (
@@ -3228,6 +3240,8 @@ async function applyForm() {
         if (fit.version === 2) old.tabClearance = fit.tabClearance;
       }
       Object.assign(old, gridRestoreValues(project.track.params, next.track.params, draft));
+      if ('slotEdge' in baselines)
+        Object.assign(old, slotRestoreValues(project.track.params, next.track.params, draft));
       previous.set(key, old);
     }
   }
@@ -3550,6 +3564,7 @@ function refreshLive() {
     if (isTrack && trackTab === 'geometry' && activeTrial) {
       fitUneditedPitGrid(form, activeTrial.next.track.params);
       syncPitAssemblyNotes(form, activeTrial.next.track.params);
+      showSlotAdvice(form, activeTrial.next.track.params);
     }
     if (isTrack && trackTab === 'profile' && activeTrial) {
       const figure = form.querySelector('figure');
@@ -3560,8 +3575,11 @@ function refreshLive() {
     }
     if (isTrack && trackTab === 'borders' && activeTrial)
       unmountHandles?.update?.(activeTrial.next.track.params);
-    if (isTrack && ['geometry', 'borders', 'markings'].includes(trackTab) && activeTrial)
+    if (isTrack && ['geometry', 'borders', 'markings'].includes(trackTab) && activeTrial) {
       syncPaintControls(form, activeTrial.next.track.params);
+      // The hint under Centre line follows a slot position still being edited.
+      syncCentreSlotNote(form, activeTrial.next.track.params);
+    }
     if (isTrack && trackTab === 'joints' && activeTrial) {
       const figure = form.querySelector('[data-joint-fit]');
       if (figure)
@@ -3827,7 +3845,22 @@ function syncPackApply(form = $('#settings-form')) {
           '</li>',
       )
       .join('') +
-    '</ul>';
+    '</ul>' +
+    offCentreLoss(changed, p);
+}
+// Off-centre slots are single-lane only, so a second lane centres them all.
+function offCentreLoss(changed, p) {
+  if (!changed.includes('lanes') || Number(p.lanes) === 1) return '';
+  const pieces = currentPack?.pieces ?? [];
+  const count = pieces.filter((piece) => piece.track.params.slotPosition).length;
+  if (!count) return '';
+  return (
+    '<p>' +
+    (count === 1 ? '1 piece loses its' : count + ' pieces lose their') +
+    ' off-centre slot and ' + (count === 1 ? 'is' : 'are') +
+    ' centred. Setting the pack back to one lane does not bring ' +
+    (count === 1 ? 'it' : 'them') + ' back.</p>'
+  );
 }
 // Applies the edit to this piece, then writes the pack rules into every
 // piece of its pack. The library checks all pieces first.
@@ -3844,7 +3877,11 @@ async function applyToCollectionAction() {
   try {
     result = await store.applyToCollection(
       link.collectionId,
-      { profile: profileFromTrack(project.track), values },
+      {
+        profile: profileFromTrack(project.track),
+        values,
+        piece: { id: link.pieceId, track: project.track },
+      },
       {
         expectedRevision: Math.max(
           link.revision,
@@ -3864,7 +3901,13 @@ async function applyToCollectionAction() {
   await savePieceToPack();
   currentPack = null;
   render();
-  notice('Applied to all ' + result.pieces + ' pieces of the pack.');
+  notice(
+    'Applied to all ' + result.pieces + ' pieces of the pack.' +
+      (result.centred
+        ? ' ' + result.centred + (result.centred === 1 ? ' piece has' : ' pieces have') +
+          ' a centred slot now.'
+        : ''),
+  );
 }
 // A pack piece is saved into its pack whenever an edit is applied.
 // The latest pack revision this window saved. Undo and reload can bring back a
@@ -4011,7 +4054,11 @@ function restoreField(name) {
   else el.value = target;
   storeField(el);
   if (project.mode === 'track' && !(name in draft)) {
-    const related = gridFieldDependencies(name, project.track.params, inspectorDraft(previousTrackFields));
+    const previousFields = inspectorDraft(previousTrackFields);
+    const related = {
+      ...gridFieldDependencies(name, project.track.params, previousFields),
+      ...slotFieldDependencies(name, previousFields),
+    };
     if (Object.keys(related).length)
       formDrafts.set(draftKey(), { ...related, ...formDrafts.get(draftKey()) });
   }
@@ -5160,8 +5207,10 @@ $('#inspector').addEventListener('click', (e) => {
   refreshLive();
 });
 $('#inspector').addEventListener('input', (e) => {
-  const el = e.target;
-  if (!el.name || busy) return;
+  if (busy) return;
+  // The Centred / Off-centre switch has no name: it sets the edge field.
+  const el = applySlotMode(e.target) ?? e.target;
+  if (!el.name) return;
   changeJointCount(el, storeField);
   if (/^place_(inner|outer)/.test(el.name)) {
     const mutes = el.form.elements.placementMutes;
@@ -5243,6 +5292,13 @@ $('#inspector').addEventListener('change', (e) => {
     return;
   }
   const name = e.target.name;
+  // A committed slot distance shows the half millimetre it is stored at.
+  if (project.mode === 'track' && !busy && snapSlotField(e.target)) {
+    storeField(e.target);
+    updateRestoreControls();
+    // The snap can undo the edit, so the status and Save label follow it.
+    refreshLive();
+  }
   if (
     isSolidTool(editorTab) &&
     [

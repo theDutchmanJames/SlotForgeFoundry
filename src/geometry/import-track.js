@@ -17,6 +17,7 @@ import { prepareBridges } from './bridge-build.js';
 import { sectionStations } from './bridge-sections.js';
 import { apexPositionFor } from './border-profile.js';
 import { validateLaneBends } from '../lane-adjustment.js';
+import { lanesVary } from '../slot-position.js';
 
 const distance = (a, b) => length2(minus(a, b));
 const closed = (path) =>
@@ -168,7 +169,7 @@ export function laneTools(work, p, { lanes, outlines, path, p: actual }) {
   return lanes.map((lane, index) => {
     const loop = closed(lane);
     const pts = loop ? lane.slice(0, -1) : lane;
-    if (p.laneAdjustment && !path?.laneCurves) validateLaneBends(p, pts);
+    if (lanesVary(p) && !path?.laneCurves) validateLaneBends(p, pts);
     const normals = path?.laneNormals?.[index] ?? vertexNormals(pts, loop);
     const planes = loop
       ? []

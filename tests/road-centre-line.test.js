@@ -5,6 +5,9 @@ import { buildTrack, defaultTrack, nativeTrackPoint } from '../src/track.js';
 import { specialTrackParams } from '../src/special-pieces.js';
 import { encodeSTL, parseSTL } from '../src/editor.js';
 import { printableSTL } from '../src/kit.js';
+import { centreLineSlots } from '../src/geometry/road-centre-line.js';
+import { laneOffsetAt } from '../src/lane-adjustment.js';
+import { roadLineFolder, syncCentreSlotNote, syncRoadMarkingFields } from '../src/paint-controls.js';
 
 const wasm = await Module();
 wasm.setup();
@@ -105,4 +108,91 @@ test('the diamond carries a continuous marking across each assembled arm and lea
   assert.equal(z(15, 2.3), 0.4);
   assert.equal(z(50, 0.2), p.slotDepth);
   assert.equal(z(54, 0.2), p.braidDepth);
+});
+
+const slot = (edge, startMm, endMm = startMm) => ({ version: 1, edge, startMm, endMm });
+
+test('an off-centre slot leaves the whole centre stripe on the road, and a moving slot opens it only where it crosses', t => {
+  const single = extra => straight({ lanes: 1, length: 300, roadCentreLine: 'solid', ...extra });
+  // Centred: the slot and its braids take the stripe along the whole piece.
+  const [centred] = roads(t, single());
+  for (const x of [-140, 0, 140]) assert.equal(painted(centred, x, 0.1), false);
+  for (const edge of ['outer', 'inner']) {
+    const p = single({ slotPosition: slot(edge, 35), roadLineGroove: true });
+    const [road] = roads(t, p);
+    for (const x of [-149, -75, 0.1, 75, 149]) {
+      assert.ok(painted(road, x, 1.9));
+      assert.ok(painted(road, x, -1.9));
+      assert.equal(painted(road, x, 2.1), false);
+    }
+    const depth = readDepth(t, p, road);
+    const y = edge === 'outer' ? 65 : -65;
+    assert.equal(depth(10, y), p.slotDepth, 'the slot is where it was typed');
+    assert.equal(depth(10, 0.1), 0, 'no slot under the stripe');
+    assert.equal(depth(10, 2.3), 0.4);
+    assert.equal(depth(10, -2.3), 0.4);
+  }
+  // From 35 to 145 mm the slot passes over the centre a little after mid-way.
+  const moving = single({ slotPosition: slot('outer', 35, 145) });
+  const [road] = roads(t, moving);
+  const x = [...Array(301).keys()].map(i => i - 150).find(x => laneOffsetAt(moving, 0, x / 300 + 0.5) <= 0);
+  assert.ok(x > 5 && x < 25, 'crossing at ' + x);
+  for (const clear of [-149, -60, 80, 149]) assert.ok(painted(road, clear, 0.1), 'stripe at ' + clear);
+  for (const taken of [x - 4, x, x + 4]) assert.equal(painted(road, taken, 0.1), false, 'slot at ' + taken);
+});
+
+test('the centre line hint describes the slot that is really there', () => {
+  const p = straight({ lanes: 1, length: 300, roadCentreLine: 'solid' });
+  assert.equal(centreLineSlots(p), 'centred');
+  assert.equal(centreLineSlots({ ...p, lanes: 2 }), 'clear');
+  assert.equal(centreLineSlots({ ...p, lanes: 3 }), 'centred');
+  assert.equal(centreLineSlots({ ...p, slotPosition: slot('outer', 35) }), 'clear');
+  assert.equal(centreLineSlots({ ...p, slotPosition: slot('inner', 35) }), 'clear');
+  // 5 mm off centre the 4 mm stripe and the 7.1 mm braid shoulder still overlap.
+  assert.equal(centreLineSlots({ ...p, slotPosition: slot('outer', 95) }), 'beside');
+  assert.equal(centreLineSlots({ ...p, slotPosition: slot('outer', 35, 145) }), 'crossing');
+  assert.equal(centreLineSlots({ ...p, slotPosition: slot('outer', 35, 80) }), 'clear');
+  assert.equal(centreLineSlots({ ...p, kind: 'curve', radius: 300, angle: 45, slotPosition: slot('inner', 35) }), 'clear');
+
+  const note = html => html.match(/<p class="hint" data-lanes="(\d)" data-centre-slot-note(?:="(\w+)")?( hidden)?>([^<]*)<\/p>/);
+  // Without a slot position the markup is what it always was.
+  assert.deepEqual(note(roadLineFolder(p)).slice(1),
+    ['1', undefined, undefined, 'A centred guide slot occupies the marking here. Paint appears only on clear road surface.']);
+  assert.equal(note(roadLineFolder({ ...p, lanes: 2 }))[3], ' hidden');
+  assert.equal(note(roadLineFolder({ ...p, roadCentreLine: 'none' }))[3], ' hidden');
+  const off = note(roadLineFolder({ ...p, slotPosition: slot('outer', 35) }));
+  assert.deepEqual(off.slice(2, 4), ['clear', ' hidden']);
+  const crossing = note(roadLineFolder({ ...p, slotPosition: slot('outer', 35, 145) }));
+  assert.deepEqual(crossing.slice(2), ['crossing', undefined,
+    'The guide slot crosses the centre line on this piece. Paint appears only on clear road surface.']);
+  assert.match(note(roadLineFolder({ ...p, slotPosition: slot('outer', 95) }))[4], /^The off-centre guide slot takes part of the marking here\./);
+
+  // Showing and hiding the folder's fields keeps the note in step.
+  const form = (dataset, lanes) => {
+    const hint = { dataset }, group = {};
+    return { hint, elements: { roadCentreLine: { value: 'solid' }, roadKerbSide: { value: 'none' }, ...(lanes ? { lanes: { value: lanes } } : {}) },
+      querySelector: key => key === '[data-centre-slot-note]' ? hint : group };
+  };
+  for (const [dataset, lanes, hidden] of [
+    [{ lanes: '1', centreSlotNote: 'clear' }, undefined, true],
+    [{ lanes: '1', centreSlotNote: 'crossing' }, undefined, false],
+    [{ lanes: '1', centreSlotNote: 'beside' }, '1', false],
+    [{ lanes: '1' }, undefined, false],
+    [{ lanes: '1', centreSlotNote: '' }, '2', true],
+    [{ lanes: '2' }, '3', false],
+  ]) {
+    const f = form(dataset, lanes);
+    syncRoadMarkingFields(f);
+    assert.equal(f.hint.hidden, hidden, JSON.stringify(dataset) + ' with ' + lanes + ' lanes');
+  }
+  const live = { dataset: {} };
+  const container = { querySelector: () => live };
+  syncCentreSlotNote(container, { ...p, slotPosition: slot('outer', 35, 145) });
+  assert.deepEqual([live.hidden, live.dataset.centreSlotNote], [false, 'crossing']);
+  assert.match(live.textContent, /crosses the centre line/);
+  syncCentreSlotNote(container, { ...p, slotPosition: slot('outer', 35) });
+  assert.deepEqual([live.hidden, live.dataset.centreSlotNote], [true, 'clear']);
+  syncCentreSlotNote(container, p);
+  assert.deepEqual([live.hidden, live.dataset.centreSlotNote], [false, '']);
+  assert.match(live.textContent, /^A centred guide slot/);
 });

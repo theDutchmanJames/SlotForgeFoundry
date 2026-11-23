@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { trackInspector } from '../src/inspector.js';
 import { defaultTrack } from '../src/track.js';
 import { readTrackShapeFields } from '../src/track-shape-controls.js';
-import { gridFieldDependencies, gridRestoreValues, syncStartingGridControls } from '../src/starting-grid-controls.js';
+import {
+  gridFieldDependencies, gridRestoreValues, readStartingGridFields, startingGridControls, syncStartingGridControls,
+} from '../src/starting-grid-controls.js';
 import { defaultStartingGrid, startingGridLayout } from '../src/geometry/starting-grid.js';
 import { toolGuides } from '../src/guide-geometry.js';
 
@@ -35,6 +37,26 @@ test('an ordinary straight can acquire and clear its grid recipe independently o
   Object.assign(p, readTrackShapeFields({ kind: 'curve' }, track));
   assert.equal(p.startingGrid, undefined);
   assert.doesNotMatch(road(), /gridEnabled/);
+});
+
+test('switching the grid on beside an off-centre slot starts from a mark that fits the narrow side', () => {
+  const p = { ...straight(), lanes: 1, length: 300, slotPosition: { version: 1, edge: 'outer', startMm: 35, endMm: 35 } };
+  // The untouched fields already show the fitted mark while the grid is off.
+  assert.match(startingGridControls(p), /name="gridWidth" value="50.4"/);
+  assert.match(startingGridControls(p), /name="gridThickness" value="2.1"/);
+  readStartingGridFields({ gridEnabled: true }, p);
+  assert.deepEqual(p.startingGrid, { width: 50.4, thickness: 2.1, legLength: 35, stagger: 0, recessed: false });
+  assert.equal(startingGridLayout(p).paint.length, 2);
+  // A slot position that arrives in the same edit is the one the mark is sized for.
+  const moved = { ...p, startingGrid: undefined, slotPosition: { ...p.slotPosition, startMm: 20, endMm: 20 } };
+  delete moved.startingGrid;
+  readStartingGridFields({ gridEnabled: true }, moved);
+  assert.equal(moved.startingGrid.width, 28.8);
+  assert.equal(startingGridLayout(moved).paint.length, 2);
+  // Typed sizes are kept as typed.
+  readStartingGridFields({ gridEnabled: true, gridWidth: 40 }, p);
+  assert.equal(p.startingGrid.width, 40);
+  assert.equal(p.startingGrid.thickness, 2.1);
 });
 
 test('row controls respond to lane count, including single-lane straights', () => {

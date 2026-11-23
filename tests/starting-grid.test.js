@@ -200,3 +200,119 @@ test('recessed grid outlines survive STL export on both sides of a road print se
     } finally { solid.delete(); }
   }
 });
+
+const slot = (edge, startMm, endMm = startMm) => ({ version: 1, edge, startMm, endMm });
+const wideSingle = (extra) => {
+  const p = { ...straight(1), width: 200, length: 300, ...extra };
+  delete p.startingGrid;
+  return p;
+};
+function sameSpans(actual, expected) {
+  assert.equal(actual.length, expected.length, JSON.stringify(actual) + ' vs ' + JSON.stringify(expected));
+  for (const [i, span] of expected.entries())
+    for (const k of [0, 1]) assert.ok(Math.abs(actual[i][k] - span[k]) < 1e-9, JSON.stringify(actual) + ' vs ' + JSON.stringify(expected));
+}
+
+test('a slot 35 mm from either edge gets a default grid box that fits the narrow side and is centred on the slot', t => {
+  assert.deepEqual(defaultStartingGrid(wideSingle()), { width: 72, thickness: 3, legLength: 35, recessed: false, stagger: 0 });
+  for (const [edge, y] of [['outer', 65], ['inner', -65]]) {
+    const p = wideSingle({ slotPosition: slot(edge, 35) });
+    p.startingGrid = defaultStartingGrid(p);
+    // 72 % of the 70 mm between the edge and its mirror about the slot.
+    assert.deepEqual(p.startingGrid, { width: 50.4, thickness: 2.1, legLength: 35, recessed: false, stagger: 0 });
+    assert.doesNotThrow(() => validateTrack(p));
+    const { paint } = startingGridLayout(p);
+    assert.equal(paint.length, 2);
+    const front = (35 + 2.1) / 2;
+    for (const side of [-1, 1]) {
+      sameSpans(spans(paint, y + side * 25.1), [[front - 37.1, front]]);
+      sameSpans(spans(paint, y + side * 15), [[front - 2.1, front]]);
+      sameSpans(spans(paint, y + side * 7.51), [[front - 2.1, front]]);
+      // The guide, both braid shelves and the road beyond the box stay clear.
+      sameSpans(spans(paint, y + side * 7.49), []);
+      sameSpans(spans(paint, y + side * 25.3), []);
+    }
+    sameSpans(spans(paint, y), []);
+    sameSpans(spans(paint, 0), []);
+    const parts = buildTrack(wasm, p);
+    t.after(() => parts.forEach(part => part.solid.delete()));
+    assert.ok(parts[0].kerbMarkings.some(mark => mark.color === '#FFFFFF'));
+  }
+  // Edge lines take their share of the narrow side.
+  const lined = wideSingle({ slotPosition: slot('outer', 35), whiteLineRoad: 'both', whiteLineWidth: 4 });
+  lined.startingGrid = defaultStartingGrid(lined);
+  assert.deepEqual(lined.startingGrid, { width: 44.64, thickness: 1.86, legLength: 35, recessed: false, stagger: 0 });
+  assert.doesNotThrow(() => validateTrack(lined));
+  // Right against the printable limit there is still a mark that builds.
+  const tight = wideSingle({ slotPosition: slot('inner', 8.1) });
+  tight.startingGrid = defaultStartingGrid(tight);
+  assert.equal(tight.startingGrid.width, 16);
+  assert.equal(startingGridLayout(tight).paint.length, 2);
+});
+
+test('the default grid beside an off-centre slot leaves room for road kerbs on the near edge', () => {
+  // Closer in, the slot leaves too little room for any mark, but the default
+  // is no longer the thing that overlaps the kerb.
+  const close = wideSingle({ slotPosition: slot('outer', 12), roadKerbSide: 'both' });
+  close.startingGrid = defaultStartingGrid(close);
+  assert.throws(() => validateTrack(close), (err) => !/road edge marking/.test(err.message));
+  for (const [mm, extra] of [
+    [15, { roadKerbSide: 'both' }],
+    [17, { roadKerbSide: 'outer' }],
+    [20, { roadKerbSide: 'both', whiteLineRoad: 'both' }],
+  ]) {
+    const p = wideSingle({ slotPosition: slot('outer', mm), ...extra });
+    p.startingGrid = defaultStartingGrid(p);
+    assert.doesNotThrow(() => validateTrack(p), mm + ' mm ' + JSON.stringify(extra));
+  }
+  // Kerbs on the far edge do not narrow the box.
+  const far = wideSingle({ slotPosition: slot('outer', 35), roadKerbSide: 'inner' });
+  assert.equal(defaultStartingGrid(far).width, 50.4);
+});
+
+test('a mark sized for a centred slot names the near edge and the width that fits once the slot has moved', () => {
+  const p = wideSingle({ slotPosition: slot('outer', 35) });
+  p.startingGrid = defaultStartingGrid(wideSingle());
+  assert.throws(() => validateTrack(p), err => {
+    assert.match(err.message, /The mark reaches the left edge of the road or its white line\. Reduce Mark width to 70 mm or less, or move the slot away from the left edge under Slot position\./);
+    assert.equal(err.warning.setting.field, 'gridWidth');
+    return true;
+  });
+  p.slotPosition = slot('inner', 35);
+  assert.throws(() => validateTrack(p), /reaches the right edge/);
+  p.startingGrid.width = 70;
+  assert.doesNotThrow(() => validateTrack(p));
+  // Pieces without a slot position keep their wording.
+  const centred = { ...straight(), whiteLineRoad: 'both' };
+  centred.startingGrid.width = 95;
+  assert.throws(() => validateTrack(centred), /Lane 1 reaches the road edge or its white line\. Reduce Mark width or widen the road\./);
+});
+
+test('on a slot that moves from 35 to 145 mm the grid follows the real S and its default legs shorten to clear it', t => {
+  const p = wideSingle({ slotPosition: slot('outer', 35, 145) });
+  p.startingGrid = defaultStartingGrid(p);
+  assert.deepEqual(p.startingGrid, { width: 72, thickness: 3, legLength: 26.25, recessed: false, stagger: 0 });
+  assert.doesNotThrow(() => validateTrack(p));
+  const { paint } = startingGridLayout(p);
+  assert.equal(paint.length, 2);
+  const front = (26.25 + 3) / 2, at = x => laneOffsetAt(p, 0, x / p.length + 0.5);
+  // The slot crosses the bar well off the straight line between its two ends.
+  assert.ok(Math.abs(at(front - 1.5) - (65 - 110 * ((front - 1.5) / 300 + 0.5))) > 3);
+  const inked = (x, y) => spans(paint, y).some(([a, b]) => a < x && x < b);
+  for (let x = front - 29; x <= front; x += 0.5)
+    for (const offset of [-7.3, -3, 0, 3, 7.3])
+      assert.equal(inked(x, at(x) + offset), false, 'paint over the slot at x ' + x + ', offset ' + offset);
+  for (const side of [-1, 1]) {
+    assert.ok(inked(front - 1.5, at(front - 1.5) + side * 12), 'bar beside the slot');
+    assert.ok(inked(front - 20, at(front - 1.5) + side * 35), 'leg');
+  }
+  const parts = buildTrack(wasm, p);
+  t.after(() => parts.forEach(part => part.solid.delete()));
+  assert.ok(parts[0].kerbMarkings.some(mark => mark.color === '#FFFFFF'));
+  // Full-length legs on a narrow mark run into the slanted slot, and say so.
+  p.startingGrid = { ...p.startingGrid, width: 40, legLength: 35 };
+  assert.throws(() => validateTrack(p), /A grid leg reaches its lane’s guide slot or braid shelf\..*The slot runs at an angle to the mark on this piece\./);
+  // A long, gentle move keeps the usual legs.
+  const gentle = wideSingle({ length: 1000, slotPosition: slot('outer', 35, 145) });
+  assert.equal(defaultStartingGrid(gentle).legLength, 35);
+});

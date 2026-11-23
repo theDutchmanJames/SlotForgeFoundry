@@ -31,6 +31,15 @@ import {
   opposingRoadPockets,
   sideStationRules,
 } from './track-joints.js';
+import { connectorWarning } from './connector-warning.js';
+import { slotPositionSetting, slotRoomAdvice } from './connector-position-warnings.js';
+import {
+  slotEndFace,
+  slotEndObstacle,
+  slotEndRequest,
+  slotEndRow,
+} from './slot-end-row.js';
+import { hasSlotPosition } from '../slot-position.js';
 import { clipSpec } from './clip-types.js';
 import { CLIP_TABLE_CLEARANCE, resolveJointFit } from './joint-fit.js';
 import { KEEPER_CHAMBER_TOP } from './keeper-dimensions.js';
@@ -250,6 +259,12 @@ function footprint(point, dir, from, to, half) {
 // recorded on its mating faces. While editing, the map can plan a draft row.
 function rowFromParts(parts, request, key, index, pointAt) {
   if (!parts) return null;
+  const rows = stationsInParts(parts, key, index, pointAt);
+  if (types.some(type => rows[type].size !== request[type].count)) return null;
+  return { tab: [...rows.tab], clip: [...rows.clip] };
+}
+
+function stationsInParts(parts, key, index, pointAt) {
   const rows = { tab: new Set(), clip: new Set() };
   for (const part of parts) {
     for (const { station, kind, point } of part.jointGuides ?? []) {
@@ -260,8 +275,7 @@ function rowFromParts(parts, request, key, index, pointAt) {
       if (Math.hypot(x - point[0], y - point[1]) < 1e-4) rows[type].add(station.value);
     }
   }
-  if (types.some(type => rows[type].size !== request[type].count)) return null;
-  return { tab: [...rows.tab], clip: [...rows.clip] };
+  return rows;
 }
 
 /** Prepare the selected physical joint and the reusable placement fields it
@@ -444,10 +458,13 @@ export function connectorLayout(params, plan, scope, options = {}) {
       }
     cache.outlines = outlines;
   }
-  const nativeLanes = Array.from(
-    { length: p.lanes },
-    (_, i) => (i - (p.lanes - 1) / 2) * p.laneSpacing,
-  );
+  // An off-centre slot leaves end A where the path says it does.
+  const nativeLanes = hasSlotPosition(p)
+    ? path.laneOffsets(0)
+    : Array.from(
+        { length: p.lanes },
+        (_, i) => (i - (p.lanes - 1) / 2) * p.laneSpacing,
+      );
   const timingKeepouts = [];
   if (p.special?.type === 'timing') {
     for (const y of nativeLanes) for (const sign of [-1, 1]) {
@@ -477,6 +494,29 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const env = connectorEnvelopes(p),
     spec = clipSpec(p),
     fit = resolveJointFit(p);
+  // Beside an off-centre slot an external end is laid out by the same rule as
+  // the build, from that end alone (slot-end-row.js).
+  const slotFace =
+    hasSlotPosition(p) && !border && scope !== 'seam'
+      ? slotEndFace({
+          width: w,
+          lanes: laneOffsets,
+          envelopes: env,
+          slotWidth: p.slotWidth,
+          wall: p.wall,
+        })
+      : null;
+  // The walls of a slot that moves sideways, which no pocket may reach.
+  const sleeveHalf = p.slotWidth / 2 + p.wall;
+  const sleeves =
+    hasSlotPosition(p) && path.laneCurves
+      ? path.measuredLanes.map((l) =>
+          polygon([
+            ...l.ts.map((u) => l.atOffset(u, -sleeveHalf)),
+            ...l.ts.map((u) => l.atOffset(u, sleeveHalf)).reverse(),
+          ]),
+        )
+      : [];
   // Test the actual slot and braid footprints when their floor is low enough
   // to intersect the pocket roof (e.g. a skew imported lane near the end).
   const roofs = {
@@ -581,6 +621,11 @@ export function connectorLayout(params, plan, scope, options = {}) {
     if (sideMount) {
       const reason = rules[type].structuralReason(tAt(value));
       if (reason) return sideMessages[reason] ?? reason;
+    } else if (slotFace) {
+      const blocked = slotEndObstacle(slotFace, type, value, true);
+      if (blocked === 'edge')
+        return 'Leave more material between the connector and the edge.';
+      if (blocked) return sideMessages.lane;
     } else {
       if (Math.min(value - domain[0], domain[1] - value) * mm < half - 1e-8)
         return 'Leave more material between the connector and the edge.';
@@ -617,6 +662,8 @@ export function connectorLayout(params, plan, scope, options = {}) {
       if (!supported(corners, regions))
         return 'The pocket or its supporting wall would break through the outline.';
     }
+    if (!border && sleeves.some((shape) => overlaps(corners, shape)))
+      return 'The slot moves sideways into the room this pocket needs.';
     if (feeds.some((shape) => overlaps(corners, shape)))
       return 'The connector support would intersect a braid pass-through.';
     if (timingKeepouts.some(shape => overlaps(corners, shape)))
@@ -723,7 +770,37 @@ export function connectorLayout(params, plan, scope, options = {}) {
   }
   let placementWarning;
   const request = countedJoint(p, scope, border ? side : undefined, mode);
-  if (request) {
+  if (slotFace) {
+    const location = 'Road ' + scope;
+    try {
+      const row = slotEndRow(
+        slotEndRequest(p, scope, { width: w, lanes: laneOffsets, envelopes: env, location }),
+      );
+      Object.assign(positions, row.positions);
+      // The row never gives way to the rest of the piece. A finished build
+      // has accepted it; until then, look for what would refuse it.
+      const built = options.parts && stationsInParts(options.parts, key, index, pointAt);
+      for (const { type, value, custom } of row.specs) {
+        if (built?.[type].has(value)) continue;
+        const why = structural(type, value);
+        if (!why) continue;
+        const error = connectorWarning(
+          location + ' · ' + env[type].name,
+          why,
+          custom
+            ? 'Move this connector, ' + slotRoomAdvice(p.kind).toLowerCase() + ', or move the slot.'
+            : slotRoomAdvice(p.kind) + ', move the slot, or place the connectors by hand.',
+          slotPositionSetting(),
+        );
+        error.proposedPositions = row.positions;
+        throw error;
+      }
+    } catch (error) {
+      if (!options.editInvalid || !error.proposedPositions) throw error;
+      Object.assign(positions, error.proposedPositions);
+      placementWarning = error.message;
+    }
+  } else if (request) {
     const borderName = side === 'inner' ? 'Inside border' : 'Outside border';
     const jointName = index === 0 ? 'start' : index === count ? 'finish' : 'seam ' + index;
     const location = sideMount
@@ -772,6 +849,8 @@ export function connectorLayout(params, plan, scope, options = {}) {
     key,
     positions,
     placementWarning,
+    // Automatic marks at this end are set by the off-centre slot alone.
+    fixedRow: Boolean(slotFace),
     reason,
     even,
   };

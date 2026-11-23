@@ -93,6 +93,34 @@ test('road kerbs follow either edge without a border and preserve block phase ac
   }
 });
 
+test('road kerbs fit beside an off-centre slot on either edge and point at Slot position when they reach it', () => {
+  // 20 mm from the left edge leaves 12.9 mm of road outside the braid.
+  const p = {
+    ...straight, length: 100, width: 200, borderSide: 'none', braidGap: 0.6,
+    slotPosition: { version: 1, edge: 'outer', startMm: 20, endMm: 20 },
+  };
+  built({ ...p, roadKerbSide: 'both', kerbWidth: 12 }, ([road]) => {
+    for (const y of [-94, 94]) assert.equal(colourAt(road.kerbMarkings, [-45, y]), red);
+    assert.equal(colourAt(road.kerbMarkings, [-45, 80]), undefined, 'the slot keeps its braids');
+    checkPaint(road, 12);
+  });
+  built({ ...p, roadKerbSide: 'inner', kerbWidth: 60 }, ([road]) => {
+    assert.equal(colourAt(road.kerbMarkings, [-45, -41]), red);
+    assert.equal(colourAt(road.kerbMarkings, [-45, -39]), undefined);
+  });
+  assert.throws(
+    () => built({ ...p, roadKerbSide: 'outer', kerbWidth: 14 }, () => {}),
+    /The kerbstones reach a guide slot or braid strip\. Reduce the kerbstone width or the edge line width to leave room beside the lane, or move the slot away from this edge under Slot position\.$/,
+  );
+  // Without a slot position the advice is what it was.
+  const centred = { ...p, roadKerbSide: 'outer', kerbWidth: 95 };
+  delete centred.slotPosition;
+  assert.throws(
+    () => built(centred, () => {}),
+    /The kerbstones reach a guide slot or braid strip\. Reduce the kerbstone width or the edge line width to leave room beside the lane\.$/,
+  );
+});
+
 test('road and border kerbs sit beside their shared edge stripe and each block perimeter exports as a groove', () => {
   const p = {
     ...straight, length: 100, segments: 2, borderSegments: 2, borderSide: 'outer',

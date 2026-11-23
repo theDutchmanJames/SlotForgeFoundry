@@ -3,6 +3,7 @@ import { measuredLane, vertexNormals } from './geometry/import-track.js';
 import { borderEndProfile } from './geometry/border-ends.js';
 import { borderPath, maxBorderWidth } from './geometry/border-profile.js';
 import { laneOffsetAt, validateLaneBends } from './lane-adjustment.js';
+import { hasSlotPosition } from './slot-position.js';
 
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const sample = (steps, at) =>
@@ -40,6 +41,9 @@ function shiftGeometry(run, offset, radius, label) {
 
 export function validateRacingPiece(p) {
   const s = p.special;
+  // The racing lines are laid out about the road centre.
+  if (hasSlotPosition(p))
+    throw Error('Special pieces define their own lanes. Set Slot position to Centred.');
   if (s.type === 'chicane') {
     if (p.kind !== 'straight')
       throw Error('The bus-stop chicane uses a straight entry and exit.');

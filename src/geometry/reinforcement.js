@@ -1,6 +1,7 @@
 import { interpolateStation } from './braid-feeds.js';
 import { ribHardwareKeepouts } from './rib-clearances.js';
 import { left, length2, minus, move, unit } from './solids.js';
+import { slotShiftAt } from '../slot-position.js';
 
 // Keep the two actual mesh edges at each path station, including shaped
 // border ends and skewed cuts. A shared centreline cannot describe all of
@@ -109,7 +110,14 @@ export function addReinforcement(work, p, part) {
     part.additions.push(work.prism(footprint, 0, p.height - p.deck));
     // Merge redundant subdivisions where webs meet the deck, rim and sleeves
     // before milling the top face and connector openings.
-    const blank = work.own(work.union(part.additions).asOriginal());
+    // A single union of all the additions can drop a thin strip of the deck
+    // (seen on an off-centre slot curve with tabs placed by hand). Adding
+    // them one at a time keeps every part. Pieces with a centred slot keep
+    // the single union, so their prints stay exactly as they were.
+    const merged = slotShiftAt(p, 0) || slotShiftAt(p, 1)
+      ? part.additions.reduce((sum, next) => work.own(sum.add(next)))
+      : work.union(part.additions);
+    const blank = work.own(merged.asOriginal());
     part.additions = [work.own(blank.simplify())];
   }
 }
