@@ -361,14 +361,18 @@ test('a flowing bend prints a road with both slots, a border and square Track Pl
 test('paths through waypoints still give the plans recorded before the flowing curve', () => {
   const recorded = {
     straight: 'f0acb913541663f2',
-    'S piece': 'f804f9f9ed8ca4a5',
-    'S piece, squeezed': '8fa34cf2c6fce525',
-    'wide four-lane hook, spread': '15e7be7a0e0632c4',
-    'closed oval': 'e7343b696e650c27',
-    'figure eight on supports': '6d46c5099f0d53b5',
+    'S piece': '38c50fcfa355354e',
+    'S piece, squeezed': '5499e58ba8cfe029',
+    'wide four-lane hook, spread': '9a5aedd13c7781a0',
+    'closed oval': 'b83ecf55454b687f',
+    'figure eight on supports': 'cc804a6ff880fde1',
   };
   for (const [name, recipe, params] of WAYPOINT_CASES(defaultTrack())) {
-    const plan = JSON.stringify(customTrackPlan(recipe, params));
+    // Rounded to a millionth of a millimetre: the last bits of the arithmetic
+    // differ between x64 and ARM processors.
+    const plan = JSON.stringify(customTrackPlan(recipe, params), (key, value) =>
+      typeof value === 'number' ? Math.round(value * 1e6) / 1e6 : value,
+    );
     assert.equal(
       createHash('sha256').update(plan).digest('hex').slice(0, 16),
       recorded[name],

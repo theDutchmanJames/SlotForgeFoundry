@@ -1,5 +1,6 @@
 // Waypoint paths whose plans were recorded before the flowing curve arrived.
-// Each digest is the first 16 hex digits of the SHA-256 of the plan's JSON.
+// Each digest is the first 16 hex digits of the SHA-256 of the plan's JSON,
+// with numbers rounded to a millionth of a millimetre.
 export const WAYPOINT_CASES = (defaults) => {
   const p = { ...defaults, kind: 'import', lanes: 2, width: 60, laneSpacing: 25 };
   const squeeze = { version: 1, mode: 'squeeze', spacingMm: 18, anchor: 'centre' };
