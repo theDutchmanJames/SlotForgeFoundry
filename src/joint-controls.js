@@ -31,7 +31,7 @@ export function clipChoices() {
   return [
     ['draw-key', 'Double-dovetail draw key + retainer'],
     ['carrera-retained', 'Carrera + two retainers'],
-    [SCREW_CLIP_TYPE, 'Side screw clip + two screws'],
+    [SCREW_CLIP_TYPE, SCREW_CLIP_NAME + ' + two screws'],
   ];
 }
 
@@ -41,7 +41,7 @@ const screwField = (s, key, unit = 'mm') =>
     max: SCREW_CLIP_LIMITS[key][1],
   });
 
-// The pack settings of the side screw clip, shown while it is the clip type.
+// The pack settings of the Kevan Sideclip, shown while it is the clip type.
 function screwClipControls(base) {
   const s = screwClipSettings(base);
   return (
@@ -68,6 +68,7 @@ function screwClipControls(base) {
     screwField(s, 'screwInset') +
     screwField(s, 'screwClipWidth') +
     screwField(s, 'screwClipDepth') +
+    screwField(s, 'screwClipCorner') +
     screwField(s, 'screwClipThickness') +
     screwField(s, 'screwClipPlay') +
     '<p class="hint">Play is the total clearance: the pocket is this much wider, deeper and thicker than the clip. The pocket sits halfway up the road, so a screw from the top or the bottom bites equally far.</p>' +
@@ -85,17 +86,21 @@ function screwClipDiagram(params) {
     problem = error.warning?.reason ?? error.message;
   }
   const scale = Math.min(2.6, 56 / s.screwClipDepth, 120 / s.screwClipWidth);
-  const r = (s.screwClipWidth / 2) * scale;
   const d = s.screwClipDepth * scale;
   const hole = (s.screwPilot / 2) * scale;
   const x = (u) => 132 + u * scale;
   const y = (v) => 6 + v * scale;
-  const clip = `M${x(-s.screwClipWidth / 2)} ${y(0)}H${x(s.screwClipWidth / 2)}V${y(s.screwClipDepth) - r}A${r} ${r} 0 0 1 ${x(-s.screwClipWidth / 2)} ${y(s.screwClipDepth) - r}Z`;
+  // Straight sides and a straight inner end with rounded inner corners.
+  const c = Math.min(s.screwClipCorner, s.screwClipWidth / 2) * scale;
+  const half = s.screwClipWidth / 2;
+  const clip = `M${x(-half)} ${y(0)}H${x(half)}V${y(s.screwClipDepth) - c}A${c} ${c} 0 0 1 ${x(half) - c} ${y(s.screwClipDepth)}` +
+    `H${x(-half) + c}A${c} ${c} 0 0 1 ${x(-half)} ${y(s.screwClipDepth) - c}Z`;
   const screws = [-1, 1].map((k) =>
     `<circle cx="${x(k * s.screwSeamDistance)}" cy="${y(s.screwInset)}" r="${hole}" fill="var(--d-paper)" stroke="var(--d-hardware-edge)"/>`).join('');
   const height = d + 14;
   const caption =
-    SCREW_CLIP_NAME + ' · ' + s.screwClipWidth + ' × ' + s.screwClipDepth + ' × ' + s.screwClipThickness + ' mm. ' +
+    SCREW_CLIP_NAME + ' · ' + s.screwClipWidth + ' × ' + s.screwClipDepth + ' × ' + s.screwClipThickness +
+    ' mm, ' + Math.min(s.screwClipCorner, s.screwClipWidth / 2) + ' mm inner corners. ' +
     'Two ' + screwName(params) + 's, one in each piece, ' + s.screwSeamDistance + ' mm from the seam and ' +
     s.screwInset + ' mm in from the side face.' +
     (g ? ' The pocket sits halfway up the road. Each screw grips ' + mm(g.grip) + ' mm of thread: ' +

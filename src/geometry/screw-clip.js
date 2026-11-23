@@ -1,7 +1,9 @@
-// The side screw clip: a flat "tombstone" plate that slides into a pocket
-// from the side face of the road, across a road joint. Each piece holds half
-// of the pocket and one countersunk wood screw, which passes through the
-// piece and the clip and bites into a pilot hole beyond it.
+// The Kevan Sideclip (internal id 'side-screw'): a flat plate that slides
+// into a pocket from the side face of the road, across a road joint. Its
+// flat edge is flush with the side face; straight parallel sides lead to a
+// straight inner end with rounded inner corners. Each piece holds half of
+// the pocket and one countersunk wood screw, which cuts its thread into the
+// clip and on into a pilot hole beyond it.
 //
 // Local frame of one clip: u runs along the track from the seam (towards the
 // second piece), v runs from the side face into the road, z is height above
@@ -11,7 +13,8 @@ import { footprintHull } from './plate.js';
 import { SolidWorkshop, left, move } from './solids.js';
 
 export const SCREW_CLIP_TYPE = 'side-screw';
-export const SCREW_CLIP_NAME = 'Side screw clip';
+export const SCREW_CLIP_NAME = 'Kevan Sideclip';
+export const SCREW_CLIP_PLURAL = 'Kevan Sideclips';
 
 /** Defaults for 2.5 mm wood screws. Shared by every piece of a pack. */
 export const SCREW_CLIP_DEFAULTS = Object.freeze({
@@ -24,7 +27,8 @@ export const SCREW_CLIP_DEFAULTS = Object.freeze({
   screwSeamDistance: 9,
   screwInset: 12,
   screwClipWidth: 30,
-  screwClipDepth: 30,
+  screwClipDepth: 18,
+  screwClipCorner: 6,
   screwClipThickness: 3,
   screwClipPlay: 0.3,
   screwDirection: 'top',
@@ -41,6 +45,7 @@ export const SCREW_CLIP_LIMITS = Object.freeze({
   screwInset: [2, 150],
   screwClipWidth: [8, 120],
   screwClipDepth: [6, 200],
+  screwClipCorner: [0.5, 60],
   screwClipThickness: [1, 20],
   screwClipPlay: [0.05, 1.5],
 });
@@ -58,6 +63,7 @@ export const SCREW_CLIP_LABELS = Object.freeze({
   screwInset: 'Screw inset from side face',
   screwClipWidth: 'Clip width',
   screwClipDepth: 'Clip depth into road',
+  screwClipCorner: 'Inner corner radius',
   screwClipThickness: 'Clip thickness',
   screwClipPlay: 'Play in pocket',
   screwDirection: 'Screw direction',
@@ -88,6 +94,8 @@ const PILOT_PAST_TIP = 0.5;
 const ROOF_OVER_HEAD = 1;
 // Solid walls around the pocket in a hollow piece.
 export const SCREW_CLIP_WALL = 2;
+// Clip material kept from each clip hole to every edge of the clip.
+export const SCREW_CLIP_MARGIN = 4;
 const LEAD_IN = 0.5;
 const NOTCH_WIDTH = 6;
 const NOTCH_FLOOR = 3;
@@ -146,7 +154,8 @@ export function screwClipGeometry(s, height) {
   return {
     gap,
     radius,
-    straight: s.screwClipDepth - radius,
+    corner: Math.min(s.screwClipCorner, radius),
+    straight: s.screwClipDepth - Math.min(s.screwClipCorner, radius),
     thickness,
     floor,
     top,
@@ -224,7 +233,7 @@ export function screwSides(p) {
 
 export const sideName = (sign) => (sign > 0 ? 'left side' : 'right side');
 
-/** A road joint mode without its clips: the side screw clips are placed apart. */
+/** A road joint mode without its clips: the Kevan Sideclips are placed apart. */
 export const tabsOnly = (mode) => (mode === 'tabs' || mode === 'both' ? 'tabs' : 'none');
 
 /** The across-road space a clip on each enabled side keeps from other connectors. */
@@ -257,12 +266,12 @@ function lengthAdvice(s, height) {
 }
 
 const FAMILY_FIELDS = [
-  'screwClipWidth', 'screwClipDepth', 'screwClipThickness', 'screwClipPlay',
+  'screwClipWidth', 'screwClipDepth', 'screwClipCorner', 'screwClipThickness', 'screwClipPlay',
   'screwSeamDistance', 'screwInset', 'screwPilot', 'screwThread',
 ];
 
 /**
- * The family of a side screw clip in the Track Planner. Two ends join only
+ * The family of a Kevan Sideclip in the Track Planner. Two ends join only
  * when everything that shapes the clip or its mating holes is the same; the
  * screw direction and length belong to each piece's own half.
  */
@@ -271,7 +280,7 @@ export function screwClipFamily(p) {
   return SCREW_CLIP_TYPE + '|' + FAMILY_FIELDS.map((key) => key + '=' + round(s[key])).join('|');
 }
 
-/** The first setting two side screw clip families disagree on, as text. */
+/** The first setting two Kevan Sideclip families disagree on, as text. */
 export function screwFamilyDifference(here, next) {
   if (!here?.startsWith(SCREW_CLIP_TYPE + '|') || !next?.startsWith(SCREW_CLIP_TYPE + '|')) return '';
   const values = (family) => Object.fromEntries(family.split('|').slice(1).map((pair) => pair.split('=')));
@@ -318,50 +327,67 @@ export function validateScrewClip(p) {
       'screwHead',
     );
   const g = screwClipGeometry(s, p.height);
-  if (g.straight < 1)
+  const half = g.radius;
+  if (s.screwClipCorner > half + 1e-9)
     throw fail(
-      'The clip must reach at least 1 mm further into the road than half its width (' +
-        mm(g.radius) + ' mm), so that it has straight sides.',
-      'Make the clip deeper or narrower.',
-      'screwClipDepth',
+      'The inner corner radius (' + mm(s.screwClipCorner) + ' mm) can be at most half the clip width (' +
+        mm(half) + ' mm).',
+      'Set the inner corner radius to ' + mm(Math.min(SCREW_CLIP_DEFAULTS.screwClipCorner, half)) + ' mm.',
+      'screwClipCorner',
     );
-  // The screws sit in the straight part, their heads clear of the side face
-  // and of the notch in the flat edge.
+  const hole = s.screwPilot / 2;
+  // Clip material each hole keeps to every edge of the clip, and road
+  // material (the solid walls) the countersink keeps around the pocket.
+  const need = Math.max(
+    hole + SCREW_CLIP_MARGIN,
+    s.screwHead / 2 + 1 - g.gap - SCREW_CLIP_WALL,
+  );
+  // Along the seam: clear of the road end, the side edges and the walls.
+  const seamMin = s.screwHead / 2 + 1;
+  const seamMax = half - need;
+  if (seamMin > seamMax + 1e-9)
+    throw fail(
+      a(s.screwClipWidth) + ' mm wide clip leaves no room for two screws with ' +
+        mm(s.screwHead) + ' mm heads and ' + mm(SCREW_CLIP_MARGIN) + ' mm of clip around each hole.',
+      'Make the clip at least ' + mm(Math.ceil(2 * (seamMin + need) * 10) / 10) + ' mm wide.',
+      'screwClipWidth',
+    );
+  if (s.screwSeamDistance < seamMin - 1e-9 || s.screwSeamDistance > seamMax + 1e-9)
+    throw fail(
+      'Each screw must sit between ' + mm(seamMin) + ' and ' + mm(seamMax) +
+        ' mm from the seam: clear of the road end, with ' + mm(SCREW_CLIP_MARGIN) +
+        ' mm of clip beside its hole and its head inside the walls around the pocket.',
+      'Set the screw distance from the seam to ' +
+        mm(Math.min(Math.max(s.screwSeamDistance, seamMin), seamMax)) + ' mm.',
+      'screwSeamDistance',
+    );
+  // Across the road: the heads clear of the side face and the notch, and the
+  // holes with their margin to the inner end and its rounded corners.
   const nearest = NOTCH_DEPTH + 1 + s.screwHead / 2;
-  if (s.screwInset > g.straight + 1e-9)
-    throw fail(
-      'The screws sit ' + mm(s.screwInset) + ' mm in from the side face, beyond the straight part of ' +
-        a(s.screwClipDepth).toLowerCase() + ' mm deep clip.',
-      'Make the clip at least ' + mm(g.radius + Math.max(s.screwInset, nearest)) +
-        ' mm deep, or bring the screws nearer the side face.',
-      'screwClipDepth',
-    );
+  const corner = Math.min(s.screwClipCorner, half);
+  const x = s.screwSeamDistance - (half - corner);
+  // How far the inner end must lie beyond the screws.
+  const beyond = x > 0 ? corner - Math.sqrt(Math.max(0, (corner - need) ** 2 - x * x)) : need;
+  const insetMax = s.screwClipDepth - beyond;
+  const depthFor = (inset) => Math.ceil((inset + beyond) * 10) / 10;
   if (s.screwInset < nearest - 1e-9)
     throw fail(
       'The screw heads must sit clear of the side face and the notch in the clip: at least ' + mm(nearest) +
         ' mm in from the side face.',
-      g.straight >= nearest - 1e-9
-        ? 'Set the screw inset between ' + mm(nearest) + ' and ' + mm(g.straight) + ' mm.'
-        : 'Make the clip at least ' + mm(g.radius + nearest) + ' mm deep, and the screw inset ' + mm(nearest) + ' mm.',
-      g.straight >= nearest - 1e-9 ? 'screwInset' : 'screwClipDepth',
+      insetMax >= nearest - 1e-9
+        ? 'Set the screw inset between ' + mm(nearest) + ' and ' + mm(insetMax) + ' mm.'
+        : 'Make the clip at least ' + mm(depthFor(nearest)) + ' mm deep, and the screw inset ' + mm(nearest) + ' mm.',
+      insetMax >= nearest - 1e-9 ? 'screwInset' : 'screwClipDepth',
     );
-  // Clear of the road end, inside the clip with 1.2 mm around the hole, and
-  // the countersink inside the solid walls around the pocket.
-  const seamMin = s.screwHead / 2 + 1;
-  const seamMax = Math.min(
-    g.radius - s.screwPilot / 2 - 1.2,
-    g.radius + g.gap + SCREW_CLIP_WALL - s.screwHead / 2 - 1,
-  );
-  if (s.screwSeamDistance < seamMin - 1e-9 || s.screwSeamDistance > seamMax + 1e-9)
+  if (clipMaterial(s, s.screwSeamDistance, s.screwInset) < need - 1e-9)
     throw fail(
-      seamMin > seamMax
-        ? 'The clip is too narrow for two screws with ' + mm(s.screwHead) + ' mm heads.'
-        : 'Each screw must sit between ' + mm(seamMin) + ' and ' + mm(seamMax) +
-            ' mm from the seam: clear of the road end, inside the clip, and with its head inside the walls around the pocket.',
-      seamMin > seamMax
-        ? 'Make the clip at least ' + mm(2 * (seamMin + Math.max(s.screwPilot / 2 + 1.2, s.screwHead / 2 + 1 - g.gap - SCREW_CLIP_WALL))) + ' mm wide.'
-        : 'Set the screw distance from the seam to ' + mm(Math.min(Math.max(s.screwSeamDistance, seamMin), seamMax)) + ' mm.',
-      seamMin > seamMax ? 'screwClipWidth' : 'screwSeamDistance',
+      'The screws sit ' + mm(s.screwInset) + ' mm in from the side face. ' +
+        a(s.screwClipDepth) + ' mm deep clip then keeps only ' +
+        mm(Math.max(0, Math.floor((clipMaterial(s, s.screwSeamDistance, s.screwInset) - hole) * 100) / 100)) +
+        ' mm of material beyond each hole, to its inner end or corner; it needs ' + mm(need - hole) + ' mm.',
+      'Make the clip at least ' + mm(depthFor(s.screwInset)) + ' mm deep' +
+        (insetMax >= nearest - 1e-9 ? ', or set the screw inset to ' + mm(Math.floor(insetMax * 10) / 10) + ' mm or less.' : '.'),
+      'screwClipDepth',
     );
   if (Math.min(g.floor, g.roof) < g.countersink + ROOF_OVER_HEAD - 1e-9)
     throw fail(
@@ -403,9 +429,9 @@ export function validateScrewSides(p) {
     if (p[key] !== undefined && !allowed.includes(p[key]))
       throw connectorWarning(
         'Road connections',
-        'The side screw clip setting ' + key + ' cannot be "' + p[key] + '".',
+        'The ' + SCREW_CLIP_NAME + ' setting ' + key + ' cannot be "' + p[key] + '".',
         'Choose Fitted or None for a side, and From the top or From the bottom for its screws.',
-        { tab: 'joints', field: key, label: 'Edit side screw clips' },
+        { tab: 'joints', field: key, label: 'Edit ' + SCREW_CLIP_PLURAL },
       );
 }
 
@@ -416,17 +442,40 @@ function framer(edge, dir, inward) {
   return (u, v) => move(move(edge, dir, u), inward, v);
 }
 
-// The tombstone outline grown by `grow`, from v = from to its round end.
+// The clip outline grown by `grow`, from v = from: straight parallel sides
+// and a straight inner end with rounded inner corners. Growing keeps it an
+// exact offset: the corner radius grows with it.
 function outline(s, grow, from) {
-  const radius = s.screwClipWidth / 2;
-  const centre = s.screwClipDepth - radius;
-  const r = radius + grow;
-  const loop = [[-r, from], [r, from]];
-  for (let i = 0; i <= SEGMENTS; i++) {
-    const a = (i * Math.PI) / SEGMENTS;
-    loop.push([r * Math.cos(a), centre + r * Math.sin(a)]);
-  }
+  const half = s.screwClipWidth / 2;
+  const corner = Math.min(s.screwClipCorner, half);
+  const centreU = half - corner;
+  const centreV = s.screwClipDepth - corner;
+  const r = corner + grow;
+  const loop = [[-(half + grow), from], [half + grow, from]];
+  const steps = Math.max(4, Math.round(SEGMENTS / 2));
+  for (const [sign, a0] of [[1, 0], [-1, Math.PI / 2]])
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (i * Math.PI) / 2 / steps;
+      const u = sign * centreU + r * Math.cos(a);
+      const v = centreV + r * Math.sin(a);
+      // The two corners meet at u = 0 when the corner is half the width.
+      if (sign < 0 && i === 0 && centreU === 0) continue;
+      loop.push([u, v]);
+    }
   return loop;
+}
+
+/**
+ * Clip material from a point (u, v) of the clip to its nearest side edge,
+ * inner end or rounded corner. Negative outside the clip.
+ */
+export function clipMaterial(s, u, v) {
+  const half = s.screwClipWidth / 2;
+  const corner = Math.min(s.screwClipCorner, half);
+  const x = Math.abs(u) - (half - corner);
+  const y = v - (s.screwClipDepth - corner);
+  if (x > 0 && y > 0) return corner - Math.hypot(x, y);
+  return Math.min(half - Math.abs(u), s.screwClipDepth - v);
 }
 
 function circle(work, centre, radius) {

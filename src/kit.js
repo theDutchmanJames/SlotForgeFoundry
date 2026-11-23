@@ -355,7 +355,7 @@ export function packKit(
     const params = project.track.params;
     files['Fitting the clips.txt'] = strToU8(
       'You need ' + 2 * screwClips + ' × ' + screwName(params) + ' for ' +
-        (screwClips === 1 ? 'this side screw clip' : 'these ' + screwClips + ' side screw clips') +
+        (screwClips === 1 ? 'this Kevan Sideclip' : 'these ' + screwClips + ' Kevan Sideclips') +
         ': two per clip.\n\n' +
         fitScrewClip(params) + '\n\n' + releaseScrewClip + '\n',
     );

@@ -384,7 +384,7 @@ export function validateTrack(p) {
   if (p.special?.pitGrid !== undefined) return pitGridLayout(p);
 }
 
-// Side screw clips slide in from a road side face. They join road ends only.
+// Kevan Sideclips slide in from a road side face. They join road ends only.
 function validateScrewClipUse(p) {
   for (const side of ['inner', 'outer']) {
     if (p.borderSide !== side && p.borderSide !== 'both') continue;
@@ -395,7 +395,7 @@ function validateScrewClipUse(p) {
       if (usesClips(activeJointMode(p, scope, side)))
         throw connectorWarning(
           'Border connections',
-          'Side screw clips join road ends only. They cannot attach or join borders.',
+          'Kevan Sideclips join road ends only. They cannot attach or join borders.',
           'Choose Tabs + sockets or Plain for Connections → Border connections → ' + name + '.',
           { tab: 'joints', field, label: 'Edit border connections' },
         );
@@ -405,16 +405,16 @@ function validateScrewClipUse(p) {
   if (p.kind === 'import' || ['diamond', 'pit'].includes(p.special?.type))
     throw connectorWarning(
       'Road connections',
-      'Side screw clips are made for straights and corners, not for drawn pieces, crossings or pit lanes.',
+      'Kevan Sideclips are made for straights and corners, not for drawn pieces, crossings or pit lanes.',
       'Choose another clip type under Connections → Project clip type, or tabs for this piece.',
       { tab: 'joints', field: 'clipType', label: 'Edit clip type' },
     );
   if (!screwSides(p).length)
     throw connectorWarning(
       'Road connections',
-      'Both side screw clips are switched off, so the road joints set to clips would have no connector.',
+      'Both Kevan Sideclips are switched off, so the road joints set to clips would have no connector.',
       'Fit the clip on at least one side under Connections → Road connections, or choose Plain or Tabs + sockets for these joints.',
-      { tab: 'joints', field: 'sideClipLeft', label: 'Edit side screw clips' },
+      { tab: 'joints', field: 'sideClipLeft', label: 'Edit Kevan Sideclips' },
     );
   validateScrewClip(p);
 }
@@ -738,7 +738,7 @@ function nativePieces(
         section,
       );
       shell(work, part, p);
-      // Side screw clip corners that stand proud of a convex road edge.
+      // Kevan Sideclip corners that stand proud of a convex road edge.
       for (const relief of roads[0]?.screwReliefs ?? [])
         if (relief.sign === sign) part.cuts.push(relief.solid);
       registerRibRun(p, part, sidePath, a, b, t => [edge, free(t)]);

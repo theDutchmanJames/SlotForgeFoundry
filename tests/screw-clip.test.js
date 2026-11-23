@@ -12,6 +12,7 @@ import {
 import {
   SCREW_CLIP_DEFAULTS,
   SCREW_MIN_BITE,
+  clipMaterial,
   screwClipGeometry,
   screwClipSettings,
   screwName,
@@ -90,7 +91,7 @@ test('defaults: the pocket sits halfway up a 12 mm road, and a 10 mm screw grips
   assert.equal(screwName({ height: 10 }), '2.5 × 8 mm countersunk wood screw');
   void SCREW_CLIP_DEFAULTS;
   const spec = clipSpec(screw());
-  assert.equal(spec.clipName, 'Side screw clip');
+  assert.equal(spec.clipName, 'Kevan Sideclip');
   assert.equal(spec.type, 'side-screw');
 });
 
@@ -116,7 +117,7 @@ test('defaults build on the default road: hollow and solid, straight and curve, 
       assert.equal(clips.length, 2 * (p.segments ?? 1), label);
       for (const clip of clips) {
         assert.equal(clip.clipType, 'side-screw', label);
-        assert.equal(clip.name, 'Side screw clip', label);
+        assert.equal(clip.name, 'Kevan Sideclip', label);
       }
       for (const part of parts) assert.equal(part.solid.status(), 'NoError', label);
     } finally {
@@ -125,7 +126,7 @@ test('defaults build on the default road: hollow and solid, straight and curve, 
   }
 });
 
-test('the pocket is a tombstone open at the side face, with a lead-in, and both halves line up', () => {
+test('the pocket has straight sides and a straight inner end with rounded corners, opens at the side face with a lead-in, and both halves line up', () => {
   const p = straight({ segments: 2, length: 240, joint: 'clips' });
   const { get, free } = build(p);
   try {
@@ -145,16 +146,23 @@ test('the pocket is a tombstone open at the side face, with a lead-in, and both 
       // The straight sides: 15 + 0.15 play, then road.
       assert.equal(solidAt(second, probe(15.4, 10)), true);
       assert.equal(solidAt(first, probe(-15.4, 10)), true);
-      // The half-round end reaches 30.15 mm in on the centre line.
-      assert.equal(solidAt(second, probe(0.1, 30.05)), false);
-      assert.equal(solidAt(second, probe(0.1, 30.3)), true);
-      assert.equal(solidAt(second, probe(10, 15 + Math.sqrt(15.15 ** 2 - 100) - 0.1)), false);
-      assert.equal(solidAt(second, probe(10, 15 + Math.sqrt(15.15 ** 2 - 100) + 0.2)), true);
+      // The straight inner end lies 18.15 mm in (18 mm clip, 0.15 mm play).
+      for (const u of [0.1, 5, 8.9]) {
+        assert.equal(solidAt(second, probe(u, 18.05)), false, 'inner end ' + u);
+        assert.equal(solidAt(second, probe(u, 18.3)), true, 'beyond the inner end ' + u);
+      }
+      // The sides run straight to v = 12, then the 6 mm corner (6.15 with play).
+      assert.equal(solidAt(second, probe(15.05, 11.9)), false);
+      const arc = 12 + Math.sqrt(6.15 ** 2 - 16);
+      assert.equal(solidAt(second, probe(13, arc - 0.1)), false, 'inside the corner arc');
+      assert.equal(solidAt(second, probe(13, arc + 0.2)), true, 'beyond the corner arc');
+      assert.equal(solidAt(first, probe(-13, arc - 0.1)), false);
+      assert.equal(solidAt(first, probe(-13, arc + 0.2)), true);
       // Floor and roof: 3 mm clip, 0.3 mm play, centred.
-      assert.equal(solidAt(second, probe(5, 20, g.floor + 0.05)), false);
-      assert.equal(solidAt(second, probe(5, 20, g.floor - 0.1)), true);
-      assert.equal(solidAt(second, probe(5, 20, g.top - 0.05)), false);
-      assert.equal(solidAt(second, probe(5, 20, g.top + 0.1)), true);
+      assert.equal(solidAt(second, probe(5, 10, g.floor + 0.05)), false);
+      assert.equal(solidAt(second, probe(5, 10, g.floor - 0.1)), true);
+      assert.equal(solidAt(second, probe(5, 10, g.top - 0.05)), false);
+      assert.equal(solidAt(second, probe(5, 10, g.top + 0.1)), true);
       // The lead-in chamfer opens the mouth beyond the pocket.
       assert.equal(solidAt(second, probe(5, 0.1, g.top + 0.3)), false);
       assert.equal(solidAt(second, probe(5, 1, g.top + 0.3)), true);
@@ -250,29 +258,31 @@ test('per road side: each side of the piece has its own direction, and either si
     off.free();
   }
   assert.throws(() => validateTrack(trackParameters(straight({ sideClipLeft: 'maybe' }))), (e) => {
-    assert.match(e.message, /side screw clip setting sideClipLeft cannot be "maybe"/);
+    assert.match(e.message, /Kevan Sideclip setting sideClipLeft cannot be "maybe"/);
     assert.equal(e.warning.setting.field, 'sideClipLeft');
     return true;
   });
   // Both sides off on a joint with clips leaves no connector: refused.
   assert.throws(() => validateTrack(trackParameters(straight({ sideClipLeft: 'none', sideClipRight: 'none' }))), (e) => {
-    assert.match(e.message, /^Road connections\. Both side screw clips are switched off/);
+    assert.match(e.message, /^Road connections\. Both Kevan Sideclips are switched off/);
     assert.equal(e.warning.setting.field, 'sideClipLeft');
     return true;
   });
   validateTrack(trackParameters(straight({ joint: 'tabs', sideClipLeft: 'none', sideClipRight: 'none' })));
 });
 
-test('the clip prints flat: a 30 mm flat edge, a half-round end, a notch and two pilot-size holes', () => {
+test('the clip prints flat: a 30 mm flat edge, straight sides, a straight inner end with 6 mm corners, a notch and two pilot-size holes', () => {
   const p = straight();
   const { parts, free } = build(p);
   try {
     const clip = parts.find((part) => part.role === 'clip');
     const flat = clip.printPose((solid) => solid.boundingBox(), true);
     assert.deepEqual(flat.min.map((v) => Math.round(v * 1000) / 1000), [-15, 0, 0]);
-    assert.deepEqual(flat.max.map((v) => Math.round(v * 1000) / 1000), [15, 30, 3]);
+    assert.deepEqual(flat.max.map((v) => Math.round(v * 1000) / 1000), [15, 18, 3]);
     const volume = clip.printPose((solid) => solid.volume(), true);
-    const plate = 30 * 15 + (Math.PI * 15 ** 2) / 2;
+    // 30 × 18 mm less two rounded 6 mm corners: 524.5 mm² (was 803.4 mm²).
+    const plate = 30 * 18 - 2 * (1 - Math.PI / 4) * 6 ** 2;
+    assert.ok(Math.abs(plate - 524.55) < 0.01);
     // Pilot-size holes (2.1 mm): each screw cuts its thread into the clip.
     const holes = 2 * Math.PI * 1.05 ** 2;
     assert.ok(volume < 3 * (plate - holes) && volume > 3 * (plate - holes) - 25, String(volume));
@@ -281,6 +291,22 @@ test('the clip prints flat: a 30 mm flat edge, a half-round end, a notch and two
       assert.equal(solidAt(solid, [x, y, 1.5]), false, 'hole');
       assert.equal(solidAt(solid, [x + 0.95, y, 1.5]), false, 'pilot radius 1.05');
       assert.equal(solidAt(solid, [x + 1.2, y, 1.5]), true, 'not clearance size');
+      // The inner end is straight between the corners, the corners round.
+      assert.equal(solidAt(solid, [0, 17.9, 1.5]), true);
+      assert.equal(solidAt(solid, [8.9, 17.9, 1.5]), true);
+      assert.equal(solidAt(solid, [0, 18.1, 1.5]), false);
+      const arc = 12 + Math.sqrt(36 - 16);
+      assert.equal(solidAt(solid, [13, arc - 0.1, 1.5]), true, 'inside the corner');
+      assert.equal(solidAt(solid, [13, arc + 0.1, 1.5]), false, 'corner cut off');
+      assert.equal(solidAt(solid, [14.9, 11.9, 1.5]), true, 'straight side up to the corner');
+      // From each hole centre the clip edge lies 6 mm away towards the inner
+      // end, the side and diagonally into the corner arc: 6 - 1.05 = 4.95 mm
+      // of clip beyond the hole edge, more than the 4 mm required.
+      for (const [dx, dy] of [[0, 1], [1, 0], [Math.SQRT1_2, Math.SQRT1_2]]) {
+        assert.equal(solidAt(solid, [x + 5.9 * dx, y + 5.9 * dy, 1.5]), true, 'clip at 5.9 mm ' + dx);
+        assert.equal(solidAt(solid, [x + 6.1 * dx, y + 6.1 * dy, 1.5]), false, 'edge before 6.1 mm ' + dx);
+      }
+      assert.ok(clipMaterial(screwClipSettings({}), 9, 12) - 1.05 >= 4);
     }, true);
     // Assembled, the flat edge is flush with the side face at the finish end.
     const box = clip.solid.boundingBox();
@@ -307,37 +333,49 @@ test('plain-language validation of the clip and screw settings', () => {
   fails({ screwPilot: 2.5 }, /pilot hole \(2\.5 mm\) must be smaller than the screw thread/, 'screwPilot');
   fails({ screwClearance: 2.5 }, /clearance hole \(2\.5 mm\) must be larger than the screw thread/, 'screwClearance');
   fails({ screwHead: 2.8 }, /screw head \(2\.8 mm\) must be wider than the clearance hole/, 'screwHead');
-  fails({ screwClipThickness: 8 }, /^Side screw clip\. An 8 mm clip leaves 1\.85 mm of road above and below its pocket in a 12 mm road\. The countersunk head and a roof need 2\.1 mm\./, 'screwClipThickness');
-  fails({ screwLength: 6 }, /^Side screw clip\. A 6 mm screw reaches only 0 mm into the pilot hole beyond the clip\. It needs at least 1 mm there, after the 3 mm through the clip\. Use a 10 mm screw/, 'screwLength');
+  fails({ screwClipThickness: 8 }, /^Kevan Sideclip\. An 8 mm clip leaves 1\.85 mm of road above and below its pocket in a 12 mm road\. The countersunk head and a roof need 2\.1 mm\./, 'screwClipThickness');
+  fails({ screwLength: 6 }, /^Kevan Sideclip\. A 6 mm screw reaches only 0 mm into the pilot hole beyond the clip\. It needs at least 1 mm there, after the 3 mm through the clip\. Use a 10 mm screw/, 'screwLength');
   fails({ screwLength: 12 }, /A 12 mm screw would end less than 0\.6 mm from the far side of a 12 mm road, or come out of it\. Use a 10 mm screw/, 'screwLength');
-  fails({ screwLength: 11, height: 18 }, /^Side screw clip\. An 11 mm screw reaches only 0\.35 mm.*Use a 16 mm screw \(12, 13, 14 or 16 mm fit\)/, 'screwLength');
-  // A depth that leaves the screws beyond the straight part: a working depth.
-  fails({ screwClipDepth: 17 }, /Make the clip at least 27 mm deep/, 'screwClipDepth');
-  fails({ screwInset: 20 }, /Make the clip at least 35 mm deep/, 'screwClipDepth');
-  fails({ screwInset: 3 }, /at least 5 mm in from the side face\. Set the screw inset between 5 and 15 mm\./, 'screwInset');
-  // The countersink must stay inside the walls around the pocket.
-  fails({ screwSeamDistance: 14 }, /between 3\.5 and 12\.75 mm from the seam.*Set the screw distance from the seam to 12\.75 mm/, 'screwSeamDistance');
-  fails({ screwHead: 10, screwSeamDistance: 12.4, screwDirection: 'bottom', screwClipThickness: 1 }, /between 6 and 11\.15 mm/, 'screwSeamDistance');
-  fails({ screwClipDepth: 15 }, /straight sides/, 'screwClipDepth');
+  fails({ screwLength: 11, height: 18 }, /^Kevan Sideclip\. An 11 mm screw reaches only 0\.35 mm.*Use a 16 mm screw \(12, 13, 14 or 16 mm fit\)/, 'screwLength');
+  // At least 4 mm of clip beyond each hole: to the inner end, a working depth
+  // or inset is named (and builds, below).
+  fails({ screwClipDepth: 15 }, /keeps only 1\.95 mm of material beyond each hole, to its inner end or corner; it needs 4 mm\. Make the clip at least 17\.1 mm deep, or set the screw inset to 9\.9 mm or less\./, 'screwClipDepth');
+  fails({ screwInset: 14 }, /Make the clip at least 19\.1 mm deep, or set the screw inset to 12\.9 mm or less\./, 'screwClipDepth');
+  fails({ screwInset: 3 }, /at least 5 mm in from the side face\. Set the screw inset between 5 and 12\.95 mm\./, 'screwInset');
+  // To the side edges, and the countersink inside the walls around the pocket.
+  fails({ screwSeamDistance: 11 }, /between 3\.5 and 9\.95 mm from the seam.*Set the screw distance from the seam to 9\.95 mm/, 'screwSeamDistance');
+  fails({ screwHead: 10, screwSeamDistance: 12.4, screwDirection: 'bottom', screwClipThickness: 1 }, /between 6 and 9\.95 mm/, 'screwSeamDistance');
+  // To the rounded corner itself: the straight edges are 6 mm away, but a
+  // 12 mm corner arc comes within 3.5 mm of the hole centre.
+  assert.ok(clipMaterial({ ...screwClipSettings({}), screwClipCorner: 12 }, 9, 12) < 4);
+  fails({ screwClipCorner: 12 }, /keeps only 2\.46 mm of material beyond each hole, to its inner end or corner.*Make the clip at least 20\.5 mm deep, or set the screw inset to 9\.5 mm or less\./, 'screwClipDepth');
+  fails({ screwClipCorner: 16 }, /inner corner radius \(16 mm\) can be at most half the clip width \(15 mm\)\. Set the inner corner radius to 6 mm\./, 'screwClipCorner');
+  fails({ screwClipWidth: 16 }, /A 16 mm wide clip leaves no room for two screws.*Make the clip at least 17\.1 mm wide\./, 'screwClipWidth');
+  for (const extra of [
+    { screwClipDepth: 17.1 }, { screwClipDepth: 15, screwInset: 9.9 }, { screwInset: 12.9 },
+    { screwClipCorner: 12, screwClipDepth: 20.5 }, { screwClipCorner: 12, screwInset: 9.5 },
+    { screwSeamDistance: 9.95 }, { screwClipCorner: 15, screwClipDepth: 22.8 },
+  ])
+    validateTrack(trackParameters(straight(extra)));
   fails({ screwHeadAngle: 30 }, /Countersink angle must be between 60 and 120°/, 'screwHeadAngle');
   fails({ screwClipThickness: 6 }, /No stock screw length grips a 6 mm clip in a 12 mm road.*Use a thinner clip or less play/, 'screwClipThickness');
   // A 10 mm road: a 10 mm screw is too long; left automatic, 8 mm is chosen.
   fails({ height: 10, slotDepth: 7, screwLength: 10 }, /Use an 8 mm screw/, 'screwLength');
   validateTrack(trackParameters(straight({ height: 10, slotDepth: 7 })));
   validateTrack(trackParameters(straight({ height: 10, slotDepth: 7, screwLength: 9 })));
-  // The settings are only checked when side screw clips are in use.
+  // The settings are only checked when Kevan Sideclips are in use.
   validateTrack(trackParameters(straight({ screwPilot: 3, clipType: 'draw-key' })));
   validateTrack(trackParameters(straight({ screwPilot: 3, joint: 'tabs' })));
   assert.ok(validateScrewClip({ ...screwClipSettings({}), height: 12 }).bite > 2.3);
 });
 
-test('borders: side screw clips only join road ends; tabs on a border keep clear of the clips', () => {
+test('borders: Kevan Sideclips only join road ends; tabs on a border keep clear of the clips', () => {
   for (const extra of [
     { borderSide: 'outer', borderMount: 'clips' },
     { borderSide: 'inner', borderMount: 'tabs', borderJoint: 'both', borderSegments: 2 },
   ])
     assert.throws(() => validateTrack(trackParameters(screw(extra))), (e) => {
-      assert.match(e.message, /^Border connections\. Side screw clips join road ends only\./);
+      assert.match(e.message, /^Border connections\. Kevan Sideclips join road ends only\./);
       assert.equal(e.warning.setting.tab, 'joints');
       return true;
     });
@@ -357,7 +395,7 @@ test('borders: side screw clips only join road ends; tabs on a border keep clear
   // A tab placed by hand at the clip is refused, with the reason.
   assert.throws(
     () => build(straight({ length: 120, borderSide: 'outer', borderMount: 'tabs', placements: { sideTabs: [0.08] } })),
-    /side screw clip at a road joint/,
+    /Kevan Sideclip at a road joint/,
   );
 });
 
@@ -380,26 +418,28 @@ test('a border beside a convex road edge is relieved where the clip corners stan
 
 test('keep-outs: slots, braid pass-throughs, other connectors and short pieces stop the build with what to change', () => {
   const slot = (startMm) => ({ version: 1, edge: 'outer', startMm, endMm: startMm });
-  assert.throws(() => build(straight({ lanes: 1, slotPosition: slot(33) })), (e) => {
-    assert.match(e.message, /^Road start · Side screw clip, left side\. The nearest guide slot centre is 33 mm from the left edge\./);
+  // The 18 mm clip, its play, the slot half-width and wall: 21.65 mm.
+  assert.throws(() => build(straight({ lanes: 1, slotPosition: slot(21) })), (e) => {
+    assert.match(e.message, /^Road start · Kevan Sideclip, left side\. The nearest guide slot centre is 21 mm from the left edge\. The clip pocket and the slot wall need more than 21\.65 mm\./);
     assert.equal(e.warning.setting.field, 'slotStart');
     return true;
   });
-  assert.throws(() => build(straight({ lanes: 1, slotPosition: slot(34), length: 300, braidFeedSide: 'both', braidFeedStations: [0.02] })), (e) => {
+  build(straight({ lanes: 1, slotPosition: slot(22) })).free();
+  assert.throws(() => build(straight({ lanes: 1, slotPosition: slot(23), length: 300, braidFeedSide: 'both', braidFeedStations: [0.02] })), (e) => {
     assert.match(e.message, /would cut into a braid pass-through/);
     assert.equal(e.warning.setting.field, 'feedPercent');
     return true;
   });
-  assert.throws(() => build(straight({ width: 60, lanes: 1 })), (e) => {
+  assert.throws(() => build(straight({ width: 40, lanes: 1 })), (e) => {
     // The width advised includes the room the centred guide slot needs.
-    assert.match(e.message, /The road is 60 mm wide\. Clips on both sides beside the guide slot need at least 67\.5 mm\..*widen the road to at least 67\.5 mm/);
+    assert.match(e.message, /The road is 40 mm wide\. Clips on both sides beside the guide slot need at least 43\.5 mm\..*widen the road to at least 43\.5 mm/);
     assert.equal(e.warning.setting.field, 'width');
     return true;
   });
-  assert.throws(() => build(straight({ width: 64.5, lanes: 1 })), /widen the road to at least 67\.5 mm/);
-  build(straight({ width: 67.5, lanes: 1 })).free();
+  assert.throws(() => build(straight({ width: 43, lanes: 1 })), /widen the road to at least 43\.5 mm/);
+  build(straight({ width: 43.5, lanes: 1 })).free();
   // A narrow road takes one clip.
-  build(straight({ width: 60, lanes: 1, sideClipRight: 'none', slotPosition: slot(45) })).free();
+  build(straight({ width: 40, lanes: 1, sideClipRight: 'none', slotPosition: slot(30) })).free();
   // Too short for clips at both ends: the minimum length, which then builds.
   assert.throws(() => build(straight({ length: 30 })), (e) => {
     assert.match(e.message, /Clips at both ends need at least 36\.3 mm along the left edge; this segment has 30 mm\. Increase Road → Road length to at least 36\.3 mm/);
@@ -414,20 +454,21 @@ test('keep-outs: slots, braid pass-throughs, other connectors and short pieces s
   const both = build(straight({ joint: 'both', length: 260 }));
   try {
     const tabs = both.get('road-1').jointGuides.filter((g) => g.kind === 'Tab').map((g) => Math.abs(g.point[1]));
-    for (const y of tabs) assert.ok(y + 5 + 0.2 <= 70 - 32.15 + 1e-6, String(y));
+    assert.deepEqual(tabs, [44.4, 44.4]);
+    for (const y of tabs) assert.ok(y + 5 + 0.2 <= 70 - 20.15 + 1e-6, String(y));
   } finally {
     both.free();
   }
   assert.throws(
-    () => build(straight({ joint: 'both', length: 260, placements: { startTabs: [-55, 0] } })),
-    /side screw clip pocket at the road edge/,
+    () => build(straight({ joint: 'both', length: 260, placements: { startTabs: [-62, 0] } })),
+    /Kevan Sideclip pocket at the road edge/,
   );
   // Counted tabs plan around the clips.
   build(straight({ joint: 'both', length: 260, connectorCounts: { startTabs: 2, finishTabs: 2 } })).free();
   // Drawn pieces and pit lanes are refused.
   assert.throws(
     () => validateTrack(trackParameters(specialTrackParams('pit', screw()))),
-    /Side screw clips are made for straights and corners/,
+    /Kevan Sideclips are made for straights and corners/,
   );
 });
 
@@ -466,7 +507,7 @@ test('Track Set kit notes count the screws in plain words', async () => {
   const parts = buildTrack(wasm, project.track.params);
   try {
     const notes = strFromU8(unzipSync(packKit(wasm, parts, project, encodeSTL))['Fitting the clips.txt']);
-    assert.match(notes, /^You need 2 × 2\.5 × 10 mm countersunk wood screw for this side screw clip: two per clip\./);
+    assert.match(notes, /^You need 2 × 2\.5 × 10 mm countersunk wood screw for this Kevan Sideclip: two per clip\./);
     assert.match(notes, /cuts its thread into the hole in the clip/);
   } finally {
     parts.forEach((part) => part.solid.delete());
@@ -475,17 +516,18 @@ test('Track Set kit notes count the screws in plain words', async () => {
 
 test('the placement map shows the clips at the edges and keeps tabs clear of them', () => {
   const layout = connectorLayout(straight({ joint: 'both', length: 260 }), undefined, 'start');
-  assert.deepEqual(layout.positions.clip, [-53.925, 53.925]);
+  // The clip zone: 18 mm + 0.15 mm play + 2 mm walls in from each edge.
+  assert.deepEqual(layout.positions.clip, [-59.925, 59.925]);
   assert.ok(layout.lockedClips);
   assert.equal(layout.reason('clip', 0), layout.lockedClips);
-  assert.match(layout.reason('tab', 50), /side screw clip/);
-  assert.deepEqual(layout.positions.tab, [-23.4, 23.4]);
+  assert.match(layout.reason('tab', 50), /Kevan Sideclip/);
+  assert.deepEqual(layout.positions.tab, [-44.4, 44.4]);
   assert.equal(layout.reason('tab', 20, 1), null);
   const one = connectorLayout(straight({ sideClipLeft: 'none' }), undefined, 'finish');
-  assert.deepEqual(one.positions.clip, [-53.925]);
+  assert.deepEqual(one.positions.clip, [-59.925]);
 });
 
-test('a test joint and fit samples are made for the side screw clip', () => {
+test('a test joint and fit samples are made for the Kevan Sideclip', () => {
   const parts = buildTestJoint(wasm, straight());
   try {
     assert.deepEqual(parts.map((part) => part.id), ['road-1', 'road-2', 'road-clip-1', 'road-clip-1-2']);
@@ -494,9 +536,9 @@ test('a test joint and fit samples are made for the side screw clip', () => {
   }
   const files = unzipSync(packFitSamples(wasm, screw()));
   assert.deepEqual(Object.keys(files).sort(), [
-    'fit-key.txt', 'rack-B.stl', 'screw-sample-1-A.stl', 'screw-sample-1-B.stl',
-    'screw-sample-2-A.stl', 'screw-sample-2-B.stl', 'screw-sample-3-A.stl', 'screw-sample-3-B.stl',
-    'side-screw-clip.stl', 'tab-key.stl',
+    'fit-key.txt', 'kevan-sideclip-sample-1-A.stl', 'kevan-sideclip-sample-1-B.stl',
+    'kevan-sideclip-sample-2-A.stl', 'kevan-sideclip-sample-2-B.stl', 'kevan-sideclip-sample-3-A.stl',
+    'kevan-sideclip-sample-3-B.stl', 'kevan-sideclip.stl', 'rack-B.stl', 'tab-key.stl',
   ]);
   // The three dots of the last sample stay inside its blocks: every sample
   // pair is the same size, dots or not.
@@ -512,8 +554,9 @@ test('a test joint and fit samples are made for the side screw clip', () => {
     return hi - lo;
   };
   const g = screwClipGeometry(screwClipSettings({ height: H, screwClipPlay: 0.4 }), H);
-  assert.ok(Math.abs(size(files['screw-sample-3-A.stl']) - (g.across + 11)) < 1e-3);
+  assert.ok(Math.abs(size(files['kevan-sideclip-sample-3-A.stl']) - (g.across + 11)) < 1e-3);
   const key = strFromU8(files['fit-key.txt']);
+  assert.match(key, /Clip type Kevan Sideclip · 30 × 18 × 3 mm, 6 mm inner corners/);
   assert.match(key, /1 dot \| 0\.2\n2 dots \| 0\.3 {2}\(current\)\n3 dots \| 0\.4/);
   assert.match(key, /2\.5 × 10 mm countersunk wood screw/);
   assert.match(fitScrewClip(screw()), /before any border on that side/);
@@ -547,7 +590,7 @@ test('matching ends mate in the planner, a mirrored left-hand corner too; differ
   // The two ends of every piece carry clips at both edges.
   for (const port of straightPiece.sections[0].ports)
     assert.deepEqual(port.hardware.map((h) => h.family), Array(2).fill(
-      'side-screw|screwClipWidth=30|screwClipDepth=30|screwClipThickness=3|screwClipPlay=0.3|' +
+      'side-screw|screwClipWidth=30|screwClipDepth=18|screwClipCorner=6|screwClipThickness=3|screwClipPlay=0.3|' +
         'screwSeamDistance=9|screwInset=12|screwPilot=2.1|screwThread=2.5',
     ));
   const { layout, defs } = run(straightPiece, corner, [corner, 'left'], straightPiece);
@@ -565,13 +608,14 @@ test('matching ends mate in the planner, a mirrored left-hand corner too; differ
     [{ screwClipThickness: 2.6 }, /Clip thickness is 3 mm on this piece and 2\.6 mm on the next/],
     [{ screwClipPlay: 0.1 }, /Play in pocket is 0\.3 mm on this piece and 0\.1 mm on the next/],
     [{ screwPilot: 1.8 }, /Pilot hole is 2\.1 mm on this piece and 1\.8 mm on the next/],
-    [{ screwSeamDistance: 11 }, /Screw distance from seam is 9 mm/],
+    [{ screwSeamDistance: 9.5 }, /Screw distance from seam is 9 mm/],
     [{ screwInset: 8 }, /Screw inset from side face is 12 mm/],
-    [{ screwClipDepth: 34 }, /Clip depth into road is 30 mm/],
+    [{ screwClipDepth: 24 }, /Clip depth into road is 18 mm/],
+    [{ screwClipCorner: 4 }, /Inner corner radius is 6 mm on this piece and 4 mm on the next/],
     [{ screwThread: 2.2, screwPilot: 2.1, screwClearance: 2.5 }, /Screw thread is 2\.5 mm on this piece and 2\.2 mm on the next/],
   ])
     assert.throws(() => run(straightPiece, source(STRAIGHT, extra)),
-      (e) => text.test(e.message) && /^The side screw clips differ at this joint: .*Give both pieces the same side screw clip settings in Track Set\.$/.test(e.message),
+      (e) => text.test(e.message) && /^The Kevan Sideclips differ at this joint: .*Give both pieces the same Kevan Sideclip settings in Track Set\.$/.test(e.message),
       JSON.stringify(extra));
   // The screw direction and length belong to each piece's own half.
   const longer = run(straightPiece, source(STRAIGHT, { screwDirection: 'bottom', screwLength: 9 }));
@@ -589,7 +633,7 @@ test('matching ends mate in the planner, a mirrored left-hand corner too; differ
     name: 'Loop', groups: [], lanes: [], hardware,
     settings: { infill: 20, spoolPrice: 0, braidSpare: 50 }, material: { name: 'PLA', density: 1.24 },
   });
-  assert.match(list, /Screws \(one in each piece at every side screw clip; each cuts its thread into the clip\)\r\n {2}12 × 2\.5 × 8 mm countersunk wood screw/);
+  assert.match(list, /Screws \(one in each piece at every Kevan Sideclip; each cuts its thread into the clip\)\r\n {2}12 × 2\.5 × 8 mm countersunk wood screw/);
   // The clip prints from the planner like any other clip.
   const bytes = engine.plannerPrint({
     track: defs.get('s1').track,

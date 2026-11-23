@@ -274,13 +274,13 @@ function mismatch(target, incoming) {
     );
   return null;
 }
-// Side screw clips that differ in a setting that shapes the clip or its holes.
+// Kevan Sideclips that differ in a setting that shapes the clip or its holes.
 function screwClipMismatch(target, incoming) {
   const family = (end) => end.hardware.find((g) => g.kind === 'Clip')?.family;
   const difference = screwFamilyDifference(family(target), family(incoming));
   return difference
-    ? 'The side screw clips differ at this joint: ' + difference +
-        '. Give both pieces the same side screw clip settings in Track Set.'
+    ? 'The Kevan Sideclips differ at this joint: ' + difference +
+        '. Give both pieces the same Kevan Sideclip settings in Track Set.'
     : '';
 }
 // A piece placed mirrored carries its connectors mirrored too. Where the

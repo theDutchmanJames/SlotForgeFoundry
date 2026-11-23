@@ -20,7 +20,7 @@ export function fitRetainer(spec) {
     location + ' Start with the wings across the seam. ' + keeperToolAccess + ' ' + lockRetainer;
 }
 
-// The side screw clip. A border on that side covers the side face, so the
+// The Kevan Sideclip. A border on that side covers the side face, so the
 // clip and its screws go in before the border.
 export function fitScrewClip(params) {
   const sides = screwSides(params);

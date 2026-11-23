@@ -276,7 +276,7 @@ export function editConnectorPlacement({
         ? 'Position along joint (%)'
         : 'Offset from road centre (mm)';
     $('[data-cp-remove]').disabled = selected == null;
-    // Side screw clips sit at the road edges and are not placed by hand.
+    // Kevan Sideclips sit at the road edges and are not placed by hand.
     const locked = kind === 'clip' && layout?.lockedClips;
     if (locked)
       for (const control of [count, spacing, field, $('[data-cp-minus]'), $('[data-cp-plus]'),

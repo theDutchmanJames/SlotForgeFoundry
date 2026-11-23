@@ -38,7 +38,7 @@ const exact = (value) => (Math.sign(value) * Math.round(Math.abs(value) * 1e6)) 
 export const endObstacleText = {
   edge: 'Leave room for the supporting walls inside the edge.',
   lane: 'The pocket would reach a guide slot wall.',
-  screwClip: 'The tab support would meet a side screw clip pocket at the road edge.',
+  screwClip: 'The tab support would meet a Kevan Sideclip pocket at the road edge.',
 };
 
 // Each slot with its mirror partner (outermost pair first), and the middle
@@ -73,7 +73,7 @@ export function slotEndFace({ width, lanes, envelopes, slotWidth, wall, screwZon
     envelopes,
     slotWidth,
     wall,
-    // Side screw clips at this end, which tabs keep clear of.
+    // Kevan Sideclips at this end, which tabs keep clear of.
     screwZones: screwZones ?? [],
   };
 }
@@ -118,7 +118,7 @@ export function slotEndRequest(p, end, {
   location = 'Road ' + end,
   screwZones,
 } = {}) {
-  // Side screw clips sit at the edges, apart from the row: tabs keep clear.
+  // Kevan Sideclips sit at the edges, apart from the row: tabs keep clear.
   if (isScrewClip(p)) {
     screwZones ??= usesClips(activeJointMode(p, end)) ? screwClipZones(p, width) : [];
     mode = tabsOnly(mode);

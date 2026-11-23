@@ -75,7 +75,7 @@ const obstacle = {
   channel: 'The support would intersect a guide slot, braid recess or existing pocket.',
   feed: 'The connector support would intersect a braid pass-through.',
   detector: 'The connector support would reach the timing equipment.',
-  screwClip: 'The tab support would meet a side screw clip pocket at the road edge.',
+  screwClip: 'The tab support would meet a Kevan Sideclip pocket at the road edge.',
 };
 // The text for a blocking reason. A sweep on a piece with an off-centre slot
 // is the slot moving sideways; on any other piece it keeps its old words.
@@ -483,7 +483,7 @@ function screwClipWarning(p, { location, sign, reason, detail, lanes, edge, end,
 }
 
 /**
- * Side screw clips at every road joint with clips: one at each enabled road
+ * Kevan Sideclips at every road joint with clips: one at each enabled road
  * edge, centred on the seam. They never move; when the piece leaves no room
  * the build stops with a warning that says what to change.
  * Fills zones with the across-road room each joint's clips keep.
@@ -679,7 +679,7 @@ export function addRoadJoints(
         clips(modeA) || clips(modeB) ? envelopes.clip.name : 'tab',
       );
   }
-  // Side screw clips sit at the road edges, fixed by the side faces. Fit them
+  // Kevan Sideclips sit at the road edges, fixed by the side faces. Fit them
   // first; tabs at the same joints then keep clear of them.
   const screwZones = new Map();
   const screw = isScrewClip(p);
@@ -971,7 +971,7 @@ export function sideStationRules(
       p.segments;
     if (roadEndDistance <= half + 0.5) return 'roadEnd';
     if (screwReach) {
-      // A side screw clip sits in this road edge at each road joint.
+      // A Kevan Sideclip sits in this road edge at each road joint.
       const k = Math.round(t * p.segments);
       const scope = k === 0 ? 'start' : k === p.segments ? 'finish' : 'seam';
       if (clips(activeJointMode(p, scope)) && roadEndDistance <= half + 0.5 + screwReach)

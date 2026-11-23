@@ -751,9 +751,13 @@ try {
         .evaluateAll((options) => options.map((o) => o.value)),
       ['draw-key', 'carrera-retained', 'side-screw'],
     );
-    // The side screw clip shows its own settings and diagram in place of the keepers.
+    // The Kevan Sideclip shows its own settings and diagram in place of the keepers.
+    assert.equal(
+      await input('clipType').locator('option[value="side-screw"]').textContent(),
+      'Kevan Sideclip + two screws',
+    );
     await input('clipType').selectOption('side-screw');
-    await waitText('[data-clip-diagram]', 'Side screw clip · 30 × 30 × 3 mm');
+    await waitText('[data-clip-diagram]', 'Kevan Sideclip · 30 × 18 × 3 mm, 6 mm inner corners');
     assert.equal(await input('screwLength').isVisible(), true);
     assert.equal(await input('clipClearance').isVisible(), false);
     await input('screwLength').fill('8');
@@ -797,7 +801,7 @@ try {
       });
     await tab('borders').click();
     console.log(
-      '✓ Three clip families, side screw clip settings, live dovetail height, both Carrera keeper positions and Restore',
+      '✓ Three clip families, Kevan Sideclip settings, live dovetail height, both Carrera keeper positions and Restore',
     );
     const apex = page.getByRole('slider', { name: 'Outside apex width' });
     const originalWidth = Number(

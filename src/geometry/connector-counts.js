@@ -25,7 +25,7 @@ export function connectorEnvelopes(p) {
   const fit = resolveJointFit(p);
   const fork = clipSpec(p);
   if (fork?.screw) {
-    // A side screw clip reaches in from a side face, not across the road.
+    // A Kevan Sideclip reaches in from a side face, not across the road.
     return {
       tab: tabEnvelope(fit),
       clip: screwClipEnvelope(p),

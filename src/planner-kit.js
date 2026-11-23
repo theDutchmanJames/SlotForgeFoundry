@@ -99,8 +99,8 @@ export function laneLengths(sections) {
   return lanes;
 }
 
-// Bought hardware for the layout: one wood screw for each half of every side
-// screw clip at a joined end, sized by the piece that half belongs to.
+// Bought hardware for the layout: one wood screw for each half of every
+// Kevan Sideclip at a joined end, sized by the piece that half belongs to.
 // ends as endsOf() gives them.
 export function screwHardware({ ends, joints }) {
   const byName = new Map();
@@ -138,7 +138,7 @@ export function shoppingList({ name, groups, lanes, settings, material, hardware
   });
   if (lanes.length) lines.push('  Total braid: ' + m(total) + ' (spare ' + settings.braidSpare + ' mm per strip included)');
   if (hardware.length) {
-    lines.push('', 'Screws (one in each piece at every side screw clip; each cuts its thread into the clip)');
+    lines.push('', 'Screws (one in each piece at every Kevan Sideclip; each cuts its thread into the clip)');
     for (const { name: item, count } of hardware) lines.push('  ' + count + ' × ' + item);
   }
   lines.push('', 'Weights are estimates from the part volumes; your slicer gives the real figure.');

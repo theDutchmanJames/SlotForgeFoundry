@@ -143,7 +143,7 @@ function keyText(p, fit, clip, samples) {
   ].join('\n');
 }
 
-// The side screw clip play is tried 0.1 mm tighter and looser.
+// The Kevan Sideclip play is tried 0.1 mm tighter and looser.
 function screwPlays(params) {
   const { screwClipPlay: play } = screwClipSettings(params);
   const [min, max] = SCREW_CLIP_LIMITS.screwClipPlay;
@@ -157,7 +157,7 @@ function screwPlays(params) {
   return plays;
 }
 
-// Pairs of short road ends, A and B, joined by one side screw clip at the
+// Pairs of short road ends, A and B, joined by one Kevan Sideclip at the
 // face where y = 0. Each pair has its own play, marked by its dot count.
 function screwSampleBlocks(work, params, loose) {
   const direction = screwClipSettings(params).screwDirection === 'bottom' ? 'bottom' : 'top';
@@ -175,13 +175,13 @@ function screwSampleBlocks(work, params, loose) {
     // Room beyond the pocket walls for up to three dots 3.2 mm apart.
     const deep = across + 11;
     for (const [side, x0, x1, key] of [['A', -reach, 0, 'first'], ['B', 0, reach, 'second']]) {
-      const part = block(work, params, 'screw-sample-' + (i + 1) + '-' + side, x0, x1, 0, deep);
+      const part = block(work, params, 'kevan-sideclip-sample-' + (i + 1) + '-' + side, x0, x1, 0, deep);
       if (params.hollow) part.additions.push(work.and(tools.support, work.prism(part.section, 0, params.height)));
       part.cuts.push(tools.cut, tools.screws[key].holes);
       markStation(work, part, (x0 + x1) / 2, across + 5.5, i + 1, params);
       blocks.push({ part, x: side === 'A' ? 0 : reach + 4 });
     }
-    if (i === 0) loose.push(screwClipPart(work, p, tools, { id: 'side-screw-clip' }));
+    if (i === 0) loose.push(screwClipPart(work, p, tools, { id: 'kevan-sideclip' }));
   });
   return blocks;
 }
@@ -194,7 +194,8 @@ function screwKeyText(params, fit, samples) {
     'SlotForge Foundry · Connector fit samples',
     'Track height ' + mm(params.height) + ' mm',
     'Clip type ' + SCREW_CLIP_NAME + ' · ' + mm(s.screwClipWidth) + ' × ' + mm(s.screwClipDepth) +
-      ' × ' + mm(s.screwClipThickness) + ' mm',
+      ' × ' + mm(s.screwClipThickness) + ' mm, ' + mm(Math.min(s.screwClipCorner, s.screwClipWidth / 2)) +
+      ' mm inner corners',
     'Screws: ' + screwName(params) + ', two per clip. Pilot holes ' + mm(s.screwPilot) +
       ' mm in the clip and the road, clearance hole ' + mm(s.screwClearance) + ' mm. Each screw grips ' +
       mm(g.grip) + ' mm of thread: ' + mm(g.thickness) + ' mm in the clip and ' + mm(g.bite) + ' mm in the road.',
@@ -294,7 +295,7 @@ export function packFitSamples(wasm, rawParams) {
         tabClearance: s.tabClearance,
         clipClearance: s.clipClearance,
       };
-      // A side screw clip enters from a side face; it has its own blocks.
+      // A Kevan Sideclip enters from a side face; it has its own blocks.
       if (!screw)
         clipPair(
           work,

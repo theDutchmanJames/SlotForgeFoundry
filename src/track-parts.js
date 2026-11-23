@@ -16,7 +16,7 @@ const families = {
 const clipNames = {
   'carrera-retained': 'Carrera clips',
   'draw-key': 'Dovetail keys',
-  'side-screw': 'Side screw clips',
+  'side-screw': 'Kevan Sideclips',
 };
 
 const eyes = { shown: icon('eye'), hidden: icon('eyeoff') };

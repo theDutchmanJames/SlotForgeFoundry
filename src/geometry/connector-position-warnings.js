@@ -142,7 +142,7 @@ export function roadOffsetWarning({
   } else if (reason === 'opposite') {
     detail = at + 'this pocket meets a connector from the other end of the same road segment. Move a connector across the seam or lengthen the segment.';
   } else if (reason === 'screwClip') {
-    detail = at + 'the support would meet a side screw clip pocket at the road edge.';
+    detail = at + 'the support would meet a Kevan Sideclip pocket at the road edge.';
   } else {
     detail =
       at +
@@ -272,7 +272,7 @@ export function sideMountWarning({
     channel: 'the pocket would cut into a guide slot or braid recess.',
     feed: 'the pocket would cut into a braid pass-through.',
     other: 'the attachment is too close to another mount on this border.',
-    screwClip: 'the pocket would meet a side screw clip at a road joint.',
+    screwClip: 'the pocket would meet a Kevan Sideclip at a road joint.',
     outline:
       'the pocket or its support extends beyond the road or border outline.',
   };
@@ -345,7 +345,7 @@ const slotPocketCauses = {
   channel: 'the pocket would cut into the guide slot or a braid recess.',
   feed: 'the pocket would cut into a braid pass-through.',
   detector: 'the pocket would reach the timing equipment.',
-  screwClip: 'the tab support would meet a side screw clip pocket at the road edge.',
+  screwClip: 'the tab support would meet a Kevan Sideclip pocket at the road edge.',
 };
 
 /**

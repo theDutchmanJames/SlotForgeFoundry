@@ -84,7 +84,7 @@ const groups = [
       'clipClearance',
     ],
   ],
-  ['Side screw clip', SCREW_PROFILE_FIELDS],
+  ['Kevan Sideclip', SCREW_PROFILE_FIELDS],
 ];
 
 export async function showTrackLibrary({
@@ -470,7 +470,7 @@ export async function showTrackLibrary({
         } else next[control.name] = control.valueAsNumber;
       } else if (control.value) next[control.name] = control.value;
       else next[control.name] = null;
-      // A screw clip setting the pack never set stays unset at its default.
+      // A Kevan Sideclip setting the pack never set stays unset at its default.
       // An empty screw length is automatic.
       if (
         Object.hasOwn(SCREW_CLIP_DEFAULTS, control.name) &&

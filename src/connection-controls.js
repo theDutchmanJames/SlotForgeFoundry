@@ -2,7 +2,12 @@ import { choice, details, esc, field } from './ui.js';
 import { braidSpan } from './geometry/solids.js';
 import { hasSlotPosition, slotLaneOffsetAt, slotVaries } from './slot-position.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
-import { SCREW_CLIP_DEFAULTS, SCREW_CLIP_TYPE } from './geometry/screw-clip.js';
+import {
+  SCREW_CLIP_DEFAULTS,
+  SCREW_CLIP_NAME,
+  SCREW_CLIP_PLURAL,
+  SCREW_CLIP_TYPE,
+} from './geometry/screw-clip.js';
 import {
   placementKeys,
   positionKey,
@@ -30,13 +35,13 @@ const positionKeysFor = (scope, kind) => {
     : [positionKey(scope, kind)];
 };
 
-// Side screw clips of this piece: either road side can be switched off, and
+// Kevan Sideclips of this piece: either road side can be switched off, and
 // with Per road side each side has its own screw direction.
 function screwSideControls(p) {
   const screw = p.clipType === SCREW_CLIP_TYPE;
   const perSide = (p.screwDirection ?? 'top') === 'side';
   const side = (name, label) =>
-    choice('sideClip' + name, label + ' side clips', p['sideClip' + name] ?? '', [
+    choice('sideClip' + name, label + ' side ' + SCREW_CLIP_NAME, p['sideClip' + name] ?? '', [
       ['', 'Fitted'],
       ['none', 'None'],
     ]) +
@@ -45,10 +50,10 @@ function screwSideControls(p) {
       ['', 'From the top'],
       ['bottom', 'From the bottom'],
     ]) + '</div>';
-  return '<div class="joint-count-group" role="group" aria-label="Side screw clips" data-screw-sides' +
+  return '<div class="joint-count-group" role="group" aria-label="' + SCREW_CLIP_PLURAL + '" data-screw-sides' +
     (screw ? '' : ' hidden') + '>' +
     side('Left', 'Left') + side('Right', 'Right') +
-    '<p class="hint">Side screw clips sit at both road edges of every road joint with clips. Left is the outside of a corner. Each side of the piece can have its own screw direction when the clip settings say Per road side.</p></div>';
+    '<p class="hint">' + SCREW_CLIP_PLURAL + ' sit at both road edges of every road joint with clips. Left is the outside of a corner. Each side of the piece can have its own screw direction when the clip settings say Per road side.</p></div>';
 }
 
 export function jointCountControls(p) {
@@ -102,7 +107,7 @@ export function syncJointCountControls(form) {
         form.elements.namedItem('place_' + key)?.value.trim() || mutes.has(key));
       const showInherited = external(scope) && !mode && (manual || select.value);
       row.hidden = !active(mode || form.elements.joint.value, kind) || (!mode && !showInherited) ||
-        // Side screw clips have no count: one sits at each road edge.
+        // Kevan Sideclips have no count: one sits at each road edge.
         (screw && kind === 'clip' && !['side', 'end'].includes(scope));
       row.querySelector('[data-custom-count]').hidden = !manual;
       if (external(scope))
@@ -225,7 +230,7 @@ export function formatConnectorPositions(key, positions) {
 
 /** Apply to normal form values before assigning them to track parameters. */
 export function parseConnectionControls(fields, params = {}, edited = {}) {
-  // The side screw clip settings are always on the Joints page. A piece that
+  // The Kevan Sideclip settings are always on the Joints page. A piece that
   // never set them keeps them unset until one differs from its default.
   if (Object.keys(SCREW_CLIP_DEFAULTS).some((key) => Object.hasOwn(fields, key))) {
     fields = { ...fields };

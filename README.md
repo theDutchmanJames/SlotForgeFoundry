@@ -66,7 +66,7 @@ Each piece opens in **Track Set**, with large buttons for each part of the desig
 - **Cross-section:** a solid or hollow deck with underside ribs, the guide slot, braid recesses and braid pass-throughs.
 - **Borders:** inside and outside borders with their own widths, apex and ends (rounded, tapered or S-curve).
 - **Markings:** white lines, centre lines, kerbstones, starting grids and pit markers, with optional paint grooves cut into the print.
-- **Joints:** the double-dovetail draw key with quarter-turn keepers, a Carrera-style fork, a side screw clip held by two wood screws, or tabs and sockets. Choose how many per joint and drag each one into place.
+- **Joints:** the double-dovetail draw key with quarter-turn keepers, a Carrera-style fork, the Kevan Sideclip held by two wood screws, or tabs and sockets. Choose how many per joint and drag each one into place.
 - **Print:** the number of print segments, checked against your print plate.
 
 Every change shows live in the viewport before you apply it. A **Scale car** at 1:64, 1:43, 1:32 or 1:24 shows how a real car sits on the track.

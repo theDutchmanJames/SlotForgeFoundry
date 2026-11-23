@@ -29,7 +29,7 @@ const sizes = {
   tabClearance: JOINT_FIT_LIMITS.tab,
   clipClearance: JOINT_FIT_LIMITS.tab, // Version one used the wider tab range.
 };
-// The side screw clip settings. A pack that never set them leaves them out.
+// The Kevan Sideclip settings. A pack that never set them leaves them out.
 const screwSizes = SCREW_CLIP_LIMITS;
 export const SCREW_PROFILE_FIELDS = Object.freeze([...Object.keys(screwSizes), 'screwDirection']);
 export const SHARED_PROFILE_FIELDS = Object.freeze([

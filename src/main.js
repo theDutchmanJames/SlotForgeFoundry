@@ -57,7 +57,7 @@ import {
   surfaceNote,
 } from './inspector.js';
 import { plateDiagram } from './plate-preview.js';
-import { jointFitDiagram, jointsClipDiagram } from './joint-controls.js';
+import { clipChoices, jointFitDiagram, jointsClipDiagram } from './joint-controls.js';
 import { KEEPER_TOOL_FILENAME } from './keeper-tool-stl.js';
 import { resolveJointFit } from './geometry/joint-fit.js';
 import { clipTypeFromSTL } from './geometry/fork-clip.js';
@@ -3825,6 +3825,12 @@ const PACK_RULE_LABELS = {
   lanes: 'Lane count',
   laneSpacing: 'Lane spacing',
 };
+// A pack rule's value as people read it: the clip's name, not its id.
+function packRuleValue(key, value) {
+  if (key === 'clipType')
+    return new Map(clipChoices()).get(value) ?? String(value ?? 'off');
+  return String(value ?? 'off');
+}
 // The pack rules a pending edit of a pack piece would change.
 function packRuleChanges() {
   if (project.mode !== 'track' || !project.libraryPiece || !activeTrial) return [];
@@ -3853,7 +3859,7 @@ function syncPackApply(form = $('#settings-form')) {
           '<li>' +
           esc(PACK_RULE_LABELS[k] ?? k) +
           ': ' +
-          esc(String(p[k] ?? 'off')) +
+          esc(packRuleValue(k, p[k])) +
           '</li>',
       )
       .join('') +

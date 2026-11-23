@@ -60,7 +60,7 @@ const sideMessages = {
   width: 'The border is too narrow for the pocket and its supporting wall.',
   finish: 'Move the connector into the full-width section, clear of the shaped end.',
   lane: 'The connector support would reach a guide slot.',
-  screwClip: 'The connector would meet a side screw clip at the road edge.',
+  screwClip: 'The connector would meet a Kevan Sideclip at the road edge.',
 };
 
 function segmentDistanceSq(p, a, b) {
@@ -497,14 +497,14 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const env = connectorEnvelopes(p),
     spec = clipSpec(p),
     fit = resolveJointFit(p);
-  // Side screw clips sit at the road edges, centred on each road joint. They
+  // Kevan Sideclips sit at the road edges, centred on each road joint. They
   // are shown on the joint but never placed by hand.
   const screw = isScrewClip(p);
   const screwRow =
     screw && !border && usesClips(activeJointMode(p, scope)) ? screwClipZones(p, w) : [];
   const screwLock = border
-    ? 'Side screw clips join road ends only. Use tabs on borders.'
-    : 'Side screw clips sit at the road edges, centred on the joint. Switch a side off under Connections → Road connections.';
+    ? 'Kevan Sideclips join road ends only. Use tabs on borders.'
+    : 'Kevan Sideclips sit at the road edges, centred on the joint. Switch a side off under Connections → Road connections.';
   // Beside an off-centre slot an external end is laid out by the same rule as
   // the build, from that end alone (slot-end-row.js).
   const slotFace =
@@ -723,7 +723,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const key = (type) => positionKey(scope, type, border ? side : undefined);
   const configured = (type) =>
     configuredPositions(p, scope, type, border ? side : undefined);
-  // The row the user can arrange: without the side screw clips.
+  // The row the user can arrange: without the Kevan Sideclips.
   const rowMode = screw ? tabsOnly(mode) : mode;
   const enabled = (type) =>
     (rowMode === 'both' || rowMode === type + 's') && configured(type)?.length !== 0;
@@ -875,7 +875,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
     placementWarning,
     // Automatic marks at this end are set by the off-centre slot alone.
     fixedRow: Boolean(slotFace),
-    // Side screw clips are shown but not placed by hand.
+    // Kevan Sideclips are shown but not placed by hand.
     ...(screw && { lockedClips: screwLock }),
     reason,
     even,
