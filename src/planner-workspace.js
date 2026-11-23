@@ -24,7 +24,7 @@ import {
   validateLayout,
   blockedJoints,
 } from './planner-model.js';
-import { slotLabel } from './slot-position.js';
+import { slotTitle } from './slot-position.js';
 import { zipSync, strToU8 } from 'fflate';
 import { clipAttribution } from './geometry/clip-types.js';
 import { assemblyNotes, wiringDiagram } from './special-print.js';
@@ -50,10 +50,11 @@ const btn = (key, label, symbol = '', style = '') =>
   label +
   '</button>';
 const checkedSelect = (val, current) => (val === current ? ' selected' : '');
-// ' · slot 35-145' for a piece with an off-centre slot, nothing otherwise,
-// and nothing after a name that already says it.
+// ' · slot 35-145 from left' for a piece with an off-centre slot ('slots
+// 35/135 from left' for several lanes), nothing otherwise, and nothing after
+// a name that already says it.
 const slotNote = (p, name = '') => {
-  const note = slotLabel(p) && 'slot ' + slotLabel(p);
+  const note = slotTitle(p);
   return note && !name.includes(note) ? ' · ' + note : '';
 };
 const jointKey = (j) => [j.a.key, j.b.key].sort().join('|');

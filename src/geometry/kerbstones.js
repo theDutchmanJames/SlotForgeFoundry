@@ -7,6 +7,18 @@ const white = '#ECE9E2';
 export const WHITE_LINE_COLOR = '#FFFFFF';
 const maxBlocks = 4096;
 const maxStations = 32768;
+/**
+ * The end of an advice sentence about a marking on road edge `side` that
+ * reaches a slot: '.' when centred, else where to move the slot. With
+ * several slots it names the one nearest that edge, numbered from the edge
+ * the slots are measured from.
+ */
+export function slotEdgeAdvice(p, side) {
+  if (!hasSlotPosition(p)) return '.';
+  if (!(p.lanes > 1)) return ', or move the slot away from this edge under Slot position.';
+  const slot = side === p.slotPosition.edge ? 1 : p.lanes;
+  return ', or move slot ' + slot + ' away from this edge under Slot position.';
+}
 const sideName = (side, road = false) =>
   (side === 'inner' ? 'Inside' : 'Outside') + (road ? ' road edge' : ' border');
 const distance = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -203,7 +215,7 @@ function applyKerbBands(work, p, side, parts, edges, reserved, road) {
           sideName(side, true) + ' · ' + part.name,
           'The kerbstones reach a guide slot or braid strip.',
           'Reduce the kerbstone width or the edge line width to leave room beside the lane' +
-            (hasSlotPosition(p) ? ', or move the slot away from this edge under Slot position.' : '.'),
+            slotEdgeAdvice(p, side),
           { tab: 'geometry', field: 'kerbWidth', label: 'Edit kerbstone width' },
         );
     }

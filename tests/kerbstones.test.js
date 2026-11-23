@@ -121,6 +121,28 @@ test('road kerbs fit beside an off-centre slot on either edge and point at Slot 
   );
 });
 
+test('with several off-centre slots road kerbs fit beside the slot nearest each edge and name it when they reach it', () => {
+  const p = { ...straight, length: 100, width: 200, lanes: 2, laneSpacing: 65, borderSide: 'none', braidGap: 0.6 };
+  const advice = (slot) => new RegExp('The kerbstones reach a guide slot or braid strip\\. Reduce the kerbstone width or the edge line width ' +
+    'to leave room beside the lane, or move slot ' + slot + ' away from this edge under Slot position\\.$');
+  // Together 20 mm from the left: slot 1 at +80, slot 2 at +15.
+  const together = { ...p, slotPosition: { version: 1, edge: 'outer', startMm: 20, endMm: 20 } };
+  built({ ...together, roadKerbSide: 'both', kerbWidth: 12 }, ([road]) => {
+    for (const y of [-94, 94]) assert.equal(colourAt(road.kerbMarkings, [-45, y]), red);
+    for (const y of [80, 15]) assert.equal(colourAt(road.kerbMarkings, [-45, y]), undefined, 'the slot keeps its braids');
+    checkPaint(road, 12);
+  });
+  assert.throws(() => built({ ...together, roadKerbSide: 'outer', kerbWidth: 14 }, () => {}), advice(1));
+  // Each lane set from the right edge: slot 1 20 mm from it, slot 2 in the middle.
+  const each = { ...p, slotPosition: { version: 1, edge: 'inner', lanes: [{ startMm: 20, endMm: 20 }, { startMm: 100, endMm: 100 }] } };
+  assert.throws(() => built({ ...each, roadKerbSide: 'inner', kerbWidth: 14 }, () => {}), advice(1));
+  assert.throws(() => built({ ...each, roadKerbSide: 'outer', kerbWidth: 95 }, () => {}), advice(2));
+  built({ ...each, roadKerbSide: 'outer', kerbWidth: 90 }, ([road]) => {
+    assert.equal(colourAt(road.kerbMarkings, [-45, 11]), red);
+    assert.equal(colourAt(road.kerbMarkings, [-45, 0]), undefined, 'slot 2 keeps its braids');
+  });
+});
+
 test('road and border kerbs sit beside their shared edge stripe and each block perimeter exports as a groove', () => {
   const p = {
     ...straight, length: 100, segments: 2, borderSegments: 2, borderSide: 'outer',

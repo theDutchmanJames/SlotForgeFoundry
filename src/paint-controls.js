@@ -68,6 +68,14 @@ const centreSlotNotes = {
   beside: 'The off-centre guide slot takes part of the marking here. Paint appears only on clear road surface.',
   crossing: 'The guide slot crosses the centre line on this piece. Paint appears only on clear road surface.',
 };
+// The same with several slots on the piece: one of them is meant.
+const centreSlotNotesSeveral = {
+  beside: 'An off-centre guide slot takes part of the marking here. Paint appears only on clear road surface.',
+  crossing: 'A guide slot crosses the centre line on this piece. Paint appears only on clear road surface.',
+};
+const centreSlotNote = (p, slots) =>
+  (hasSlotPosition(p) && p.lanes > 1 ? centreSlotNotesSeveral[slots] : undefined) ??
+  centreSlotNotes[slots] ?? centreSlotNotes.centred;
 
 /**
  * Bring the note under Centre line up to date with a piece's slot position.
@@ -79,7 +87,7 @@ export function syncCentreSlotNote(container, p) {
   const slots = centreLineSlots(p);
   note.dataset.lanes = p.lanes;
   note.dataset.centreSlotNote = hasSlotPosition(p) ? slots : '';
-  note.textContent = centreSlotNotes[slots] ?? centreSlotNotes.centred;
+  note.textContent = centreSlotNote(p, slots);
   note.hidden = (p.roadCentreLine ?? 'none') === 'none' || slots === 'clear';
 }
 
@@ -106,7 +114,7 @@ export function roadLineFolder(p) {
       ) + choice('roadCentreLine', 'Centre line', centre, centreLineStyles) +
         '<p class="hint" data-lanes="' + p.lanes + '" data-centre-slot-note' +
         (hasSlotPosition(p) ? '="' + slots + '"' : '') + (centre !== 'none' && slots !== 'clear' ? '>' : ' hidden>') +
-        (centreSlotNotes[slots] ?? centreSlotNotes.centred) + '</p>' +
+        centreSlotNote(p, slots) + '</p>' +
         (pit ? pitDividerControl(p) : '') +
         '<fieldset class="border-apex-fields" data-road-dashes' + (dashes ? '>' : ' hidden disabled>') +
         field('dashLength', 'Dash length', dimensions.dashLength, 'mm', { min: 1, max: 2000 }) +

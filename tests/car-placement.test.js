@@ -62,6 +62,35 @@ test('the car rides an off-centre slot, follows its S from end A to end B and st
   for (const [x, y] of bend.points) close(Math.hypot(x, y + 300), 235, 1e-9);
 });
 
+test('with several off-centre slots the car on every lane follows its own slot', () => {
+  const two = { ...base, kind: 'straight', length: 300, lanes: 2, laneSpacing: 65 };
+  const each = (edge, ...lanes) => ({ version: 1, edge, lanes: lanes.map(([startMm, endMm = startMm]) => ({ startMm, endMm })) });
+  // Lanes together 35 mm from the left: slot 1 at +65, slot 2 65 mm further right.
+  const together = buildCarRoutes({ params: { ...two, slotPosition: { version: 1, edge: 'outer', startMm: 35, endMm: 35 } } });
+  assert.deepEqual(together.map(route => carPose(route, 0.4).position[1]), [0, 65]);
+  // Each lane set, 35/105 -> 95/165 mm from the left: lane 2 (index 1) is slot 1.
+  const routes = buildCarRoutes({ params: { ...two, slotPosition: each('outer', [35, 95], [105, 165]) } });
+  assert.equal(routes.length, 2);
+  for (const [route, [a, b]] of [[routes[1], [65, 5]], [routes[0], [-5, -65]]]) {
+    assert.deepEqual(carPose(route, 0).position, [-150, a, 10]);
+    assert.deepEqual(carPose(route, 1).position, [150, b, 10]);
+    // Square to both joints.
+    for (const t of [0, 1]) close(carPose(route, t).forward[0], 1, 1e-6);
+    close(carPose(route, 0.5).position[1], (a + b) / 2, 1e-3);
+    for (const [x, y] of route.points) {
+      const u = x / 300 + 0.5;
+      close(y, a + (b - a) * u ** 3 * (10 - 15 * u + 6 * u * u), 1e-9);
+    }
+  }
+  // Picking a slot on the road finds that lane.
+  assert.equal(nearestCarRoute(routes, [0, -35, 5], { role: 'road' }).id, routes[0].id);
+  assert.equal(nearestCarRoute(routes, [0, 35, 5], { role: 'road' }).id, routes[1].id);
+  // On a curve, measured from the inner edge, each slot keeps its own radius.
+  const bend = buildCarRoutes({ params: { ...two, kind: 'curve', radius: 300, angle: 90, slotPosition: each('inner', [35], [120]) } });
+  for (const [route, radius] of [[bend[0], 235], [bend[1], 320]])
+    for (const [x, y] of route.points) close(Math.hypot(x, y + 300), radius, 1e-9);
+});
+
 test('both pit branches and crossing axes are individually available alongside other specials', () => {
   for (const [type] of SPECIAL_PIECES) {
     const params = specialTrackParams(type, base);

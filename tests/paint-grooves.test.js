@@ -297,6 +297,25 @@ test('an edge line fits beside an off-centre slot where there is road for it, an
   );
 });
 
+test('with several off-centre slots an edge line fits beside the slot nearest its edge and names that slot when it reaches it', (t) => {
+  // Each lane set from the right edge: slot 1 12 mm from it, slot 2 60 mm from the left edge.
+  const p = {
+    borderSide: 'none', segments: 1, width: 200, lanes: 2, laneSpacing: 65, braidGap: 0.6,
+    slotPosition: { version: 1, edge: 'inner', lanes: [{ startMm: 12, endMm: 12 }, { startMm: 140, endMm: 140 }] },
+  };
+  const [near] = build(t, { ...p, whiteLineRoad: 'both', whiteLineWidth: 4.5 });
+  assert.equal(paintAt(near, 0, -96), '#FFFFFF');
+  assert.equal(paintAt(near, 0, -95), undefined);
+  assert.equal(paintAt(near, 0, 96), '#FFFFFF');
+  const advice = (slot) => new RegExp('The white line reaches a guide slot or braid strip\\. Reduce White line width under Road → ' +
+    'Shared line and groove dimensions, or move slot ' + slot + ' away from this edge under Slot position\\.$');
+  assert.throws(() => buildTrack(wasm, { ...straight, ...p, whiteLineRoad: 'inner', whiteLineWidth: 5 }), advice(1));
+  assert.throws(() => buildTrack(wasm, { ...straight, ...p, whiteLineRoad: 'outer', whiteLineWidth: 55 }), advice(2));
+  // Lanes together from the left: the right edge line meets slot 2.
+  const together = { ...p, laneSpacing: 128, slotPosition: { version: 1, edge: 'outer', startMm: 60, endMm: 60 } };
+  assert.throws(() => buildTrack(wasm, { ...straight, ...together, whiteLineRoad: 'inner', whiteLineWidth: 5 }), advice(2));
+});
+
 test('a groove in the solid border rim may extend past the thickness of the hollow deck', (t) => {
   const parts = build(t, {
     whiteLineBorder: 'outer',

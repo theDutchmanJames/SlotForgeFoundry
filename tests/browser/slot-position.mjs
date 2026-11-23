@@ -61,14 +61,18 @@ export async function checkSlotPosition({
   assert.equal(await mode.inputValue(), 'centre');
   assert.equal(await group.locator('[data-slot-options]').isVisible(), false);
   await mode.selectOption('off');
-  // Several lanes keep their slots where they are, and the group says so.
+  // A second lane offers the Lanes choice and numbers the slots; one lane does not.
+  const lanesChoice = group.locator('[data-slot-lanes-choice]');
+  assert.equal(await lanesChoice.isVisible(), false);
   await input('lanes').fill('2');
-  await group.locator('[data-slot-unavailable]').waitFor();
-  assert.equal(await mode.isVisible(), false);
-  assert.equal(await group.locator('[data-slot-options]').isVisible(), false);
-  await input('lanes').fill('1');
-  await mode.waitFor();
+  await lanesChoice.waitFor();
   assert.equal(await mode.inputValue(), 'off');
+  assert.equal(await group.locator('[data-slot-options]').isVisible(), true);
+  assert.equal((await group.locator('[data-slot-label="start"]').innerText()).trim(), 'Slot 1 at end A');
+  await input('lanes').fill('1');
+  await lanesChoice.waitFor({ state: 'hidden' });
+  assert.equal(await mode.inputValue(), 'off');
+  assert.equal((await group.locator('[data-slot-label="start"]').innerText()).trim(), 'At end A');
   await input('slotStart').fill('35');
   await input('slotEnd').fill('145');
   await live();
@@ -208,6 +212,123 @@ export async function checkSlotPosition({
   assert.equal(await input('slotStart').isVisible(), true);
   await action('restore').click();
   await live('idle');
+
+  // ---- Two lanes: lanes moving together, then each lane set.
+  const pair = newProject();
+  pair.name = 'Two-lane slot position';
+  Object.assign(pair.track.params, {
+    ...project.track.params,
+    lanes: 2,
+    laneSpacing: 70,
+    joint: 'none',
+    connectorCounts: undefined,
+  });
+  await openProject(Buffer.from(JSON.stringify(pair)), 'slot-position-lanes.slotfab');
+  await tab('geometry').click();
+  await openSection('Lane layout');
+  assert.equal(await mode.isDisabled(), false);
+  await mode.selectOption('off');
+  await input('slotEdge').selectOption('outer');
+  assert.equal(await input('slotLanes').inputValue(), 'together');
+  assert.match(
+    await group.locator('[data-slot-follow]').innerText(),
+    /Slot 1 is nearest the edge you measure from\. The others follow every 70 mm\./,
+  );
+  await input('slotStart').fill('35');
+  await input('slotEnd').fill('95');
+  await live();
+  assert.match(
+    await group.locator('[data-slot-readout]').innerText(),
+    /End A is 165\/95 mm and end B 105\/35 mm from the right edge\./,
+  );
+  assert.match(await notes.innerText(), /tightest bend in the slots/);
+  const together = { version: 1, edge: 'outer', startMm: 35, endMm: 95 };
+  assert.deepEqual((await saved()).slotPosition, together);
+
+  await tab('geometry').click();
+  await openSection('Lane layout');
+  // Set each lane: the table starts from the slots of lanes moving together.
+  await input('slotLanes').selectOption('each');
+  await group.locator('[data-slot-each]').waitFor();
+  assert.equal(await group.locator('[data-slot-together]').isVisible(), false);
+  assert.deepEqual(
+    [
+      await input('slotLane1Start').inputValue(), await input('slotLane1End').inputValue(),
+      await input('slotLane2Start').inputValue(), await input('slotLane2End').inputValue(),
+    ],
+    ['35', '95', '105', '165'],
+  );
+  assert.equal(await input('slotLane3Start').isVisible(), false);
+  assert.equal(await page.locator('[data-slot-spacing-unused]').isVisible(), true);
+  // A 35/105 to 95/165 list is spaced 70 mm at both ends: it is stored as the
+  // lanes moving together.
+  await live();
+  assert.deepEqual((await saved()).slotPosition, together);
+  await tab('geometry').click();
+  await openSection('Lane layout');
+  if ((await input('slotLanes').inputValue()) !== 'each') await input('slotLanes').selectOption('each');
+  await group.locator('[data-slot-each]').waitFor();
+  await input('slotLane2Start').fill('120.2');
+  await input('slotLane2Start').press('Tab');
+  // A committed distance settles on its half millimetre.
+  assert.equal(await input('slotLane2Start').inputValue(), '120');
+  await input('slotLane2End').fill('170');
+  await live();
+  assert.match(
+    await group.locator('[data-slot-readout]').innerText(),
+    /End A is 165\/80 mm and end B 105\/30 mm from the right edge\./,
+  );
+  const each = {
+    version: 1,
+    edge: 'outer',
+    lanes: [{ startMm: 35, endMm: 95 }, { startMm: 120, endMm: 170 }],
+  };
+  const applied2 = await saved();
+  assert.deepEqual(applied2.slotPosition, each);
+  assert.equal(Object.keys(applied2).some((key) => /^slot(Edge|Start|End|Lanes|Lane\d)/.test(key)), false);
+  await snap('slot-position-each-lane');
+
+  // Crossing lanes are refused with a message that names the slots.
+  await tab('geometry').click();
+  await openSection('Lane layout');
+  await input('slotLane2Start').fill('20');
+  await error.waitFor();
+  assert.match(await error.innerText(), /slot 2 is not further from the left edge than slot 1/);
+  await action('restore').click();
+  await live('idle');
+  // Slots whose braids would meet are refused too.
+  await input('slotLane2Start').fill('40');
+  await error.waitFor();
+  assert.match(
+    await error.innerText(),
+    /At end A slots 1 and 2 are only 5 mm apart\. Keep neighbouring slots more than [\d.]+ mm apart so their braids do not meet\./,
+  );
+  await action('restore').click();
+  await live('idle');
+
+  // Squeeze / spread and moved slots exclude each other.
+  await input('laneMode').selectOption('squeeze');
+  await error.waitFor();
+  assert.match(await error.innerText(), /A piece can squeeze or spread its lanes, or move its slots, not both\./);
+  assert.equal(await group.locator('[data-slot-unavailable]').isVisible(), true);
+  await action('restore').click();
+  await live('idle');
+
+  // Back to lanes moving together: slot 1 is kept, the others follow 70 mm on.
+  await input('slotLanes').selectOption('together');
+  assert.equal(await input('slotStart').inputValue(), '35');
+  assert.equal(await input('slotEnd').inputValue(), '95');
+  await live();
+  assert.deepEqual((await saved()).slotPosition, together);
+  await tab('geometry').click();
+  await openSection('Lane layout');
+  // Restore brings the whole lane list back.
+  await action('restore').click();
+  await live();
+  assert.equal(await input('slotLanes').inputValue(), 'each');
+  assert.equal(await input('slotLane2Start').inputValue(), '120');
+  assert.deepEqual((await saved()).slotPosition, each);
+  await tab('geometry').click();
 
   // ---- The piece creator, in a single-lane pack 200 mm wide.
   const library = page.locator('dialog.track-library');
@@ -357,7 +478,85 @@ export async function checkSlotPosition({
   await panel.locator('[data-pl="new"]').click();
   await idle();
   await action('mode-track').click();
+
+  // ---- Two lanes in a pack: an S with the lanes together, and a straight
+  // set lane by lane that is stored as lanes together.
+  const pairPack = 'Two-lane slot pack';
+  await openLibrary();
+  await control('new').click();
+  await setting('itemName').fill(pairPack);
+  await setting('startWith').selectOption('empty');
+  await setting('packWidth').fill('200');
+  await setting('packLanes').fill('2');
+  await setting('packLaneSpacing').fill('70');
+  await setting('packR1').fill('200');
+  await control('commit-new').click();
+  await control('create-piece').waitFor();
+  assert.equal(await setting('collection').locator('option:checked').textContent(), pairPack);
+  async function createPairStraight(fill, name) {
+    await control('create-piece').click();
+    await creator.locator('[data-shape="straight"]').click();
+    await pc('pcLength').fill('300');
+    assert.equal(await pc('pcLanes').inputValue(), '2');
+    await creator.locator('[data-slot-mode]').selectOption('off');
+    await pc('pcSlotEdge').selectOption('outer');
+    await fill();
+    assert.equal(await creator.locator('[data-piece-name]').inputValue(), name);
+    assert.equal(await pcStatus.innerText(), '');
+    await add.click();
+    await creator.waitFor({ state: 'detached' });
+    await waitText('#model-title', name);
+    return name;
+  }
+  const pairS = await createPairStraight(async () => {
+    assert.equal(await pc('pcSlotLanes').inputValue(), 'together');
+    await pc('pcSlotStart').fill('35');
+    await pc('pcSlotEnd').fill('95');
+  }, 'Straight · 300 mm · slots 35/105-95/165 from left');
+  assert.deepEqual((await saved()).slotPosition, together);
+  await openLibrary(pairPack);
+  assert.match(await library.locator('.lib-section-head').innerText(), /200 mm wide · 2 lanes · 70 mm spacing · some slots off-centre/);
+  const pairEnd = await createPairStraight(async () => {
+    await pc('pcSlotStart').fill('95');
+    await pc('pcSlotEnd').fill('95');
+    await pc('pcSlotLanes').selectOption('each');
+    await creator.locator('[data-slot-each]').waitFor();
+    assert.deepEqual(
+      [
+        await pc('pcSlotLane1Start').inputValue(), await pc('pcSlotLane1End').inputValue(),
+        await pc('pcSlotLane2Start').inputValue(), await pc('pcSlotLane2End').inputValue(),
+      ],
+      ['95', '95', '165', '165'],
+    );
+  }, 'Straight · 300 mm · slots 95/165 from left');
+  assert.deepEqual((await saved()).slotPosition, { ...together, startMm: 95 });
+
+  await action('mode-planner').click();
+  await panel.waitFor();
+  await panel.locator('[data-pl="new"]').click();
+  await idle();
+  await panel.locator('[data-pl-field="pack"]').selectOption({ label: pairPack });
+  await page.waitForFunction(() => document.querySelectorAll('.pl-card').length === 2);
+  await place(pairS);
+  assert.equal(await message.evaluate((el) => el.classList.contains('error')), false, await message.innerText());
+  const pairFirst = (await layout()).nodes.length;
+  // End B of the S has its slots 95 and 165 mm from the left edge, like the next piece.
+  await place(pairEnd);
+  assert.equal(await message.evaluate((el) => el.classList.contains('error')), false, await message.innerText());
+  const pairJoined = (await layout()).nodes.length;
+  assert.ok(pairJoined > pairFirst, 'the matching two-lane piece was added');
+  assert.doesNotMatch(await panel.locator('.pl-stats').innerText(), /slots out of line/);
+  await place(pairS);
+  assert.equal(await message.evaluate((el) => el.classList.contains('error')), true);
+  assert.match(
+    await message.innerText(),
+    /The guide slots do not line up at this joint: the slots are 95 and 165 mm from the left edge on this piece and 35 and 105 mm on the next\./,
+  );
+  assert.equal((await layout()).nodes.length, pairJoined);
+  await panel.locator('[data-pl="new"]').click();
+  await idle();
+  await action('mode-track').click();
   console.log(
-    '✓ Slot position: an off-centre S on a single-lane straight applies live, shows its ends, notes and connector map, refuses a slot off the road, keeps one distance on a corner, clears when centred, and only joins matching slots in the Track Planner',
+    '✓ Slot position: an off-centre S on a single-lane straight applies live, shows its ends, notes and connector map, refuses a slot off the road, keeps one distance on a corner, clears when centred, and only joins matching slots in the Track Planner; two lanes move together or are set one by one, are stored normalised, refuse slots that cross or crowd, and join only matching two-lane pieces',
   );
 }

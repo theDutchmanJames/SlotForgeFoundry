@@ -8,10 +8,14 @@ import {
   usesClips,
   usesTabs,
 } from './connector-counts.js';
-import { roadOffsetWarning, slotRowWarning } from './connector-position-warnings.js';
+import {
+  roadOffsetWarning,
+  slotPositionSetting,
+  slotRowWarning,
+} from './connector-position-warnings.js';
 import { currentJointSettings } from './joint-fit.js';
 import { activeJointMode, countedJoint, countWarningSetting } from './placements.js';
-import { hasSlotPosition } from '../slot-position.js';
+import { hasSlotPosition, slotDistances, slotForm } from '../slot-position.js';
 
 // Connector rows at the two ends of a piece with an off-centre slot.
 //
@@ -26,32 +30,61 @@ export const SLOT_SWEEP_ALLOWANCE = 1;
 
 // Two ways of typing the same position must never land either side of a limit.
 const TIE = 1e-7;
-const exact = (value) => Math.round(value * 1e6) / 1e6;
+// Rounded alike on both sides of the centre, so a mirrored slot is exactly
+// the negative of the original.
+const exact = (value) => (Math.sign(value) * Math.round(Math.abs(value) * 1e6)) / 1e6 + 0;
 
 export const endObstacleText = {
   edge: 'Leave room for the supporting walls inside the edge.',
   lane: 'The pocket would reach a guide slot wall.',
 };
 
+// Each slot with its mirror partner (outermost pair first), and the middle
+// slot of an odd count alone. A mirrored face gives exactly the negatives.
+function mirrorPairs(lanes) {
+  const sorted = [...lanes].sort((a, b) => a - b);
+  const n = sorted.length;
+  return Array.from({ length: Math.ceil(n / 2) }, (_, i) =>
+    i === n - 1 - i ? sorted[i] : sorted[i] + sorted[n - 1 - i]);
+}
+
 /**
  * The face of one road end: its width, the lanes that arrive there, and the
  * sizes that decide how close a connector may sit.
- * A centred face is measured exactly as the standard pieces are.
+ * A face whose slots sit symmetrically about the centre is measured exactly
+ * as the standard centred pieces are.
  */
 export function slotEndFace({ width, lanes, envelopes, slotWidth, wall }) {
   const arriving = lanes.map(exact);
-  const lean = arriving.reduce((sum, lane) => sum + lane, 0);
-  const offCentre = lean !== 0;
+  const pairs = mirrorPairs(arriving);
+  const lean = pairs.reduce((sum, pair) => sum + pair, 0);
+  const offCentre = pairs.some((pair) => pair !== 0);
+  // The side the slots crowd: where they lean, or for slots that balance
+  // without being symmetric, where the outermost unequal pair leans.
+  const side = (Math.sign(lean) || Math.sign(pairs.find((pair) => pair !== 0) ?? 0)) < 0 ? -1 : 1;
   return {
     width: offCentre ? exact(width) : width,
     lanes: arriving,
     lean,
+    side,
     offCentre,
     envelopes,
     slotWidth,
     wall,
   };
 }
+
+// The slots where a piece with these lanes has them when it is centred.
+const standardLanes = (p) =>
+  p.lanes > 1
+    ? Array.from({ length: p.lanes }, (_, i) => (i - (p.lanes - 1) / 2) * p.laneSpacing)
+    : [0];
+
+const sameSlots = (a, b) => {
+  const sort = (list) => list.map(exact).sort((x, y) => x - y);
+  const [x, y] = [sort(a), sort(b)];
+  return x.length === y.length && x.every((value, i) => value === y[i]);
+};
 
 /** Distance a connector centre keeps from a slot centre at this face. */
 export function slotEndKeepOut(face, type, byHand = false) {
@@ -92,6 +125,12 @@ export function slotEndRequest(p, end, {
     tabOffset: p.connectorOffset,
     location,
     countSetting: (type) => countWarningSetting(p, end, type),
+    // A row that does not fit beside slots the piece has moved points at the
+    // slot nearest the trouble; at the standard slots it fails as a standard
+    // piece does.
+    slotSetting: lanes && !sameSlots(lanes, standardLanes(p))
+      ? (value) => slotPositionSetting(p, lanes, value, end)
+      : null,
   };
 }
 
@@ -104,6 +143,24 @@ const grouped = (specs) => ({
   tab: valuesOf(specs, 'tab'),
   clip: valuesOf(specs, 'clip'),
 });
+
+// The setting a failed row points at, as a function of the offset (mm from
+// the centre) where it failed, or null for the slots of a centred piece.
+const movedSlots = (ask, face) =>
+  ask.slotSetting !== undefined
+    ? ask.slotSetting
+    : face.offCentre ? () => slotPositionSetting() : null;
+
+// Where a counted row first meets a slot: the first proposed connector the
+// slots block, else the centre. In the caller's coordinates.
+function troubleAt(face, error, turn) {
+  const proposed = error.proposedPositions;
+  const blocked = proposed && ['tab', 'clip']
+    .flatMap((type) => proposed[type].map((value) => ({ type, value })))
+    .sort((a, b) => Math.abs(a.value) - Math.abs(b.value))
+    .find(({ type, value }) => slotEndObstacle(face, type, value) === 'lane');
+  return turn(blocked ? blocked.value : 0);
+}
 
 function countedRow(ask, face, turn) {
   const { request } = ask;
@@ -144,7 +201,9 @@ function countedRow(ask, face, turn) {
           lanes: face.lanes.map(turn),
           reason: slotEndObstacle(face, stuck.type, turn(stuck.value), true),
         })
-      : face.offCentre ? slotRowWarning(error, true) : error;
+      : movedSlots(ask, face)
+        ? slotRowWarning(error, true, movedSlots(ask, face)(troubleAt(face, error, turn)), face.lanes.length)
+        : error;
     const proposed = error.proposedPositions;
     if (proposed) {
       warning.proposedPositions = {
@@ -204,7 +263,8 @@ function legacyRow(ask, face, turn) {
         fixedTabOffset,
         reason: blocking(value),
       });
-      const failed = !custom && face.offCentre ? slotRowWarning(error, false) : error;
+      const moved = !custom && movedSlots(ask, face);
+      const failed = moved ? slotRowWarning(error, false, moved(turn(value)), face.lanes.length) : error;
       // Show the marks where they were asked for, so they can still be moved.
       failed.proposedPositions = grouped([
         ...specs,
@@ -249,8 +309,8 @@ function legacyRow(ask, face, turn) {
  */
 export function slotEndRow(ask) {
   const face = slotEndFace(ask);
-  // Solve with the slot on the positive side, then turn the answer back.
-  const side = face.lean < 0 ? -1 : 1;
+  // Solve with the slots crowding the positive side, then turn the answer back.
+  const { side } = face;
   const turn = (value) => side * value + 0;
   const turnedFace = side < 0 ? { ...face, lanes: face.lanes.map(turn) } : face;
   const specs = ask.request
@@ -270,13 +330,19 @@ export function slotConnectorNotes(params) {
     if (!hasSlotPosition(params)) return [];
     // Size the connectors as the build does, whatever version was saved.
     const p = currentJointSettings(params);
-    const { edge, startMm, endMm } = p.slotPosition;
+    const count = p.lanes > 1 ? p.lanes : 1;
+    const ends = [['start', slotDistances(p, 0)], ['finish', slotDistances(p, 1)]];
     if (
-      p.lanes !== 1 ||
-      ![p.width, p.slotWidth, p.wall, startMm, endMm].every(Number.isFinite)
+      !Number.isInteger(count) ||
+      ![p.width, p.slotWidth, p.wall].every(Number.isFinite) ||
+      ends.some(([, list]) => list.length !== count || !list.every(Number.isFinite)) ||
+      (count > 1 && !Number.isFinite(p.laneSpacing))
     ) return [];
+    const single = count === 1;
+    // Slots typed one by one have no single distance to step along.
+    const together = slotForm(p) === 'together';
     const envelopes = connectorEnvelopes(p);
-    const side = edge === 'outer' ? 1 : -1;
+    const side = p.slotPosition.edge === 'outer' ? 1 : -1;
     const rowAt = (end, lanes) => {
       try {
         return JSON.stringify(
@@ -286,26 +352,36 @@ export function slotConnectorNotes(params) {
         return null;
       }
     };
-    const slotAt = (mm) => [side * (p.width / 2 - mm)];
+    const offsetsOf = (list) => list.map((mm) => side * (p.width / 2 - mm));
+    // Lanes moving together: every slot follows the one nearest the edge.
+    const slotsAt = (mm) =>
+      offsetsOf(Array.from({ length: count }, (_, k) => (k ? mm + k * p.laneSpacing : mm)));
+    // Where the slot nearest the edge sits on a centred piece, doubled.
+    const centre = single ? p.width : p.width - (count - 1) * p.laneSpacing;
+    const crowds = (lanes) => slotEndFace({
+      width: p.width, lanes, envelopes, slotWidth: p.slotWidth, wall: p.wall,
+    }).side;
     const remarks = [];
-    for (const [end, mm] of [['start', startMm], ['finish', endMm]]) {
+    for (const [end, list] of ends) {
       if (activeJointMode(p, end) === 'none') continue;
-      const standard = rowAt(end, slotAt(p.width / 2));
-      const row = rowAt(end, slotAt(mm));
+      const mm = list[0];
+      const lanes = offsetsOf(list);
+      const standard = rowAt(end, standardLanes(p));
+      const row = rowAt(end, lanes);
       if (!standard || !row || row === standard) continue;
       // Step towards the centre until the standard row comes back.
-      const towards = mm < p.width / 2 ? 1 : -1;
+      const towards = mm * 2 < centre ? 1 : -1;
       let keeps = null,
         lasting = true;
       for (
         let step = towards > 0 ? Math.floor(mm * 2) + 1 : Math.ceil(mm * 2) - 1;
-        towards * (p.width - step) > 0;
+        together && towards * (centre - step) > 0;
         step += towards
       ) {
-        const same = rowAt(end, slotAt(step / 2)) === standard;
+        const same = rowAt(end, slotsAt(step / 2)) === standard;
         if (keeps == null) {
           // Next to the centre is no place for an off-centre slot.
-          if (same && Math.abs(p.width - step) >= 10) keeps = step / 2;
+          if (same && Math.abs(centre - step) >= 10) keeps = step / 2;
         } else if (!same) {
           lasting = false;
           break;
@@ -313,21 +389,24 @@ export function slotConnectorNotes(params) {
       }
       remarks.push({
         end,
-        mm,
-        // The same row with the slot out of reach shows whether the slot is
-        // what pushed a connector aside.
-        moved: row !== rowAt(end, [Math.sign(slotAt(mm)[0]) * 1e6]),
+        mm: list.map(trimmed).join('/'),
+        at: list.join('/'),
+        // The same row with the slots out of reach shows whether the slots
+        // are what pushed a connector aside.
+        moved: row !== rowAt(end, [crowds(lanes) * 1e6]),
         keeps: keeps == null ? ''
-          : ' At ' + trimmed(keeps) + ' mm' + (lasting ? (towards > 0 ? ' or more' : ' or less') : '') +
+          : (single ? ' At ' : ' With slot 1 at ') + trimmed(keeps) + ' mm' +
+            (lasting ? (towards > 0 ? ' or more' : ' or less') : '') +
             ' the standard positions stay.',
       });
     }
+    const slots = single ? 'the slot' : 'the slots';
     const text = ({ mm, moved, keeps }, where, subject) =>
       'Connectors at ' + where +
-      (moved ? ' move to make room for the slot. ' : ' are not where a centred piece has them. ') +
-      subject + ' other ends with the slot at ' + trimmed(mm) + ' mm, not centred pieces.' + keeps;
+      (moved ? ' move to make room for ' + slots + '. ' : ' are not where a centred piece has them. ') +
+      subject + ' other ends with ' + slots + ' at ' + mm + ' mm, not centred pieces.' + keeps;
     const [a, b] = remarks;
-    if (b && a.mm === b.mm && a.moved === b.moved && a.keeps === b.keeps)
+    if (b && a.at === b.at && a.moved === b.moved && a.keeps === b.keeps)
       return [{ level: 'note', text: text(a, 'both ends', 'They fit') }];
     return remarks.map((remark) => {
       const name = remark.end === 'start' ? 'end A' : 'end B';

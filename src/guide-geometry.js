@@ -12,7 +12,7 @@ import { markingStations, whiteLineLayout } from './geometry/paint-guides.js';
 import { startingGridLayout } from './geometry/starting-grid.js';
 import { designGuides } from './design-guides.js';
 import { laneOffsetAt } from './lane-adjustment.js';
-import { hasSlotPosition, slotEdgeName, slotEnds, slotVaries } from './slot-position.js';
+import { hasSlotPosition, slotEdgeName, slotEndLists, slotEnds, slotForm, slotVaries } from './slot-position.js';
 import { SPECIAL_PIECES, specialPreview } from './special-pieces.js';
 import { featureGuides } from './create-feature-controls.js';
 import {
@@ -28,7 +28,12 @@ export const SLOT_POSITION_FIELDS = Object.freeze([
   'slotEdge',
   'slotStart',
   'slotEnd',
+  'slotLanes',
+  // Set each lane: slot n (1 nearest the chosen edge) at end A and end B.
+  ...Array.from({ length: 8 }, (_, i) => ['slotLane' + (i + 1) + 'Start', 'slotLane' + (i + 1) + 'End']).flat(),
 ]);
+
+const SLOT_LANE_FIELD = /^slotLane(\d)(Start|End)$/;
 
 const radians = (d) => (d * Math.PI) / 180;
 const fmt = (n) => String(Number(n.toFixed(2)));
@@ -1011,7 +1016,34 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
         ),
       );
     const slotField = SLOT_POSITION_FIELDS.includes(field);
-    if (slotField && native && hasSlotPosition(p)) {
+    if (slotField && native && hasSlotPosition(p) && p.lanes > 1) {
+      // Measure each slot from the edge the distances were typed against,
+      // slot 1 nearest it. A focused lane field shows that slot at that end;
+      // otherwise every typed distance is shown: slot 1 when the lanes move
+      // together, every slot when each lane is set.
+      const edge = p.slotPosition.edge, side = edge === 'outer' ? half : -half;
+      const lists = slotEndLists(p), varies = slotVaries(p);
+      const focus = SLOT_LANE_FIELD.exec(field);
+      const shown = focus
+        ? [[Number(focus[1]) - 1, focus[2] === 'Start' ? 0 : 1]]
+        : (slotForm(p) === 'each' ? lists.start[edge].map((_, k) => k) : [0])
+            .flatMap((k) => (varies ? [[k, 0], [k, 1]] : [[k, 0]]));
+      for (const [k, t] of shown) {
+        const distance = (t ? lists.end : lists.start)[edge][k];
+        if (distance === undefined) continue;
+        const lane = edge === 'outer' ? p.lanes - 1 - k : k;
+        guides.push(
+          dimension(
+            (k ? 'slot-' + (k + 1) : 'slot') + (t ? '-end' : '-start'),
+            'accent',
+            point(t, side),
+            point(t, offsets(t)[lane]),
+            'Slot ' + (k + 1) + ' · ' + (varies ? (t ? 'end B' : 'end A') + ' · ' : '') +
+              mm(distance) + ' from the ' + slotEdgeName(p) + ' edge',
+          ),
+        );
+      }
+    } else if (slotField && native && hasSlotPosition(p)) {
       // Measure each end from the edge the distances were typed against.
       const edge = p.slotPosition.edge, side = edge === 'outer' ? half : -half;
       const ends = slotEnds(p), varies = slotVaries(p);
@@ -1189,7 +1221,7 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
       // The path knows where each lane leaves end A, moved slot included.
       const lanes =
         measuredLanes ??
-        sourcePath.laneOffsets(0).map((offset) => nativeBraidLane(p, sourcePath, offset));
+        sourcePath.laneOffsets(0).map((offset, i) => nativeBraidLane(p, sourcePath, offset, i));
       const edge = p.slotWidth / 2 + p.braidGap + p.braidWidth / 2;
       for (const [i, lane] of lanes.entries()) {
         if (p.braidFeedLane && p.braidFeedLane !== i + 1) continue;

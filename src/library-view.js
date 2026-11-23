@@ -2,8 +2,7 @@ import { esc, fmt } from './ui.js';
 import { nativeTrackPoint, trackParameters } from './track.js';
 import { refreshCustomTrack } from './custom-track.js';
 import { laneOffsetAt } from './lane-adjustment.js';
-import { hasSlotPosition, lanesVary } from './slot-position.js';
-import { slotSummary } from './slot-position-controls.js';
+import { hasSlotPosition, lanesVary, slotTitle } from './slot-position.js';
 import { specialPreview } from './special-pieces.js';
 import { specialName } from './special-piece-controls.js';
 import { startingGridLayout } from './geometry/starting-grid.js';
@@ -87,10 +86,12 @@ function drawThumbnail(track, profile) {
     // names the ends and shows which way the piece runs.
     if (hasSlotPosition(p)) {
       const centre = (t) => nativeTrackPoint(p, t, 0);
+      // The arrowhead sits on slot 1, the slot nearest the edge measured from.
+      const first = p.slotPosition.edge === 'outer' ? p.lanes - 1 : 0;
       ends = {
         a: [centre(0), centre(0.001)],
         b: [centre(1), centre(0.999)],
-        travel: [slot(0, 0.49), slot(0, 0.5), slot(0, 0.51)],
+        travel: [slot(first, 0.49), slot(first, 0.5), slot(first, 0.51)],
       };
     }
   }
@@ -160,7 +161,7 @@ function drawThumbnail(track, profile) {
 export function pieceDetail(track) {
   const p = trackParameters(track.params);
   if (p.special) return specialName(p.special.type) + ' · ' + (p.kind === 'curve' ? fmt(p.angle) + '°' : fmt(p.length) + ' mm');
-  const slot = slotSummary(p) && ' · ' + slotSummary(p);
+  const slot = slotTitle(p) && ' · ' + slotTitle(p);
   if (p.kind === 'straight')
     return fmt(p.length) + ' × ' + fmt(p.width) + ' mm' + slot;
   if (p.kind === 'curve')

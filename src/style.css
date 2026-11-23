@@ -764,6 +764,60 @@ details[open] summary .i {
 .slot-warning {
   color: var(--warn-text);
 }
+/* Set each lane: one row per slot, numbered from the edge, End A / End B. */
+.slot-lane-table {
+  margin: 6px 0;
+}
+.slot-lane-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+  font-size: 12px;
+}
+.slot-lane-row[hidden] {
+  display: none;
+}
+.slot-lane-head {
+  color: var(--muted);
+  font-size: 11px;
+}
+.slot-lane-row .restorable-field {
+  grid-template-columns: minmax(0, 1fr) 19px;
+  gap: 2px;
+  min-width: 0;
+}
+.slot-lane-cell {
+  display: block;
+  min-width: 0;
+}
+.slot-lane-row .slot-lane-cell .input-wrap {
+  width: 100%;
+  max-width: none;
+}
+.slot-lane-cell input {
+  width: 100%;
+  height: 30px;
+  padding: 4px 26px 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.slot-lane-cell input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.slot-lane-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .selection-note {
   padding: 10px 11px;
   border-radius: 6px;

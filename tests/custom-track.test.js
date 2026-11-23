@@ -127,6 +127,16 @@ test('a freeform path refuses a slot position before it can move a lane, and lea
     // The refusal neither replaced nor poisoned the plan kept for this recipe.
     assert.equal(refreshCustomTrack(track).plan, plan);
   }
+  // Two lanes, each with its own slot position, are refused the same way.
+  const plain = { ...single, lanes: 2 };
+  const track = { params: plain, custom: line };
+  const { plan } = refreshCustomTrack(track);
+  const lanes = { version: 1, edge: 'inner', lanes: [{ startMm: 35, endMm: 95 }, { startMm: 105, endMm: 165 }] };
+  const shifted = { ...track, params: { ...plain, slotPosition: lanes } };
+  assert.throws(() => customTrackPlan(line, shifted.params), refusal);
+  assert.throws(() => refreshCustomTrack(shifted), refusal);
+  assert.throws(() => buildTrack(wasm, shifted.params, plan), refusal);
+  assert.equal(refreshCustomTrack(track).plan, plan);
 });
 
 test('closed and open figure eights keep two independent flat passages with matching cut faces and complete lane paths', () => {

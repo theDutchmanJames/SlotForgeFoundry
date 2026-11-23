@@ -303,7 +303,9 @@ export function editConnectorPlacement({
       '. Drag a mark to move it.' +
       repeated +
       (layout?.fixedRow
-        ? ' This piece has an off-centre slot, so automatic marks at its ends keep fixed places and matching ends always fit.'
+        ? (params.lanes > 1
+            ? ' This piece has off-centre slots, so automatic marks at its ends keep fixed places and matching ends always fit.'
+            : ' This piece has an off-centre slot, so automatic marks at its ends keep fixed places and matching ends always fit.')
         : '');
     const names = (k) =>
       positions[k].length + ' ' + k + (positions[k].length === 1 ? '' : 's');

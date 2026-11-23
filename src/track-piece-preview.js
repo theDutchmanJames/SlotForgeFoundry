@@ -71,7 +71,9 @@ export function piecePreview(p) {
 // preview plots -y, which puts the left edge of a straight at the top.
 function slotEndMarks(p, size) {
   const centre = (t) => nativeTrackPoint(p, t, 0);
-  const slot = (t) => nativeTrackPoint(p, t, laneOffsetAt(p, 0, t));
+  // The arrowhead sits on slot 1, the slot nearest the edge measured from.
+  const first = p.slotPosition.edge === 'outer' ? p.lanes - 1 : 0;
+  const slot = (t) => nativeTrackPoint(p, t, laneOffsetAt(p, first, t));
   const towards = (from, to) => {
     const dx = to[0] - from[0],
       dy = to[1] - from[1],

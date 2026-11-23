@@ -59,6 +59,25 @@ test('switching the grid on beside an off-centre slot starts from a mark that fi
   assert.equal(p.startingGrid.thickness, 2.1);
 });
 
+test('switching the grid on beside several off-centre slots starts from staggered marks that build', () => {
+  for (const [slotPosition, width] of [
+    // 72 % of the 65 mm between the slots.
+    [{ version: 1, edge: 'outer', startMm: 35, endMm: 35 }, '46.8'],
+    // 72 % of the 70 mm to the edge and back.
+    [{ version: 1, edge: 'inner', lanes: [{ startMm: 35, endMm: 95 }, { startMm: 105, endMm: 165 }] }, '50.4'],
+  ]) {
+    const p = { ...straight(), laneSpacing: 65, slotPosition };
+    assert.match(startingGridControls(p), new RegExp('name="gridWidth" value="' + width + '"'));
+    readStartingGridFields({ gridEnabled: true }, p);
+    assert.deepEqual(p.startingGrid, defaultStartingGrid({ ...p, startingGrid: undefined }));
+    assert.equal(p.startingGrid.stagger, 45);
+    assert.equal(startingGridLayout(p).paint.length, 4);
+  }
+  // A single lane shows the stagger it would get with two, wherever its slot is.
+  const one = { ...straight(), lanes: 1, slotPosition: { version: 1, edge: 'outer', startMm: 35, endMm: 35 } };
+  assert.match(startingGridControls(one), /name="gridStagger" value="45"/);
+});
+
 test('row controls respond to lane count, including single-lane straights', () => {
   const groups = {};
   const form = {

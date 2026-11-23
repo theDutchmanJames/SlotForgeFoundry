@@ -1,5 +1,12 @@
 import { braidSpan } from './geometry/solids.js';
-import { slotShiftAt, slotShiftDerivatives } from './slot-position.js';
+import {
+  SLOT_AND_SQUEEZE,
+  hasSlotPosition,
+  slotForm,
+  slotLaneOffsetAt,
+  slotLaneOffsetDerivatives,
+  slotShiftAt,
+} from './slot-position.js';
 
 // Sideways travel of one lane at the middle of a squeeze or spread.
 function squeezeTravel(p, index) {
@@ -11,9 +18,10 @@ function squeezeTravel(p, index) {
 
 // The Circuit profile has zero first and second derivatives at both ends.
 // t is distance along the unadjusted road centreline, including print seams.
-// An off-centre slot moves every lane sideways by the same amount.
+// An off-centre slot sets every lane itself; a piece never has both.
 export function laneOffsetAt(p, index, t) {
-  const normal = (index - (p.lanes - 1) / 2) * p.laneSpacing + slotShiftAt(p, t);
+  if (hasSlotPosition(p)) return slotLaneOffsetAt(p, index, t);
+  const normal = (index - (p.lanes - 1) / 2) * p.laneSpacing;
   if (!p.laneAdjustment || t === 0 || t === 1) return normal;
   const blend = 64 * (t * (1 - t)) ** 3;
   return normal + squeezeTravel(p, index) * blend;
@@ -21,17 +29,19 @@ export function laneOffsetAt(p, index, t) {
 
 /** First and second derivative of laneOffsetAt with respect to t. */
 export function laneOffsetDerivatives(p, index, t) {
+  if (hasSlotPosition(p)) return slotLaneOffsetDerivatives(p, index, t);
   const travel = squeezeTravel(p, index);
-  const [speed, acceleration] = slotShiftDerivatives(p, t);
+  // 0 + keeps a zero travel from reporting -0, as it always has.
   return [
-    speed + travel * 192 * t ** 2 * (1 - t) ** 2 * (1 - 2 * t),
-    acceleration + travel * 384 * t * (1 - t) * (1 - 5 * t + 5 * t ** 2),
+    0 + travel * 192 * t ** 2 * (1 - t) ** 2 * (1 - 2 * t),
+    0 + travel * 384 * t * (1 - t) * (1 - 5 * t + 5 * t ** 2),
   ];
 }
 
 export function validateLaneAdjustment(p) {
   const adjustment = p.laneAdjustment;
   if (adjustment == null) return;
+  if (hasSlotPosition(p)) throw Error(SLOT_AND_SQUEEZE);
   if (p.lanes < 2)
     throw Error('Squeeze and Spread need at least two lanes.');
   if (
@@ -63,10 +73,15 @@ export function validateLaneAdjustment(p) {
 
 // Bound the lateral chord error on a straight. abs(blend'') is at most 24 and
 // the slot transition's second derivative at most 10 / sqrt(3) times its move.
+// Set lane by lane, the lane that moves furthest decides.
 export function laneProfileSteps(p) {
-  const travel = Math.max(...[0, p.lanes - 1].map(i => Math.abs(
+  const each = slotForm(p) === 'each';
+  const lanes = Array.from({ length: p.lanes }, (_, i) => i);
+  const travel = each ? 0 : Math.max(...[0, p.lanes - 1].map(i => Math.abs(
     laneOffsetAt(p, i, 0.5) - slotShiftAt(p, 0.5) - (laneOffsetAt(p, i, 0) - slotShiftAt(p, 0)))));
-  const move = Math.abs(slotShiftAt(p, 1) - slotShiftAt(p, 0));
+  const move = each
+    ? Math.max(...lanes.map(i => Math.abs(slotLaneOffsetAt(p, i, 1) - slotLaneOffsetAt(p, i, 0))))
+    : Math.abs(slotShiftAt(p, 1) - slotShiftAt(p, 0));
   return 2 * Math.max(16, Math.ceil(Math.sqrt((24 * travel + 5.7736 * move) / (8 * 0.015)) / 2));
 }
 

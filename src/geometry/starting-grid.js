@@ -16,13 +16,16 @@ export function defaultStartingGrid(p) {
   const edgeSpace = Math.max(roadEdgeMarkWidth(p, 'inner'), roadEdgeMarkWidth(p, 'outer'));
   const laneWidth = Math.max(0.1, Math.min(rowSpacing, p.width - laneSpan - 2 * edgeSpace));
   const stagger = p.lanes > 1 ? Math.min(45, 0.225 * p.length) : 0;
-  if (!hasSlotPosition(p) || p.lanes !== 1)
+  if (!hasSlotPosition(p))
     return { ...markDefaults(laneWidth, p.length, 2 * laneShoulder(p)), stagger };
-  // An off-centre slot leaves less road on one side. Centre the box on the
-  // slot and size it to the narrow side.
+  // An off-centre slot leaves less road on one side. Centre each box on its
+  // slot and size the marks to the lane with the least room: the road edge,
+  // its line and kerb, and the neighbouring slots. Without a squeeze the
+  // lane spacing says nothing the room does not, so only the road caps it.
+  const cap = p.width - 2 * edgeSpace;
   const fitted = (legLength) => {
-    const room = 2 * laneRoom(p, 0, markStation(legLength, p.length));
-    const mark = markDefaults(Math.max(0.1, Math.min(laneWidth, room)), p.length, 2 * laneShoulder(p));
+    const room = Math.min(...Array.from({ length: p.lanes }, (_, i) => boxRoom(p, i, legLength, stagger)));
+    const mark = markDefaults(Math.max(0.1, Math.min(cap, room)), p.length, 2 * laneShoulder(p));
     // The room is rarely a round number. Keep the fields readable, and the
     // width inside the room.
     return { ...mark, width: Math.floor(mark.width * 100 + 1e-7) / 100,
@@ -55,8 +58,25 @@ function markDefaults(laneWidth, length, clearWidth) {
   };
 }
 
-// Where along the road the middle of a single lane's transverse line sits.
-const markStation = (legLength, length) => legLength / (2 * length) + 0.5;
+// Where along the road the middle of a lane's transverse line sits, as
+// startingGridLayout puts it (the station does not depend on the thickness).
+function markStation(p, lane, legLength, stagger) {
+  const row = (p.lanes - 1 - lane) % 2 === 0 ? 1 : -1;
+  return (legLength / 2 + (p.lanes > 1 ? row * stagger / 2 : 0)) / p.length + 0.5;
+}
+
+// Width a lane's box may take at its own station: twice the clear road to
+// the nearer edge, and no more than the distance to a neighbouring slot (the
+// lane spacing of a centred piece).
+function boxRoom(p, lane, legLength, stagger) {
+  const t = markStation(p, lane, legLength, stagger), y = laneOffsetAt(p, lane, t);
+  const neighbours = [lane - 1, lane + 1].filter((j) => j >= 0 && j < p.lanes)
+    .map((j) => Math.abs(laneOffsetAt(p, j, t) - y));
+  return Math.min(2 * laneRoom(p, lane, t), ...neighbours);
+}
+
+// Slots are numbered from the edge they are measured from: 1 is nearest it.
+const slotNumber = (p, lane) => (p.slotPosition.edge === 'outer' ? p.lanes - lane : lane + 1);
 
 // Clear road from a lane to the nearer edge, edge line or road kerb at one station.
 function laneRoom(p, lane, t) {
@@ -193,25 +213,38 @@ export function startingGridLayout(p) {
     const front = (grid.legLength + grid.thickness) / 2 + stagger;
     const station = (front - grid.thickness / 2) / p.length + 0.5;
     const y = laneOffsetAt(p, i, station);
-    if (y - grid.width / 2 - gap < low - 1e-8 || y + grid.width / 2 + gap > high + 1e-8) {
+    const inner = y - grid.width / 2 - gap < low - 1e-8, outer = y + grid.width / 2 + gap > high + 1e-8;
+    if (inner || outer) {
       if (!hasSlotPosition(p))
         throw gridWarning('Lane ' + (i + 1) + ' reaches the road edge or its white line.',
           'Reduce Mark width or widen the road.', 'gridWidth', 'Edit mark width');
       // The mark is centred on the slot, so the nearer edge decides.
-      const edge = slotEdgeName(p, y > 0 ? 'outer' : 'inner');
-      throw gridWarning('The mark reaches the ' + edge + ' edge of the road or its white line.',
+      const edge = slotEdgeName(p, inner && outer ? (y > 0 ? 'outer' : 'inner') : outer ? 'outer' : 'inner');
+      const slot = p.lanes > 1 ? 'slot ' + slotNumber(p, i) : 'the slot';
+      throw gridWarning('The mark' + (p.lanes > 1 ? ' on ' + slot : '') + ' reaches the ' + edge +
+        ' edge of the road or its white line.',
         'Reduce Mark width to ' + formatMm(Math.max(0, 2 * (laneRoom(p, i, station) - gap))) +
-        ' or less, or move the slot away from the ' + edge + ' edge under Slot position.',
+        ' or less, or move ' + slot + ' away from the ' + edge + ' edge under Slot position.',
         'gridWidth', 'Edit mark width');
     }
     const channel = channels[i], paintChannel = gap ? laneClearance(p, i, gap) : channel;
     const stroke = markAroundGuide(grid, front, y, gap, channel, paintChannel,
       slotVaries(p) ? slantedSlotWarning : gridWarning);
     const { surround } = stroke;
-    if (occupied.some(other => clipping.intersection(other, surround).length) ||
-        channels.some((channel, j) => j !== i && clipping.intersection(channel, surround).length))
-      throw gridWarning('Adjacent starting marks or lane channels overlap.',
-        'Reduce Mark width or increase the lane spacing.', 'gridWidth', 'Edit mark width');
+    const marks = occupied.findIndex(other => clipping.intersection(other, surround).length);
+    const slots = channels.findIndex((channel, j) => j !== i && clipping.intersection(channel, surround).length);
+    if (marks >= 0 || slots >= 0) {
+      if (!hasSlotPosition(p))
+        throw gridWarning('Adjacent starting marks or lane channels overlap.',
+          'Reduce Mark width or increase the lane spacing.', 'gridWidth', 'Edit mark width');
+      // Name the two slots, numbered from the edge they are measured from.
+      const [a, b] = [slotNumber(p, i), slotNumber(p, marks >= 0 ? marks : slots)].sort((x, y) => x - y);
+      throw gridWarning(
+        (marks >= 0 ? 'The marks on slots ' + a + ' and ' + b + ' overlap.'
+          : 'The mark on slot ' + slotNumber(p, i) + ' reaches slot ' + slotNumber(p, slots) + ' or its braids.'),
+        'Reduce Mark width, or move slots ' + a + ' and ' + b + ' further apart under Slot position.',
+        'gridWidth', 'Edit mark width');
+    }
     occupied.push(surround);
     paint.push(...stroke.paint);
     grooves.push(...stroke.grooves);

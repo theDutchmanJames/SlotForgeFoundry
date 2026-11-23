@@ -157,10 +157,9 @@ export async function showTrackLibrary({
       );
     const perPage = 24,
       start = page * perPage;
-    // "Centred" stays true only while no piece moves its slot.
-    const singleLane = c.pieces.some((piece) => piece.track.params.slotPosition)
-      ? '1 lane · some slots off-centre'
-      : '1 centred lane';
+    // "Centred" stays true only while no piece moves its slots.
+    const offCentre = c.pieces.some((piece) => piece.track.params.slotPosition);
+    const singleLane = offCentre ? '1 lane · some slots off-centre' : '1 centred lane';
     return (
       '<div class="lib-controls">' +
       selectCollection() +
@@ -170,7 +169,10 @@ export async function showTrackLibrary({
       count(c.pieces.length) +
       '</h3><small>' +
       esc(c.rules.width) + ' mm wide · ' +
-      (c.rules.lanes === 1 ? singleLane : esc(c.rules.lanes) + ' lanes · ' + esc(c.rules.laneSpacing) + ' mm spacing') +
+      (c.rules.lanes === 1
+        ? singleLane
+        : esc(c.rules.lanes) + ' lanes · ' + esc(c.rules.laneSpacing) + ' mm spacing' +
+          (offCentre ? ' · some slots off-centre' : '')) +
       '</small></div>' +
       (createPiece ? btn('create-piece', 'Add track piece', 'primary', 'plus') : '') +
       btn('rules', 'Pack rules', 'outline', 'settings') +

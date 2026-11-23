@@ -437,7 +437,7 @@ test('half of a piece whose slot moves sideways is refused next to another piece
   half.layout.sources.s9 = { name: 'Straight', track: fromLeft(90).track };
   refuses(
     () => placeSource(half.layout, half.defs, 's9', cut.end),
-    /^The guide slots meet at an angle at this joint/,
+    /^The guide slots meet at an angle at this joint, so a guide would catch\. A piece whose slot moves sideways only joins up with all of its own sections in place\.$/,
   );
   assert.equal(half.layout.nodes.length, 2);
   // The second half of another copy is the same seam, and fits.
@@ -606,6 +606,293 @@ test('pieces that differ only in slot position, and the mirrored print of a corn
       'track/Full-straight-slot-35-from-left-Road-1-x2.stl',
       'track/R1-corner-Road-1-mirrored-x1.stl',
       'track/R1-corner-Road-1-x1.stl',
+    ],
+  );
+});
+
+// Several lanes. The 2-lane pack road: 200 mm wide, lanes 100 mm apart, so
+// centred slots are 50 and 150 mm from either edge. Pieces are 300 mm long
+// on R300, without connectors unless asked.
+const pack = starterPack(2).pieces;
+const each = (edge, starts, ends = starts) => ({
+  version: 1,
+  edge,
+  lanes: starts.map((startMm, k) => ({ startMm, endMm: ends[k] })),
+});
+function pair(index, slotPosition, changes = {}) {
+  const key = JSON.stringify(['pair', index, slotPosition, changes]);
+  if (!built.has(key)) {
+    const { name, track } = structuredClone(pack[index]);
+    Object.assign(track.params, {
+      length: 300,
+      radius: 300,
+      angle: 90,
+      segments: 1,
+      borderSegments: 1,
+      joint: 'none',
+      ...changes,
+    });
+    if (slotPosition) track.params.slotPosition = slotPosition;
+    built.set(key, {
+      name,
+      ...engine.plannerSource({ track, plate, autoFit: false }),
+    });
+  }
+  return built.get(key);
+}
+const both = (mm) => pair(STRAIGHT, slot('outer', mm));
+
+test('every lane of an off-centre piece is drawn where its slot runs, nearest slot first', () => {
+  // Together: 35 and 135 mm from the left are 65 and -35 mm across.
+  const together = pair(STRAIGHT, slot('outer', 35, 55)).sections[0];
+  const ys = (port) => port.slots.map(([, y]) => y).sort((a, b) => a - b);
+  assert.deepEqual(ys(together.ports[0]), [-35, 65]);
+  assert.deepEqual(ys(together.ports[1]), [-55, 45]);
+  // Each lane its own: 40 and 110 mm from the left become 30 and 110 mm.
+  const spread = pair(STRAIGHT, each('outer', [40, 110], [30, 110])).sections[0];
+  assert.deepEqual(ys(spread.ports[0]), [-10, 60]);
+  assert.deepEqual(ys(spread.ports[1]), [-10, 70]);
+  for (const s of [together, spread])
+    for (const port of s.ports)
+      for (const a of port.slotAngles) assert.ok(Math.abs(a - port.angle) < 1e-6);
+  // A still lane stays straight; the moving one makes its S.
+  assert.ok(spread.lanes.some((line) => line.every(([, y]) => Math.abs(y + 10) < 1e-9)));
+});
+
+test('a 2-lane run from centred through together and each-lane slots joins with tabs, clips or both', () => {
+  for (const changes of [
+    { joint: 'none' },
+    { joint: 'tabs' },
+    { joint: 'clips' },
+    { joint: 'clips', connectorCounts: { seamClips: 2 } },
+    { joint: 'both' },
+    { joint: 'clips', clipType: 'carrera-retained', connectorCounts: undefined },
+  ]) {
+    const piece = (index, slotPosition) => pair(index, slotPosition, changes);
+    const label = JSON.stringify(changes);
+    // Centred (50/150), across to 30/130 together, along, a right-hand corner
+    // (outer edge on the left), a left-hand corner (the mirrored print, inner
+    // edge on the left), then each lane its own to 40/110, along, the same
+    // road typed from the right edge, an each-lane corner both ways round, and
+    // back to the pack spacing and centred.
+    const { layout, defs } = run(
+      piece(STRAIGHT),
+      piece(STRAIGHT, slot('outer', 50, 30)),
+      piece(STRAIGHT, slot('outer', 30)),
+      piece(CORNER, slot('outer', 30)),
+      [piece(CORNER, slot('inner', 30)), 'left'],
+      piece(STRAIGHT, each('outer', [30, 130], [40, 110])),
+      piece(STRAIGHT, each('outer', [40, 110])),
+      piece(STRAIGHT, each('inner', [90, 160])),
+      piece(CORNER, each('outer', [40, 110])),
+      [piece(CORNER, each('inner', [40, 110])), 'left'],
+      piece(STRAIGHT, each('outer', [40, 110], [50, 150])),
+      piece(STRAIGHT),
+    );
+    assert.equal(layout.nodes.length, 12, label);
+    const net = endsOf(layout, defs);
+    // Every joint really carries its connectors, off-centre ends included.
+    if (changes.joint !== 'none')
+      assert.ok(net.ends.every((e) => e.hardware.length > 0), label);
+    assert.equal(net.open.length, 2, label);
+    assert.deepEqual(blockedJoints(net), [], label);
+  }
+});
+
+test('several slots out of place are refused with every slot, from the edge they were typed from', () => {
+  const left = run(both(35));
+  refuses(
+    () => left.add(pair(STRAIGHT)),
+    /^The guide slots do not line up at this joint: the slots are 35 and 135 mm from the left edge on this piece and 50 and 150 mm on the next\.$/,
+  );
+  const right = run(pair(STRAIGHT, slot('inner', 35)));
+  refuses(
+    () => right.add(pair(STRAIGHT)),
+    /^The guide slots do not line up at this joint: the slots are 35 and 135 mm from the right edge on this piece and 50 and 150 mm on the next\.$/,
+  );
+  // One slot in place and one not is still refused, naming both.
+  const spread = run(pair(STRAIGHT, each('outer', [40, 110])));
+  refuses(
+    () => spread.add(pair(STRAIGHT, each('outer', [40, 120]))),
+    /^The guide slots do not line up at this joint: the slots are 40 and 110 mm from the left edge on this piece and 40 and 120 mm on the next\.$/,
+  );
+  // The centred road reads from the left, as it always has.
+  refuses(
+    () => run(pair(STRAIGHT), both(35)),
+    /^The guide slots do not line up at this joint: the slots are 50 and 150 mm from the left edge on this piece and 35 and 135 mm on the next\.$/,
+  );
+  // A different number of lanes is said as such.
+  refuses(
+    () => run(both(35), wide(STRAIGHT, slot('outer', 35))),
+    /^The guide slots do not line up at this joint: this piece has 2 slots and the next has 1 slot\.$/,
+  );
+  // The planner refuses before anything is placed.
+  assert.equal(left.layout.nodes.length, 1);
+});
+
+test('a mirrored 2-lane corner names all its slots and the corner to make, in either lane form', () => {
+  const mirrored = (word, list, edge) =>
+    new RegExp(
+      '^The guide slots do not line up at this joint\\. This corner is printed mirrored for a left-hand turn\\. Its slots are still ' +
+        list +
+        ' mm from its ' +
+        edge +
+        ' edge, but this turn puts that edge on the other side of the road\\. Make a corner with the slots measured from the ' +
+        (edge === 'outer' ? 'inner' : 'outer') +
+        ' edge instead\\.$',
+    );
+  refuses(
+    () => run(both(35), [pair(CORNER, slot('outer', 35)), 'left']),
+    mirrored('slots', '35 and 135', 'outer'),
+  );
+  // The advice is right: the same numbers from the inner edge fit.
+  const fixed = run(both(35), [pair(CORNER, slot('inner', 35)), 'left'], both(35));
+  assert.equal(endsOf(fixed.layout, fixed.defs).open.length, 2);
+  const spread = pair(STRAIGHT, each('outer', [40, 110]));
+  refuses(
+    () => run(spread, [pair(CORNER, each('outer', [40, 110])), 'left']),
+    mirrored('slots', '40 and 110', 'outer'),
+  );
+  refuses(
+    () => run(pair(STRAIGHT, each('inner', [40, 110])), [pair(CORNER, each('inner', [40, 110])), 'left']),
+    mirrored('slots', '40 and 110', 'inner'),
+  );
+  const fixedEach = run(spread, [pair(CORNER, each('inner', [40, 110])), 'left'], spread);
+  assert.equal(endsOf(fixedEach.layout, fixedEach.defs).open.length, 2);
+  // A straight added to a mirrored corner names the corner as the cause.
+  refuses(
+    () => run([pair(CORNER, slot('outer', 35)), 'left'], both(35)),
+    /^The guide slots do not line up at this joint\. The corner at this joint is printed mirrored for a left-hand turn\. Its slots are still 35 and 135 mm from its outer edge, but this turn puts that edge on the other side of the road\. Make a corner with the slots measured from the inner edge instead\.$/,
+  );
+  // The wrong corner for a right-hand turn gets the plain positions.
+  refuses(
+    () => run(both(35), pair(CORNER, slot('inner', 35))),
+    /the slots are 35 and 135 mm from the left edge on this piece and 65 and 165 mm on the next\.$/,
+  );
+});
+
+test('a mirrored 3-lane corner whose slots sit symmetric about the centre says why its clip no longer meets', () => {
+  // 300 mm, lanes 90 mm apart: 55/150/245 is symmetric about the centre but
+  // off the standard 60/150/240, so its single clip stands beside the middle slot.
+  const three = { lanes: 3, width: 300, laneSpacing: 90, joint: 'clips' };
+  const list = [55, 150, 245];
+  const straight = pair(STRAIGHT, each('outer', list), three);
+  // Turning right, the corner joins.
+  const right = run(straight, pair(CORNER, each('outer', list), three));
+  assert.equal(right.layout.nodes.length, 2);
+  refuses(
+    () => run(straight, [pair(CORNER, each('inner', list), three), 'left']),
+    /^The connector positions differ at this joint\. This corner is printed mirrored for a left-hand turn, which moves its off-centre clip to the other side of the road\. Use tab joints, or move one slot so that the slots are no longer symmetric about the road centre\.$/,
+  );
+  // Named from the other side when the straight follows the corner.
+  refuses(
+    () => run([pair(CORNER, each('inner', list), three), 'left'], straight),
+    /^The connector positions differ at this joint\. The corner at this joint is printed mirrored for a left-hand turn, which moves its off-centre clip/,
+  );
+  // Both remedies work: tab joints, or a list that is not symmetric.
+  const tabs = { ...three, joint: 'tabs' };
+  run(pair(STRAIGHT, each('outer', list), tabs), [pair(CORNER, each('inner', list), tabs), 'left']);
+  const lopsided = [40, 130, 220];
+  run(pair(STRAIGHT, each('outer', lopsided), three), [pair(CORNER, each('inner', lopsided), three), 'left']);
+  // Centred pieces keep the message they always had.
+  refuses(
+    () => run(pair(STRAIGHT, null, three), [pair(CORNER, null, three), 'left']),
+    /^The connector positions or clip families differ at this joint\. Choose another end or match their settings in Track Set\.$/,
+  );
+});
+
+test('half of a 2-lane piece whose slots move sideways is refused next to another piece, in the plural', () => {
+  const moving = pair(STRAIGHT, slot('outer', 30, 50), { segments: 2 });
+  const half = run(both(30), moving);
+  const cut = removeSection(half.layout, half.defs, half.at().selected);
+  half.defs.set('s9', both(40));
+  half.layout.sources.s9 = { name: 'Straight', track: both(40).track };
+  refuses(
+    () => placeSource(half.layout, half.defs, 's9', cut.end),
+    /^The guide slots meet at an angle at this joint, so a guide would catch\. A piece whose slots move sideways only joins up with all of its own sections in place\.$/,
+  );
+});
+
+test('a 2-lane straight only goes in as built, and the advice says slots', () => {
+  const moving = pair(STRAIGHT, each('outer', [30, 130], [40, 110]));
+  const asBuilt = run(both(30), moving, pair(STRAIGHT, each('outer', [40, 110])));
+  assert.equal(endsOf(asBuilt.layout, asBuilt.defs).open.length, 2);
+  // Turned end for end it would be 90/160 to 70/170 from the left.
+  refuses(
+    () => run(pair(STRAIGHT, each('outer', [90, 160])), moving),
+    /the slots are 90 and 160 mm from the left edge on this piece and 30 and 130 mm on the next\. This piece would fit turned end for end, but the planner builds every piece from end A to end B\. Make a second piece for the way back, with the distances for end A and end B swapped and measured from the other edge\.$/,
+  );
+  // That second piece: 40/110 to 30/130 from the right edge.
+  const second = run(
+    pair(STRAIGHT, each('outer', [90, 160])),
+    pair(STRAIGHT, each('inner', [40, 110], [30, 130])),
+    pair(STRAIGHT, slot('outer', 70)),
+  );
+  assert.equal(endsOf(second.layout, second.defs).open.length, 2);
+  refuses(
+    () => run(both(30), moving, moving),
+    /the slots are 40 and 110 mm from the left edge on this piece and 30 and 130 mm on the next\. Turning this piece round does not bring the slots back\. Make a second piece for the way back, with the distances for end A and end B swapped\.$/,
+  );
+  refuses(
+    () => run(both(65), both(35)),
+    /This piece would fit turned end for end, but the planner builds every piece from end A to end B\. Make a second piece with the slots measured from the other edge\.$/,
+  );
+});
+
+test('a 2-lane loop whose last joint is out of line reports every slot', () => {
+  const bend = pair(CORNER, slot('outer', 35));
+  const oval = run(both(35), bend, bend, both(35), bend, bend);
+  assert.equal(endsOf(oval.layout, oval.defs).open.length, 0);
+  assert.deepEqual(blockedJoints(endsOf(oval.layout, oval.defs)), []);
+  const far = pair(CORNER, each('outer', [35, 115]));
+  const open = run(
+    both(35),
+    bend,
+    bend,
+    pair(STRAIGHT, each('outer', [35, 135], [35, 115])),
+    far,
+    far,
+  );
+  const [joint, ...others] = blockedJoints(endsOf(open.layout, open.defs));
+  assert.equal(others.length, 0);
+  assert.equal(joint.reason, 'slots');
+  assert.equal(
+    joint.text,
+    'The guide slots do not line up at this joint: the slots are 35 and 115 mm from the left edge on this piece and 35 and 135 mm on the next.',
+  );
+});
+
+test('2-lane pieces that differ only in their slots are separate kit entries named by every slot', () => {
+  const { layout, defs } = run(
+    pair(STRAIGHT),
+    pair(STRAIGHT, slot('outer', 50, 35)),
+    both(35),
+    pair(STRAIGHT, each('outer', [35, 135], [40, 110])),
+    [pair(CORNER, each('inner', [40, 110])), 'left'],
+  );
+  layout.nodes.push({
+    ...structuredClone(layout.nodes.at(-1)),
+    id: 'right-hander',
+    pose: { x: 3000, y: 0, a: 0, flip: false },
+  });
+  const names = kitPieceNames(layout.sources);
+  assert.deepEqual(names, {
+    s1: 'Full straight',
+    s2: 'Full straight slots 50/150-35/135 from left',
+    s3: 'Full straight slots 35/135 from left',
+    s4: 'Full straight slots 35/135-40/110 from left',
+    s5: 'R1 corner',
+  });
+  const roads = tally(layout, defs).filter((g) => g.role === 'road');
+  assert.deepEqual(
+    roads.map((g) => [g.source, g.mirror, g.count]),
+    [
+      ['s1', false, 1],
+      ['s2', false, 1],
+      ['s3', false, 1],
+      ['s4', false, 1],
+      ['s5', true, 1],
+      ['s5', false, 1],
     ],
   );
 });

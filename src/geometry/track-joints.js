@@ -29,6 +29,7 @@ import {
   roadOffsetWarning,
   sideMountWarning,
   slotPocketWarning,
+  slotPositionSetting,
 } from './connector-position-warnings.js';
 import { connectorWarning } from './connector-warning.js';
 import { endObstacleText, slotEndRequest, slotEndRow } from './slot-end-row.js';
@@ -563,6 +564,8 @@ export function addRoadJoints(
             kind: p.kind,
             end,
             reason,
+            setting: slotPositionSetting(p, seamLanes, spec.value, end),
+            lanes: seamLanes.length,
           });
       }
       for (const { type, value, index } of row) {
@@ -873,7 +876,9 @@ export function addSideMounts(
                 ? Math.min(...path.laneOffsets(proposed).map(v => Math.abs(edge - v)))
                 : (p.width - (p.lanes - 1) * p.laneSpacing) / 2,
           laneMinimum: p.slotWidth / 2 + p.wall + Math.max(8, envelope.root),
-          slotPosition: hasSlotPosition(p),
+          // The slot nearest this edge is the one to move.
+          slotPosition: hasSlotPosition(p) &&
+            slotPositionSetting(p, path.laneOffsets?.(proposed), edge),
         });
       if (custom) throw warning();
       const alternatives = Array.from(

@@ -148,7 +148,12 @@ export function syncTrackShapeControls(form) {
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
   if (e.slotEdge)
-    syncSlotPositionControls(form, { kind: e.kind?.value, lanes: e.lanes?.value });
+    syncSlotPositionControls(form, {
+      kind: e.kind?.value,
+      lanes: e.lanes?.value,
+      squeeze: Number(e.lanes?.value) >= 2 && Boolean(mode) && mode.value !== 'uniform',
+      spacing: e.laneSpacing?.value,
+    });
   if (e.laneSpacing) {
     const single = Number(e.lanes.value) === 1;
     form.querySelector('[data-lane-spacing-controls]').hidden = single;

@@ -1,17 +1,17 @@
 import { cleanName } from './project.js';
-import { slotLabel } from './slot-position.js';
+import { slotTitle } from './slot-position.js';
 
 // The name each layout piece carries in the kit. Pieces that share a name and
-// differ in their slot position say so, so their files and rows read apart:
-// "Straight slot 35" and "Straight slot 35-145".
+// differ in their slot positions say so, so their files and rows read apart:
+// "Straight slot 35 from left" and "Straight slots 35/135-55/155 from left".
 export function kitPieceNames(sources) {
   const slots = new Map();
   for (const { name, track } of Object.values(sources))
-    slots.set(name, (slots.get(name) ?? new Set()).add(slotLabel(track.params)));
+    slots.set(name, (slots.get(name) ?? new Set()).add(slotTitle(track.params)));
   return Object.fromEntries(
     Object.entries(sources).map(([key, { name, track }]) => {
-      const slot = slotLabel(track.params);
-      return [key, slots.get(name).size > 1 && slot ? name + ' slot ' + slot : name];
+      const slot = slotTitle(track.params);
+      return [key, slots.get(name).size > 1 && slot ? name + ' ' + slot : name];
     }),
   );
 }
@@ -26,6 +26,19 @@ function sameTriangles(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 80; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+// File names are cut at 80 characters. A long piece name (every slot of an
+// 8-lane piece at both ends) gives up its middle instead, so its start, its
+// last distances with the edge they are measured from, and the part name
+// stay in the name.
+const FILE_NAME = 80;
+function fileBase(piece, part) {
+  const whole = piece + '-' + part;
+  if (whole.length <= FILE_NAME) return whole;
+  const room = FILE_NAME - part.length - 4;
+  if (room < 24) return whole;
+  const tail = Math.floor(room / 2);
+  return piece.slice(0, room - tail).trimEnd() + '...' + piece.slice(-tail).trimStart() + '-' + part;
 }
 export function printGroups(prints) {
   const groups = [];
@@ -42,7 +55,7 @@ export function printGroups(prints) {
   return groups.map((g) => {
     const shared = g.pieces.size > 1;
     const base =
-      cleanName(shared ? g.part : g.piece + '-' + g.part).replace(/\s+/g, '-') +
+      cleanName(shared ? g.part : fileBase(g.piece, g.part)).replace(/\s+/g, '-') +
       (g.mirror ? '-mirrored' : '');
     const folder = KIT_FOLDERS[g.role] ?? 'parts';
     let file = folder + '/' + base + '-x' + g.count + '.stl';

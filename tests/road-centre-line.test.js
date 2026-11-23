@@ -196,3 +196,36 @@ test('the centre line hint describes the slot that is really there', () => {
   assert.deepEqual([live.hidden, live.dataset.centreSlotNote], [false, '']);
   assert.match(live.textContent, /^A centred guide slot/);
 });
+
+const eachLane = (edge, ...lanes) => ({ version: 1, edge, lanes: lanes.map(([startMm, endMm = startMm]) => ({ startMm, endMm })) });
+
+test('with several off-centre slots the stripe gives way to every slot, and the hint looks at all of them', t => {
+  const two = extra => straight({ lanes: 2, length: 300, roadCentreLine: 'solid', ...extra });
+  // Lanes together 35 mm from the left: slots at +65 and -35, the stripe is clear.
+  assert.equal(centreLineSlots(two({ slotPosition: slot('outer', 35) })), 'clear');
+  // Slot 2 eight millimetres left of the centre takes part of the stripe all the way.
+  const beside = two({ slotPosition: eachLane('outer', [35], [92]) });
+  assert.equal(centreLineSlots(beside), 'beside');
+  // Slot 2 from 60 to 140 mm crosses the centre; the right edge measures the mirror.
+  assert.equal(centreLineSlots(two({ slotPosition: eachLane('outer', [35], [60, 140]) })), 'crossing');
+  assert.equal(centreLineSlots(two({ slotPosition: eachLane('inner', [60, 140], [165]) })), 'crossing');
+  assert.equal(centreLineSlots(two({ slotPosition: eachLane('inner', [35], [165]) })), 'clear');
+  const note = html => html.match(/data-centre-slot-note="(\w+)"( hidden)?>([^<]*)<\/p>/).slice(1);
+  assert.deepEqual(note(roadLineFolder(beside)),
+    ['beside', undefined, 'An off-centre guide slot takes part of the marking here. Paint appears only on clear road surface.']);
+  const live = { dataset: {} };
+  syncCentreSlotNote({ querySelector: () => live }, two({ slotPosition: eachLane('outer', [35], [60, 140]) }));
+  assert.equal(live.textContent, 'A guide slot crosses the centre line on this piece. Paint appears only on clear road surface.');
+
+  // The build: paint stops at both slots and their braids, and runs between them.
+  const p = { ...beside, roadLineGroove: true };
+  const [road] = roads(t, p);
+  for (const x of [-140, 0.1, 140]) {
+    assert.equal(painted(road, x, 1.9), false, 'slot 2 sits on the stripe at ' + x);
+    assert.ok(painted(road, x, -1.9), 'stripe beside slot 2 at ' + x);
+  }
+  const depth = readDepth(t, p, road);
+  assert.equal(depth(10, 65), p.slotDepth, 'slot 1 is 35 mm from the left edge');
+  assert.equal(depth(10, 8), p.slotDepth, 'slot 2 is 92 mm from the left edge');
+  assert.equal(depth(10, -50), 0, 'no slot where a centred lane would be');
+});

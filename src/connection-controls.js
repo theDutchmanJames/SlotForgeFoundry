@@ -1,6 +1,6 @@
 import { choice, details, esc, field } from './ui.js';
 import { braidSpan } from './geometry/solids.js';
-import { slotShiftAt, slotVaries } from './slot-position.js';
+import { hasSlotPosition, slotLaneOffsetAt, slotVaries } from './slot-position.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
 import {
   placementKeys,
@@ -337,12 +337,12 @@ export function profileDiagram(p) {
   )
     return '';
   // The section is cut at end A, where an off-centre slot starts.
-  const moved = imported ? 0 : slotShiftAt(p, 0);
-  const shift = Number.isFinite(moved) && Math.abs(moved) < width / 2 ? moved : 0;
-  const laneX = Array.from(
-    { length: lanes },
-    (_, i) => (i - (lanes - 1) / 2) * p.laneSpacing + shift,
-  );
+  const laneX = Array.from({ length: lanes }, (_, i) => {
+    const nominal = (i - (lanes - 1) / 2) * p.laneSpacing;
+    if (imported || !hasSlotPosition(p)) return nominal;
+    const x = slotLaneOffsetAt(p, i, 0);
+    return Number.isFinite(x) && Math.abs(x) < width / 2 ? x : nominal;
+  });
   const xScale = 280 / width,
     zScale = 64 / height;
   const f = (n) => Number(n.toFixed(2));

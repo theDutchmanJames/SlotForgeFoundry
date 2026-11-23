@@ -24,7 +24,9 @@ function gridControlValues(p, grid = p.startingGrid ?? defaultStartingGrid(p)) {
     gridThickness: grid.thickness,
     gridLegLength: grid.legLength,
     gridLayout: layoutOf(grid.stagger),
-    gridStagger: Math.abs(grid.stagger) || defaultStartingGrid({ ...p, lanes: 2 }).stagger,
+    // Only the stagger is wanted: it does not depend on where the slots are,
+    // and a lane list for this piece does not fit two lanes.
+    gridStagger: Math.abs(grid.stagger) || defaultStartingGrid({ ...p, lanes: 2, slotPosition: undefined }).stagger,
     gridRecessed: grid.recessed,
   };
 }

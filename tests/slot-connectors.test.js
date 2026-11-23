@@ -13,6 +13,9 @@ import { connectorEnvelopes } from '../src/geometry/track-joints.js';
 import {
   roadOffsetWarning,
   sideMountWarning,
+  slotPocketWarning,
+  slotPositionSetting,
+  slotToMove,
 } from '../src/geometry/connector-position-warnings.js';
 import {
   SLOT_SWEEP_ALLOWANCE,
@@ -24,6 +27,7 @@ import {
 } from '../src/geometry/slot-end-row.js';
 import { left } from '../src/geometry/solids.js';
 import { slotShiftAt } from '../src/slot-position.js';
+import { laneOffsetAt } from '../src/lane-adjustment.js';
 import { profileDiagram } from '../src/connection-controls.js';
 
 const wasm = await initManifold();
@@ -325,6 +329,11 @@ test('what the rest of the piece cannot accommodate is refused with a pointer to
   assert.deepEqual(endRows(t, road({ ...carrera, length: 150, slotPosition: slot(100, 165) })).A, ['clip 14']);
   const placed = road({ ...carrera, length: 150, slotPosition: slot(100, 35), placements: { startClips: [-14] } });
   assert.deepEqual(endRows(t, placed).A, ['clip -14']);
+  // The same trouble at end B points at the end-B distance of the slot.
+  const arriving = warningOf(() => buildTrack(wasm, road({ ...carrera, length: 150, slotPosition: slot(35, 100) })));
+  assert.equal(arriving.location, 'Road finish · Carrera clip');
+  assert.equal(arriving.advice, advice);
+  assert.deepEqual(arriving.setting, { ...SLOT_POSITION, field: 'slotEnd' });
 
   // Opposing pockets on a short piece.
   const counted = { joint: 'clips', clipType: 'carrera-retained', connectorCounts: { seamClips: 2 } };
@@ -588,6 +597,396 @@ test('a pocket that meets a sideways-moving slot is described for slot positions
   }).warning;
   assert.match(side(true).reason, /the pocket reaches the wall of a guide slot where the slot moves sideways\./);
   assert.match(side(false).reason, /the pocket reaches the wall of a guide slot as the lanes change spacing\./);
+});
+
+// Pieces with two or more lanes. 'Lanes move together' gives the slot nearest
+// the edge; 'Set each lane' lists every slot, nearest the edge first.
+const pack = (extra = {}) => road({ lanes: 2, laneSpacing: 100, ...extra });
+const each = (A, B = A, edge = 'outer') => ({
+  version: 1, edge, lanes: A.map((startMm, k) => ({ startMm, endMm: B[k] })),
+});
+
+test('several lanes: ends with the same slots get the same row, whatever the far end or the form, and standard slots keep the standard row', (t) => {
+  for (const [name, mode] of Object.entries(MODES)) {
+    const rows = (extra) => endRows(t, pack({ ...mode, ...extra }));
+    const standard = rows({});
+    assert.deepEqual(standard.B, standard.A, name);
+    // 50 mm from the left of a 200 mm road with 100 mm spacing is the centred pack.
+    assert.deepEqual(rows({ slotPosition: slot(50) }), standard, name + ': explicit centre');
+    const at35 = rows({ slotPosition: slot(35) });
+    const at20 = rows({ slotPosition: slot(20) });
+    assert.deepEqual(at35.B, at35.A, name + ': 35/135 chains with itself');
+    assert.deepEqual(at20.B, at20.A, name + ': 20/120 chains with itself');
+    const into35 = rows({ slotPosition: slot(50, 35) });
+    assert.deepEqual(into35.A, standard.A, name + ': a centred end A fits a standard two-lane piece');
+    assert.deepEqual(into35.B, at35.A, name + ': end B fits a constant 35/135 piece');
+    const back = rows({ slotPosition: slot(35, 20) });
+    assert.deepEqual([back.A, back.B], [at35.A, at20.A], name + ': 35/135 -> 20/120');
+    // Set each lane: 35/105 at end A and 95/165 at end B. The same slots in the
+    // other form (lanes together, 70 mm apart) give the same rows.
+    const moving = rows({ slotPosition: each([35, 105], [95, 165]) });
+    const near = rows({ laneSpacing: 70, slotPosition: slot(35) });
+    const far = rows({ laneSpacing: 70, slotPosition: slot(95) });
+    assert.deepEqual(moving.A, near.A, name + ': end A of each 35/105 -> 95/165');
+    assert.deepEqual(moving.B, far.A, name + ': end B of each 35/105 -> 95/165');
+    assert.deepEqual(rows({ slotPosition: each([35, 105]) }), near, name + ': each 35/105 = together 35/105');
+    // Symmetric slots are the standard row of a centred pack with that spacing.
+    assert.deepEqual(rows({ slotPosition: each([40, 160]) }), rows({ laneSpacing: 120 }), name + ': 40/160');
+  }
+  // Pinned rows, low side first.
+  const pins = (extra) => endRows(t, pack({ ...MODES['two tabs and two clips, counted'], ...extra }));
+  assert.deepEqual(pins({}).A, ['clip -72', 'tab -24', 'clip 24', 'tab 72']);
+  assert.deepEqual(pins({ slotPosition: slot(20) }).A, ['clip -90', 'tab -30', 'clip 30', 'tab 90']);
+  const moving = pins({ slotPosition: each([35, 105], [95, 165]) });
+  assert.deepEqual(moving.A, ['clip -75', 'tab -25', 'clip 25', 'tab 75']);
+  assert.deepEqual(moving.B, ['tab -75', 'clip -25', 'tab 25', 'clip 75']);
+  const lone = endRows(t, pack({ ...MODES['tabs and a clip'], slotPosition: each([35, 105], [95, 165]) }));
+  assert.deepEqual([lone.A, lone.B], [['tab -72', 'clip 10', 'tab 75'], ['tab -75', 'clip -10', 'tab 72']]);
+});
+
+test('several lanes: the same slots give the same row on straights and curves, in one to three segments, and on a 300 mm three-lane road', (t) => {
+  for (const name of ['tabs and a clip', 'two counted draw-key clips', 'two tabs and two clips, counted']) {
+    const mode = MODES[name];
+    const at35 = endRows(t, pack({ ...mode, slotPosition: slot(35) })).A;
+    const each35 = endRows(t, pack({ ...mode, laneSpacing: 70, slotPosition: slot(35) })).A;
+    const each95 = endRows(t, pack({ ...mode, laneSpacing: 70, slotPosition: slot(95) })).A;
+    for (const segments of [1, 2, 3]) {
+      const label = name + ', ' + segments + ' segment(s)';
+      const long = { ...mode, segments, length: 800 };
+      const constant = endRows(t, pack({ ...long, slotPosition: slot(35) }));
+      assert.deepEqual([constant.A, constant.B], [at35, at35], label + ': together');
+      const movingPiece = pack({ ...long, slotPosition: each([35, 105], [95, 165]) });
+      if (segments === 3 && name === 'two tabs and two clips, counted') {
+        // Seam 2 has slots at -52.4 and 17.6 mm: no symmetric row of four
+        // fits between them. That is the seam's own matter, reported as today.
+        const crowded = warningOf(() => buildTrack(wasm, movingPiece));
+        assert.equal(crowded.location, 'Road seam 2');
+        assert.equal(crowded.setting.field, 'count_seamClips');
+      } else {
+        const moving = endRows(t, movingPiece);
+        assert.deepEqual([moving.A, moving.B], [each35, each95], label + ': each');
+      }
+      const bend = { ...mode, segments, kind: 'curve', radius: 400, angle: 45 };
+      const outer = endRows(t, pack({ ...bend, slotPosition: slot(35) }));
+      assert.deepEqual([outer.A, outer.B], [at35, at35], label + ': curve, together');
+      // 95/165 from the inner edge are the slots 35/105 from the outer edge.
+      const inner = endRows(t, pack({ ...bend, slotPosition: each([95, 165], [95, 165], 'inner') }));
+      assert.deepEqual([inner.A, inner.B], [each35, each35], label + ': curve, each from the inner edge');
+    }
+    const three = (slotPosition, extra = {}) =>
+      endRows(t, road({ ...mode, width: 300, lanes: 3, laneSpacing: 100, slotPosition, ...extra }));
+    const centred = three(undefined);
+    assert.deepEqual(three(slot(50)), centred, name + ': three lanes, explicit centre');
+    const moving = three(each([35, 120, 205], [95, 180, 265]));
+    assert.deepEqual(moving.A, three(slot(35), { laneSpacing: 85 }).A, name + ': three lanes, end A');
+    assert.deepEqual(moving.B, three(slot(95), { laneSpacing: 85 }).A, name + ': three lanes, end B');
+    assert.deepEqual(three(slot(50, 35)).A, centred.A, name + ': three lanes, centred end A');
+  }
+});
+
+test('several lanes: slots the same distance from the other edge get the mirror image of the row, in real builds', (t) => {
+  for (const [name, mode] of Object.entries(MODES)) {
+    const rows = (slotPosition, extra = {}) => endRows(t, pack({ ...mode, slotPosition, ...extra }));
+    const leftSide = rows(slot(35));
+    const rightSide = rows(slot(35, 35, 'inner'));
+    assert.deepEqual([rightSide.A, rightSide.B], [mirrored(leftSide.A), mirrored(leftSide.B)], name + ': together');
+    const moving = rows(each([35, 105], [95, 165]));
+    // W - x of 35/105 -> 95/165 is 95/165 -> 35/105.
+    const mirror = rows(each([95, 165], [35, 105]));
+    assert.deepEqual([mirror.A, mirror.B], [mirrored(moving.A), mirrored(moving.B)], name + ': each');
+    assert.deepEqual(rows(each([35, 105], [95, 165], 'inner')), mirror, name + ': each, typed from the right edge');
+    const three = (slotPosition) =>
+      endRows(t, road({ ...mode, width: 300, lanes: 3, laneSpacing: 100, slotPosition }));
+    const a = three(each([35, 120, 205], [95, 180, 265]));
+    const b = three(each([35, 120, 205], [95, 180, 265], 'inner'));
+    assert.deepEqual([b.A, b.B], [mirrored(a.A), mirrored(a.B)], name + ': three lanes');
+  }
+});
+
+test('several lanes: the row is a function of the slots at the end alone, mirrored for mirrored slots, and float ties cannot split it', () => {
+  const requests = [
+    ...Object.values(MODES),
+    { joint: 'both', connectorCounts: { seamTabs: 1, seamClips: 1 } },
+    { joint: 'clips', connectorCounts: { seamClips: 3 } },
+    { joint: 'tabs', connectorOffset: 60 },
+  ];
+  const flip = (row) => ({
+    tab: row.tab.map((value) => -value + 0).sort((a, b) => a - b),
+    clip: row.clip.map((value) => -value + 0).sort((a, b) => a - b),
+  });
+  const attempt = (run) => {
+    try {
+      return run();
+    } catch (error) {
+      assert.ok(error.warning, error.message);
+      return 'refused';
+    }
+  };
+  const lists = [
+    [65, -35], [80, -20], [5, -65], [60, 40], [70, -60], [12.5, -87.5],
+    // Three lanes on 300 mm: one that balances without being symmetric.
+    [-60, 10, 50], [115, 15, -85], [-120, -20, 80], [100, 40, -20],
+  ];
+  for (const request of requests) {
+    for (const lanes of lists) {
+      const extra = { ...request, lanes: lanes.length, width: lanes.length === 3 ? 300 : 200 };
+      const row = attempt(() => pureRow(extra, 'start', lanes));
+      const turned = attempt(() => pureRow(extra, 'start', lanes.map((x) => -x)));
+      assert.deepEqual(turned, row === 'refused' ? row : flip(row), JSON.stringify(request) + ' at ' + lanes);
+      assert.deepEqual(attempt(() => pureRow(extra, 'finish', [...lanes].reverse())), row, 'order and end do not matter');
+    }
+  }
+  const p = trackParameters(pack());
+  const face = (lanes, width = 200) => slotEndFace({
+    width, lanes, envelopes: connectorEnvelopes(p), slotWidth: p.slotWidth, wall: p.wall,
+  });
+  // A face that balances without being symmetric still has a side, and its
+  // mirror image the other one.
+  assert.deepEqual([face([-60, 10, 50], 300).side, face([-50, -10, 60], 300).side], [-1, 1]);
+  assert.equal(face([-60, 10, 50], 300).offCentre, true);
+  // Symmetric slots are measured as a centred piece is: no sweep allowance.
+  assert.equal(face([-60, 60]).offCentre, false);
+  assert.equal(face([-60, 60 + 1e-9]).offCentre, false);
+  // Slots typed from either edge that differ in the last bit give one row.
+  const clips = { joint: 'clips', connectorCounts: { seamClips: 2 }, lanes: 2 };
+  const typed = [[100 - 42.3, 100 - 142.3], [157.7 - 100, 57.7 - 100], [57.7, -42.3], [57.699999999999996, -42.300000000000004]];
+  for (const lanes of typed)
+    assert.deepEqual(pureRow(clips, 'start', lanes), pureRow(clips, 'start', typed[2]), String(lanes));
+  for (const lanes of typed)
+    assert.deepEqual(pureRow(clips, 'start', lanes.map((x) => -x)), flip(pureRow(clips, 'start', typed[2])), String(lanes));
+});
+
+test('several lanes: real builds of slots typed from either edge agree to the last bit', (t) => {
+  const clips = { joint: 'clips', connectorCounts: { seamClips: 2 } };
+  const fromLeft = endRows(t, pack({ ...clips, slotPosition: each([42.3, 142.3]) }));
+  const fromRight = endRows(t, pack({ ...clips, slotPosition: each([57.7, 157.7], [57.7, 157.7], 'inner') }));
+  assert.deepEqual(fromRight, fromLeft);
+  assert.deepEqual(endRows(t, pack({ ...clips, slotPosition: slot(42.3) })), fromLeft);
+});
+
+test('several lanes: a row that cannot be placed between the slots is refused, naming the end and the slot to move', (t) => {
+  const lone = { joint: 'clips', connectorCounts: { seamClips: 1 } };
+  const field = (field) => ({ tab: 'geometry', field, label: 'Slot position' });
+  // End A of 35/105 -> 95/165 has slot 2 just 5 mm right of the centre clip.
+  const start = warningOf(() => buildTrack(wasm, pack({ ...lone, slotPosition: each([35, 105], [95, 165]) })));
+  assert.equal(start.location, 'Road start');
+  assert.match(start.reason, /centre position is blocked/i);
+  assert.equal(start.advice, 'Move slot 2, change the number of connectors, or place the connectors by hand.');
+  assert.deepEqual(start.setting, field('slotLane2Start'));
+  // A centred end A builds; end B, with slot 1 5 mm left of the centre, does
+  // not, and points at the distance of slot 1 at end B.
+  const finish = warningOf(() => buildTrack(wasm, pack({ ...lone, slotPosition: each([50, 150], [95, 165]) })));
+  assert.equal(finish.location, 'Road finish');
+  assert.equal(finish.advice, 'Move slot 1, change the number of connectors, or place the connectors by hand.');
+  assert.deepEqual(finish.setting, field('slotLane1End'));
+  // The dialog map of end B points there too.
+  const finishMap = warningOf(() => connectorLayout(pack({ ...lone, slotPosition: each([50, 150], [95, 165]) }), null, 'finish'));
+  assert.deepEqual(finishMap.setting, field('slotLane1End'));
+  // The mirror image, counted from the right edge: still slot 2 at end A ...
+  const inner = warningOf(() => buildTrack(wasm, pack({ ...lone, slotPosition: each([35, 105], [95, 165], 'inner') })));
+  assert.deepEqual([inner.location, inner.setting], ['Road start', field('slotLane2Start')]);
+  // ... and slot 1 when the slot by the centre is the one nearest the edge.
+  const first = warningOf(() => buildTrack(wasm, pack({ ...lone, slotPosition: each([95, 165], [35, 105]) })));
+  assert.deepEqual([first.location, first.setting], ['Road start', field('slotLane1Start')]);
+  // ... and lanes moving together point at the one slot position.
+  const together = warningOf(() => buildTrack(wasm, pack({ ...lone, laneSpacing: 70, slotPosition: slot(95) })));
+  assert.deepEqual([together.location, together.setting], ['Road start', SLOT_POSITION]);
+  // Never built with fewer connectors: where the clip fits, it is there.
+  assert.deepEqual(endRows(t, pack({ ...lone, slotPosition: each([40, 160]) })), { A: ['clip 0'], B: ['clip 0'] });
+  // The dialog map refuses it the same way.
+  const map = warningOf(() => connectorLayout(pack({ ...lone, slotPosition: each([35, 105], [95, 165]) }), null, 'start'));
+  assert.deepEqual(map.setting, field('slotLane2Start'));
+
+  // A pocket the moving slot sweeps into on a short piece points at that slot.
+  const carrera = { joint: 'clips', clipType: 'carrera-retained', connectorCounts: { seamClips: 2 }, length: 150 };
+  const swept = warningOf(() => buildTrack(wasm, pack({ ...carrera, slotPosition: each([50, 150], [20, 150]) })));
+  assert.equal(swept.location, 'Road finish · Carrera clip');
+  assert.match(swept.reason, /the slot moves sideways into the room this pocket needs/);
+  // The pocket is at end B, so the field is the distance of slot 1 there.
+  assert.deepEqual(swept.setting, field('slotLane1End'));
+  assert.match(swept.reason, /On a piece with off-centre slots the connectors keep fixed places/);
+  assert.equal(swept.advice, 'Use a longer piece, move slot 1, or place the connectors by hand.');
+  const other = warningOf(() => buildTrack(wasm, pack({ ...carrera, slotPosition: each([50, 150], [50, 180]) })));
+  assert.equal(other.location, 'Road finish · Carrera clip');
+  assert.deepEqual(other.setting, field('slotLane2End'));
+  // Lanes that move together: one end-B distance for every slot.
+  const sweptTogether = warningOf(() => buildTrack(wasm, pack({ ...carrera, slotPosition: slot(50, 20) })));
+  assert.equal(sweptTogether.location, 'Road finish · Carrera clip');
+  assert.deepEqual(sweptTogether.setting, field('slotEnd'));
+  assert.equal(sweptTogether.advice, 'Use a longer piece, move the slots, or place the connectors by hand.');
+  assert.deepEqual(endRows(t, pack({ ...carrera, length: 250, slotPosition: each([50, 150], [20, 150]) })).A,
+    ['clip -72', 'clip 72']);
+
+  // Side mounts beside the slot nearest that edge.
+  const border = { joint: 'none', borderSide: 'outer', borderMount: 'clips' };
+  const recess = warningOf(() => buildTrack(wasm, pack({ ...border, slotPosition: each([19, 119]) })));
+  assert.deepEqual(recess.setting, field('slotLane1Start'));
+  const recessInner = warningOf(() => buildTrack(wasm, pack({ ...border, slotPosition: each([81, 181], [81, 181], 'inner') })));
+  assert.deepEqual(recessInner.setting, field('slotLane2Start'));
+  const narrow = warningOf(() => buildTrack(wasm, pack({ ...border, clipType: 'carrera-retained', slotPosition: each([30, 130]) })));
+  assert.match(narrow.reason, /guide-slot centre is 30 mm from this road edge/);
+  assert.deepEqual(narrow.setting, field('slotLane1Start'));
+  // The advice names the slot the field belongs to.
+  assert.equal(narrow.advice, 'Either move slot 1 away from this edge under Road → Slot position, or increase Road → Road width.');
+  const sideways = warningOf(() => buildTrack(wasm, pack({ ...border, clipType: 'carrera-retained', slotPosition: slot(30) })));
+  assert.deepEqual(sideways.setting, SLOT_POSITION);
+  assert.equal(sideways.advice, 'Either move the slot away from this edge under Road → Slot position, or increase Road → Road width.');
+  // Three lanes set one by one: the third slot is the one by the inside border.
+  const three = warningOf(() => buildTrack(wasm, road({
+    ...border, borderSide: 'both', clipType: 'carrera-retained', lanes: 3, laneSpacing: 60,
+    slotPosition: each([60, 120, 172]),
+  })));
+  assert.deepEqual(three.setting, field('slotLane3Start'));
+  assert.match(three.advice, /^Either move slot 3 away from this edge under Road → Slot position, /);
+});
+
+test('several lanes: a refusal points at the slot and the end it is about, and says which slot to move', () => {
+  const field = (field) => ({ tab: 'geometry', field, label: 'Slot position' });
+  const straight = { kind: 'straight', width: 200, lanes: 2, laneSpacing: 100 };
+  const moving = { ...straight, slotPosition: each([50, 150], [95, 165]) };
+  // Offsets from the centre at end B: slot 1 at 5, slot 2 at -65.
+  assert.deepEqual(slotPositionSetting(moving, [5, -65], 0, 'finish'), field('slotLane1End'));
+  assert.deepEqual(slotPositionSetting(moving, [5, -65], -60, 'finish'), field('slotLane2End'));
+  assert.deepEqual(slotPositionSetting(moving, [50, -50], 0, 'start'), field('slotLane1Start'));
+  // A seam, a curve and a slot that keeps its place use the end-A field.
+  assert.deepEqual(slotPositionSetting(moving, [5, -65], 0, 'seam'), field('slotLane1Start'));
+  assert.deepEqual(slotPositionSetting({ ...moving, kind: 'curve', slotPosition: each([95, 165]) }, [5, -65], 0, 'finish'),
+    field('slotLane1Start'));
+  assert.deepEqual(slotPositionSetting({ ...straight, slotPosition: each([95, 165]) }, [5, -65], 0, 'finish'),
+    field('slotLane1Start'));
+  // Lanes moving together, and a single lane: slotEnd at end B of a moving slot.
+  assert.deepEqual(slotPositionSetting({ ...straight, slotPosition: slot(50, 20) }, [80, -20], 0, 'finish'), field('slotEnd'));
+  assert.deepEqual(slotPositionSetting({ kind: 'straight', width: 200, slotPosition: slot(35, 100) }, [0], 0, 'finish'), field('slotEnd'));
+  assert.deepEqual(slotPositionSetting({ kind: 'straight', width: 200, slotPosition: slot(35) }, [65], 0, 'finish'), SLOT_POSITION);
+  assert.deepEqual(slotPositionSetting(), SLOT_POSITION);
+  // What to move: the slot a lane field names, all the slots, or the one slot.
+  assert.equal(slotToMove(field('slotLane3End'), 3), 'slot 3');
+  assert.equal(slotToMove(SLOT_POSITION, 2), 'the slots');
+  assert.equal(slotToMove(SLOT_POSITION, 1), 'the slot');
+  assert.equal(slotToMove(SLOT_POSITION), 'the slot');
+  // The pocket refusal keeps its single-lane words, and says slots for several.
+  const pocket = (extra) => slotPocketWarning({
+    label: 'Road start · Clip', kind: 'straight', end: 'start', type: 'clip', value: 14, reason: 'laneSweep', ...extra,
+  }).warning;
+  const single = pocket({});
+  assert.match(single.reason, / On a piece with an off-centre slot the connectors keep fixed places/);
+  assert.equal(single.advice, 'Use a longer piece, move the slot, or place the connectors by hand.');
+  const two = pocket({ lanes: 2 });
+  assert.match(two.reason, / On a piece with off-centre slots the connectors keep fixed places/);
+  assert.equal(two.advice, 'Use a longer piece, move the slots, or place the connectors by hand.');
+  const named = pocket({ lanes: 2, setting: field('slotLane2Start') });
+  assert.equal(named.advice, 'Use a longer piece, move slot 2, or place the connectors by hand.');
+  assert.equal(pocket({ lanes: 2, custom: true }).advice,
+    'Move Start clips under Connections → Custom road connector positions, use a longer piece, or move the slots.');
+});
+
+test('several lanes: the dialog map shows the row the build prints, at both ends', (t) => {
+  const pieces = [slot(35), slot(50, 20), each([35, 105], [95, 165]), each([95, 165], [35, 105], 'inner')];
+  for (const name of ['tabs', 'tabs and a clip', 'two counted draw-key clips', 'two tabs and two clips, counted']) {
+    for (const slotPosition of pieces) {
+      const p = pack({ ...MODES[name], slotPosition });
+      const rows = endRows(t, p);
+      for (const [scope, row] of [['start', rows.A], ['finish', rows.B]]) {
+        const layout = connectorLayout(p, null, scope);
+        const shown = sorted([
+          ...layout.positions.tab.map((offset) => ({ type: 'tab', offset: tidy(offset) })),
+          ...layout.positions.clip.map((offset) => ({ type: 'clip', offset: tidy(offset) })),
+        ]);
+        assert.deepEqual(shown, row, name + ' ' + scope + ' ' + JSON.stringify(slotPosition));
+        assert.equal(layout.placementWarning, undefined);
+      }
+    }
+  }
+  // Both slots are drawn where they run.
+  const layout = connectorLayout(pack({ joint: 'clips', slotPosition: each([35, 105], [95, 165]) }), null, 'start');
+  assert.deepEqual(layout.lanes.map((lane) => [lane[0][1], lane.at(-1)[1]].map(tidy)).sort((a, b) => a[0] - b[0]),
+    [[-5, -65], [65, 5]]);
+});
+
+test('several lanes: internal seams are planned from the slots at each seam, and fit samples carry the row of their end', (t) => {
+  const seamPieces = [
+    pack({ ...MODES['two counted draw-key clips'], length: 800, segments: 3, slotPosition: each([35, 105], [95, 165]) }),
+    pack({ ...MODES['tabs and a clip'], length: 800, segments: 3, slotPosition: slot(20, 50) }),
+    road({ ...MODES['tabs and a clip'], width: 300, lanes: 3, laneSpacing: 100, length: 900, segments: 3,
+      slotPosition: each([35, 120, 205], [95, 180, 265]) }),
+  ];
+  for (const p of seamPieces) {
+    const q = trackParameters(p);
+    const parts = build(t, p);
+    const path = nativePath(q);
+    const envelopes = connectorEnvelopes(q);
+    for (const station of [1 / 3, 2 / 3]) {
+      const lanes = Array.from({ length: q.lanes }, (_, i) => laneOffsetAt(q, i, station));
+      const row = measured(parts, path.point(station, 0), path.tangent(station));
+      assert.ok(row.length >= 2, 'connectors at the seam');
+      for (const entry of row) {
+        const [type, offset] = entry.split(' ');
+        for (const lane of lanes)
+          assert.ok(
+            Math.abs(Number(offset) - lane) > q.slotWidth / 2 + q.wall + envelopes[type].half,
+            entry + ' clears the slot at ' + lane,
+          );
+      }
+    }
+  }
+  const sampleRow = (p, which) => {
+    const parts = build(t, p, which);
+    return measured(parts, [0, 0], [1, 0], ['Socket', 'Clip']).filter((entry, i, all) => all.indexOf(entry) === i);
+  };
+  for (const name of ['tabs and a clip', 'two counted draw-key clips', 'two tabs and two clips, counted']) {
+    for (const p of [
+      pack({ ...MODES[name], slotPosition: each([35, 105], [95, 165]) }),
+      pack({ ...MODES[name], slotPosition: slot(50, 20) }),
+      road({ ...MODES[name], width: 300, lanes: 3, laneSpacing: 100, slotPosition: each([35, 120, 205], [95, 180, 265]) }),
+    ]) {
+      const rows = endRows(t, p);
+      const label = name + ' ' + JSON.stringify(p.slotPosition);
+      assert.deepEqual(sampleRow(p, 'start'), rows.A, label + ': start sample');
+      assert.deepEqual(sampleRow(p, 'finish'), rows.B, label + ': finish sample');
+      assert.deepEqual(sampleRow(p, 'seam'), rows.A, label + ': joint sample');
+    }
+  }
+});
+
+test('several lanes: the notes say which ends leave the standard positions', () => {
+  const texts = (extra) => slotConnectorNotes(trackParameters(pack(extra))).map((note) => {
+    assert.equal(note.level, 'note');
+    return note.text;
+  });
+  const clips = MODES['two counted draw-key clips'];
+  assert.deepEqual(texts({ ...clips, slotPosition: slot(35) }), [
+    'Connectors at both ends move to make room for the slots. They fit other ends with the slots at 35/135 mm, not centred pieces. With slot 1 at 42.5 mm or more the standard positions stay.',
+  ]);
+  assert.deepEqual(texts({ ...clips, slotPosition: slot(50, 35) }), [
+    'Connectors at end B move to make room for the slots. End B fits other ends with the slots at 35/135 mm, not centred pieces. With slot 1 at 42.5 mm or more the standard positions stay.',
+  ]);
+  assert.deepEqual(texts({ ...clips, slotPosition: each([35, 105], [95, 165]) }), [
+    'Connectors at end A move to make room for the slots. End A fits other ends with the slots at 35/105 mm, not centred pieces.',
+    'Connectors at end B move to make room for the slots. End B fits other ends with the slots at 95/165 mm, not centred pieces.',
+  ]);
+  assert.deepEqual(texts({ ...MODES['a draw-key clip'], slotPosition: each([35, 105]) }), [
+    'Connectors at both ends move to make room for the slots. They fit other ends with the slots at 35/105 mm, not centred pieces.',
+  ]);
+  assert.deepEqual(texts({ ...clips, slotPosition: slot(50) }), []);
+  assert.deepEqual(texts({ ...clips, slotPosition: slot(42.5) }), []);
+  assert.deepEqual(texts({ joint: 'none', slotPosition: slot(35) }), []);
+  assert.deepEqual(texts({ ...clips, slotPosition: { version: 1, edge: 'outer', lanes: [{ startMm: 35 }] } }), []);
+  // At 42.5 mm the standard clips stay in a real build too.
+  assert.deepEqual(pureRow({ ...clips, lanes: 2 }, 'start', [57.5, -42.5]), { tab: [], clip: [-72, 72] });
+  assert.notDeepEqual(pureRow({ ...clips, lanes: 2 }, 'start', [58, -42]), { tab: [], clip: [-72, 72] });
+});
+
+test('several lanes: the cross-section diagram draws every slot where it starts', () => {
+  const outline = (p) => profileDiagram(trackParameters(p)).match(/<path d="([^"]+)"/)[1];
+  // 1.4 px per mm around x = 154: standard slots at -50 and 50 mm.
+  assert.match(outline(pack()), /L81\.9 /);
+  assert.match(outline(pack()), /L221\.9 /);
+  // 35/105 from the left: slots at 65 and -5 mm.
+  const moved = outline(pack({ slotPosition: each([35, 105], [95, 165]) }));
+  assert.match(moved, /L242\.9 /);
+  assert.match(moved, /L144\.9 /);
+  assert.doesNotMatch(moved, /L81\.9 /);
+  assert.match(profileDiagram(trackParameters(pack({ slotPosition: each([35, 105], [95, 165]) }))), /Seen at end A/);
 });
 
 test('the cross-section diagram draws the slot where it starts', () => {

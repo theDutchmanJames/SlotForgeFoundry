@@ -243,3 +243,37 @@ test('hand-placed tabs on an off-centre slot curve keep the whole running surfac
     [...plain, ...tabbed].forEach((part) => part.solid.delete());
   }
 });
+
+test('several slots merge the reinforcement one part at a time whenever any slot is off its centred place', t => {
+  // Count the step-by-step merges: the single union of a centred piece makes none.
+  const own = SolidWorkshop.prototype.own;
+  let adds = 0;
+  SolidWorkshop.prototype.own = function (solid) {
+    if (typeof solid?.add === 'function' && !solid.counted) {
+      const add = solid.add.bind(solid);
+      solid.add = (...rest) => (adds++, add(...rest));
+      solid.counted = true;
+    }
+    return own.call(this, solid);
+  };
+  t.after(() => { SolidWorkshop.prototype.own = own; });
+  const work = workshop(t);
+  const merges = (slotPosition) => {
+    adds = 0;
+    const parts = build(work, straight({ slotPosition }));
+    return [adds, parts];
+  };
+  const [centredAdds, centred] = merges(undefined);
+  assert.equal(centredAdds, 0);
+  // Lanes together 50 mm from the left of a 200 mm road with 100 mm lanes are
+  // where a centred piece has them: the same single union, the same print.
+  const [sameAdds, same] = merges({ version: 1, edge: 'outer', startMm: 50, endMm: 50 });
+  assert.equal(sameAdds, 0);
+  for (const [i, part] of same.entries()) assert.deepEqual(encodeSTL(part.solid), encodeSTL(centred[i].solid));
+  // 35 and 165 mm from the left: both slots moved outwards, though their
+  // mean is still the road centre.
+  const [symmetricAdds] = merges({ version: 1, edge: 'outer', lanes: [{ startMm: 35, endMm: 35 }, { startMm: 165, endMm: 165 }] });
+  assert.ok(symmetricAdds > 0, 'step-by-step merge for a symmetric lane list');
+  const [togetherAdds] = merges({ version: 1, edge: 'inner', startMm: 40, endMm: 40 });
+  assert.ok(togetherAdds > 0, 'step-by-step merge for lanes moved together');
+});

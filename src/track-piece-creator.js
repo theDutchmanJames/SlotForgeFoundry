@@ -7,16 +7,18 @@ import {
   creatorLaneControls,
 } from './creator-lane-controls.js';
 import {
+  applySlotLanes,
   applySlotMode,
   readSlotPosition,
   showSlotAdvice,
   slotFieldNames,
   slotFieldValues,
   slotPositionControls,
+  slotSpacingHint,
   snapSlotField,
   syncSlotPositionControls,
 } from './slot-position-controls.js';
-import { slotLabel } from './slot-position.js';
+import { slotDistances, slotTitle } from './slot-position.js';
 import { matchingFamilyPreview, piecePreview } from './track-piece-preview.js';
 import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { fitUneditedPitGrid } from './starting-grid-controls.js';
@@ -100,9 +102,10 @@ export function openTrackPieceCreator({
         ${field('pcWidth', 'Road width', dimensions.width, 'mm', { min: 2, max: 5000 })}
         ${field('pcLanes', 'Lanes', dimensions.lanes, '', { min: 1, max: 8, step: 1 })}
         ${field('pcSpacing', 'Lane spacing', dimensions.laneSpacing, 'mm', { min: 0.1, max: 1000 })}
+        ${slotSpacingHint(base)}
         ${packRules ? '<p class="hint">Change road width, lanes, spacing and the R1 inner road edge in Pack rules.</p>' : ''}
         ${creatorLaneControls()}
-        ${slotPositionControls({ ...base, kind: 'curve', width: dimensions.width, lanes: dimensions.lanes }, slotFields)}
+        ${slotPositionControls({ ...base, kind: 'curve', width: dimensions.width, lanes: dimensions.lanes, laneSpacing: dimensions.laneSpacing }, slotFields)}
         <p class="hint" data-slot-lengths></p>
         <p class="hint" data-family-note></p>
       </div>
@@ -217,11 +220,21 @@ export function openTrackPieceCreator({
     if (special) get('[data-lane-editor]').hidden = true;
     if (adjustment) params.laneAdjustment = adjustment;
     else delete params.laneAdjustment;
-    syncSlotPositionControls(dialog, { kind: shape, lanes: params.lanes, special });
+    syncSlotPositionControls(dialog, {
+      kind: shape,
+      lanes: params.lanes,
+      special,
+      squeeze: Boolean(adjustment),
+      spacing: input('pcSpacing').value,
+    });
     const slot = readSlotPosition(slotFieldValues(dialog, slotFields), params);
     if (slot) params.slotPosition = slot;
     else delete params.slotPosition;
     showSlotAdvice(dialog, params);
+    const slotName =
+      slot && [...slotDistances(params, 0), ...slotDistances(params, 1)].every(Number.isFinite)
+        ? ' · ' + slotTitle(params)
+        : '';
     if (!editingName)
       name.value =
         (special
@@ -233,9 +246,7 @@ export function openTrackPieceCreator({
               (Number.isFinite(number('pcLength'))
                 ? ' · ' + number('pcLength') + ' mm'
                 : '')) +
-        (slot && Number.isFinite(slot.startMm + slot.endMm)
-          ? ' · slot ' + slotLabel(params)
-          : '');
+        slotName;
     try {
       if (
         [...dialog.querySelectorAll('input[type="number"]')].some(
@@ -260,13 +271,18 @@ export function openTrackPieceCreator({
         get('[data-family-graphic]').innerHTML =
           familyView.diagram + familyView.table;
         const turns = 360 / angle;
+        // Slot 1 of the next radius out sits beside the last slot of this one.
+        const slots = slot ? slotDistances(params, 0) : [];
+        const span = slots.length
+          ? slots.at(-1) - slots[0]
+          : (params.lanes - 1) * params.laneSpacing;
         get('[data-family-note]').textContent =
           'Nesting shown at 90°. ' +
           (Number.isInteger(turns)
             ? turns + ' pieces make a full circle. '
             : '') +
           'Slot spacing across adjacent radii is ' +
-          fmt(width - (params.lanes - 1) * params.laneSpacing) +
+          fmt(width - span) +
           (slot ? ' mm when every radius uses this slot position.' : ' mm.');
       } else get('[data-family-note]').textContent = '';
       status.textContent = recipe.sourceName
@@ -287,7 +303,9 @@ export function openTrackPieceCreator({
 
   dialog.addEventListener('input', (e) => {
     if (e.target === name) editingName = true;
-    // The Centred / Off-centre switch sets the edge field it stands for.
+    // The Centred / Off-centre switch sets the edge field it stands for, and
+    // the Lanes choice carries the slot positions into the mode it opens.
+    applySlotLanes(e.target, number('pcSpacing'), slotFields);
     refresh(applySlotMode(e.target) ?? e.target);
   });
   dialog.addEventListener('change', (e) => {

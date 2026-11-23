@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Module from 'manifold-3d';
-import { buildTrack, buildTestJoint, defaultTrack, nativePath, nativeTrackPoint } from '../src/track.js';
+import { buildTrack, buildTestJoint, defaultTrack, nativePath, nativeTrackPoint, validateTrack } from '../src/track.js';
 import {
   laneOffsetAt, laneOffsetDerivatives, laneProfileSteps, validateLaneAdjustment,
 } from '../src/lane-adjustment.js';
@@ -162,22 +162,39 @@ const single = (extra = {}) => ({
   ...defaultTrack(), kind: 'straight', width: 200, length: 300, lanes: 1, ...extra,
 });
 
-test('a lane offset is its place in the row, plus the slot shift, plus the squeeze', () => {
+// Phase 2: a slot position sets the lanes on its own. A squeeze beside it is
+// refused, so the slot terms no longer add to a squeeze (they did in stage 1).
+const pack = (extra = {}) => profile({laneAdjustment: undefined, ...extra});
+const eachSlot = (lanes, edge = 'outer') => ({version: 1, edge, lanes: lanes.map(([startMm, endMm = startMm]) => ({startMm, endMm}))});
+
+test('a lane offset is its place in the row plus the slot shift, or the squeeze', () => {
   const p = single({slotPosition: slot(35, 145)});
   assert.deepEqual([0, 0.5, 1].map(t => laneOffsetAt(p, 0, t)), [65, 10, -45]);
   assert.equal(laneOffsetAt(single({slotPosition: slot(35, 35, 'inner')}), 0, 0.3), -65);
-  // Stage 1 never stores both, but the three terms are independent.
-  const plain = profile(), both = profile({slotPosition: slot(100, 60)});
-  assert.deepEqual([0, 1].map(i => laneOffsetAt(both, i, 0)), [-50, 50]);
-  assert.deepEqual([0, 1].map(i => laneOffsetAt(both, i, 1)), [-10, 90]);
-  assert.deepEqual([0, 1].map(i => laneOffsetAt(both, i, 0.5)), [0, 40]);
+  // Together: the slot nearest the left edge is 50 then 10 mm from it, the other 100 mm further.
+  const together = pack({slotPosition: slot(50, 10)});
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(together, i, 0)), [-50, 50]);
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(together, i, 1)), [-10, 90]);
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(together, i, 0.5)), [-30, 70]);
   for (const t of [0.1, 0.37, 0.8]) for (const i of [0, 1])
-    assert.ok(Math.abs(laneOffsetAt(both, i, t) - laneOffsetAt(plain, i, t) - slotShiftAt(both, t)) < 1e-12);
+    assert.ok(Math.abs(laneOffsetAt(together, i, t) - laneOffsetAt(pack(), i, t) - slotShiftAt(together, t)) < 1e-12);
+  // A squeeze stored beside a slot position plays no part in the offsets.
+  for (const t of [0, 0.37, 1]) for (const i of [0, 1])
+    assert.equal(laneOffsetAt(profile({slotPosition: slot(50, 10)}), i, t), laneOffsetAt(together, i, t));
+  // Each lane: entry 0 is nearest the edge, lane index 1 from the left, lane 0 from the right.
+  const each = pack({slotPosition: eachSlot([[20, 60], [150, 120]])});
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(each, i, 0)), [-50, 80]);
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(each, i, 1)), [-20, 40]);
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(each, i, 0.5)), [-35, 60]);
+  const right = pack({slotPosition: eachSlot([[20, 60], [150, 120]], 'inner')});
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(right, i, 0)), [-80, 50]);
+  assert.deepEqual([0, 1].map(i => laneOffsetAt(right, i, 1)), [-40, 20]);
 });
 
 test('lane derivatives cover the squeeze bump and the slot transition', () => {
   const h = 1e-4;
-  for (const p of [profile(), single({slotPosition: slot(35, 145)}), profile({slotPosition: slot(100, 60)})]) {
+  for (const p of [profile(), single({slotPosition: slot(35, 145)}), pack({slotPosition: slot(50, 10)}),
+    pack({slotPosition: eachSlot([[20, 60], [150, 120]])}), pack({lanes: 3, laneSpacing: 50, slotPosition: eachSlot([[20, 20], [70, 100], [150, 180]], 'inner')})]) {
     for (const i of [0, p.lanes - 1]) {
       assert.deepEqual(laneOffsetDerivatives(p, i, 0), [0, 0]);
       assert.deepEqual(laneOffsetDerivatives(p, i, 1), [0, 0]);
@@ -197,10 +214,11 @@ test('the lane stations keep a moving slot within 0.015 mm of its true curve', (
   assert.equal(laneProfileSteps(single({laneAdjustment: undefined})), 32);
   assert.equal(laneProfileSteps(single({slotPosition: slot(35)})), 32);
   for (const p of [single({slotPosition: slot(35, 145)}), single({slotPosition: slot(190, 10, 'inner')}),
-    profile({slotPosition: slot(100, 60)})]) {
+    pack({slotPosition: slot(50, 10)}), pack({slotPosition: eachSlot([[20, 20], [80, 180]])}),
+    pack({lanes: 3, laneSpacing: 50, slotPosition: eachSlot([[20, 20], [70, 100], [150, 180]], 'inner')})]) {
     const steps = laneProfileSteps(p);
     assert.equal(steps % 2, 0);
-    for (const i of [0, p.lanes - 1]) for (let k = 0; k < steps; k++) {
+    for (let i = 0; i < p.lanes; i++) for (let k = 0; k < steps; k++) {
       const chord = (laneOffsetAt(p, i, k / steps) + laneOffsetAt(p, i, (k + 1) / steps)) / 2;
       assert.ok(Math.abs(chord - laneOffsetAt(p, i, (k + 0.5) / steps)) <= 0.015);
     }
@@ -208,18 +226,22 @@ test('the lane stations keep a moving slot within 0.015 mm of its true curve', (
   assert.equal(laneProfileSteps(single({slotPosition: slot(35, 145)})), 74);
 });
 
-test('the road edge is checked along the whole lane, not only at its ends and middle', () => {
-  // The spread peaks mid-way and the slot shift at end B. Together the outer
-  // lane reaches 75 mm near t = 0.7 although it is 70 mm at both of those.
+// Phase 2 replaces the stage 1 test of a spread plus a moving slot: that
+// combination is now refused, in words that say to choose one.
+test('a spread is checked against the road edge and never shares a piece with a slot position', () => {
   const p = profile({
-    width: 160, laneSpacing: 60, slotPosition: slot(80, 40),
+    width: 160, laneSpacing: 60,
     laneAdjustment: {version: 1, mode: 'spread', spacingMm: 100, anchor: 'centre'},
   });
-  assert.deepEqual([0, 0.5, 1].map(t => laneOffsetAt(p, 1, t)), [30, 70, 70]);
-  assert.ok(laneOffsetAt(p, 1, 0.7) > 75);
-  assert.throws(() => validateLaneAdjustment(p), /reaches the edge of the road/);
-  assert.doesNotThrow(() => validateLaneAdjustment({...p, width: 166, slotPosition: slot(83, 43)}));
-  assert.doesNotThrow(() => validateLaneAdjustment({...p, slotPosition: undefined}));
+  assert.deepEqual([0, 0.5, 1].map(t => laneOffsetAt(p, 1, t)), [30, 50, 30]);
+  assert.doesNotThrow(() => validateLaneAdjustment(p));
+  assert.throws(() => validateLaneAdjustment({...p, width: 112}), /reaches the edge of the road/);
+  const message = /^Error: A piece can squeeze or spread its lanes, or move its slots, not both\. Choose one: turn off Squeeze \/ spread lanes, or set Slot position to Centred\.$/;
+  for (const slotPosition of [slot(40, 20), eachSlot([[30], [100]])]) {
+    assert.throws(() => validateLaneAdjustment({...p, slotPosition}), message);
+    assert.throws(() => validateTrack({...p, slotPosition}), message);
+    assert.throws(() => nativePath({...p, slotPosition}), message);
+  }
 });
 
 test('a slot transition tighter than its own braid channel is refused as a fold', () => {

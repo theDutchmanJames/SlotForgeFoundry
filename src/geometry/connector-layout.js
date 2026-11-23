@@ -32,7 +32,7 @@ import {
   sideStationRules,
 } from './track-joints.js';
 import { connectorWarning } from './connector-warning.js';
-import { slotPositionSetting, slotRoomAdvice } from './connector-position-warnings.js';
+import { slotPositionSetting, slotRoomAdvice, slotToMove } from './connector-position-warnings.js';
 import {
   slotEndFace,
   slotEndObstacle,
@@ -475,7 +475,7 @@ export function connectorLayout(params, plan, scope, options = {}) {
     }
   }
   const measured =
-    path.measuredLanes ?? nativeLanes.map((n) => nativeBraidLane(p, path, n));
+    path.measuredLanes ?? nativeLanes.map((n, i) => nativeBraidLane(p, path, n, i));
   const laneBudget = Math.max(
     16,
     Math.min(800, Math.floor(4096 / measured.length)),
@@ -784,13 +784,15 @@ export function connectorLayout(params, plan, scope, options = {}) {
         if (built?.[type].has(value)) continue;
         const why = structural(type, value);
         if (!why) continue;
+        const setting = slotPositionSetting(p, laneOffsets, value, scope);
+        const move = 'move ' + slotToMove(setting, laneOffsets.length);
         const error = connectorWarning(
           location + ' · ' + env[type].name,
           why,
           custom
-            ? 'Move this connector, ' + slotRoomAdvice(p.kind).toLowerCase() + ', or move the slot.'
-            : slotRoomAdvice(p.kind) + ', move the slot, or place the connectors by hand.',
-          slotPositionSetting(),
+            ? 'Move this connector, ' + slotRoomAdvice(p.kind).toLowerCase() + ', or ' + move + '.'
+            : slotRoomAdvice(p.kind) + ', ' + move + ', or place the connectors by hand.',
+          setting,
         );
         error.proposedPositions = row.positions;
         throw error;

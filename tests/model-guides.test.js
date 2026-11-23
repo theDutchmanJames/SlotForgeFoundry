@@ -703,6 +703,76 @@ test('a braid pass-through too close to the side wall names the slot position, n
     assert.throws(() => attempt({ slotPosition, braidFeedStations: [0.01] }), /crosses an end wall or segment seam/);
 });
 
+const eachAt = (edge, ...lanes) => ({ version: 1, edge, lanes: lanes.map(([startMm, endMm = startMm]) => ({ startMm, endMm })) });
+const wideTwo = { ...wideSingle, lanes: 2, laneSpacing: 70 };
+
+test('with several slots every typed distance is measured, slot 1 nearest the chosen edge', () => {
+  const together = track('geometry', { ...wideTwo, slotPosition: slotAt('outer', 35) }, { field: 'slotStart' });
+  // Slot 1 is the lane on the left; the lanes follow every 70 mm.
+  assert.equal(find(together, 'slot-start').text, 'Slot 1 · 35 mm from the left edge');
+  assert.deepEqual(find(together, 'slot-start').paths, [[[-150, 100, 10], [-150, 65, 10]]]);
+  assert.equal(together.some(g => g.id.startsWith('slot-2')), false);
+  assert.deepEqual(find(together, 'lanes').paths.map(path => path[0][1]), [-5, 65]);
+
+  const moving = track('geometry', { ...wideTwo, slotPosition: slotAt('inner', 35, 55) }, { field: 'slotEnd' });
+  assert.equal(find(moving, 'slot-start').text, 'Slot 1 · end A · 35 mm from the right edge');
+  assert.deepEqual(find(moving, 'slot-end').paths, [[[150, -100, 10], [150, -45, 10]]]);
+
+  // Each lane set: every slot at both ends, or the focused one.
+  const each = { ...wideTwo, laneSpacing: 65, slotPosition: eachAt('outer', [35, 95], [105, 165]) };
+  const all = track('geometry', each, { field: 'slotLanes' });
+  assert.deepEqual(all.filter(g => g.id.startsWith('slot')).map(g => [g.id, g.text, g.paths[0][1][1]]), [
+    ['slot-start', 'Slot 1 · end A · 35 mm from the left edge', 65],
+    ['slot-end', 'Slot 1 · end B · 95 mm from the left edge', 5],
+    ['slot-2-start', 'Slot 2 · end A · 105 mm from the left edge', -5],
+    ['slot-2-end', 'Slot 2 · end B · 165 mm from the left edge', -65],
+  ]);
+  const focused = track('geometry', each, { field: 'slotLane2Start' });
+  assert.deepEqual(focused.filter(g => g.id.startsWith('slot')).map(g => [g.text, g.paths[0]]),
+    [['Slot 2 · end A · 105 mm from the left edge', [[-150, 100, 10], [-150, -5, 10]]]]);
+  const mirrored = track('geometry', { ...each, slotPosition: { ...each.slotPosition, edge: 'inner' } }, { field: 'slotLane2End' });
+  assert.deepEqual(mirrored.filter(g => g.id.startsWith('slot')).map(g => [g.text, g.paths[0]]),
+    [['Slot 2 · end B · 165 mm from the right edge', [[150, -100, 10], [150, 65, 10]]]]);
+  for (const name of ['slotLanes', 'slotLane1Start', 'slotLane8End']) assert.ok(SLOT_POSITION_FIELDS.includes(name), name);
+
+  // On a curve the dimension runs along the joint to the focused slot.
+  const bend = { ...wideTwo, kind: 'curve', radius: 300, angle: 45, laneSpacing: 65, slotPosition: eachAt('inner', [35], [120]) };
+  const radial = find(track('geometry', bend, { field: 'slotLane2Start' }), 'slot-2-start');
+  assert.equal(radial.text, 'Slot 2 · 120 mm from the inner edge');
+  near(Math.hypot(...radial.paths[0][0].map((v, i) => v - radial.paths[0][1][i])), 120);
+});
+
+test('with several slots the braid feed markers follow each slot and a pass-through in the side wall names its slot', async () => {
+  const each = { ...wideTwo, laneSpacing: 65, slotPosition: eachAt('outer', [35, 95], [105, 165]),
+    braidFeedSide: 'left', braidFeedStations: [0.5] };
+  const dots = find(track('profile', each), 'braid-feed').dots;
+  assert.equal(dots.length, 2);
+  // Mid-way the slots are 65 and 135 mm from the left edge: +35 and -35 mm.
+  // Each marker is the middle of the braid, 4.6 mm square to its slanted slot.
+  for (const [i, y] of [[0, -35], [1, 35]]) {
+    near(Math.hypot(dots[i][0], dots[i][1] - y), 4.6);
+    assert.ok(dots[i][1] > y + 4, 'on the left braid of lane ' + i);
+  }
+  const wasm = await Module();
+  wasm.setup();
+  const attempt = (params) => {
+    const parts = buildTrack(wasm, { ...defaultTrack(), ...wideTwo, braidFeedSide: 'both', braidFeedStations: [0.5], braidFeedLength: 12, ...params });
+    const volume = parts[0].solid.volume();
+    parts.forEach((p) => p.solid.delete());
+    return volume;
+  };
+  const sideWall = (slot, edge) => new RegExp(
+    '^Error: The braid pass-through reaches the side wall of the road, because slot ' + slot + ' is close to the ' + edge +
+    ' edge here\\. Under Slot position, keep slot ' + slot + ' at least 9\\.5 mm from that edge\\.$');
+  assert.throws(() => attempt({ slotPosition: slotAt('outer', 9) }), sideWall(1, 'left'));
+  assert.throws(() => attempt({ laneSpacing: 65, slotPosition: eachAt('inner', [8.1], [100]) }), sideWall(1, 'right'));
+  // Slot 2 is the one beside the far edge: the numbers follow the edge chosen.
+  assert.throws(() => attempt({ laneSpacing: 65, slotPosition: eachAt('outer', [100], [191.9]) }), sideWall(2, 'right'));
+  // Only the slot beside the edge is fed into the wall; the other lane alone builds.
+  assert.ok(attempt({ laneSpacing: 65, slotPosition: eachAt('outer', [100], [191.9]), braidFeedLane: 2 }) > 0);
+  assert.throws(() => attempt({ laneSpacing: 65, slotPosition: eachAt('outer', [100], [191.9]), braidFeedLane: 1 }), sideWall(2, 'right'));
+});
+
 test('print plate guides account for optimal bed rotation, margin and raised geometry', () => {
   const p = {
     ...part,

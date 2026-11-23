@@ -51,6 +51,21 @@ test('an off-centre slot position is saved with the piece and opens unchanged', 
   assert.equal('slotPosition' in checkProject(newProject()).track.params, false);
 });
 
+test('slot positions of several lanes are saved with the piece and open unchanged', () => {
+  for (const slotPosition of [
+    { version: 1, edge: 'outer', startMm: 35, endMm: 95 },
+    { version: 1, edge: 'inner', lanes: [{ startMm: 35, endMm: 95 }, { startMm: 105, endMm: 165 }] },
+  ]) {
+    const project = newProject();
+    Object.assign(project.track.params, {
+      kind: 'straight', length: 300, width: 200, lanes: 2, laneSpacing: 65, borderSide: 'none', slotPosition,
+    });
+    const reopened = checkProject(JSON.parse(JSON.stringify(project)));
+    assert.deepEqual(reopened.track.params.slotPosition, slotPosition);
+    validateTrack(reopened.track.params);
+  }
+});
+
 test('a fresh enclosure has a finer printed corner and saved edits keep their source mesh', async (t) => {
   const wasm = await initManifold();
   wasm.setup();

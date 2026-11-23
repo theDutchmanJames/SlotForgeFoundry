@@ -77,13 +77,18 @@ import { packSpecialTrack, SPECIAL_SHORT_NAMES, specialsFor } from './pack-speci
 import { specialName } from './special-piece-controls.js';
 import { borderRunLength, readTrackShapeFields, suggestedSpacing, syncTrackShapeControls } from './track-shape-controls.js';
 import {
+  applySlotLanes,
   applySlotMode,
+  packApplyNotice,
+  packRuleSlotNote,
   showSlotAdvice,
   slotFieldDependencies,
+  slotFieldToFocus,
   slotPositionAllowed,
   slotRestoreValues,
   snapSlotField,
 } from './slot-position-controls.js';
+import { normaliseSlotPosition } from './slot-position.js';
 import { gridRestoreValues, gridFieldDependencies, fitUneditedPitGrid } from './starting-grid-controls.js';
 import { showFlatImport } from './flat-import-dialog.js';
 import { refreshCustomTrack } from './custom-track.js';
@@ -113,7 +118,7 @@ import {
   starterPack,
   trackWithProfile,
 } from './library-profile.js';
-import { COLLECTION_RULE_FIELDS } from './library-database.js';
+import { COLLECTION_RULE_FIELDS, packRuleSlotChanges } from './library-database.js';
 import { pieceDetail, sharedLabels, trackThumbnail } from './library-view.js';
 import { changeJointCount, parseConnectionControls, syncJointCountControls } from './connection-controls.js';
 import { editConnectorPlacement } from './connector-placement.js';
@@ -3183,9 +3188,15 @@ function candidate(report = true) {
     }
     if (params.kind === 'import' && !nextTrack.custom)
       delete params.laneAdjustment;
-    // Drawn paths, drawings, special pieces and roads with several lanes
-    // keep a centred slot, whichever page changed the piece.
+    // Drawn paths, drawings and special pieces keep a centred slot,
+    // whichever page changed the piece. Slots that a new width or spacing
+    // puts where a centred piece has them are centred too.
     if (!slotPositionAllowed(params)) delete params.slotPosition;
+    else if (params.slotPosition) {
+      const slot = normaliseSlotPosition(params);
+      if (slot) params.slotPosition = slot;
+      else delete params.slotPosition;
+    }
     if (nextTrack.curveFamily) {
       const family = nextTrack.curveFamily;
       if (
@@ -3848,19 +3859,16 @@ function syncPackApply(form = $('#settings-form')) {
     '</ul>' +
     offCentreLoss(changed, p);
 }
-// Off-centre slots are single-lane only, so a second lane centres them all.
+// The pieces a new road width, lane count or spacing centres, counted by the
+// same test Apply to collection uses, with the rule values it sends.
 function offCentreLoss(changed, p) {
-  if (!changed.includes('lanes') || Number(p.lanes) === 1) return '';
-  const pieces = currentPack?.pieces ?? [];
-  const count = pieces.filter((piece) => piece.track.params.slotPosition).length;
-  if (!count) return '';
-  return (
-    '<p>' +
-    (count === 1 ? '1 piece loses its' : count + ' pieces lose their') +
-    ' off-centre slot and ' + (count === 1 ? 'is' : 'are') +
-    ' centred. Setting the pack back to one lane does not bring ' +
-    (count === 1 ? 'it' : 'them') + ' back.</p>'
+  if (!changed.some((k) => COLLECTION_RULE_FIELDS.includes(k))) return '';
+  const open = project.libraryPiece?.pieceId;
+  const pieces = (currentPack?.pieces ?? []).map((piece) => (piece.id === open ? p : piece.track.params));
+  const values = Object.fromEntries(
+    COLLECTION_RULE_FIELDS.filter((k) => p[k] !== undefined).map((k) => [k, p[k]]),
   );
+  return packRuleSlotNote(packRuleSlotChanges(pieces, values));
 }
 // Applies the edit to this piece, then writes the pack rules into every
 // piece of its pack. The library checks all pieces first.
@@ -3901,13 +3909,7 @@ async function applyToCollectionAction() {
   await savePieceToPack();
   currentPack = null;
   render();
-  notice(
-    'Applied to all ' + result.pieces + ' pieces of the pack.' +
-      (result.centred
-        ? ' ' + result.centred + (result.centred === 1 ? ' piece has' : ' pieces have') +
-          ' a centred slot now.'
-        : ''),
-  );
+  notice(packApplyNotice(result));
 }
 // A pack piece is saved into its pack whenever an edit is applied.
 // The latest pack revision this window saved. Undo and reload can bring back a
@@ -4137,7 +4139,9 @@ function focusTrackSetting(target) {
     trackTab = section;
     renderInspector();
   }
-  const control = $('#settings-form')?.elements.namedItem(target.field);
+  const form = $('#settings-form');
+  // A slot warning names slot 1 of one lane mode; the other may be shown.
+  const control = form?.elements.namedItem(slotFieldToFocus(form, target.field));
   if (!control) return;
   for (
     let section = control.closest('details');
@@ -5211,6 +5215,10 @@ $('#inspector').addEventListener('input', (e) => {
   // The Centred / Off-centre switch has no name: it sets the edge field.
   const el = applySlotMode(e.target) ?? e.target;
   if (!el.name) return;
+  // The Lanes choice of Slot position carries the distances into the other
+  // mode; those fields are part of the edit.
+  for (const filled of applySlotLanes(el, el.form.elements.namedItem('laneSpacing')?.valueAsNumber))
+    storeField(filled);
   changeJointCount(el, storeField);
   if (/^place_(inner|outer)/.test(el.name)) {
     const mutes = el.form.elements.placementMutes;

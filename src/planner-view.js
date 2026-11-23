@@ -2,7 +2,7 @@ import { Viewport } from './viewport.js';
 import { pitch, sourcePartMap, xyOf } from './planner-model.js';
 import { esc } from './ui.js';
 import { creaseLineIndices, isTrackSurface } from './surface-features.js';
-import { slotLabel } from './slot-position.js';
+import { slotTitle } from './slot-position.js';
 
 const digits = (n) => Number(n.toFixed(3));
 const points = (path) =>
@@ -153,7 +153,7 @@ export function createPlanView(host, onPick) {
         }
         const s = def.sections[n.index],
           map = sourcePartMap(def),
-          slot = slotLabel(def.track.params);
+          slot = slotTitle(def.track.params);
         const path = (id) =>
           pathD(
             (map.get(id).outline ?? []).map((loop) =>
@@ -194,7 +194,7 @@ export function createPlanView(host, onPick) {
           esc(def.name) +
           ' · ' +
           esc(s.road) +
-          (slot && !def.name.includes('slot ' + slot) ? ' · slot ' + esc(slot) : '') +
+          (slot && !def.name.includes(slot) ? ' · ' + esc(slot) : '') +
           '</title>' +
           piece +
           lanes +

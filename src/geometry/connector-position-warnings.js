@@ -1,5 +1,6 @@
 import { connectorWarning, formatMm } from './connector-warning.js';
 import { placementKeys } from './placements.js';
+import { slotForm, slotVaries } from '../slot-position.js';
 
 export function roadLengthWarning(
   p,
@@ -195,7 +196,13 @@ export function sideMountWarning({
   laneMinimum,
   slotPosition = false,
 }) {
-  const moveSlot = 'move the slot away from this edge under Road → Slot position';
+  // slotPosition: true, or the setting of the slot nearest this edge.
+  const slotSetting = () =>
+    typeof slotPosition === 'object' ? slotPosition : slotPositionSetting();
+  // On a piece whose lanes are set one by one, name the slot to move.
+  const named = typeof slotPosition === 'object' && /^slotLane\d+(?:Start|End)$/.test(slotPosition.field);
+  const moveSlot = 'move ' + (named ? slotToMove(slotPosition) : 'the slot') +
+    ' away from this edge under Road → Slot position';
   const positions = {
     tab: 'joints',
     field: 'place_' + key,
@@ -246,7 +253,7 @@ export function sideMountWarning({
         ? 'Either ' + moveSlot + ', or increase Road → Road width.'
         : 'Increase Road → Road width to give the pocket more room beside the guide slot.',
       slotPosition
-        ? slotPositionSetting()
+        ? slotSetting()
         : { tab: 'geometry', field: 'width', label: 'Edit road width' },
     );
   const causes = {
@@ -280,26 +287,51 @@ export function sideMountWarning({
       ? detail
       : 'Automatic placement could not find a clear position. ' + detail,
     advice,
-    beside && !custom ? slotPositionSetting() : positions,
+    beside && !custom ? slotSetting() : positions,
   );
 }
 
-/** The inspector field that holds the slot position of a piece. */
-export const slotPositionSetting = () => ({
-  tab: 'geometry',
-  field: 'slotStart',
-  label: 'Slot position',
-});
+/**
+ * The inspector field that holds the slot position of a piece. On a piece
+ * whose lanes are set one by one it is the field of the slot nearest `value`
+ * (mm from the road centre) among `lanes`, the slot offsets at that end:
+ * 'slotLane<n>Start', n counted from the edge the slots are measured from.
+ * At end B ('finish') of a straight whose slots move sideways the distance
+ * there is the end-B field: 'slotLane<n>End', or 'slotEnd' when the lanes
+ * move together. Seams, curves and slots that keep their place use end A.
+ */
+export function slotPositionSetting(p, lanes, value = 0, end) {
+  const atB = end === 'finish' && p?.kind === 'straight' && slotVaries(p);
+  const setting = { tab: 'geometry', field: atB ? 'slotEnd' : 'slotStart', label: 'Slot position' };
+  if (slotForm(p) !== 'each' || !lanes?.length) return setting;
+  const nearest = lanes.reduce((best, lane) =>
+    Math.abs(lane - value) < Math.abs(best - value) ? lane : best);
+  const outer = p.slotPosition.edge === 'outer';
+  const slot = lanes.filter((lane) => (outer ? lane > nearest : lane < nearest)).length + 1;
+  return { ...setting, field: 'slotLane' + slot + (atB ? 'End' : 'Start') };
+}
+
+/**
+ * The slot the advice tells the user to move: the slot a lane field names
+ * ('slot 2'), the slots of a piece with several lanes moving together, or the
+ * one slot of a single-lane piece.
+ */
+export function slotToMove(setting, lanes = 1) {
+  const named = /^slotLane(\d+)(?:Start|End)$/.exec(setting?.field ?? '');
+  if (named) return 'slot ' + named[1];
+  return lanes > 1 ? 'the slots' : 'the slot';
+}
 
 /** A row beside an off-centre slot that cannot be laid out across the road. */
-export function slotRowWarning(source, counted) {
+export function slotRowWarning(source, counted, setting = slotPositionSetting(), lanes = 1) {
+  const move = 'Move ' + slotToMove(setting, lanes);
   return connectorWarning(
     source.warning.location,
     source.warning.reason,
     counted
-      ? 'Move the slot, change the number of connectors, or place the connectors by hand.'
-      : 'Move the slot, widen the road, or place the connectors by hand.',
-    slotPositionSetting(),
+      ? move + ', change the number of connectors, or place the connectors by hand.'
+      : move + ', widen the road, or place the connectors by hand.',
+    setting,
   );
 }
 
@@ -317,15 +349,19 @@ const slotPocketCauses = {
  * leaves no room for. Its place is fixed by the slot at that end alone, so
  * the piece has to change, not the row.
  */
-export function slotPocketWarning({ label, kind, end, type, value, custom, fixedTabOffset, reason }) {
+export function slotPocketWarning({
+  label, kind, end, type, value, custom, fixedTabOffset, reason, setting = slotPositionSetting(),
+  lanes = 1,
+}) {
   const detail =
     'At the ' + formatMm(value) + ' offset, ' + (slotPocketCauses[reason] ?? reason);
   const roomier = slotRoomAdvice(kind, reason);
+  const move = 'move ' + slotToMove(setting, lanes);
   if (fixedTabOffset)
     return connectorWarning(
       label,
       detail,
-      'Change Tab offset from centre in Connections, ' + roomier.toLowerCase() + ', or move the slot.',
+      'Change Tab offset from centre in Connections, ' + roomier.toLowerCase() + ', or ' + move + '.',
       { tab: 'joints', field: 'connectorOffset', label: 'Edit tab offset' },
     );
   const key = end + (type === 'tab' ? 'Tabs' : 'Clips');
@@ -336,7 +372,7 @@ export function slotPocketWarning({ label, kind, end, type, value, custom, fixed
       'Move ' +
         placementKeys[key] +
         ' under Connections → Custom road connector positions, ' +
-        roomier.toLowerCase() + ', or move the slot.',
+        roomier.toLowerCase() + ', or ' + move + '.',
       {
         tab: 'joints',
         field: 'place_' + key,
@@ -346,9 +382,10 @@ export function slotPocketWarning({ label, kind, end, type, value, custom, fixed
   return connectorWarning(
     label,
     detail +
-      ' On a piece with an off-centre slot the connectors keep fixed places, so that matching ends always fit together.',
-    roomier + ', move the slot, or place the connectors by hand.',
-    slotPositionSetting(),
+      (lanes > 1 ? ' On a piece with off-centre slots' : ' On a piece with an off-centre slot') +
+      ' the connectors keep fixed places, so that matching ends always fit together.',
+    roomier + ', ' + move + ', or place the connectors by hand.',
+    setting,
   );
 }
 

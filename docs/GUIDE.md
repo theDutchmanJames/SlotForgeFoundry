@@ -30,7 +30,7 @@ Special-piece print kits include individual STLs, a conductor map and assembly n
 
 Hollow roads and borders have crosswise ribs underneath. Under **Cross-section → Road body**, use **Target rib spacing** to set the distance between supports (50 mm by default). Each rib uses the selected **Wall thickness**. Foundry distributes ribs within each printable section and adjusts them around connectors and other hardware. Choose **View underside** to inspect the layout. Turn off **Reinforce roads and borders** for an open underside, or set reinforcement for a collection under **Shared print profile**.
 
-**Track packs → New track pack** sets road width, lane count, normal slot spacing, the R1 inner road radius and default sweep. Choose **Add track piece → Curve** for a matching R1–R8 bend or an independent inner radius. Use **Straight** for a measured length and **Freeform path** for a route drawn through points. The creator previews the outline and slots. **Add to pack** saves the recipe and opens it in Track Set. **Road → Lane layout** lets you squeeze or spread the slots and braid shelves at mid-piece while preserving their alignment at both ends. A single-lane straight or curve can also carry its slot away from the middle of the road: see [Off-centre slots](#off-centre-slots).
+**Track packs → New track pack** sets road width, lane count, normal slot spacing, the R1 inner road radius and default sweep. Choose **Add track piece → Curve** for a matching R1–R8 bend or an independent inner radius. Use **Straight** for a measured length and **Freeform path** for a route drawn through points. The creator previews the outline and slots. **Add to pack** saves the recipe and opens it in Track Set. **Road → Lane layout** lets you squeeze or spread the slots and braid shelves at mid-piece while preserving their alignment at both ends. A straight or curve can also carry its slots away from their usual places: see [Off-centre slots](#off-centre-slots).
 
 **Borders → Border ends** gives each side independent entry and exit finishes. Choose Rounded, Tapered or S-curve, select Short or Long, and drag the tip in the border diagram or enter its distance from the start along that road edge. Set the exit on the following straight to leave the remaining road bare. The full-width section accommodates the selected clips and keepers.
 
@@ -50,13 +50,20 @@ Both Basic packs include a 200 mm long **Starting grid** straight. The 100 mm wi
 
 ### Off-centre slots
 
-A single-lane straight or curve can carry its guide slot, with its braids, away from the middle of the road. Choose **Slot position → Off-centre** in **Add track piece**, or later under **Road → Lane layout** in Track Set. Under **Measure from**, pick a road edge, then enter the distance from that edge to the centre of the slot. Typed distances settle on half millimetres. Roads with two or more lanes, special pieces, freeform paths and imported drawings keep their slots where they are. Bring the slot back to the centre on a straight before a special piece.
+A straight or curve with one to eight lanes can carry its guide slots, with their braids, away from their usual places. Choose **Slot position → Off-centre** in **Add track piece**, or later under **Road → Lane layout** in Track Set. Under **Measure from**, pick a road edge, then enter the distance from that edge to the centre of the slot. Typed distances settle on half millimetres. Special pieces, freeform paths and imported drawings keep their slots where they are. Bring the slots back to their usual places on a straight before a special piece.
+
+With two or more lanes the slots are numbered from the edge you measure from: **Slot 1** is the slot nearest that edge. **Lanes** offers two ways to place them:
+
+- **Lanes move together** asks for slot 1 at end A and end B. The other slots follow every lane spacing, further from the edge. A new lane spacing moves them, and a new road width keeps the typed distance of slot 1.
+- **Set each lane** gives a small table with one row per slot and a column for end A and end B (a curve has one column). Lane spacing then plays no part in where the slots are. The slots must stay in order at both ends, slot 1 nearest the edge, and neighbouring slots must stay far enough apart for their braids. A table spaced exactly the lane spacing at both ends is stored as lanes moving together. Switching to **Set each lane** fills the table from the slots of lanes moving together; switching back keeps slot 1.
+
+A piece cannot both squeeze or spread its lanes and move its slots. Turn off **Squeeze / spread** or set **Slot position** to **Centred**.
 
 Every piece has an **end A**, where it starts, and an **end B**, where it finishes. On a straight, **Left edge** and **Right edge** are the sides you see looking from end A to end B. The creator preview and the Library tile mark both ends and put an arrowhead on the slot. In the preview the left edge is at the top. On a curve the choice is **Outer edge** or **Inner edge**.
 
-On a straight, **At end A** and **At end B** can differ. The slot then crosses the road in a smooth S and leaves both ends square to the joint, so it lines up with the slot of the next piece. A longer piece makes a gentler S. A curve keeps one distance all the way round. Change position on a straight before or after it.
+On a straight, **At end A** and **At end B** can differ. The slot then crosses the road in a smooth S and leaves both ends square to the joint, so it lines up with the slot of the next piece. A longer piece makes a gentler S. A curve keeps one distance all the way round. Change position on a straight before or after it. With lanes that move together every slot follows the same S. With **Set each lane** each slot makes its own S between its two distances, so the gaps between the slots change along the piece. Slots that run at an angle come closer together than their distances at the ends suggest, so the spacing narrows mid-way; a longer piece narrows it less.
 
-The line below the two distances gives the distance from the other edge and the room on this road. A distance outside that room, or an S too sharp for a guide to follow, stops the build with a message that names the limit. The notes underneath are advice and never stop a build. They report the tightest bend in the slot and the piece length that would make it gentle, the angle of the slot mid-way, an edge so close that a car body hangs over it (a border on that side helps), and connectors that have moved.
+The line below the distances gives the distance of every slot from the other edge and the room on this road. A distance outside that room, slots that cross or come too close for their braids, or an S too sharp for a guide to follow stops the build with a message that names the limit. The notes underneath are advice and never stop a build. They report the tightest bend in the slots and the piece length that would make it gentle, the angle of the slots mid-way, a spacing that narrows noticeably mid-way and the length that would keep it, slots closer than the pack's lane spacing (cars on neighbouring lanes may touch), an edge so close that a car body hangs over it (a border on that side helps), and connectors that have moved.
 
 Clips and tabs keep clear of the guide slot and the braids. With the slot near one edge they cannot sit where they do on a centred piece, so they move across the joint. Two pieces mate when their slots are the same distance from the same edge at the joint they share. Check the joint in **Connections** after moving a slot.
 
@@ -64,9 +71,18 @@ A piece that moves the slot to the right does so whichever way round it is place
 
 A left-hand corner in the Track Planner is a mirrored print of the corner you designed, so its slot swaps sides. A corner with the slot 35 mm from its outer edge has the slot on the left as a right-hander and on the right as a left-hander. To keep the slot on the same side of the car through a left-hand corner, make a second corner measured from the other edge.
 
-The Track Planner joins two pieces only when their slots meet. A piece whose slot starts somewhere else is not placed, and the message gives both distances at that joint. Catalogue tiles and the parts list show each piece's slot position, such as **slot 35-145 from left**, so a piece and its mirror image read apart.
+The Track Planner joins two pieces only when their slots meet. A piece whose slot starts somewhere else is not placed, and the message gives both distances at that joint. Catalogue tiles and the parts list show each piece's slot position, such as **slot 35-145 from left**, or for several lanes every slot at end A, then at end B, such as **slots 35/135-55/155 from left**, so a piece and its mirror image read apart.
 
-Changing the road width of a pack keeps each typed distance from its edge. Giving the pack a second lane centres every piece again.
+Pack rules keep the slot positions where they can:
+
+- A new road width keeps each typed distance from its edge.
+- A new lane count keeps lanes that move together: slot 1 stays where it was typed and the new lanes follow every lane spacing. A piece set lane by lane is centred again, because its table is for its old lane count.
+- A new lane spacing moves the slots of lanes that move together and leaves a table set lane by lane as it is. A table whose gaps all equal the new spacing becomes lanes that move together, and from then on it follows later spacing changes; the notice after applying says how many pieces this turned.
+- A piece whose slots the new rules put where a centred piece has them is centred too, for example lanes moving together 30 mm from the edge of a 200 mm road with a third lane at 70 mm spacing.
+
+The pack rules box says how many pieces the new width, lane count or spacing centres before you apply, and the notice says so afterwards. Setting the rules back does not bring their slot positions back.
+
+If a piece cannot take the new rules, for example because a slot would leave the road, the whole change is refused and the message names the piece.
 
 ### Planning a track layout
 

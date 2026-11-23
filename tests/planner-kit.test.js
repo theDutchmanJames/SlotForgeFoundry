@@ -40,6 +40,29 @@ test('two different parts with the same name get their own files', () => {
   assert.deepEqual(groups.map((g) => g.file), ['track/Chicane-Road-1-x1.stl', 'track/Chicane-Road-1-2-x1.stl']);
 });
 
+test('a piece name too long for a file gives up its middle, never its edge or its part', () => {
+  const left = 'Full straight slots 25/80/135/190/245/300/355/410-30/85/140/195/250/305/360/415 from left';
+  const right = 'Full straight slots 25/80/135/190/245/300/355/410-30/85/140/195/250/305/360/420 from right';
+  const groups = printGroups([
+    { piece: left, part: 'Road 1', role: 'road', mirror: false, count: 1, bytes: road('a') },
+    { piece: right, part: 'Road 1', role: 'road', mirror: false, count: 1, bytes: stl('b', [7, 7, 7, 7]) },
+    { piece: left, part: 'Outside border 2', role: 'border', mirror: true, count: 1, bytes: stl('c', [8, 8]) },
+  ]);
+  assert.deepEqual(groups.map((g) => g.file), [
+    'track/Full-straight-slots-25_80_135_190_2...5_140_195_250_305_360_415-from-left-Road-1-x1.stl',
+    'track/Full-straight-slots-25_80_135_190_2..._140_195_250_305_360_420-from-right-Road-1-x1.stl',
+    'borders/Full-straight-slots-25_80_135_..._195_250_305_360_415-from-left-Outside-border-2-mirrored-x1.stl',
+  ]);
+  for (const g of groups) assert.ok(g.file.split('/')[1].replace(/(-mirrored)?-x1\.stl$/, '').length <= 80, g.file);
+  // The full name stays in the label.
+  assert.equal(groups[0].label, left + ' · Road 1');
+  // Names that fit are left as they were.
+  const short = printGroups([
+    { piece: 'Straight slots 35/135 from left', part: 'Road 1', role: 'road', mirror: false, count: 2, bytes: road('d') },
+  ]);
+  assert.deepEqual(short.map((g) => g.file), ['track/Straight-slots-35_135-from-left-Road-1-x2.stl']);
+});
+
 import { kitPieceNames } from '../src/planner-kit.js';
 test('pieces that share a name are told apart by their slot position, and only then', () => {
   const piece = (name, slotPosition) => ({ name, track: { params: { slotPosition } } });

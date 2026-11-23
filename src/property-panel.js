@@ -17,10 +17,13 @@ const readouts = {
     if (!pit) return choice(f, 'braidFeedSide');
     return pit.disabled ? 'No braid' : choice(f, 'spPitContactMode');
   },
-  lanes: (form) =>
-    value(form, 'lanes') === '1'
-      ? '1 lane' + (['outer', 'inner'].includes(value(form, 'slotEdge')) ? ' · off-centre' : '')
-      : value(form, 'lanes') + ' lanes · ' + value(form, 'laneSpacing') + ' mm',
+  lanes: (form) => {
+    const off = ['outer', 'inner'].includes(value(form, 'slotEdge')) ? ' · off-centre' : '';
+    if (value(form, 'lanes') === '1') return '1 lane' + off;
+    // Set each lane: the spacing plays no part in where the slots are.
+    const each = off && form.elements.namedItem('slotLanes')?.value === 'each';
+    return value(form, 'lanes') + ' lanes' + (each ? '' : ' · ' + value(form, 'laneSpacing') + ' mm') + off;
+  },
   startingGrid: (form) =>
     form.elements.gridEnabled.checked ? value(form, 'gridWidth') + ' mm wide' : 'Off',
   pitGrid: (form) =>

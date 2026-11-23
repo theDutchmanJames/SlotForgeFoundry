@@ -1,6 +1,6 @@
 import polygonClipping from 'polygon-clipping';
 import { sectionStations } from './geometry/bridge-sections.js';
-import { hasSlotPosition, slotVaries } from './slot-position.js';
+import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
 
 export const newLayout = () => ({
   format: 'slotforge-layout',
@@ -124,6 +124,8 @@ const listed = (values) =>
     : mm(values[0]);
 const slotCount = (values) =>
   values.length + (values.length === 1 ? ' slot' : ' slots');
+// 'slot' for a single-lane piece, 'slots' for a piece with several.
+const slotWord = (p) => (p.lanes > 1 ? 'slots' : 'slot');
 // Where the slots of two touching ends lie, as someone driving through the
 // joint sees them: mm from the left or right road edge, looking from end A to
 // end B of the first piece. The edge is the one the off-centre slot was typed
@@ -152,34 +154,37 @@ function slotReading(target, incoming) {
     next: read(incoming),
   };
 }
-// A corner placed as a left-hand turn is the mirrored print: its slot keeps
-// its distance from the outer or inner edge, which is now the other side of
-// the road. Recognise that, so the message can say what to make instead.
+// A corner placed as a left-hand turn is the mirrored print: its slots keep
+// their distances from the outer or inner edge, which is now the other side
+// of the road. Recognise that, so the message can say what to make instead:
+// the same distances measured from the other edge, in either lane form.
 function mirroredCorner(target, incoming) {
   for (const [corner, other, name] of [
     [incoming, target, 'This corner'],
     [target, incoming, 'The corner at this joint'],
   ]) {
     const p = corner.params;
-    if (
-      !corner.flip ||
-      p?.kind !== 'curve' ||
-      !hasSlotPosition(p) ||
-      corner.slots.length !== 1 ||
-      other.slots.length !== 1
-    )
-      continue;
+    if (!corner.flip || p?.kind !== 'curve' || !hasSlotPosition(p)) continue;
     const [a, b] = corner.edges,
-      [x, y] = corner.slots[0];
-    if (!near([a[0] + b[0] - x, a[1] + b[1] - y], other.slots[0])) continue;
-    const { edge, startMm } = p.slotPosition;
+      across = uniquePoints(corner.slots).map(([x, y]) => [
+        a[0] + b[0] - x,
+        a[1] + b[1] - y,
+      ]);
+    if (!across.length || !matched(across, uniquePoints(other.slots))) continue;
+    const { edge } = p.slotPosition,
+      word = slotWord(p);
     return (
       name +
-      ' is printed mirrored for a left-hand turn. Its slot is still ' +
-      mm(startMm) +
+      ' is printed mirrored for a left-hand turn. Its ' +
+      word +
+      (word === 'slot' ? ' is' : ' are') +
+      ' still ' +
+      listed(slotDistances(p, 0)) +
       ' mm from its ' +
       edge +
-      ' edge, but this turn puts that edge on the other side of the road. Make a corner with the slot measured from the ' +
+      ' edge, but this turn puts that edge on the other side of the road. Make a corner with the ' +
+      word +
+      ' measured from the ' +
       (edge === 'outer' ? 'inner' : 'outer') +
       ' edge instead.'
     );
@@ -246,19 +251,66 @@ function mismatch(target, incoming) {
         }
       : fault('slots', slotText(target, incoming));
   }
-  if (!slotsInLine(target, incoming))
+  if (!slotsInLine(target, incoming)) {
+    const moving = [target, incoming].find((e) => hasSlotPosition(e.params)) ?? target,
+      word = slotWord(moving.params ?? {});
     return fault(
       'slot-angle',
-      'The guide slots meet at an angle at this joint, so a guide would catch. A piece whose slot moves sideways only joins up with all of its own sections in place.',
+      'The guide slots meet at an angle at this joint, so a guide would catch. A piece whose ' +
+        word +
+        (word === 'slot' ? ' moves' : ' move') +
+        ' sideways only joins up with all of its own sections in place.',
     );
+  }
   if (Math.abs(target.z - incoming.z) > 0.05)
     return fault('height', 'These road surfaces meet at different heights.');
   if (!hardwareMatches(target, incoming))
     return fault(
       'connectors',
-      'The connector positions or clip families differ at this joint. Choose another end or match their settings in Track Set.',
+      mirroredRow(target, incoming) ||
+        'The connector positions or clip families differ at this joint. Choose another end or match their settings in Track Set.',
     );
   return null;
+}
+// A piece placed mirrored carries its connectors mirrored too. Where the
+// slots meet and only that mirror keeps the rows apart (an off-centre clip
+// beside slots that sit symmetric about the centre), say so, and what helps.
+function mirroredRow(target, incoming) {
+  if (target.flip === incoming.flip) return '';
+  if (![target, incoming].some((e) => hasSlotPosition(e.params))) return '';
+  for (const [piece, other, name] of [
+    [incoming, target, 'This '],
+    [target, incoming, 'The '],
+  ]) {
+    if (!piece.flip) continue;
+    const c = Math.cos(piece.angle),
+      s = Math.sin(piece.angle);
+    // Across the centre line of this end: the row as the unmirrored print has it.
+    const across = piece.hardware.map((g) => {
+      const x = g.xy[0] - piece.xy[0],
+        y = g.xy[1] - piece.xy[1],
+        along = x * c + y * s;
+      return {
+        ...g,
+        xy: [piece.xy[0] + 2 * along * c - x, piece.xy[1] + 2 * along * s - y],
+      };
+    });
+    if (!hardwareMatches(other, { ...piece, hardware: across })) continue;
+    const kind = piece.params?.kind === 'curve' ? 'corner' : 'piece',
+      clip = piece.hardware.some((g) => g.kind === 'Clip');
+    return (
+      'The connector positions differ at this joint. ' +
+      name +
+      kind +
+      (name === 'The ' ? ' at this joint' : '') +
+      ' is printed mirrored for a left-hand turn, which moves its off-centre ' +
+      (clip ? 'clip' : 'connectors') +
+      ' to the other side of the road. ' +
+      (clip ? 'Use tab joints, or move' : 'Move') +
+      ' one slot so that the slots are no longer symmetric about the road centre.'
+    );
+  }
+  return '';
 }
 // advice (optional) adds what to do about slots that are in the wrong place.
 function checkMate(target, incoming, advice) {
@@ -317,7 +369,7 @@ function turnAdvice(target, def, node, far) {
       '. Make a second piece' +
       (slotVaries(p)
         ? ' for the way back, with the distances for end A and end B swapped and measured from the other edge.'
-        : ' with the slot measured from the other edge.')
+        : ' with the ' + slotWord(p) + ' measured from the other edge.')
     );
   // The slot it ends with is the one needed here: the piece for the way back.
   const end = farEnd(node.pose);
@@ -327,7 +379,9 @@ function turnAdvice(target, def, node, far) {
   ]);
   if (slotVaries(p) && matched(back, uniquePoints(target.slots)))
     return (
-      'Turning this piece round does not bring the slot back' +
+      'Turning this piece round does not bring the ' +
+      slotWord(p) +
+      ' back' +
       (tabbed ? ', and it cannot be turned round with tab joints' : '') +
       '. Make a second piece for the way back, with the distances for end A and end B swapped.'
     );

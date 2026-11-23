@@ -8,6 +8,7 @@ import { rulesFromPieces, validatePackRules } from './track-pack-rules.js';
 import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { validateLayout } from './planner-model.js';
 import { checkProject } from './project.js';
+import { normaliseSlotPosition, slotForm } from './slot-position.js';
 
 const applicationId = 0x53464c42; // SFLB
 export const LIBRARY_VERSION = 5;
@@ -432,6 +433,59 @@ export function replaceLibrary(db, collections, expectedCollections, { restore =
 // the rest. Each piece is checked first; one that no longer works stops the
 // whole change, so a pack is never left half updated.
 export const COLLECTION_RULE_FIELDS = Object.freeze(['width', 'lanes', 'laneSpacing']);
+
+/**
+ * A piece's params under the pack rules `ruleValues`, and what they do to its
+ * slots: 'lanes' when a list set lane by lane is centred because it is for
+ * another lane count, 'centre' when the rules put every slot where a centred
+ * piece has it, 'together' when a list set lane by lane is now spaced exactly
+ * the lane spacing and is stored as lanes moving together, otherwise null.
+ * Apply to collection and the pack rules box both use it, so they agree.
+ */
+export function paramsUnderPackRules(params, ruleValues) {
+  // A single-lane piece of a two-lane pack (a pit lane, say) keeps its own
+  // lane count; the road width and spacing still follow the pack.
+  const own = { ...ruleValues };
+  if (own.lanes !== undefined && params.special) delete own.lanes;
+  const next = { ...params, ...own };
+  let change = null;
+  // Lanes that move together keep the typed distance of slot 1 from its
+  // edge under a new width, lane count or spacing; the others follow every
+  // lane spacing. A list set lane by lane is for one lane count only: under
+  // another the piece is centred again.
+  if (slotForm(next) === 'each' && next.slotPosition.lanes.length !== Number(next.lanes)) {
+    delete next.slotPosition;
+    change = 'lanes';
+  }
+  // Slots the new rules put where a centred piece has them are centred,
+  // and a centred slot is never stored.
+  if (next.slotPosition) {
+    const each = slotForm(next) === 'each';
+    const slot = normaliseSlotPosition(next);
+    if (slot) {
+      next.slotPosition = slot;
+      if (each && slotForm(next) === 'together') change = 'together';
+    } else {
+      delete next.slotPosition;
+      change = 'centre';
+    }
+  }
+  return { params: next, change };
+}
+
+/**
+ * How many pieces (their params) new pack rules change the slots of, by the
+ * reasons of paramsUnderPackRules: { lanes, centre, together }.
+ */
+export function packRuleSlotChanges(pieces, ruleValues) {
+  const counts = { lanes: 0, centre: 0, together: 0 };
+  for (const params of pieces) {
+    const { change } = paramsUnderPackRules(params, ruleValues);
+    if (change) counts[change]++;
+  }
+  return counts;
+}
+
 export function applyToCollection(
   db,
   id,
@@ -451,28 +505,20 @@ export function applyToCollection(
     'SELECT id, name, track FROM pieces WHERE collection_id=?',
     [id],
   );
-  // Pieces whose off-centre slot this change takes away, for the notice.
+  // Pieces whose off-centre slots the new rules take away, and pieces whose
+  // lane-by-lane list they turn into lanes moving together, for the notice.
+  // Counted by paramsUnderPackRules, as the pack rules box counts them.
   let centred = 0;
+  let together = 0;
   const updated = members.map((r) => {
     const stored = JSON.parse(r.track);
-    const hadSlot = Boolean(stored.params.slotPosition);
     // The piece open in the editor is checked as edited, not as last saved:
     // its new values and the new rules arrive together.
     const track = piece && r.id === piece.id ? structuredClone(piece.track) : stored;
-    // A single-lane piece of a two-lane pack (a pit lane, say) keeps its own
-    // lane count; the road width and spacing still follow the pack.
-    const own = { ...ruleValues };
-    if (own.lanes !== undefined && track.params.special) delete own.lanes;
-    track.params = { ...track.params, ...own };
-    // An off-centre slot is a single-lane setting: with more lanes the piece
-    // is centred again. A new road width keeps the typed edge distance.
-    if (own.lanes !== undefined && own.lanes !== 1) delete track.params.slotPosition;
-    // A distance that the new width puts on the road centre is a centred
-    // slot, and a centred slot is never stored.
-    const slot = track.params.slotPosition;
-    if (slot && slot.startMm === slot.endMm && slot.startMm === track.params.width / 2)
-      delete track.params.slotPosition;
-    if (hadSlot && !track.params.slotPosition) centred++;
+    const { params, change } = paramsUnderPackRules(track.params, ruleValues);
+    track.params = params;
+    if (change === 'lanes' || change === 'centre') centred++;
+    if (change === 'together') together++;
     validateRecipe({ name: r.name, track }, chosen);
     return [r.id, track];
   });
@@ -489,7 +535,7 @@ export function applyToCollection(
     revision,
     id,
   ]);
-  return { revision, pieces: updated.length, centred };
+  return { revision, pieces: updated.length, centred, together };
 }
 
 /* ---------- Managing packs and pieces ---------- */

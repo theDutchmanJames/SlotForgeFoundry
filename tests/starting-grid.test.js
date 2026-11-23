@@ -316,3 +316,77 @@ test('on a slot that moves from 35 to 145 mm the grid follows the real S and its
   const gentle = wideSingle({ length: 1000, slotPosition: slot('outer', 35, 145) });
   assert.equal(defaultStartingGrid(gentle).legLength, 35);
 });
+
+const eachLane = (edge, ...lanes) => ({ version: 1, edge, lanes: lanes.map(([startMm, endMm = startMm]) => ({ startMm, endMm })) });
+const wideTwo = (extra) => {
+  const p = { ...straight(2), width: 200, laneSpacing: 70, ...extra };
+  delete p.startingGrid;
+  return p;
+};
+
+test('several off-centre slots get default boxes that build on first enable, each centred on its own slot', t => {
+  for (const [name, p, grid] of [
+    // Together 35 mm from the left: slots at +65 and -5, the left edge leaves slot 1 the least room.
+    ['together', wideTwo({ slotPosition: slot('outer', 35) }), { width: 50.4, thickness: 2.1, legLength: 35, recessed: false, stagger: 45 }],
+    ['together, right edge', wideTwo({ slotPosition: slot('inner', 35) }), { width: 50.4, thickness: 2.1, legLength: 35, recessed: false, stagger: 45 }],
+    // Each lane set, 35/105 -> 95/165 mm: both slots run at an angle under the legs.
+    ['each', wideTwo({ laneSpacing: 65, slotPosition: eachLane('outer', [35, 95], [105, 165]) }),
+      { width: 50.4, thickness: 2.1, legLength: 26.25, recessed: false, stagger: 45 }],
+    ['each, right edge', wideTwo({ laneSpacing: 65, slotPosition: eachLane('inner', [35, 95], [105, 165]) }),
+      { width: 50.4, thickness: 2.1, legLength: 26.25, recessed: false, stagger: 45 }],
+  ]) {
+    p.startingGrid = defaultStartingGrid(p);
+    assert.deepEqual(p.startingGrid, grid, name);
+    assert.doesNotThrow(() => validateTrack(p), name);
+    const { paint } = startingGridLayout(p);
+    assert.equal(paint.length, 4, name);
+    for (let i = 0; i < 2; i++) {
+      // Lane i's bar: its own row, centred on its own slot where it crosses it.
+      const front = (grid.legLength + grid.thickness) / 2 + ((1 - i) % 2 === 0 ? 1 : -1) * grid.stagger / 2;
+      const x = front - grid.thickness / 2, y = laneOffsetAt(p, i, x / p.length + 0.5);
+      const bar = spans(paint, y + 12).filter(([a, b]) => a < x && x < b);
+      assert.equal(bar.length, 1, name + ' lane ' + i);
+      for (const side of [-1, 1]) {
+        const reach = [...Array(400).keys()].map(k => k / 10).filter(d => spans(paint, y + side * d).some(([a, b]) => a < x && x < b)).at(-1);
+        assert.ok(Math.abs(reach - grid.width / 2) < 0.2, name + ' lane ' + i + ' reaches ' + reach);
+      }
+      assert.deepEqual(spans(paint, y).filter(([a, b]) => a < x && x < b), [], name + ': slot ' + i + ' stays clear');
+    }
+    const parts = buildTrack(wasm, p);
+    t.after(() => parts.forEach(part => part.solid.delete()));
+    assert.ok(parts[0].kerbMarkings.some(mark => mark.color === '#FFFFFF'), name);
+  }
+  // A slot squeezed against its neighbour sizes every mark; the room to the far edge does not.
+  const three = wideTwo({ lanes: 3, laneSpacing: 50, slotPosition: eachLane('inner', [30], [60], [150]) });
+  three.startingGrid = defaultStartingGrid(three);
+  assert.equal(three.startingGrid.width, 21.6);
+  assert.doesNotThrow(() => validateTrack(three));
+  // Centred pieces keep their defaults.
+  assert.deepEqual(defaultStartingGrid(wideTwo()), { width: 50.4, thickness: 2.1, legLength: 35, recessed: false, stagger: 45 });
+});
+
+test('a mark too wide for several slots names the slot and the edge or the neighbour it reaches', () => {
+  const p = wideTwo({ slotPosition: slot('outer', 35) });
+  const grid = (extra) => ({ ...p, startingGrid: { ...defaultStartingGrid(p), ...extra } });
+  assert.throws(() => validateTrack(grid({ width: 75 })), err => {
+    assert.match(err.message, /The mark on slot 1 reaches the left edge of the road or its white line\. Reduce Mark width to 70 mm or less, or move slot 1 away from the left edge under Slot position\./);
+    assert.equal(err.warning.setting.field, 'gridWidth');
+    return true;
+  });
+  assert.doesNotThrow(() => validateTrack(grid({ width: 69, stagger: 0 })));
+  // Slot 1 nearest the right edge is lane 0: the numbers follow the edge chosen.
+  const right = wideTwo({ lanes: 3, laneSpacing: 50, slotPosition: eachLane('inner', [30], [60], [150]) });
+  assert.throws(() => validateTrack({ ...right, startingGrid: { ...defaultStartingGrid(right), width: 70 } }),
+    /The mark on slot 1 reaches the right edge of the road or its white line\. Reduce Mark width to 60 mm or less, or move slot 1 away from the right edge under Slot position\./);
+  const middle = wideTwo({ slotPosition: slot('outer', 60) });
+  const at = (extra) => ({ ...middle, startingGrid: { ...defaultStartingGrid(middle), ...extra } });
+  assert.throws(() => validateTrack(at({ width: 72, stagger: 0 })),
+    /The marks on slots 1 and 2 overlap\. Reduce Mark width, or move slots 1 and 2 further apart under Slot position\./);
+  assert.doesNotThrow(() => validateTrack(at({ width: 72, stagger: 45 })));
+  assert.throws(() => validateTrack(at({ width: 130, stagger: 45 })),
+    /The mark on slot 2 reaches slot 1 or its braids\. Reduce Mark width, or move slots 1 and 2 further apart under Slot position\./);
+  // Without a slot position the wording is what it was.
+  const centred = wideTwo();
+  assert.throws(() => validateTrack({ ...centred, startingGrid: { ...defaultStartingGrid(centred), width: 72, stagger: 0 } }),
+    /Adjacent starting marks or lane channels overlap\. Reduce Mark width or increase the lane spacing\./);
+});

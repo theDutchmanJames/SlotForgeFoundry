@@ -1,11 +1,11 @@
 import {
   WHITE_LINE_COLOR,
   finishKerbstones,
+  slotEdgeAdvice,
   triangulatePaint,
 } from './kerbstones.js';
 import { connectorWarning, formatMm } from './connector-warning.js';
 import { dot, left, minus, move, unit } from './solids.js';
-import { hasSlotPosition } from '../slot-position.js';
 
 const includesSide = (selection, side) =>
   selection === side || selection === 'both';
@@ -194,7 +194,7 @@ export function layOutWhiteLines(
             ' reaches a guide slot or braid strip.',
           'Reduce White line width under Road → Shared line and groove dimensions' +
             (channel ? ' or reduce Groove width' : '') +
-            (hasSlotPosition(p) ? ', or move the slot away from this edge under Slot position.' : '.'),
+            slotEdgeAdvice(p, side),
           sharedField('whiteLineWidth', 'Edit white line width'),
         );
     }

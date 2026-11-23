@@ -39,7 +39,8 @@ import {
 import {
   hasSlotPosition,
   lanesVary,
-  slotShiftAt,
+  slotDistances,
+  slotForm,
   validateSlotPosition,
 } from './slot-position.js';
 import { finishBridges, prepareBridges } from './geometry/bridge-build.js';
@@ -297,14 +298,15 @@ export function validateTrack(p) {
   if (p.kind !== 'import') {
     validateLaneAdjustment(p);
     const laneEnvelope = p.slotWidth + 2 * braidSpan(p);
-    // An off-centre slot reaches further towards one edge than its spacing tells.
+    // An off-centre slot reaches further towards one edge than its spacing
+    // tells. Lanes set one by one keep their own gaps (validateSlotPosition).
     const laneReach = hasSlotPosition(p)
       ? 2 * Math.max(...[0, 1].flatMap((t) =>
           [0, p.lanes - 1].map((i) => Math.abs(laneOffsetAt(p, i, t)))))
       : (p.lanes - 1) * p.laneSpacing;
     if (
       laneReach + laneEnvelope >= p.width ||
-      (p.lanes > 1 && laneEnvelope >= p.laneSpacing)
+      (p.lanes > 1 && slotForm(p) !== 'each' && laneEnvelope >= p.laneSpacing)
     )
       throw new Error(
         'The guide slots and braid recesses do not fit across this road.',
@@ -453,8 +455,9 @@ export function nativePath(p, couponStation) {
   path.laneOffsets = (t) =>
     Array.from({ length: p.lanes }, (_, i) => laneOffsetAt(p, i, t));
   if (lanesVary(p)) {
-    validateLaneAdjustment(p);
+    // A slot position beside a squeeze is refused in its own words.
     validateSlotPosition(p);
+    validateLaneAdjustment(p);
     addAdjustedLanePaths(p, path, arcSteps, couponStation);
   }
   return path;
@@ -505,13 +508,22 @@ function addAdjustedLanePaths(p, path, arcSteps, couponStation) {
   );
 }
 
-// offset is where the lane leaves end A, as path.laneOffsets(0) gives it.
-export function nativeBraidLane(p, path, offset) {
+function nearestLane(p, offset) {
+  let nearest = 0;
+  for (let i = 1; i < p.lanes; i++)
+    if (Math.abs(laneOffsetAt(p, i, 0) - offset) < Math.abs(laneOffsetAt(p, nearest, 0) - offset))
+      nearest = i;
+  return nearest;
+}
+
+// offset is where lane `index` leaves end A, as path.laneOffsets(0)[index]
+// gives it. Without an index the lane is the one that leaves end A nearest
+// the offset.
+export function nativeBraidLane(p, path, offset, index) {
   if ((lanesVary(p) || isRacingPiece(p)) && path.measuredLanes) {
-    // A lone lane is the only candidate, wherever its slot has been moved to.
-    const index = Math.round(
-      (offset - slotShiftAt(p, 0)) / p.laneSpacing + (p.lanes - 1) / 2,
-    );
+    index ??= hasSlotPosition(p)
+      ? nearestLane(p, offset)
+      : Math.round(offset / p.laneSpacing + (p.lanes - 1) / 2);
     return path.measuredLanes[Math.max(0, Math.min(p.lanes - 1, index))];
   }
   return {
@@ -621,7 +633,7 @@ function nativePieces(
   if (p.braidFeedSide !== 'none') {
     const measuredLanes =
       path.measuredLanes ??
-      lanes.map((offset) => nativeBraidLane(p, path, offset));
+      lanes.map((offset, i) => nativeBraidLane(p, path, offset, i));
     attachBraidFeeds(work, p, roads, measuredLanes);
   }
   if (path.sites) hairpinFeeds(work, p, path, roads);
@@ -925,14 +937,15 @@ export function buildTestJoint(wasm, params, which = 'auto') {
   // one segment has no seam of its own: its joint sample shows end A.
   let matingEnds = false;
   if (hasSlotPosition(p)) {
-    const { edge, startMm, endMm } = p.slotPosition;
     const internal = selected === 'seam' && p.segments > 1;
     const station = selected === 'finish' ? 1
       : internal ? Math.floor(p.segments / 2) / p.segments
       : road ? 0 : 0.5;
-    const mm = station === 0 ? startMm : station === 1 ? endMm
-      : p.width / 2 - (edge === 'outer' ? 1 : -1) * slotShiftAt(p, station);
-    coupon.slotPosition = { ...p.slotPosition, startMm: mm, endMm: mm };
+    // Every slot keeps the place it has at that station, all along the sample.
+    const at = slotDistances(p, station);
+    coupon.slotPosition = slotForm(p) === 'each'
+      ? { version: 1, edge: p.slotPosition.edge, lanes: at.map((mm) => ({ startMm: mm, endMm: mm })) }
+      : { ...p.slotPosition, startMm: at[0], endMm: at[0] };
     // The seam of this sample stands for two mating ends, so its connectors
     // take the row of a real end: slot-end-row.js.
     matingEnds = road && !internal;

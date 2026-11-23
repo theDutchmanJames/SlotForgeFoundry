@@ -188,6 +188,47 @@ test('every special refuses a slot position in plain words, before any lane is l
   assert.doesNotThrow(() => validateSpecialType({ ...base, kind: 'straight', lanes: 1, slotPosition }));
 });
 
+test('specials from a multi-lane pack whose straight moves its slots are centred, keep border positions and drop road ones', () => {
+  const straight = { ...base, kind: 'straight', length: 300, borderSide: 'both', joint: 'clips', laneSpacing: 65 };
+  delete straight.connectorCounts;
+  const pack = (params) => ({
+    rules: { width: 200, lanes: 2, laneSpacing: 65 },
+    pieces: [{ track: { params: { ...straight, ...params } } }],
+  });
+  const road = { startClips: [0], finishClips: [0] }, border = { sideClips: [0.5] };
+  const centred = pack({});
+  for (const slotPosition of [
+    { version: 1, edge: 'outer', startMm: 35, endMm: 35 },
+    { version: 1, edge: 'inner', lanes: [{ startMm: 35, endMm: 95 }, { startMm: 105, endMm: 165 }] },
+  ]) {
+    // The pack's straight really carries the slots where they were typed.
+    assert.doesNotThrow(() => validateTrack(pack({ slotPosition }).pieces[0].track.params));
+    for (const [type] of specialsFor(2)) {
+      const { params: p } = packSpecialTrack(pack({ slotPosition, placements: { ...road, ...border } }), type);
+      assert.equal('slotPosition' in p, false, type);
+      assert.deepEqual(p.placements, border, type);
+      const alone = packSpecialTrack(pack({ slotPosition }), type).params;
+      assert.deepEqual(alone, packSpecialTrack(centred, type).params, type);
+      assert.doesNotThrow(() => validateTrack(alone), type);
+    }
+  }
+  // A special handed a lane list refuses it like any other slot position.
+  const lanes = { version: 1, edge: 'outer', lanes: [{ startMm: 35, endMm: 35 }, { startMm: 120, endMm: 120 }] };
+  for (const [type] of SPECIAL_PIECES)
+    assert.throws(() => validateTrack({ ...params(type), slotPosition: lanes }),
+      /^Error: Special pieces define their own lanes\. Set Slot position to Centred\.$/, type);
+  const timing = packSpecialTrack(pack({ slotPosition: lanes }), 'timing').params;
+  withParts(timing, (pieces) => {
+    const solid = pieces.find((piece) => piece.role === 'road').solid;
+    // Centred 65 mm lanes, not the 35 and 120 mm slots of the pack's straight.
+    for (const x of [-80, 80]) {
+      close(high(solid, x, 32.5), timing.height - timing.slotDepth);
+      close(high(solid, x, -32.5), timing.height - timing.slotDepth);
+      close(high(solid, x, 65), timing.height);
+    }
+  });
+});
+
 test('All six pack recipes round-trip and produce printable border STLs and route maps', () => {
   const engine = createEngine(wasm);
   try {
