@@ -20,8 +20,50 @@ const rotate = (v, a) => [
 ];
 const bounded = (n, min, max) => Number.isFinite(n) && n >= min && n <= max;
 
-export function validateCustomTrack(recipe) {
+export const isFlowing = (recipe) => recipe?.shape === 'flowing';
+
+// A flowing curve is one cubic: it starts at [0, 0], leaves towards its
+// first handle and arrives from its second handle at the end point.
+function validateFlowing(recipe) {
+  const c = recipe.controlPoints;
   if (
+    recipe.version !== 1 ||
+    !Array.isArray(c) ||
+    c.length !== 4 ||
+    !c.every(
+      (q) =>
+        Array.isArray(q) &&
+        q.length === 2 &&
+        q.every((n) => bounded(n, -LIMIT, LIMIT)),
+    )
+  )
+    throw Error(
+      'A flowing curve needs a start, two handles and an end in millimetres, each within ±20,000 mm.',
+    );
+  if (c[0][0] !== 0 || c[0][1] !== 0)
+    throw Error('A flowing curve starts at 0, 0.');
+  if (
+    norm(sub(c[1], c[0])) < 1 ||
+    norm(sub(c[3], c[2])) < 1 ||
+    norm(sub(c[3], c[0])) < 1
+  )
+    throw Error(
+      'Move the end at least 1 mm from the start, and each round handle at least 1 mm from its end of the curve.',
+    );
+  if (
+    ['points', 'radius', 'closed', 'crossingMode', 'upperPasses'].some(
+      (key) => recipe[key] !== undefined,
+    )
+  )
+    throw Error(
+      'A flowing curve has no waypoints, corner radius, closed loop or crossing.',
+    );
+}
+
+export function validateCustomTrack(recipe) {
+  if (isFlowing(recipe)) return validateFlowing(recipe);
+  if (
+    recipe?.shape !== undefined ||
     recipe?.version !== 1 ||
     !Array.isArray(recipe.points) ||
     recipe.points.length < 2 ||
@@ -95,30 +137,10 @@ function refuseSlotPosition(p) {
     throw Error('Slot position works on plain straights and curves only. Freeform pieces and imported drawings keep the slot where it is drawn.');
 }
 
-export function customTrackPlan(recipe, p) {
-  validateCustomTrack(recipe);
-  refuseSlotPosition(p);
-  validateLaneAdjustment(p);
-  const { width, lanes, laneSpacing } = p;
-  if (
-    !bounded(width, 2, 5000) ||
-    !Number.isInteger(lanes) ||
-    !bounded(lanes, 1, 8) ||
-    !bounded(laneSpacing, 0.1, 1000)
-  )
-    throw Error(
-      'Set a road width of 2–5000 mm, 1–8 lanes and a spacing of 0.1–1000 mm.',
-    );
-  const laneWidth = p.slotWidth + 2 * braidSpan(p);
-  if (
-    !Number.isFinite(laneWidth) ||
-    (lanes - 1) * laneSpacing + laneWidth >= width ||
-    (lanes > 1 && laneWidth >= laneSpacing)
-  )
-    throw Error(
-      'The lane slots and braid recesses need more space. Increase road width or adjust the lane spacing.',
-    );
-
+// Centre stations of a path through waypoints: straights joined by circular
+// bends of one radius.
+function waypointStations(recipe, p) {
+  const { width } = p;
   const radius = recipe.radius;
   let points = recipe.points;
   if (recipe.closed) {
@@ -257,6 +279,255 @@ export function customTrackPlan(recipe, p) {
     centers.splice(0, centers.length, ...frames.map((f) => f[0]));
     normals.splice(0, normals.length, ...frames.map((f) => f[1]));
   }
+  return { centers, normals, fractions };
+}
+
+// Position, unit tangent and signed curvature of the cubic at t. A left-hand
+// bend has positive curvature, and the normal points to its inside.
+function cubicAt(c, t) {
+  const u = 1 - t;
+  const v = [0, 1].map(
+    (i) =>
+      3 * u * u * (c[1][i] - c[0][i]) +
+      6 * u * t * (c[2][i] - c[1][i]) +
+      3 * t * t * (c[3][i] - c[2][i]),
+  );
+  const a = [0, 1].map(
+    (i) =>
+      6 * u * (c[2][i] - 2 * c[1][i] + c[0][i]) +
+      6 * t * (c[3][i] - 2 * c[2][i] + c[1][i]),
+  );
+  const speed = norm(v);
+  if (speed < 0.001)
+    throw Error(
+      'The curve stops and turns back on itself. Move the two round handles apart.',
+    );
+  const tangent = [v[0] / speed, v[1] / speed];
+  return {
+    t,
+    // The ends are the handle points themselves, free of rounding.
+    point:
+      t === 0
+        ? c[0].slice()
+        : t === 1
+          ? c[3].slice()
+          : [0, 1].map(
+              (i) =>
+                u * u * u * c[0][i] +
+                3 * u * u * t * c[1][i] +
+                3 * u * t * t * c[2][i] +
+                t * t * t * c[3][i],
+            ),
+    tangent,
+    normal: normal(tangent),
+    curvature: cross(v, a) / speed ** 3,
+  };
+}
+
+// Centre stations of a flowing curve, with the checks that keep its offsets
+// printable. An offset d along the normal has 1 - d * curvature of the centre
+// line's length: at zero it pinches to a point, below zero it folds over.
+const DENSE = 2048;
+const SAG = 0.035;
+function flowingStations(c, p) {
+  const { width, lanes, laneSpacing } = p;
+  const cache = new Map();
+  const at = (t) => {
+    let q = cache.get(t);
+    if (!q) cache.set(t, (q = cubicAt(c, t)));
+    return q;
+  };
+  const lengths = [0],
+    curvatures = [];
+  let tightest = at(0);
+  for (let i = 0; i <= DENSE; i++) {
+    const q = at(i / DENSE);
+    curvatures.push(q.curvature);
+    if (Math.abs(q.curvature) > Math.abs(tightest.curvature)) tightest = q;
+    if (i)
+      lengths.push(
+        lengths[i - 1] + norm(sub(q.point, at((i - 1) / DENSE).point)),
+      );
+  }
+  const tightRadius = 1 / Math.abs(tightest.curvature);
+  if (1 - (width / 2) / tightRadius <= 0.002) {
+    // Lanes count from the right of the direction of travel.
+    const lane = tightest.curvature > 0 ? lanes : 1;
+    if (1 - (((lanes - 1) / 2) * laneSpacing) / tightRadius <= 0.002)
+      throw Error(
+        'Lane ' +
+          lane +
+          ' folds on the inside of the bend. Drag the round handles further out or move the end away to open the bend, or reduce the lane spacing.',
+      );
+    throw Error(
+      'The inside road edge folds: the tightest part of the curve has a ' +
+        Number(tightRadius.toFixed(1)) +
+        ' mm centre radius and needs more than half the road width (' +
+        width / 2 +
+        ' mm). Drag the round handles further out or move the end away to open the bend.',
+    );
+  }
+  // Bound chord sag on the centre line and on both road edges.
+  const edge = (q, d) => move(q.point, q.normal, d);
+  const stations = [at(0)];
+  function split(a, b, depth) {
+    let sag = 0;
+    for (const d of [-width / 2, 0, width / 2]) {
+      const start = edge(a, d),
+        chord = sub(edge(b, d), start),
+        length = norm(chord);
+      for (const f of [0.25, 0.5, 0.75]) {
+        const q = sub(edge(at(a.t + (b.t - a.t) * f), d), start);
+        sag = Math.max(
+          sag,
+          length < EPS ? norm(q) : Math.abs(cross(chord, q)) / length,
+        );
+      }
+    }
+    if (b.t - a.t > 1 / 16 || sag > SAG) {
+      const middle = at((a.t + b.t) / 2);
+      if (!depth || stations.length > 1800)
+        throw Error(
+          'This curve is too long or too tight for a live preview. Shorten it or open the bend.',
+        );
+      split(a, middle, depth - 1);
+      split(middle, b, depth - 1);
+    } else stations.push(b);
+  }
+  split(at(0), at(1), 14);
+  const total = lengths[DENSE];
+  const fractionAt = (t) => {
+    const x = t * DENSE,
+      i = Math.min(DENSE - 1, Math.floor(x));
+    return (lengths[i] + (lengths[i + 1] - lengths[i]) * (x - i)) / total;
+  };
+  let rows = stations.map((q) => [q.t, fractionAt(q.t)]);
+  if (p.laneAdjustment) {
+    // The lane profile runs on distance along the centre line. Add stations
+    // at even distances so a squeeze or spread keeps its own chord error.
+    const parameterAt = (fraction) => {
+      const target = fraction * total;
+      let lo = 0,
+        hi = DENSE;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (lengths[mid] <= target) lo = mid;
+        else hi = mid;
+      }
+      return (lo + (target - lengths[lo]) / (lengths[hi] - lengths[lo])) / DENSE;
+    };
+    const count = laneProfileSteps(p);
+    rows = [
+      ...rows,
+      ...Array.from({ length: count - 1 }, (_, i) => [
+        parameterAt((i + 1) / count),
+        (i + 1) / count,
+      ]),
+    ]
+      .sort((a, b) => a[0] - b[0])
+      .filter((row, i, all) => !i || row[0] - all[i - 1][0] > 1e-9);
+  }
+  // A drawn piece takes its end directions from the first and last facet.
+  // Start and finish on a short straight lead, so both end faces, the joints
+  // and the Track Planner ports are square to the curve's own directions. The
+  // lead leaves the curve by far less than the sampling tolerance.
+  const lead = Math.min(Math.max(0.25, total * 2e-5), total / 8);
+  const frames = rows
+    .filter(
+      ([t, fraction]) =>
+        t === 0 ||
+        t === 1 ||
+        (fraction * total > 2 * lead && (1 - fraction) * total > 2 * lead),
+    )
+    .map(([t, fraction]) => ({ ...at(t), fraction }));
+  const start = frames[0],
+    finish = frames.at(-1);
+  frames.splice(1, 0, {
+    ...start,
+    point: move(start.point, start.tangent, lead),
+    fraction: lead / total,
+  });
+  frames.splice(-1, 0, {
+    ...finish,
+    point: move(finish.point, finish.tangent, -lead),
+    fraction: 1 - lead / total,
+  });
+  return {
+    centers: frames.map((q) => q.point),
+    normals: frames.map((q) => q.normal),
+    fractions: p.laneAdjustment ? frames.map((q) => q.fraction) : undefined,
+    stationCurvatures: frames.map((q) => q.curvature),
+    curvatures,
+  };
+}
+
+/**
+ * What a flowing curve asks of a car: for each lane its slot length, the
+ * radius at every station of the lane path and the smallest radius along it
+ * (null for a straight lane).
+ */
+export function flowingLaneReport(recipe, p, plan = customTrackPlan(recipe, p)) {
+  const { stationCurvatures, curvatures } = flowingStations(
+    recipe.controlPoints,
+    p,
+  );
+  return plan.lanes.map((points, i) => {
+    let length = 0;
+    for (let j = 1; j < points.length; j++)
+      length += norm(sub(points[j], points[j - 1]));
+    let radii, smallest;
+    if (p.laneAdjustment) {
+      // A squeezed lane leaves its offset curve: measure the sampled path.
+      radii = points.map((q, j) => {
+        if (!j || j === points.length - 1) return Infinity;
+        const a = sub(q, points[j - 1]),
+          b = sub(points[j + 1], q);
+        const area = Math.abs(cross(a, b));
+        return area < 1e-12
+          ? Infinity
+          : (norm(a) * norm(b) * norm(sub(points[j + 1], points[j - 1]))) /
+              (2 * area);
+      });
+      radii[0] = radii[1] ?? Infinity;
+      radii[radii.length - 1] = radii.at(-2) ?? Infinity;
+      smallest = Math.min(...radii);
+    } else {
+      const d = (i - (p.lanes - 1) / 2) * p.laneSpacing;
+      const radius = (k) => (k ? Math.abs((1 - d * k) / k) : Infinity);
+      radii = stationCurvatures.map(radius);
+      smallest = Math.min(...curvatures.map(radius));
+    }
+    return { length, radii, minRadius: smallest > 1e6 ? null : smallest };
+  });
+}
+
+export function customTrackPlan(recipe, p) {
+  validateCustomTrack(recipe);
+  refuseSlotPosition(p);
+  validateLaneAdjustment(p);
+  const { width, lanes, laneSpacing } = p;
+  if (
+    !bounded(width, 2, 5000) ||
+    !Number.isInteger(lanes) ||
+    !bounded(lanes, 1, 8) ||
+    !bounded(laneSpacing, 0.1, 1000)
+  )
+    throw Error(
+      'Set a road width of 2–5000 mm, 1–8 lanes and a spacing of 0.1–1000 mm.',
+    );
+  const laneWidth = p.slotWidth + 2 * braidSpan(p);
+  if (
+    !Number.isFinite(laneWidth) ||
+    (lanes - 1) * laneSpacing + laneWidth >= width ||
+    (lanes > 1 && laneWidth >= laneSpacing)
+  )
+    throw Error(
+      'The lane slots and braid recesses need more space. Increase road width or adjust the lane spacing.',
+    );
+  const flowing = isFlowing(recipe);
+  const { centers, normals, fractions } = flowing
+    ? flowingStations(recipe.controlPoints, p)
+    : waypointStations(recipe, p);
   const offset = (d) => centers.map((c, i) => move(c, normals[i], d));
   const left = offset(width / 2),
     right = offset(-width / 2);
@@ -290,7 +561,14 @@ export function customTrackPlan(recipe, p) {
     }
   }
   const outline = [...right, ...left.slice().reverse()];
-  assertSimpleOutline(outline);
+  try {
+    assertSimpleOutline(outline);
+  } catch (err) {
+    if (!flowing) throw err;
+    throw Error(
+      'The road overlaps itself. Move the end or the round handles apart, or reduce the road width.',
+    );
+  }
   return {
     outlines: [outline],
     lanes: slotPaths,

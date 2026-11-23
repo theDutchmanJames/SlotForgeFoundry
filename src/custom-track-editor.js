@@ -1,7 +1,20 @@
 import './custom-track.css';
-import { esc, field } from './ui.js';
+import { esc, field, fmt } from './ui.js';
 import { trackParameters } from './track.js';
-import { MAX_PATH_POINTS, refreshCustomTrack } from './custom-track.js';
+import {
+  MAX_PATH_POINTS,
+  flowingLaneReport,
+  isFlowing,
+  refreshCustomTrack,
+} from './custom-track.js';
+import {
+  FLOWING_PRESETS,
+  flowingDirections,
+  flowingPreset,
+  mirrorFlowing,
+  moveFlowingHandle,
+  setFlowingDirection,
+} from './flowing-curve.js';
 import {
   creatorLaneControls,
   bindCreatorLaneControls,
@@ -11,12 +24,29 @@ const SVG = 'http://www.w3.org/2000/svg';
 const pointString = (point) => point.join(',');
 const polyline = (points) => points.map(pointString).join(' ');
 const rounded = (n) => Number(n.toFixed(3));
+const degrees = (a) => Number(((a * 180) / Math.PI).toFixed(4)) || 0;
+const HANDLE_FIELDS = {
+  ctEndX: [3, 0],
+  ctEndY: [3, 1],
+  ctHandle1X: [1, 0],
+  ctHandle1Y: [1, 1],
+  ctHandle2X: [2, 0],
+  ctHandle2Y: [2, 1],
+};
+const HANDLE_NAMES = {
+  1: 'Start direction handle',
+  2: 'End direction handle',
+  3: 'Curve end',
+};
 
+// `shape: 'flowing'` starts a new piece as a flowing curve. A saved piece
+// reopens in the shape it was drawn in.
 export function openCustomTrackEditor({
   track,
   onApply,
   collectionName,
   packRules,
+  shape,
 }) {
   const editing = track.params.kind === 'import' && track.custom;
   const p = trackParameters({ ...track.params, kind: 'import' });
@@ -31,16 +61,48 @@ export function openCustomTrackEditor({
       lanes: packRules.lanes,
       laneSpacing: packRules.laneSpacing,
     });
-  const recipe = editing
-    ? structuredClone(track.custom)
-    : {
-        version: 1,
-        radius: Math.max(125, Math.ceil(p.width * 0.75)),
-        points: [
-          [0, 0],
-          [200, 0],
-        ],
-      };
+  // The tightest slot in a pack is the inside lane of its R1 curve.
+  const preferred = packRules
+    ? rounded(
+        packRules.r1InnerRadius +
+          (p.width - (p.lanes - 1) * p.laneSpacing) / 2,
+      )
+    : 200;
+  // A starting shape whose inside lane keeps to the preferred radius.
+  const startingShape = (name, radius) =>
+    flowingPreset(
+      name,
+      p.width,
+      Number.isFinite(radius) && Number.isFinite(p.lanes * p.laneSpacing)
+        ? radius + ((p.lanes - 1) * p.laneSpacing) / 2
+        : 0,
+    );
+  // Each shape keeps its own draft, so trying the other one loses nothing.
+  const drafts = {
+    points:
+      editing && !isFlowing(track.custom)
+        ? structuredClone(track.custom)
+        : {
+            version: 1,
+            radius: Math.max(125, Math.ceil(p.width * 0.75)),
+            points: [
+              [0, 0],
+              [200, 0],
+            ],
+          },
+    flowing:
+      editing && isFlowing(track.custom)
+        ? structuredClone(track.custom)
+        : {
+            version: 1,
+            shape: 'flowing',
+            controlPoints: startingShape('bend', preferred),
+          },
+  };
+  let mode = (editing ? isFlowing(track.custom) : shape === 'flowing')
+    ? 'flowing'
+    : 'points';
+  let recipe = drafts[mode];
   const dialog = document.createElement('dialog');
   dialog.className = 'custom-track-editor';
   dialog.setAttribute('aria-labelledby', 'custom-track-title');
@@ -51,14 +113,16 @@ export function openCustomTrackEditor({
       <rect data-ct-grid fill="url(#ct-grid)"/>
       <g data-ct-world transform="scale(1,-1)"><g data-ct-road></g><polyline data-ct-polygon fill="none" vector-effect="non-scaling-stroke"/><g data-ct-handles></g></g>
     </svg><div class="ct-view"><label><input data-ct-snap type="checkbox" checked> Snap 5 mm</label><button type="button" data-custom="out" aria-label="Zoom out">−</button><button type="button" data-custom="in" aria-label="Zoom in">+</button><button type="button" data-custom="fit">Fit drawing</button></div></div>
-    <div class="ct-controls"><label class="ct-name">Piece name<input data-ct-name maxlength="100" class="text" value="${esc(track.sourceName || 'Custom piece')}"></label>
+    <div class="ct-controls"><label class="ct-name">Piece name<input data-ct-name maxlength="100" class="text" value="${esc(track.sourceName || (mode === 'flowing' ? 'Flowing curve' : 'Custom piece'))}"></label>
+    <label class="ct-name">Shape<select data-ct-shape><option value="points">Path through points</option><option value="flowing">Flowing curve / S-bend</option></select></label>
     ${field('ctWidth', 'Road width', p.width, 'mm', { min: 2, max: 5000 })}
     ${field('ctLanes', 'Lanes', p.lanes, '', { min: 1, max: 8, step: 1 })}
     ${field('ctSpacing', 'Lane spacing', p.laneSpacing, 'mm', { min: 0.1, max: 1000 })}
     ${packRules ? '<p class="hint">Change road width, lanes and spacing in Pack rules.</p>' : ''}
     ${creatorLaneControls()}
-    ${field('ctRadius', 'Centre bend radius', recipe.radius, 'mm', { min: 0.1, max: 20000 })}
-    <label class="ct-loop"><input type="checkbox" data-ct-closed ${recipe.closed ? 'checked' : ''}> Close loop</label>
+    <div data-ct-for="points">
+    ${field('ctRadius', 'Centre bend radius', drafts.points.radius, 'mm', { min: 0.1, max: 20000 })}
+    <label class="ct-loop"><input type="checkbox" data-ct-closed ${drafts.points.closed ? 'checked' : ''}> Close loop</label>
     <label class="ct-name">When the road crosses itself<select data-ct-crossing-mode><option value="">Flag overlap</option><option value="flat-pieces">Flat pieces on supports</option></select></label>
     <div data-ct-crossings></div>
     <p class="hint">Click the grid to extend the path. Drag a point or enter its coordinates. Bends round off where straight sections meet.</p>
@@ -66,6 +130,29 @@ export function openCustomTrackEditor({
     ${field('ctX', 'X', 0, 'mm', { min: -20000, max: 20000 })}
     ${field('ctY', 'Y', 0, 'mm', { min: -20000, max: 20000 })}
     <div class="ct-point-buttons"><button type="button" data-custom="add">Add point</button><button type="button" data-custom="remove">Remove point</button></div>
+    </div>
+    <div data-ct-for="flowing">
+    <div class="ct-preset"><label class="ct-name">Starting shape<select data-ct-preset>${FLOWING_PRESETS.map(([value, name]) => '<option value="' + value + '">' + name + '</option>').join('')}</select></label><button type="button" data-custom="preset">Use shape</button></div>
+    <div class="ct-point-buttons"><button type="button" data-custom="mirror">Mirror to the other side</button></div>
+    <p class="hint">Drag the round handles to shape the curve. The square moves the end. The start stays at 0, 0.</p>
+    <label class="ct-loop"><input type="checkbox" data-ct-lock checked> Keep start and end directions</label>
+    ${field('ctStartDirection', 'Start direction', 0, '°', { min: -360, max: 360 })}
+    ${field('ctEndDirection', 'End direction', 0, '°', { min: -360, max: 360 })}
+    <details class="ct-coordinates"><summary>Exact handle coordinates · mm</summary>
+    ${[
+      ['ctEndX', 'End X'],
+      ['ctEndY', 'End Y'],
+      ['ctHandle1X', 'Start handle X'],
+      ['ctHandle1Y', 'Start handle Y'],
+      ['ctHandle2X', 'End handle X'],
+      ['ctHandle2Y', 'End handle Y'],
+    ]
+      .map(([key, label]) => field(key, label, 0, 'mm', { min: -20000, max: 20000 }))
+      .join('')}
+    </details>
+    ${field('ctPreferred', 'Preferred minimum radius', preferred, 'mm', { min: 1, max: 20000 })}
+    <p class="hint" data-ct-readout></p>
+    </div>
     </div></div><footer><span role="status" data-ct-status></span><button type="button" data-custom="cancel">Cancel</button><button type="button" class="primary" data-custom="apply">${collectionName ? 'Add to pack' : 'Use track piece'}</button></footer>`;
   document.body.append(dialog);
   const $ = (s) => dialog.querySelector(s);
@@ -78,8 +165,14 @@ export function openCustomTrackEditor({
   if (packRules)
     for (const key of ['ctWidth', 'ctLanes', 'ctSpacing'])
       input(key).readOnly = true;
-  $('[data-ct-crossing-mode]').value = recipe.crossingMode || '';
-  let selected = recipe.points.length - 1,
+  $('[data-ct-crossing-mode]').value = drafts.points.crossingMode || '';
+  $('[data-ct-shape]').value = mode;
+  const flowing = () => mode === 'flowing';
+  // The directions a kept curve holds. They change only when the user turns
+  // an end, so sliding a handle along its line never lets them drift.
+  let kept = flowingDirections(drafts.flowing.controlPoints),
+    activeHandle = 3;
+  let selected = drafts.points.points.length - 1,
     camera,
     dragging = false,
     frame = 0,
@@ -120,7 +213,10 @@ export function openCustomTrackEditor({
     );
   }
   function fit() {
-    const pts = [...recipe.points, ...(proposed?.plan.outlines.flat() ?? [])];
+    const pts = [
+      ...(flowing() ? recipe.controlPoints : recipe.points),
+      ...(proposed?.plan.outlines.flat() ?? []),
+    ];
     const xs = pts.map((q) => q[0]),
       ys = pts.map((q) => q[1]);
     const x0 = Math.min(...xs),
@@ -134,7 +230,42 @@ export function openCustomTrackEditor({
       Math.max(120, y1 - y0) * 1.8,
     );
   }
+  // Write the curve into its fields, leaving alone the one being typed in.
+  function flowingFields(typing) {
+    const c = recipe.controlPoints;
+    for (const [name, [index, axis]] of Object.entries(HANDLE_FIELDS))
+      if (input(name) !== typing) input(name).value = c[index][axis];
+    const directions = $('[data-ct-lock]').checked
+      ? kept
+      : flowingDirections(c);
+    if (input('ctStartDirection') !== typing)
+      input('ctStartDirection').value = degrees(directions.start);
+    if (input('ctEndDirection') !== typing)
+      input('ctEndDirection').value = degrees(directions.end);
+  }
+  function moveHandle(index, q, typing) {
+    const keep = $('[data-ct-lock]').checked;
+    recipe.controlPoints = moveFlowingHandle(
+      recipe.controlPoints,
+      index,
+      q,
+      keep && kept,
+    );
+    if (!keep) kept = flowingDirections(recipe.controlPoints);
+    activeHandle = index;
+    flowingFields(typing);
+  }
+  function setMode(next) {
+    mode = next;
+    recipe = drafts[mode];
+    for (const el of dialog.querySelectorAll('[data-ct-for]'))
+      el.hidden = el.dataset.ctFor !== mode;
+    svg.classList.toggle('ct-flowing', flowing());
+    proposed = null;
+    pointFields();
+  }
   function pointFields() {
+    if (flowing()) return flowingFields();
     const [x, y] = recipe.points[selected];
     input('ctX').value = x;
     input('ctY').value = y;
@@ -160,16 +291,24 @@ export function openCustomTrackEditor({
         [...dialog.querySelectorAll('input[type="number"]')].some(
           (el) =>
             !el.disabled &&
+            !el.closest('[data-ct-for][hidden]') &&
+            el.name !== 'ctPreferred' &&
             (!Number.isFinite(el.valueAsNumber) || !el.validity.valid),
         )
       )
         throw Error(
-          'Enter valid dimensions and point coordinates to preview your piece.',
+          flowing()
+            ? 'Enter valid dimensions, directions and handle coordinates to preview your piece.'
+            : 'Enter valid dimensions and point coordinates to preview your piece.',
         );
       try {
         proposed = refreshCustomTrack({ ...track, params: p, custom: recipe });
       } catch (err) {
-        if (recipe.crossingMode || !err.message.includes('overlaps itself'))
+        if (
+          flowing() ||
+          recipe.crossingMode ||
+          !err.message.includes('overlaps itself')
+        )
           throw err;
         // Show where the routes cross before the user commits to an overpass.
         proposed = refreshCustomTrack({
@@ -199,6 +338,44 @@ export function openCustomTrackEditor({
           }),
         ),
       );
+      if (flowing()) {
+        // The preferred radius is advice: a tighter lane still builds.
+        const report = flowingLaneReport(recipe, p, plan);
+        const limit = input('ctPreferred').valueAsNumber;
+        const advise = Number.isFinite(limit) && limit > 0;
+        let tight = false;
+        report.forEach(({ radii }, i) => {
+          const lane = plan.lanes[i];
+          for (let j = 1; advise && j < lane.length; j++)
+            if (Math.min(radii[j - 1], radii[j]) < limit) {
+              tight = true;
+              road.append(
+                element('polyline', {
+                  points: polyline([lane[j - 1], lane[j]]),
+                  fill: 'none',
+                  class: 'ct-tight',
+                  'vector-effect': 'non-scaling-stroke',
+                }),
+              );
+            }
+        });
+        $('[data-ct-readout]').textContent =
+          'Smallest radius per lane: ' +
+          report
+            .map((lane) =>
+              lane.minRadius === null ? 'straight' : fmt(lane.minRadius),
+            )
+            .join(' / ') +
+          (report.some((lane) => lane.minRadius !== null) ? ' mm' : '') +
+          '. Slot lengths: ' +
+          report.map((lane) => fmt(lane.length)).join(' / ') +
+          ' mm.' +
+          (tight
+            ? ' Red sections are tighter than your preferred ' +
+              fmt(limit) +
+              ' mm.'
+            : '');
+      }
       const crossings = plan.flatCrossing?.crossings ?? [];
       for (const c of crossings) {
         const direction = c[c.upperPass + 'Direction'];
@@ -244,36 +421,70 @@ export function openCustomTrackEditor({
       status.textContent =
         crossingNotice ||
         (crossings.length
-          ? 'Highlighted road goes over. Both passages print flat, road-face down.'
+          ? 'Highlighted road goes over. Both passages print flat.'
           : '');
       status.classList.toggle('ct-error', Boolean(crossingNotice));
     } catch (err) {
       proposed = null;
       road.replaceChildren();
       $('[data-ct-crossings]').replaceChildren();
+      $('[data-ct-readout]').textContent = '';
       status.textContent = err.message;
       status.classList.add('ct-error');
     }
     if (!camera) fit();
     const scale = svg.getScreenCTM()?.a || 1;
-    $('[data-ct-polygon]').setAttribute(
-      'points',
-      polyline(
-        recipe.closed ? [...recipe.points, recipe.points[0]] : recipe.points,
-      ),
-    );
-    $('[data-ct-handles]').replaceChildren(
-      ...recipe.points.map((q, i) =>
-        element('circle', {
-          cx: q[0],
-          cy: q[1],
-          r: 7 / scale,
-          'data-ct-index': i,
-          class: i === selected ? 'ct-selected' : '',
+    if (flowing()) {
+      const c = recipe.controlPoints;
+      const size = 7 / scale;
+      $('[data-ct-polygon]').setAttribute('points', '');
+      $('[data-ct-handles]').replaceChildren(
+        element('path', {
+          d: 'M 0 0 L ' + c[1].join(' ') + ' M ' + c[3].join(' ') + ' L ' + c[2].join(' '),
+          class: 'ct-tangent',
           'vector-effect': 'non-scaling-stroke',
         }),
-      ),
-    );
+        element('circle', { cx: 0, cy: 0, r: size * 0.6, class: 'ct-start' }),
+        ...[1, 2, 3].map((i) =>
+          element(i === 3 ? 'rect' : 'circle', {
+            ...(i === 3
+              ? {
+                  x: c[3][0] - size,
+                  y: c[3][1] - size,
+                  width: size * 2,
+                  height: size * 2,
+                }
+              : { cx: c[i][0], cy: c[i][1], r: size }),
+            'data-ct-handle': i,
+            role: 'button',
+            tabindex: 0,
+            'aria-label':
+              HANDLE_NAMES[i] + '. Arrow keys move 1 mm, Shift moves 10 mm',
+            class: i === activeHandle ? 'ct-selected' : '',
+            'vector-effect': 'non-scaling-stroke',
+          }),
+        ),
+      );
+    } else {
+      $('[data-ct-polygon]').setAttribute(
+        'points',
+        polyline(
+          recipe.closed ? [...recipe.points, recipe.points[0]] : recipe.points,
+        ),
+      );
+      $('[data-ct-handles]').replaceChildren(
+        ...recipe.points.map((q, i) =>
+          element('circle', {
+            cx: q[0],
+            cy: q[1],
+            r: 7 / scale,
+            'data-ct-index': i,
+            class: i === selected ? 'ct-selected' : '',
+            'vector-effect': 'non-scaling-stroke',
+          }),
+        ),
+      );
+    }
     apply.disabled =
       !proposed ||
       Boolean(crossingNotice) ||
@@ -312,6 +523,15 @@ export function openCustomTrackEditor({
       return;
     }
     if (e.button !== 0 || committing) return;
+    if (flowing()) {
+      const grabbed = e.target.closest('[data-ct-handle]');
+      if (!grabbed) return;
+      activeHandle = Number(grabbed.dataset.ctHandle);
+      dragging = true;
+      svg.setPointerCapture(e.pointerId);
+      draw();
+      return;
+    }
     const handle = e.target.closest('[data-ct-index]');
     if (handle) {
       selected = Number(handle.dataset.ctIndex);
@@ -335,9 +555,28 @@ export function openCustomTrackEditor({
       return;
     }
     if (!dragging || !svg.hasPointerCapture(e.pointerId)) return;
-    recipe.points[selected] = local(e);
-    pointFields();
+    if (flowing()) moveHandle(activeHandle, local(e));
+    else {
+      recipe.points[selected] = local(e);
+      pointFields();
+    }
     scheduleDraw();
+  });
+  svg.addEventListener('keydown', (e) => {
+    const index = Number(e.target.dataset?.ctHandle);
+    const delta = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, 1],
+      ArrowDown: [0, -1],
+    }[e.key];
+    if (!flowing() || !delta || !index || committing) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    const q = recipe.controlPoints[index];
+    moveHandle(index, [q[0] + delta[0] * step, q[1] + delta[1] * step]);
+    draw();
+    $('[data-ct-handle="' + index + '"]').focus();
   });
   svg.addEventListener('lostpointercapture', () => {
     dragging = false;
@@ -368,7 +607,34 @@ export function openCustomTrackEditor({
   dialog.addEventListener('input', (e) => {
     const key = e.target.name,
       value = e.target.valueAsNumber;
-    if (e.target.matches('[data-ct-crossing-mode]')) {
+    if (e.target.matches('[data-ct-shape]')) {
+      setMode(e.target.value);
+      // Frame the other drawing once it is drawn.
+      camera = null;
+    } else if (e.target.matches('[data-ct-lock]')) {
+      // From here on the curve holds the directions it has now.
+      kept = flowingDirections(recipe.controlPoints);
+    } else if (key === 'ctStartDirection' || key === 'ctEndDirection') {
+      if (Number.isFinite(value)) {
+        const end = key === 'ctStartDirection' ? 'start' : 'end';
+        kept = { ...kept, [end]: (value * Math.PI) / 180 };
+        recipe.controlPoints = setFlowingDirection(
+          recipe.controlPoints,
+          end,
+          kept[end],
+        );
+        if (!$('[data-ct-lock]').checked)
+          kept = flowingDirections(recipe.controlPoints);
+        flowingFields(e.target);
+      }
+    } else if (Object.hasOwn(HANDLE_FIELDS, key)) {
+      const [index] = HANDLE_FIELDS[key];
+      const q = Object.entries(HANDLE_FIELDS)
+        .filter(([, [i]]) => i === index)
+        .sort((a, b) => a[1][1] - b[1][1])
+        .map(([name]) => input(name).valueAsNumber);
+      if (q.every(Number.isFinite)) moveHandle(index, q, e.target);
+    } else if (e.target.matches('[data-ct-crossing-mode]')) {
       if (e.target.value) recipe.crossingMode = e.target.value;
       else delete recipe.crossingMode;
     } else if (e.target.matches('[data-ct-closed]')) {
@@ -385,6 +651,18 @@ export function openCustomTrackEditor({
     else if (Object.hasOwn(params, key)) p[params[key]] = value;
     draw(e.target);
   });
+  // Once a typed coordinate or direction is entered, show where a kept
+  // direction put the handle.
+  dialog.addEventListener('change', (e) => {
+    if (
+      flowing() &&
+      (Object.hasOwn(HANDLE_FIELDS, e.target.name) ||
+        e.target.name === 'ctStartDirection' ||
+        e.target.name === 'ctEndDirection') &&
+      Number.isFinite(e.target.valueAsNumber)
+    )
+      flowingFields();
+  });
   dialog.addEventListener('click', async (e) => {
     e.stopPropagation();
     const action = e.target.closest('[data-custom]')?.dataset.custom;
@@ -394,6 +672,20 @@ export function openCustomTrackEditor({
       return;
     }
     if (action === 'fit') fit();
+    if (action === 'preset' || action === 'mirror') {
+      recipe.controlPoints =
+        action === 'preset'
+          ? startingShape(
+              $('[data-ct-preset]').value,
+              input('ctPreferred').valueAsNumber,
+            )
+          : mirrorFlowing(recipe.controlPoints);
+      if (action === 'preset') $('[data-ct-lock]').checked = true;
+      kept = flowingDirections(recipe.controlPoints);
+      flowingFields();
+      // Frame the new curve once it is drawn.
+      camera = null;
+    }
     if (action === 'in' || action === 'out') {
       zoom(action === 'in' ? 0.75 : 1 / 0.75);
     }
@@ -449,7 +741,7 @@ export function openCustomTrackEditor({
     { once: true },
   );
   dialog.showModal();
-  pointFields();
+  setMode(mode);
   draw();
   return dialog;
 }

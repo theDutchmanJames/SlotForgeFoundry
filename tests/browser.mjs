@@ -25,7 +25,7 @@ import { checkScaleCar } from './browser/scale-car.mjs';
 import { checkTrackProfileEdges } from './browser/track-profile-edges.mjs';
 import { checkBorderApices } from './browser/border-apices.mjs';
 import { checkShapedTrack } from './browser/shaped-track.mjs';
-import { checkCustomTrack } from './browser/custom-track.mjs';
+import { checkCustomTrack, checkFlowingCurve } from './browser/custom-track.mjs';
 import { checkSpecialTrackPieces } from './browser/special-track-pieces.mjs';
 import { checkDrawFlatCrossing } from './browser/draw-flat-crossing.mjs';
 import { checkImportFlatCrossing } from './browser/import-flat-crossing.mjs';
@@ -1258,6 +1258,7 @@ try {
     await checkBorderApices(creationChecks);
     await checkShapedTrack(creationChecks);
     await checkCustomTrack(creationChecks);
+    await checkFlowingCurve(creationChecks);
     await checkSpecialTrackPieces(creationChecks);
     await checkDrawFlatCrossing(creationChecks);
     await checkImportFlatCrossing(creationChecks);

@@ -66,6 +66,7 @@ export function openTrackPieceCreator({
       <button type="button" data-shape="straight">Straight</button>
       <button type="button" data-shape="curve" aria-pressed="true">Curve</button>
       <button type="button" data-shape="freeform">Freeform path</button>
+      <button type="button" data-shape="flowing">Flowing curve / S-bend</button>
     </div>
     <div class="pc-specials" role="group" aria-label="Special pieces">
       <span class="pc-specials-title">Special pieces</span>
@@ -322,7 +323,8 @@ export function openTrackPieceCreator({
     if (!button || busy) return;
     if (button.hasAttribute('data-close')) return dialog.close();
     const nextShape = button.dataset.shape;
-    if (nextShape === 'freeform') {
+    // Both drawn shapes open the path editor: through points, or as a curve.
+    if (nextShape === 'freeform' || nextShape === 'flowing') {
       const params = { ...base, ...(recipe?.params || {}), kind: 'import' };
       delete params.special;
       delete params.curveGridRadius;
@@ -340,6 +342,7 @@ export function openTrackPieceCreator({
         onApply,
         collectionName,
         packRules,
+        shape: nextShape === 'flowing' ? 'flowing' : undefined,
       });
     } else if (nextShape) {
       if (button.dataset.special) input('pcSpecial').value = button.dataset.special;

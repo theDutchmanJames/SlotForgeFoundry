@@ -102,6 +102,60 @@ dialog.custom-track-editor {
   fill: var(--accent-text);
   stroke: var(--line);
 }
+/* Flowing curve: round direction handles, a square end, red tight slots. */
+.ct-surface svg.ct-flowing {
+  cursor: default;
+}
+[data-ct-handles] rect {
+  fill: var(--line);
+  stroke: var(--accent-text);
+  stroke-width: 2px;
+  cursor: grab;
+}
+[data-ct-handles] rect.ct-selected {
+  fill: var(--accent-text);
+  stroke: var(--line);
+}
+[data-ct-handles] circle.ct-start {
+  fill: var(--muted);
+  stroke: none;
+  cursor: default;
+}
+[data-ct-handles] .ct-tangent {
+  fill: none;
+  stroke: var(--ink);
+  stroke-dasharray: 4 4;
+  stroke-width: 1px;
+  pointer-events: none;
+}
+[data-ct-handles] :focus-visible {
+  outline: none;
+  stroke: var(--ink);
+  stroke-width: 3px;
+}
+.ct-tight {
+  stroke: var(--accent);
+  stroke-width: 4px;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.ct-preset {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.ct-preset .ct-name {
+  flex: 1;
+  margin: 0;
+}
+.ct-coordinates {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.ct-coordinates summary {
+  cursor: pointer;
+}
 .ct-view {
   position: absolute;
   bottom: 8px;
