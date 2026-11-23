@@ -13,6 +13,7 @@ import { SCREW_CLIP_DEFAULTS } from './geometry/screw-clip.js';
 import './library.css';
 import { defaultPackRules, validatePackRules } from './track-pack-rules.js';
 import { centreLineStyles } from './paint-controls.js';
+import { braidStyleChoices } from './connection-controls.js';
 
 const ruleFields = [
   ['packWidth', 'width', 'Road width', 'mm', { min: 2, max: 5000 }],
@@ -70,7 +71,7 @@ const groups = [
   ['Road markings', ['roadCentreLine', 'dashLength', 'dashGap']],
   [
     'Guide slot and braid',
-    ['slotWidth', 'slotDepth', 'braidWidth', 'braidDepth', 'braidGap'],
+    ['slotWidth', 'slotDepth', 'braidWidth', 'braidStyle', 'braidDepth', 'braidRaise', 'braidGap'],
   ],
   [
     'Tabs and clips',
@@ -256,6 +257,8 @@ export async function showTrackLibrary({
         ? check(k, sharedLabels[k], v[k])
         : k === 'roadCentreLine'
           ? choice(k, sharedLabels[k], v[k] ?? 'none', centreLineStyles)
+        : k === 'braidStyle'
+          ? choice(k, sharedLabels[k], v[k] ?? 'recessed', braidStyleChoices)
         : k === 'joint'
           ? choice(k, sharedLabels[k], v[k] ?? 'none', [
               ['none', 'Plain'],

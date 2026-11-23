@@ -2,8 +2,10 @@ import { plannerStrip } from './planner-strip.js';
 import {
   SolidWorkshop,
   addSlot,
+  braidRaised,
   braidSections,
   braidSpan,
+  validateBraidStyle,
   shell,
   makePart,
   move,
@@ -103,10 +105,13 @@ export const TRACK_PROFILE_LIMITS = Object.freeze({
   slotWidth: [0.1, 100],
   braidWidth: [0, 100],
   braidDepth: [0, 100],
+  braidRaise: [0.05, 0.8],
   braidGap: [0, 50],
 });
 
 export const RIB_DEFAULTS = Object.freeze({ reinforcement: true, ribSpacing: 50 });
+// Braid in a recess, or adhesive copper tape on a low raised land.
+export const BRAID_DEFAULTS = Object.freeze({ braidStyle: 'recessed', braidRaise: 0.2 });
 
 export function defaultTrack() {
   return {
@@ -126,6 +131,7 @@ export function defaultTrack() {
     slotDepth: 7,
     braidWidth: 5,
     braidDepth: 0.5,
+    ...BRAID_DEFAULTS,
     braidGap: 0,
     braidFeedSide: 'none',
     braidFeedLane: 0,
@@ -266,6 +272,18 @@ export function validateTrack(p) {
       'A corner with end connectors can turn at most 355°: beyond that the finish connector runs into the start end. Reduce Sweep angle or remove the end connectors.',
     );
   range('length', 1, 20000);
+  // The turnout blade, island contacts, dead strips and optical windows are
+  // all set out from a braid that lies in a recess.
+  if (braidRaised(p) && ['pit', 'timing'].includes(p.special?.type))
+    throw connectorWarning(
+      'Braid recess',
+      'A ' + (p.special.type === 'pit' ? 'pit lane' : 'timing straight') +
+        ' cannot have raised lands for copper tape. Its ' +
+        (p.special.type === 'pit' ? 'turnout blade and island contacts' : 'sensors and dead strips') +
+        ' are made for braid in a recess.',
+      'Choose Cross-section → Braid recess → Recessed for this piece.',
+      { tab: 'profile', field: 'braidStyle', label: 'Edit braid recess' },
+    );
   if (p.special?.type === 'timing') validateTiming(p);
   if (['diamond','pit'].includes(p.special?.type)) validateSpecialJunction(p);
   if (isRacingPiece(p)) validateRacingPiece(p);
@@ -289,13 +307,7 @@ export function validateTrack(p) {
     throw new Error(
       'Slot depth leaves insufficient material below the guide slot.',
     );
-  if (
-    p.braidDepth >= (p.hollow ? p.deck : p.height) ||
-    p.braidDepth > p.slotDepth
-  )
-    throw new Error(
-      'The braid recess must stay within the deck and above the slot floor.',
-    );
+  validateBraidStyle(p);
   validateSlotPosition(p);
   if (p.kind !== 'import') {
     validateLaneAdjustment(p);

@@ -1,5 +1,5 @@
 import { choice, details, esc, field } from './ui.js';
-import { braidSpan } from './geometry/solids.js';
+import { braidLevel, braidRaised, braidSpan } from './geometry/solids.js';
 import { hasSlotPosition, slotLaneOffsetAt, slotVaries } from './slot-position.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
 import {
@@ -306,6 +306,11 @@ export function parseConnectionControls(fields, params = {}, edited = {}) {
   return result;
 }
 
+export const braidStyleChoices = [
+  ['recessed', 'Recessed'],
+  ['raised', 'Raised land for copper tape'],
+];
+
 export function braidFeedControls(p) {
   const locations = (p.braidFeedStations ?? [0.15])
     .map((t) => Number((t * 100).toFixed(4)))
@@ -344,7 +349,7 @@ export function braidFeedControls(p) {
       '<label class="field"><span>Along each lane</span><span class="input-wrap"><input type="text" name="feedPercent" value="' +
       esc(locations) +
       '" maxlength="100" autocomplete="off"><small>%</small></span></label>' +
-      '<p class="hint">Enter positions from the start of the lane. Each slit runs straight down from the braid recess. Opening length is measured along the lane.</p>',
+      '<p class="hint">Enter positions from the start of the lane. Each slit runs straight down from the ' + (braidRaised(p) ? 'raised land' : 'braid recess') + '. Opening length is measured along the lane.</p>',
     pit && p.braidWidth > 0, 'feed',
   );
 }
@@ -370,7 +375,7 @@ export function profileDiagram(p) {
       wall,
       p.slotWidth,
       p.slotDepth,
-      p.braidDepth,
+      braidLevel(p),
       p.braidWidth,
       p.braidGap,
     ].every(Number.isFinite) ||
@@ -401,14 +406,15 @@ export function profileDiagram(p) {
   const path = [[-width / 2, height]],
     seats = [];
   const half = p.slotWidth / 2,
-    low = p.braidWidth > 0 ? height - p.braidDepth : height,
+    // The seat of each strip: below the road in a recess, above it on a land.
+    low = p.braidWidth > 0 ? height + braidLevel(p) : height,
     base = height - p.slotDepth;
   for (const x of laneX) {
     const a = x - half - p.braidGap - p.braidWidth,
       b = x - half - p.braidGap,
       c = x + half + p.braidGap,
       d = c + p.braidWidth;
-    if (low < height) {
+    if (low !== height) {
       path.push([a, height], [a, low]);
       if (p.braidGap > 0) path.push([b, low], [b, height]);
     }
@@ -419,7 +425,7 @@ export function profileDiagram(p) {
       [x + half, base],
       [x + half, lip],
     );
-    if (low < height) {
+    if (low !== height) {
       if (p.braidGap > 0) path.push([c, height], [c, low]);
       path.push([d, low], [d, height]);
     }
@@ -452,6 +458,7 @@ export function profileDiagram(p) {
     seats.join('') +
     '</svg><figcaption>' +
     (imported ? 'One-lane profile detail · ' : slotVaries(p) ? 'Seen at end A · ' : '') +
-    'Height enlarged <span class="braid-legend">Braid</span></figcaption></figure>'
+    'Height enlarged <span class="braid-legend">' +
+    (braidRaised(p) ? 'Copper tape' : 'Braid') + '</span></figcaption></figure>'
   );
 }

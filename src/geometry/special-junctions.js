@@ -1,5 +1,5 @@
 import { plannerStrip } from '../planner-strip.js';
-import { addSlot, braidSections, left, makePart, move, shell, unit } from './solids.js';
+import { addSlot, braidRecess, braidSections, left, makePart, move, shell, unit } from './solids.js';
 import { laneTools, measuredLane } from './import-track.js';
 import { buildPitTurnout } from './pit-turnout.js';
 import { addPitMotorMount, pitMotorMountLayout } from './pit-motor-mount.js';
@@ -231,7 +231,7 @@ function diamondTools(work, p, model) {
 function crossingFeeds(work, p, model, core) {
   if (!p.braidWidth) return;
   const { depth, width: wireChannel } = diamondJumperSize(p);
-  const feedLength = Math.max(1.2, 2 * p.braidDepth + 0.2);
+  const feedLength = Math.max(1.2, 2 * braidRecess(p) + 0.2);
   for (const { axis, laneData } of model.roads)
     for (const { d, crossings } of laneData) {
       const stations = [];

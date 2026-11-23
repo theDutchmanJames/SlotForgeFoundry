@@ -1,4 +1,4 @@
-import { braidSpan, SolidWorkshop } from './geometry/solids.js';
+import { braidRecess, braidSpan, SolidWorkshop } from './geometry/solids.js';
 import { lineGrooves } from './geometry/paint-guides.js';
 import {
   specialAssemblyNotes,
@@ -169,7 +169,7 @@ export function wiringDiagram(p) {
   if (type === 'diamond' && p.braidWidth > 0) {
     const { roads, gap } = diamondLayout(p);
     const offset = p.slotWidth / 2 + p.braidGap + p.braidWidth / 2;
-    const reach = gap + Math.max(1.2, 2 * p.braidDepth + 0.2) / 2;
+    const reach = gap + Math.max(1.2, 2 * braidRecess(p) + 0.2) / 2;
     for (const [i, road] of roads.entries())
       for (const [j, lane] of road.laneData.entries())
         for (const sign of [-1, 1]) {

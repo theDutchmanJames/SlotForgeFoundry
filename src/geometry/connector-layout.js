@@ -46,7 +46,7 @@ import { clipSpec } from './clip-types.js';
 import { CLIP_TABLE_CLEARANCE, resolveJointFit } from './joint-fit.js';
 import { KEEPER_CHAMBER_TOP } from './keeper-dimensions.js';
 import { drawKeyOutline } from './retained-clip.js';
-import { dot, left, minus, move } from './solids.js';
+import { braidRecess, dot, left, minus, move } from './solids.js';
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
@@ -554,11 +554,13 @@ export function connectorLayout(params, plan, scope, options = {}) {
   const slot = p.slotWidth / 2;
   if (!cache.channels) {
     channel(-slot, slot, p.height - p.slotDepth);
-    if (p.braidDepth > 0 && p.braidWidth > 0) {
+    // A raised land leaves the deck whole, so no pocket roof can meet it.
+    const recess = braidRecess(p);
+    if (recess > 0 && p.braidWidth > 0) {
       const inner = slot + p.braidGap;
       const outer = inner + p.braidWidth;
-      channel(-outer, -inner, p.height - p.braidDepth);
-      channel(inner, outer, p.height - p.braidDepth);
+      channel(-outer, -inner, p.height - recess);
+      channel(inner, outer, p.height - recess);
     }
     cache.channels = channels;
   }

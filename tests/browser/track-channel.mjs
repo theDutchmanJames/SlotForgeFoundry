@@ -22,6 +22,44 @@ export async function checkTrackChannel({
   await selectTrackPart(page.locator('#parts [data-part="road-1"]'));
   await tab('profile').click();
   await openSection('Braid recess');
+
+  // Raised lands for copper tape: the height replaces the depth, the guide,
+  // readout and export follow, and the STL lies underside down.
+  assert.equal(await input('braidStyle').inputValue(), 'recessed');
+  assert.equal(await input('braidRaise').isVisible(), false);
+  await input('braidStyle').selectOption('raised');
+  assert.equal(await input('braidDepth').isVisible(), false);
+  assert.equal(await input('braidRaise').inputValue(), '0.2');
+  await input('braidRaise').fill('0.3');
+  await live();
+  await waitText('[data-guide="channel-profile"]', 'Raised land · 5 mm × 0.3 mm');
+  await waitText('[data-property-readout="braid"]', '5 mm · raised 0.3 mm');
+  await waitText('.property-section-diagram figcaption', 'Copper tape');
+  await action('export-menu').click();
+  assert.match(await page.locator('#dialog').innerText(), /underside-down on the print bed, so the raised lands for copper tape print on top/);
+  const raisedSTL = (await download(action('export-part'))).bytes;
+  const raisedRoad = parseSTL(wasm, raisedSTL);
+  try {
+    const { min, max } = raisedRoad.boundingBox();
+    assert.ok(Math.abs(min[2]) < 1e-4 && Math.abs(max[2] - (project.track.params.height + 0.3)) < 1e-4);
+    const area = (z) => {
+      const cut = raisedRoad.slice(z);
+      try {
+        return cut.area();
+      } finally {
+        cut.delete();
+      }
+    };
+    // Only the four lands reach the top; the hollow underside stands on the bed.
+    assert.ok(area(max[2] - 0.1) < 0.2 * area(max[2] - 0.5), 'the lands print on top');
+    assert.ok(area(0.1) < area(max[2] - 0.5), 'the hollow underside lies on the bed');
+  } finally {
+    raisedRoad.delete();
+  }
+  console.log('✓ Raised lands for copper tape replace the recess depth, update the guide and readout, and export driving face up');
+  await input('braidStyle').selectOption('recessed');
+  assert.equal(await input('braidRaise').isVisible(), false);
+
   await input('braidGap').fill('2');
   await input('braidDepth').fill('0.65');
   await live();

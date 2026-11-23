@@ -63,7 +63,7 @@ Each piece opens in **Track Set**, with large buttons for each part of the desig
 
 - **Shape:** the road path, lanes and lane spacing. Squeeze or spread the lanes mid-piece while the ends stay aligned with the rest of the pack.
 - **Slot position:** on a straight or curve with one to eight lanes, set the guide slots a typed distance from a road edge, with the lanes moving together or each lane set on its own. A straight can move the slots across in a smooth S, with one distance at end A and another at end B.
-- **Cross-section:** a solid or hollow deck with underside ribs, the guide slot, braid recesses and braid pass-throughs.
+- **Cross-section:** a solid or hollow deck with underside ribs, the guide slot, braid recesses or raised lands for adhesive copper tape, and braid pass-throughs.
 - **Borders:** inside and outside borders with their own widths, apex and ends (rounded, tapered or S-curve).
 - **Markings:** white lines, centre lines, kerbstones, starting grids and pit markers, with optional paint grooves cut into the print.
 - **Joints:** the double-dovetail draw key with quarter-turn keepers, a Carrera-style fork, the Kevan Sideclip held by two wood screws, or tabs and sockets. Choose how many per joint and drag each one into place.
@@ -92,7 +92,7 @@ Their print kits include a conductor map and assembly notes. For crossings, a te
 
 - **Fit samples** let you test clip clearances with your own printer and filament before printing a whole track. The turning key for the keepers is included.
 - Choose your printer or enter a custom plate. Plate checks include rotation, the full footprint and protruding connectors.
-- Roads and borders export driving-face down, and each STL is centred on the bed. The print kit includes the separate STLs, quantities, a numbered assembly map and the editable project.
+- Roads and borders export driving-face down, or face up when the piece has raised lands for copper tape, and each STL is centred on the bed. The print kit includes the separate STLs, quantities, a numbered assembly map and the editable project.
 - A shopping list estimates the filament your layout needs.
 
 ### A full STL editor

@@ -23,6 +23,7 @@ import {
   checkProject,
   cleanName,
   isFlatCrossingProject,
+  printsFaceUp,
   toBase64,
   autosave,
   recover,
@@ -126,7 +127,7 @@ import { editConnectorPlacement } from './connector-placement.js';
 import { createWorkerClient } from './worker-client.js';
 import { editSurface, reviewSTL } from './mesh-workbench.js';
 import { mountBorderHandles } from './border-handles.js';
-import { profileDiagram } from './connection-controls.js';
+import { braidStyleChoices, profileDiagram } from './connection-controls.js';
 import { sharedPaintFields, syncCentreSlotNote, syncPaintControls } from './paint-controls.js';
 import { createLivePreview } from './live-preview.js';
 import { createModelGuides } from './model-guides.js';
@@ -3829,6 +3830,7 @@ const PACK_RULE_LABELS = {
 function packRuleValue(key, value) {
   if (key === 'clipType')
     return new Map(clipChoices()).get(value) ?? String(value ?? 'off');
+  if (key === 'braidStyle') return new Map(braidStyleChoices).get(value) ?? String(value);
   return String(value ?? 'off');
 }
 // The pack rules a pending edit of a pack piece would change.
@@ -4174,8 +4176,14 @@ function exportMenu() {
   const hasKeepers = track && visibleModel.some((p) => p.role === 'retainer');
   const flatCrossing = isFlatCrossingProject(shownDraft?.trial.next ?? project);
   const marked = track && visibleModel.some((p) => p.kerbMarkings?.length);
+  const faceUp = printsFaceUp(shownDraft?.trial.next ?? project);
+  const faceUpNote = faceUp
+    ? '<p class="hint">Road and border STLs lie underside-down on the print bed, so the raised lands for copper tape print on top.</p>'
+    : '';
   const otherOutputs = flatCrossing
-    ? '<p class="hint">Road and border STLs lie surface-down on the print bed. Print both passages separately and assemble the upper passage on bridge supports.</p>'
+    ? (faceUp ? '<p class="hint">Raised lands for copper tape print on top, so road and border STLs lie underside-down on the print bed.'
+      : '<p class="hint">Road and border STLs lie surface-down on the print bed.') +
+      ' Print both passages separately and assemble the upper passage on bridge supports.</p>'
     : '<details class="export-other"><summary>Other STL outputs' +
       icon('down') +
       '</summary>' +
@@ -4246,6 +4254,7 @@ function exportMenu() {
         : '') +
       '</div>' +
       otherOutputs +
+      (flatCrossing ? '' : faceUpNote) +
       (marked
         ? '<p class="hint">STLs carry the shape and any enabled paint grooves. The colours shown on the model are a painting guide.</p>'
         : ''),

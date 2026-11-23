@@ -22,6 +22,7 @@ import { activeOps,
   createsSeparateAddition,
   fromBase64,
   isFlatCrossingProject,
+  printsFaceUp,
 } from './project.js';
 import { parseDrawing } from './imports.js';
 import { inspectFlatImport } from './drawings/flat-import.js';
@@ -774,7 +775,9 @@ export function createEngine(wasm) {
       return printableSTL(single, encodeSTL, single.clipType, state.project);
     if (mode === 'assembly' && isFlatCrossingProject(state?.project))
       throw Error(
-        'Export All printable parts for separate road-face-down STLs, supports and the crossing assembly map.',
+        'Export All printable parts for separate ' +
+          (printsFaceUp(state.project) ? 'road' : 'road-face-down') +
+          ' STLs, supports and the crossing assembly map.',
       );
     if (mode === 'part')
       return withPrintableSolid(single, (solid) =>

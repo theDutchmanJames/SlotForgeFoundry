@@ -1,4 +1,5 @@
-import { defaultTrack, RIB_DEFAULTS } from './track.js';
+import { BRAID_DEFAULTS, defaultTrack, RIB_DEFAULTS } from './track.js';
+import { braidRaised } from './geometry/solids.js';
 import { validateSpecialType } from './special-pieces.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
 import { validateConnectorCounts } from './geometry/placements.js';
@@ -23,6 +24,13 @@ export function isFlatCrossingProject(project) {
     project.track.params.kind === 'import' &&
     project.track.plan?.flatCrossing?.crossings?.length > 0
   );
+}
+
+// A raised land for copper tape would be the lowest thing on the bed of a
+// face-down print, so these pieces lie underside down whatever else applies.
+export function printsFaceUp(project) {
+  const p = project?.mode === 'track' && project.track.params;
+  return Boolean(p) && braidRaised(p) && p.braidWidth > 0;
 }
 
 export function newProject() {
@@ -554,6 +562,8 @@ export function checkProject(p) {
   let params = currentJointSettings(p.track.params);
   if (params.reinforcement === undefined || params.ribSpacing === undefined)
     params = { ...RIB_DEFAULTS, ...params };
+  if (params.braidStyle === undefined || params.braidRaise === undefined)
+    params = { ...BRAID_DEFAULTS, ...params };
   validateConnectorCounts(params.connectorCounts);
   validateSpecialType(params);
   if (params.special && (p.track.plan || p.track.custom))

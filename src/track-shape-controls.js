@@ -147,6 +147,9 @@ export function syncTrackShapeControls(form) {
     ribs.hidden = ribs.disabled = !e.hollow.checked;
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
+  if (e.braidStyle)
+    for (const group of form.querySelectorAll('[data-braid-style]'))
+      group.hidden = group.disabled = group.dataset.braidStyle !== e.braidStyle.value;
   if (e.slotEdge)
     syncSlotPositionControls(form, {
       kind: e.kind?.value,

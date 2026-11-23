@@ -1,5 +1,5 @@
 import { zipSync, strToU8 } from 'fflate';
-import { cleanName, isFlatCrossingProject } from './project.js';
+import { cleanName, isFlatCrossingProject, printsFaceUp } from './project.js';
 import { withPrintableSolid } from './geometry/joints.js';
 import { clipAttribution, clipSpec, clipSTLHeader } from './geometry/clip-types.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
@@ -211,6 +211,7 @@ export function printableSTL(
   printRoadFaceDown = false,
 ) {
   const roadFaceDown = (part.role === 'road' || part.role === 'border') &&
+    !printsFaceUp(project) &&
     (printRoadFaceDown || isFlatCrossingProject(project) || (project?.mode === 'track' && project.track.params.special));
   const faceDown = part.role === 'turnoutBearing' || roadFaceDown;
   return withPrintableSolid(

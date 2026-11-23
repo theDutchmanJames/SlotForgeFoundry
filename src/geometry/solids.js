@@ -67,6 +67,28 @@ export function braidSpan({ braidWidth, braidGap }) {
   return braidWidth === 0 ? 0 : braidGap + braidWidth;
 }
 
+// A strip lies in a recess below the road, or on a low land above it for
+// adhesive copper tape. The recess depth plays no part on a raised land.
+export const BRAID_STYLES = Object.freeze(['recessed', 'raised']);
+export const braidRaised = (p) => p.braidStyle === 'raised';
+export const braidRecess = (p) => (braidRaised(p) ? 0 : p.braidDepth);
+// Where the strip sits, measured up from the driving surface.
+export const braidLevel = (p) => (braidRaised(p) ? p.braidRaise : -p.braidDepth);
+// The land starts this far below the surface, so it prints as part of the road.
+const LAND_ROOT = 0.2;
+
+export function validateBraidStyle(p) {
+  if (!BRAID_STYLES.includes(p.braidStyle))
+    throw new Error('Choose a recessed or a raised braid.');
+  if (
+    !braidRaised(p) &&
+    (p.braidDepth >= (p.hollow ? p.deck : p.height) || p.braidDepth > p.slotDepth)
+  )
+    throw new Error(
+      'The braid recess must stay within the deck and above the slot floor.',
+    );
+}
+
 // Keep the full lane footprint for spacing checks. Only the two braid-width
 // bands are milled when there is a strip of road between the braid and guide.
 export function braidSections(work, p, band) {
@@ -88,7 +110,15 @@ export function addSlot(work, part, p, guide, sleeve, braidShelf) {
     );
   }
   part.cuts.push(work.prism(guide, p.height - p.slotDepth, p.height + 1));
-  if (p.braidDepth > 0 && braidShelf)
+  if (braidRaised(p)) {
+    // The cutters run a little past each seam; a land ends on its own road.
+    // With no offset the band also spans the guide, whose cut opens it again.
+    const land = braidShelf && work.own(braidShelf.intersect(part.section));
+    if (land && !land.isEmpty())
+      part.additions.push(
+        work.prism(land, p.height - LAND_ROOT, p.height + p.braidRaise),
+      );
+  } else if (p.braidDepth > 0 && braidShelf)
     part.cuts.push(
       work.prism(braidShelf, p.height - p.braidDepth, p.height + 1),
     );

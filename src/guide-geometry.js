@@ -6,6 +6,7 @@ import {
   nativeTrackPoint,
 } from './track.js';
 import { importedTrackPaths } from './geometry/import-track.js';
+import { braidLevel, braidRaised } from './geometry/solids.js';
 import { apexPositionFor, borderPath } from './geometry/border-profile.js';
 import { borderEndProfile, borderSeam } from './geometry/border-ends.js';
 import { markingStations, whiteLineLayout } from './geometry/paint-guides.js';
@@ -674,7 +675,7 @@ function countInRange(n, max) {
 }
 
 function pitContactGuides(p, jumpers) {
-  const z = p.height - p.braidDepth;
+  const z = p.height + braidLevel(p);
   const guides = new Map();
   for (const { openings, viaRadius } of jumpers) {
     for (const opening of openings) {
@@ -720,7 +721,7 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
       const guides = [dimension('special-guide-depth','cut',edge,add(edge,[0,0,-p.slotDepth]),'Guide depth · '+mm(p.slotDepth))];
       if (p.braidWidth > 0) {
         const inner = add(edge,scale(normal,p.braidGap));
-        const floor = add(inner,[0,0,-p.braidDepth]);
+        const floor = add(inner,[0,0,braidLevel(p)]);
         if (field === 'braidGap' && p.braidGap > 0)
           guides.push(braidWallDimension(p,edge,inner));
         guides.push(dimension('special-braid-width','reference',floor,
@@ -1139,10 +1140,10 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
         field?.toLowerCase().includes('braid') &&
         !field.toLowerCase().includes('feed');
       const w = isBraid ? p.braidWidth : p.slotWidth,
-        depth = isBraid ? p.braidDepth : p.slotDepth,
+        depth = isBraid ? Math.abs(braidLevel(p)) : p.slotDepth,
         slotHalf = p.slotWidth / 2,
         inner = slotHalf + p.braidGap,
-        shelfZ = p.braidWidth > 0 ? z - p.braidDepth : z;
+        shelfZ = p.braidWidth > 0 ? z + braidLevel(p) : z;
       const slotLipZ = p.braidGap > 0 ? z : shelfZ;
       let mouth = (offset, height) => section(lane + offset, height);
       let wallStart, wallEnd;
@@ -1203,9 +1204,9 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
       guides.push(
         label(
           'channel-profile',
-          'cut',
+          isBraid && braidRaised(p) ? 'add' : 'cut',
           paths[0][1],
-          (isBraid ? 'Braid recess' : 'Guide slot') +
+          (!isBraid ? 'Guide slot' : braidRaised(p) ? 'Raised land' : 'Braid recess') +
             ' · ' +
             mm(w) +
             ' × ' +
@@ -1230,7 +1231,7 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
             ? [-1, 1]
             : [p.braidFeedSide === 'left' ? 1 : -1]) {
             markers.push(
-              withZ(lane.atOffset(t, sign * edge), p.height - p.braidDepth),
+              withZ(lane.atOffset(t, sign * edge), p.height + braidLevel(p)),
             );
           }
         }

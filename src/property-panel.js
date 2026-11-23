@@ -11,7 +11,10 @@ const readouts = {
   body: (form) =>
     value(form, 'height') + ' mm · ' + (form.elements.hollow.checked ? 'Hollow' : 'Solid'),
   slot: (f) => size(f, 'slotWidth', 'slotDepth'),
-  braid: (f) => size(f, 'braidWidth', 'braidDepth'),
+  braid: (f) =>
+    f.elements.namedItem('braidStyle')?.value === 'raised'
+      ? value(f, 'braidWidth') + ' mm · raised ' + value(f, 'braidRaise') + ' mm'
+      : size(f, 'braidWidth', 'braidDepth'),
   feed: (f) => {
     const pit = f.elements.spPitContactMode;
     if (!pit) return choice(f, 'braidFeedSide');

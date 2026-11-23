@@ -31,6 +31,7 @@ import {
   jointCountControls,
   profileDiagram,
   braidFeedControls,
+  braidStyleChoices,
 } from './connection-controls.js';
 const num = (p, k, label, unit, opts) => field(k, label, p[k], unit, opts);
 const full = (act, label, glyph) => button(act, label, glyph, 'secondary full');
@@ -366,6 +367,7 @@ export function trackInspector(project, tab, draft = {}) {
       kerbFolder(p, draft.kerbEdge) +
       lineSizeFolder(p);
   } else if (tab === 'profile') {
+    const raised = (draft.braidStyle ?? p.braidStyle) === 'raised';
     html += profileDiagram(p);
     html += details(
       'Road body',
@@ -389,10 +391,18 @@ export function trackInspector(project, tab, draft = {}) {
     );
     html += details(
       'Braid recess',
-      num(p, 'braidWidth', 'Width per strip') +
+      choice('braidStyle', 'Braid style', p.braidStyle, braidStyleChoices) +
+        num(p, 'braidWidth', 'Width per strip') +
+        '<fieldset class="border-apex-fields" data-braid-style="recessed"' + (raised ? ' hidden disabled>' : '>') +
         num(p, 'braidDepth', 'Depth') +
+        '<p class="hint">Braid lies in a recess, level with the road or just below it.</p></fieldset>' +
+        '<fieldset class="border-apex-fields" data-braid-style="raised"' + (raised ? '>' : ' hidden disabled>') +
+        num(p, 'braidRaise', 'Raised height', 'mm', {
+          min: TRACK_PROFILE_LIMITS.braidRaise[0], max: TRACK_PROFILE_LIMITS.braidRaise[1],
+        }) +
+        '<p class="hint">Each strip gets a flat land that stands this far above the road, so adhesive copper tape sits proud of the surface. These pieces always export driving face up.</p></fieldset>' +
         num(p, 'braidGap', 'Braid offset from slot') +
-        '<p class="hint">The offset sets the width of the road-height wall between the guide slot and each braid recess. Set it to 0 mm for recesses that meet the slot.</p>',
+        '<p class="hint">The offset sets the width of the road-height wall between the guide slot and each strip. Set it to 0 mm for strips that meet the slot.</p>',
       false, 'braid',
     );
     html += braidFeedControls(p);

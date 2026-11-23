@@ -7,6 +7,7 @@ import {
   CONNECTOR_MODES,
 } from './track.js';
 import { importedTrackPaths } from './geometry/import-track.js';
+import { BRAID_STYLES, braidRaised } from './geometry/solids.js';
 import { JOINT_FIT_LIMITS, TAB_SIZE_LIMITS } from './geometry/joint-fit.js';
 import { clipSpec, currentClipType } from './geometry/clip-types.js';
 import {
@@ -37,6 +38,7 @@ export const SHARED_PROFILE_FIELDS = Object.freeze([
   'hollow',
   'reinforcement',
   'roadCentreLine',
+  'braidStyle',
   'joint',
   'clipType',
   'jointFitVersion',
@@ -83,6 +85,9 @@ export function validateLibraryProfile(profile) {
     } else if (key === 'roadCentreLine') {
       if (!['none', 'solid', 'dashed'].includes(value))
         throw Error('Choose off, solid or dashed for the centre line.');
+    } else if (key === 'braidStyle') {
+      if (!BRAID_STYLES.includes(value))
+        throw Error('Choose a recessed or a raised braid.');
     } else if (key === 'joint') {
       if (!CONNECTOR_MODES.includes(value))
         throw Error('Choose a valid road connector mode.');
@@ -113,10 +118,12 @@ export function validateLibraryProfile(profile) {
     );
   if (profile.hollow && profile.deck >= profile.height)
     throw Error('The deck must leave space inside the hollow body.');
+  // The recess depth plays no part while the strips sit on raised lands.
   if (
-    profile.braidDepth > profile.slotDepth ||
-    profile.braidDepth >= profile.height ||
-    (profile.hollow && profile.braidDepth >= profile.deck)
+    !braidRaised(profile) &&
+    (profile.braidDepth > profile.slotDepth ||
+      profile.braidDepth >= profile.height ||
+      (profile.hollow && profile.braidDepth >= profile.deck))
   )
     throw Error(
       'The braid recess must stay within the deck and above the slot floor.',
