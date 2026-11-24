@@ -30,6 +30,7 @@ import {
   pegSizeOf,
   totalLength,
   tally,
+  sourcePartMap,
   validateLayout,
   blockedJoints,
 } from './planner-model.js';
@@ -60,6 +61,20 @@ const btn = (key, label, symbol = '', style = '') =>
   (symbol ? icon(symbol) : '') +
   label +
   '</button>';
+// The window that asks for the print bed before a layout is cut. It is made
+// when it opens and removed when it closes.
+const SEGMENT_DIALOG =
+    '<dialog class="pl-segment" aria-labelledby="pl-segment-title"><header><h2 id="pl-segment-title">Segment for printing</h2></header>' +
+    '<p>Is this your print bed? Every piece that does not fit is cut into the fewest equal segments that do.</p>' +
+    '<div class="pl-segment-fields"><label>Width · mm<input type="number" min="10" max="5000" step="any" data-pl-field="bedWidth"></label>' +
+    '<label>Depth · mm<input type="number" min="10" max="5000" step="any" data-pl-field="bedDepth"></label>' +
+    '<label>Margin · mm<input type="number" min="0" step="any" data-pl-field="bedMargin"></label></div>' +
+    '<p class="pl-segment-note" role="status"></p>' +
+    '<div class="pl-segment-actions">' +
+    btn('segment-cancel', 'Cancel', '', 'secondary') +
+    btn('segment-confirm', 'Segment layout', 'split', 'primary') +
+    '</div></dialog>';
+
 const checkedSelect = (val, current) => (val === current ? ' selected' : '');
 // ' · slot 35-145 from left' for a piece with an off-centre slot ('slots
 // 35/135 from left' for several lanes), nothing otherwise, and nothing after
@@ -127,6 +142,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     '</div>' +
     '<label>Build from <select data-pl-field="end" aria-label="Build from open end"></select></label>' +
     btn('fit', 'Fit', 'fit') +
+    btn('segment', 'Segment for printing', 'split') +
     '</div>' +
     '<div class="pl-stage"><svg class="planner-map" role="img" aria-label="Track layout and open ends"></svg><div class="planner-solid" hidden></div>' +
     '<div class="pl-empty"><b>Place your first track piece</b><span>Choose a piece from the catalogue to start the layout.</span></div>' +
@@ -134,7 +150,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     '<aside class="pl-inspector"><div class="pl-selection"></div><details class="pl-inventory" open><summary>Parts tally</summary><div></div></details>' +
     '<div class="pl-crossings"></div><details class="pl-bed"><summary>Print plate</summary><div><label>Width · mm<input type="number" min="10" max="5000" data-pl-field="width"></label>' +
     '<label>Depth · mm<input type="number" min="10" max="5000" data-pl-field="depth"></label><label>Margin · mm<input type="number" min="0" data-pl-field="margin"></label>' +
-    '<small>New placements use this plate and the piece’s preset cuts.</small></div></details></aside>';
+    '<small>Pieces are placed whole, with their preset cuts. Segment for printing cuts them to fit this plate.</small></div></details></aside>';
   let layout = newLayout(),
     defs = new Map(),
     cache = new Map(),
@@ -209,6 +225,117 @@ export function createPlanner({ host, call, download, current, promote }) {
     const open = net.open.filter((e) => e.id === id);
     choice = { selected: id, end: end ?? open.at(-1)?.key ?? choice.end };
     render();
+  }
+  const usablePlate = (p) =>
+    Object.values(p).every(Number.isFinite) &&
+    Math.min(p.width, p.depth) >= 10 &&
+    Math.max(p.width, p.depth) <= 5000 &&
+    p.margin >= 0 &&
+    2 * p.margin < Math.min(p.width, p.depth);
+  // How many printable parts of the layout are too large for the plate.
+  const partsOverPlate = (quantities = tally(layout, defs)) =>
+    quantities.reduce(
+      (sum, g) =>
+        sum +
+        (fitsCurrentPlate(sourcePartMap(defs.get(g.source)).get(g.id)) ? 0 : g.count),
+      0,
+    );
+  // Cut every piece that does not fit the plate. Nothing is cut when a piece
+  // is placed: this runs when the user asks for it and has checked the plate.
+  async function segmentLayout() {
+    message('Cutting the pieces to fit the print plate…');
+    const models = new Map(defs),
+      additions = {},
+      swaps = new Map(),
+      warnings = [];
+    for (const [key, entry] of Object.entries(layout.sources)) {
+      if (!layout.nodes.some((n) => n.source === key)) continue;
+      const def = await build(entry.track, true);
+      if (def.warning) warnings.push(entry.name + ': ' + def.warning);
+      // Only a piece that comes out in more parts was cut.
+      const before = defs.get(key);
+      if (
+        JSON.stringify(def.track) === JSON.stringify(entry.track) ||
+        (def.sections.length === before.sections.length &&
+          def.meshes.length === before.meshes.length)
+      )
+        continue;
+      const same = Object.entries({ ...layout.sources, ...additions }).find(
+        ([, s]) =>
+          s.name === entry.name &&
+          JSON.stringify(s.track) === JSON.stringify(def.track),
+      );
+      const next = same?.[0] ?? 's' + ++serial;
+      models.set(next, { ...def, name: entry.name });
+      additions[next] = { ...entry, track: def.track };
+      swaps.set(key, next);
+    }
+    const bed = plate.width + ' × ' + plate.depth + ' mm';
+    if (!swaps.size) {
+      const over = partsOverPlate();
+      message(
+        over
+          ? [over + (over === 1 ? ' part does' : ' parts do') + ' not fit a ' + bed + ' plate and cannot be cut further.', ...warnings].join(' ')
+          : 'Every part already fits a ' + bed + ' plate. Nothing was cut.',
+        Boolean(over),
+      );
+      return;
+    }
+    let cut = 0,
+      left = 0;
+    await edit((next) => {
+      Object.assign(next.sources, additions);
+      const samePose = (a, b) => a.x === b.x && a.y === b.y && a.a === b.a && a.flip === b.flip;
+      const out = [],
+        done = new Set();
+      let selected = choice.selected;
+      for (const n of next.nodes) {
+        if (done.has(n)) continue;
+        const to = swaps.get(n.source);
+        if (!to) {
+          out.push(n);
+          continue;
+        }
+        // The sections of one placed piece share its pose.
+        const group = next.nodes.filter((m) => m.source === n.source && samePose(m.pose, n.pose));
+        group.forEach((m) => done.add(m));
+        const whole =
+          group.length === defs.get(n.source).sections.length &&
+          new Set(group.map((m) => m.index)).size === group.length;
+        const level = group.every((m) => m.h[0] === n.h[0] && m.h[1] === n.h[0]);
+        // A piece on a ramp, or with a section removed, keeps its own cuts.
+        if (!whole || !level) {
+          out.push(...group);
+          left++;
+          continue;
+        }
+        const made = models.get(to).sections.map((_, index) => ({
+          id: crypto.randomUUID(),
+          source: to,
+          index,
+          pose: { ...n.pose },
+          h: [...n.h],
+          supports: index === 0 ? Math.max(...group.map((m) => m.supports)) : 0,
+          ...(n.supportStyle && { supportStyle: n.supportStyle }),
+          ...(n.peg && { peg: [...n.peg] }),
+        }));
+        if (group.some((m) => m.id === selected)) selected = made.at(-1).id;
+        out.push(...made);
+        cut++;
+      }
+      next.nodes = out;
+      return { selected };
+    }, models);
+    const over = partsOverPlate();
+    message(
+      [
+        cut + (cut === 1 ? ' piece was' : ' pieces were') + ' cut to fit a ' + bed + ' plate.',
+        left ? left + (left === 1 ? ' piece on a ramp or with a section removed was' : ' pieces on a ramp or with a section removed were') + ' left as placed.' : '',
+        over ? over + (over === 1 ? ' part still does' : ' parts still do') + ' not fit.' : '',
+        ...warnings,
+      ].filter(Boolean).join(' '),
+      Boolean(over),
+    );
   }
   // Barriers belong to a piece recipe. A section that gets its own barriers
   // moves to a copy of its recipe with that setting; unused copies are
@@ -367,7 +494,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         : card.track;
       jobs.push({
         track,
-        autoFit: true,
+        autoFit: false,
         then:
           viewMode === 'solid' && track.params.kind === 'curve'
             ? (def) =>
@@ -589,11 +716,12 @@ export function createPlanner({ host, call, download, current, promote }) {
   }
   async function place(card) {
     if (!card) return;
-    message('Fitting ' + card.name + ' to the print plate…');
+    message('Placing ' + card.name + '…');
     const track = card.collection
       ? trackWithProfile(card.track, card.collection.profile)
       : card.track;
-    const def = await build(track, true),
+    // Placed whole, with its preset cuts: Segment for printing fits it to the plate.
+    const def = await build(track, false),
       same = Object.entries(layout.sources).find(
         ([, s]) =>
           s.name === card.name &&
@@ -818,12 +946,7 @@ export function createPlanner({ host, call, download, current, promote }) {
             )
             .join(''),
       );
-    const over = quantities.reduce(
-      (sum, g) =>
-        sum +
-        (fitsCurrentPlate(defs.get(g.source).byPart.get(g.id)) ? 0 : g.count),
-      0,
-    );
+    const over = partsOverPlate(quantities);
     $('.pl-stats').textContent =
       layout.nodes.length +
       ' sections   ·   ' +
@@ -1177,6 +1300,36 @@ export function createPlanner({ host, call, download, current, promote }) {
       $('.pl-bridge').open = true;
       return;
     }
+    if (key === 'segment') {
+      if (!layout.nodes.length) throw Error('Place a track piece before segmenting the layout.');
+      host.insertAdjacentHTML('beforeend', SEGMENT_DIALOG);
+      $('.pl-segment').addEventListener('close', (e) => e.target.remove(), { once: true });
+      for (const [name, value] of [['bedWidth', plate.width], ['bedDepth', plate.depth], ['bedMargin', plate.margin]])
+        field(name).value = value;
+      const over = partsOverPlate();
+      $('.pl-segment-note').textContent = over
+        ? over + (over === 1 ? ' part does' : ' parts do') + ' not fit a ' + plate.width + ' × ' + plate.depth + ' mm plate now.'
+        : 'Every part fits a ' + plate.width + ' × ' + plate.depth + ' mm plate now.';
+      $('.pl-segment').showModal();
+      return;
+    }
+    if (key === 'segment-cancel') return $('.pl-segment').close();
+    if (key === 'segment-confirm') {
+      const bed = {
+        width: field('bedWidth').valueAsNumber,
+        depth: field('bedDepth').valueAsNumber,
+        margin: field('bedMargin').valueAsNumber,
+      };
+      if (!usablePlate(bed)) {
+        $('.pl-segment-note').textContent = 'Enter a usable print plate between 10 and 5,000 mm.';
+        return;
+      }
+      $('.pl-segment').close();
+      plate = bed;
+      render();
+      persist();
+      return segmentLayout();
+    }
     if (key === 'barriers') {
       message('Fitting the barriers…');
       await setBarriers({
@@ -1256,13 +1409,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       const p = Object.fromEntries(
         ['width', 'depth', 'margin'].map((k) => [k, field(k).valueAsNumber]),
       );
-      if (
-        !Object.values(p).every(Number.isFinite) ||
-        Math.min(p.width, p.depth) < 10 ||
-        Math.max(p.width, p.depth) > 5000 ||
-        p.margin < 0 ||
-        2 * p.margin >= Math.min(p.width, p.depth)
-      ) {
+      if (!usablePlate(p)) {
         render();
         message('Enter a usable print plate between 10 and 5,000 mm.', true);
         return;
@@ -1270,7 +1417,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       plate = p;
       render();
       persist();
-      message('New placements will use the updated print plate.');
+      message('Print plate updated. Use Segment for printing to cut the pieces to fit it.');
     }
   });
   return {
