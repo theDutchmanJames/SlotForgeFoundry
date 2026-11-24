@@ -4,7 +4,7 @@ import { PEG_LIMITS, PEG_SIZE } from './geometry/bridge-supports.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { MARKING_KEYS } from './markings-controls.js';
 import { TEXTURE_KEYS } from './geometry/road-texture.js';
-import { hasSlope } from './geometry/slope.js';
+import { hasSlope, slopeEndRates } from './geometry/slope.js';
 
 // The settings a layout keeps for a section when its pack changes: its
 // barriers and its markings are set in the layout.
@@ -531,13 +531,22 @@ function continueClimb(layout, defs, target, nodes, def, incoming, exit) {
   const before = defs.get(previous.source),
     node = nodes[0],
     lift = node.h[incoming.i];
+  // The climb at the end that is joined: the tilt of a ramp, or the angle a
+  // sloped piece reaches at that end.
+  const sloped = hasSlope(before.track.params);
+  const along = sloped
+    ? slopeEndRates(before.track.params)[target.i] ?? 0
+    : canRamp(previous, before)
+      ? pitch(previous, before).slope
+      : null;
   if (
     nodes.length === 1 &&
     incoming.id === exit.id &&
-    canRamp(previous, before) &&
+    // A level end leaves the new piece level, at exactly the height it joins.
+    along &&
     canRamp(node, def)
   ) {
-    const rate = pitch(previous, before).slope * (target.i === 1 ? 1 : -1),
+    const rate = along * (target.i === 1 ? 1 : -1),
       [a, b] = def.sections[node.index].ports,
       end = Math.min(500, Math.max(0, lift + rate * distance(a.xy, b.xy))),
       h = [...node.h];
@@ -548,7 +557,8 @@ function continueClimb(layout, defs, target, nodes, def, incoming, exit) {
   }
   for (const n of nodes)
     if (Math.max(...n.h) > 0) {
-      n.supports = previous.supports;
+      // A sloped piece stands on the table without supports; the ramp behind it needs one.
+      n.supports = sloped ? Math.max(1, previous.supports) : previous.supports;
       n.supportStyle = supportStyleOf(previous);
       if (previous.peg) n.peg = [...previous.peg];
     }

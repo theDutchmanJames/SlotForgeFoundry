@@ -87,6 +87,17 @@ export function slopeProfile(p) {
   return { form: s.slopeForm, length, climb, bend, start, end, radius, run, rise, at, angleAt };
 }
 
+/**
+ * How steeply the road climbs at each end of a sloped piece, as rise over
+ * run from end A towards end B: [at A, at B]. A level piece gives [0, 0].
+ */
+export function slopeEndRates(p) {
+  if (!hasSlope(p)) return [0, 0];
+  const s = slopeSettings(p),
+    rate = Math.tan(radians(s.slopeAngle));
+  return s.slopeForm === 'down' ? [rate, 0] : [0, rate];
+}
+
 export function validateSlope(p) {
   const s = slopeSettings(p);
   if (s.slopeForm === 'none') return;

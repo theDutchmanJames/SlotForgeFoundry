@@ -1038,8 +1038,17 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
         }
         for (const result of results) {
           if (!result.outline) continue;
+          // Its shadow, up to the two joint lines: the tilted end face of the
+          // sloped end reaches a little under the next piece.
           const shadow = work.own(result.solid.project());
-          result.outline = shadow.toPolygons();
+          const { min, max } = shadow.bounds();
+          const between = result.role === 'road' || result.role === 'border'
+            ? work.own(shadow.intersect(work.section([[
+                [-p.length / 2, min[1] - 1], [-p.length / 2 + profile.run, min[1] - 1],
+                [-p.length / 2 + profile.run, max[1] + 1], [-p.length / 2, max[1] + 1],
+              ]])))
+            : shadow;
+          result.outline = between.toPolygons();
         }
       }
     }

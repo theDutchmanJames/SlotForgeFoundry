@@ -10,12 +10,13 @@ import {
   SLOPE_LEAD,
   hasSlope,
   slopeFilled,
+  slopeEndRates,
   slopeProfile,
   slopeSettings,
 } from '../src/geometry/slope.js';
 import { trackInspector } from '../src/inspector.js';
 import { syncSlopeControls } from '../src/slope-controls.js';
-import { canRamp, endsOf, newLayout, placeSource } from '../src/planner-model.js';
+import { canRamp, crossings, endsOf, newLayout, pitch, placeSource, surfaces } from '../src/planner-model.js';
 import { newProject } from '../src/project.js';
 import { buildTestJoint, buildTrack, defaultTrack, trackParameters, validateTrack } from '../src/track.js';
 
@@ -337,4 +338,55 @@ test('with clips, a sloped piece joins a level piece at both ends in a layout, i
     assert.equal(net.open.length, 2);
     near(layout.nodes[2].h[0], slopeProfile(sloped({ slopeForm })).rise, 1e-6);
   }
+});
+
+test('the straight behind a sloped end carries on at the climb angle, and no crossing is reported at the joint', () => {
+  const plate = { width: 450, depth: 450, margin: 0 };
+  const source = (name, changes) => ({
+    name,
+    ...engine.plannerSource({ track: { params: piece({ joint: 'clips', ...changes }), plan: null }, plate, autoFit: false }),
+  });
+  const level = source('Straight', {}),
+    up = source('Climb', { slopeForm: 'up' }),
+    top = source('Top', { slopeForm: 'down' });
+  const rate = Math.tan((8 * Math.PI) / 180);
+  assert.deepEqual(slopeEndRates(piece()), [0, 0]);
+  assert.deepEqual(slopeEndRates(sloped()), [0, rate]);
+  assert.deepEqual(slopeEndRates(sloped({ slopeForm: 'down' })), [rate, 0]);
+  const profile = slopeProfile(sloped());
+  const defs = new Map([['level', level], ['up', up], ['top', top]]),
+    layout = newLayout();
+  for (const [id, def] of defs) layout.sources[id] = { name: def.name, track: def.track };
+  let active = placeSource(layout, defs, 'level');
+  active = placeSource(layout, defs, 'up', active.end);
+  active = placeSource(layout, defs, 'level', active.end);
+  // The ramp starts where the climb ended and rises at its angle.
+  const ramp = layout.nodes[2];
+  near(ramp.h[0], profile.rise, 1e-6);
+  near(ramp.h[1], profile.rise + rate * 200, 0.01);
+  near(pitch(ramp, level).slope, rate, 1e-4);
+  assert.ok(ramp.supports >= 1, 'a lifted ramp gets a support');
+  assert.deepEqual(layout.nodes[1].h, [0, 0]);
+  // A second straight carries on, as behind any ramp.
+  active = placeSource(layout, defs, 'level', active.end);
+  near(pitch(layout.nodes[3], level).slope, rate, 1e-4);
+  // The top of the hill joins the ramp with its sloped end and ends level, higher still.
+  active = placeSource(layout, defs, 'top', active.end);
+  const crest = layout.nodes[4];
+  near(crest.h[0], layout.nodes[3].h[1], 1e-6);
+  active = placeSource(layout, defs, 'level', active.end);
+  const after = layout.nodes[5];
+  near(after.h[0], crest.h[0] + profile.rise, 1e-6);
+  near(after.h[1], after.h[0], 1e-9);
+  const net = endsOf(layout, defs);
+  assert.equal(net.open.length, 2);
+  assert.equal(net.joints.size, 10);
+  // Pieces that only meet at a joint are not a crossing.
+  assert.equal(crossings(surfaces(layout, defs)).length, 0);
+  // Built backwards from the foot of a climb, a straight stays level: that end is level.
+  const back = newLayout();
+  for (const [id, def] of defs) back.sources[id] = { name: def.name, track: def.track };
+  placeSource(back, defs, 'up');
+  placeSource(back, defs, 'level', back.nodes[0].id + ':0');
+  assert.deepEqual(back.nodes[1].h, [0, 0]);
 });
