@@ -43,7 +43,7 @@ test('every piece setting lives in exactly one section, once', () => {
   for (const [component, settings] of Object.entries({
     geometry: ['kind', 'radius', 'angle', 'width', 'lanes', 'laneSpacing'],
     trackside: ['tracksideSide', 'tracksideShape', 'tracksideInnerOwn', 'tracksideShapeInner', 'tracksideRiseInner', 'tracksideFenceInner', 'tracksideRise', 'tracksideTabs', 'tracksideSegments', 'tracksideEnds', 'tracksideEndShape', 'tracksideFaceAngle',
-      'tracksideRailHeight', 'tracksideStartPost', 'tracksideRailThickness', 'tracksidePostWidth', 'tracksidePostDepth', 'tracksidePostDrop', 'tracksidePostInset', 'tracksideRailGround', 'tracksidePinch', 'tracksideThickness', 'tracksideFence', 'tracksideFenceHeight', 'tracksidePost', 'tracksideCable', 'tracksideMesh'],
+      'tracksideRailHeight', 'tracksideStartPost', 'tracksideRailThickness', 'tracksidePostWidth', 'tracksidePostDepth', 'tracksidePostDrop', 'tracksidePostInset', 'tracksideRailGround', 'tracksidePinch', 'tracksideBeamDepth', 'tracksideBeamWall', 'tracksideHook', 'tracksideThickness', 'tracksideFence', 'tracksideFenceHeight', 'tracksidePost', 'tracksideCable', 'tracksideMesh'],
     markings: [
       'whiteLineRoad',
       'roadCentreLine',

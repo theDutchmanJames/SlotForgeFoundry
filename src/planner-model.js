@@ -424,6 +424,8 @@ export const BARRIER_TYPES = [
   ['board', 'Advertising board'],
   ['rail', 'Single guard rail'],
   ['rail2', 'Double guard rail'],
+  ['wrail', 'Single W-beam guard rail'],
+  ['wrail2', 'Double W-beam guard rail'],
 ];
 export const BARRIER_ENDS = [
   ['none', 'Plain ends'],

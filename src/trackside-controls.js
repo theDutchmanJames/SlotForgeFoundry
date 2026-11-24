@@ -41,19 +41,32 @@ function tracksideSet(p, draft, set, titles) {
             '<p class="hint">A flat wall for a paper sign: print your sign and glue it to the face. With a fence, the board is at least thick enough for a wall on both sides of each post.</p>',
         ) +
         only(
-          'rail rail2',
-          only('rail', number('tracksideRailHeight', 'Rail height', 'mm')) +
-            only('rail2', number('tracksideRailGround', 'Clearance above the road', 'mm')) +
-            number('tracksideRailThickness', 'Rail thickness', 'mm') +
+          'rail rail2 wrail wrail2',
+          only('rail wrail', number('tracksideRailHeight', 'Rail height', 'mm')) +
+            only('rail2 wrail2', number('tracksideRailGround', 'Clearance above the road', 'mm')) +
+            only('rail rail2', number('tracksideRailThickness', 'Rail thickness', 'mm')) +
+            only(
+              'wrail wrail2',
+              number('tracksideBeamDepth', 'Profile depth', 'mm') +
+                number('tracksideBeamWall', 'Wall thickness', 'mm') +
+                number('tracksideHook', 'Reach of the hooks', 'mm'),
+            ) +
             number('tracksidePostWidth', 'Post width', 'mm') +
             number('tracksidePostDepth', 'Post depth', 'mm') +
-            number('tracksidePostDrop', 'Post top below the rail top', 'mm') +
+            only('rail rail2', number('tracksidePostDrop', 'Post top below the rail top', 'mm')) +
             number('tracksidePostInset', 'Post distance from the end', 'mm') +
             number('tracksidePinch', 'Pinch on the rail', 'mm') +
             check(name('tracksideStartPost'), 'Post at the start of the row', p[name('tracksideStartPost')]) +
-            '<p class="hint">Post width is along the edge and is never less than the tab width under Joints; post depth is away from the track. The pinch is how much tighter the gap under the T is than the rail: raise it for a firmer hold. Pieces in one row need the same post distance from the end, so each rail reaches the post of the piece before it.</p>' +
-            '<p class="hint">Height above the road is the top of the rail; the posts end flush with it and stay hidden behind the rail. A single rail hangs under that top. A double rail fills from the top to just above the road with two rails. Each piece has a post near its finish end, and its rail comes from the post of the piece before it. Switch on the start post for the first piece of a row. Barriers per segment sets the posts per segment.</p>' +
-            '<p class="hint">Two rail ends meet on a post: each drops over the stem of a T-shaped peg and is pinched under its head. A post prints on its side and a rail prints flat, both without support. On a bend the rail is still printed straight and bends to follow the posts.</p>',
+            '<p class="hint">Height above the road is the top of the rail. A single rail hangs under that top; a double rail fills from the top to just above the road. Each piece has a post near its finish end, and its rail comes from the post of the piece before it. Switch on the start post for the first piece of a row. Barriers per segment sets the posts per segment. Post width is along the edge and is never less than the tab width under Joints; post depth is away from the track. Pieces in one row need the same post distance from the end.</p>' +
+            only(
+              'rail rail2',
+              '<p class="hint">A flat rail with two ridges. Two rail ends meet on a post: each drops over the stem of a T-shaped peg and is pinched under its head, by the pinch set here. The posts end flush with the top of the rail. A post prints on its side and a rail prints flat, both without support.</p>',
+            ) +
+            only(
+              'wrail wrail2',
+              '<p class="hint">A thin sheet folded into a W, like a real guard rail: two crests, a valley and a lip at the top and bottom, hollow behind. A double rail is one sheet with four crests. The rail snaps between a hook over its top lip and one under its bottom lip; nothing presses on the crests. A cover over each joint hides the seam, and its tab passes through the valley of both rail ends into the post, so the ends butt without a gap. The pinch tightens that tab in its groove.</p>' +
+                '<p class="hint">The post prints on its side, the rail on its lips and valley with the crests up, and the cover on its side, all without support. On a bend the rail is still printed straight and bends to follow the posts.</p>',
+            ),
         ) +
         only(
           'barrier board',

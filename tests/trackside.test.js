@@ -790,3 +790,205 @@ test('a guard rail on one side and another barrier on the other', () => {
   assert.match(html, /data-trackside-shape="rail rail2" data-trackside-set="">/);
   assert.match(html, /data-trackside-shape="barrier board" data-trackside-set="" hidden/);
 });
+
+// ---- W-beam guard rails ----
+const beamPiece = (changes = {}) =>
+  piece({ tracksideSide: 'outer', tracksideShape: 'wrail', ...changes });
+const beamParts = (parts) => ({
+  posts: parts.filter((part) => part.id.startsWith('post-')),
+  rails: parts.filter((part) => part.id.startsWith('rail-')),
+  covers: parts.filter((part) => part.id.startsWith('cover-')),
+});
+// Where a ray from the track side first meets a solid, as a distance from the road edge.
+const frontAt = (solid, x, z) => solid.rayCast([x, 40, z], [x, 90, z])[0]?.position[1] - 50;
+
+test('the W-beam section is a folded sheet: crests, a valley and lips, hollow behind', async () => {
+  const { beamProfile } = await import('../src/geometry/trackside.js');
+  const { face, back, valleys, tab, lip } = beamProfile({ height: 10, depth: 2.7, wall: 0.8, units: 1 });
+  // The face: lips and valley one wall off the post, crests at the full depth.
+  assert.deepEqual(face[0], [0, 0.8]);
+  assert.deepEqual(face.at(-1), [10, 0.8]);
+  near(Math.max(...face.map(([, z]) => z)), 2.7);
+  assert.equal(face.filter(([, z]) => Math.abs(z - 2.7) < 1e-9).length, 4, 'two flat crests');
+  // The back: on the post at the lips and the valley, hollow under each crest.
+  near(Math.max(...back.map(([, z]) => z)), 2.7 - 0.8);
+  assert.equal(back.filter(([, z]) => z === 0).length, 6);
+  for (let i = 1; i < back.length; i++) assert.ok(back[i][0] > back[i - 1][0], 'the back runs one way');
+  near(lip, 0.6);
+  assert.deepEqual(valleys, [5]);
+  near(tab, 1.2);
+  // A double rail is one sheet with four crests and a valley in each W.
+  const double = beamProfile({ height: 18.5, depth: 2.7, wall: 0.8, units: 2 });
+  assert.equal(double.face.filter(([, z]) => Math.abs(z - 2.7) < 1e-9).length, 8);
+  assert.deepEqual(double.valleys, [4.625, 13.875]);
+  assert.throws(() => beamProfile({ height: 4, depth: 2, wall: 1.5, units: 1 }), /wall is too thick/);
+});
+
+test('a W-beam rail sits between two hooks on its post, with a cover over the joint', () => {
+  const p = beamPiece();
+  build(p, (parts) => {
+    const { posts, rails, covers } = beamParts(parts);
+    assert.deepEqual(posts.map((part) => part.name), ['Outer rail post 1']);
+    assert.deepEqual(rails.map((part) => part.name), ['Outer guard rail 1']);
+    assert.deepEqual(covers.map((part) => part.name), ['Outer rail cover 1']);
+    const [post] = posts,
+      [rail] = rails,
+      [cover] = covers;
+    for (const part of [post, rail, cover]) assert.equal(part.solid.status(), 'NoError');
+    // The rail: 10 mm tall under its top, 2.7 mm deep, from the post of the
+    // piece before this one to this post, its ends on the post centres.
+    const box = rail.solid.boundingBox();
+    near(box.max[2], 32);
+    near(box.min[2], 22);
+    near(box.max[1] - box.min[1], 2.7);
+    near(box.min[0], -112 + 0.05);
+    near(box.max[0], 88 - 0.05);
+    // A folded sheet, not a solid bar: far less material than its outline.
+    assert.ok(rail.solid.volume() < 0.55 * 200 * 10 * 2.7);
+    // The post: its top hook stands 0.9 mm above the rail.
+    near(post.solid.boundingBox().max[2], 32 + 0.1 + 0.8);
+    // The rail back lies on the post face, clear of the road by the cover in front of it.
+    const standoff = 2.7 + 0.1 + 0.8 + 0.4;
+    near(box.max[1], 50 + standoff);
+    near(cover.solid.boundingBox().min[1], 50 + 0.4, 0.01);
+    // Seen from the track at the post: a hook in front of each lip, 0.4 mm over it.
+    near(frontAt(post.solid, 88, 32 - 0.2), standoff - 0.8 - 0.1 - 0.8);
+    near(frontAt(post.solid, 88, 32 - 0.6), standoff, 1e-6);
+    near(frontAt(post.solid, 88, 22 + 0.2), standoff - 0.8 - 0.1 - 0.8);
+    // Behind the valley the post has the groove for the tab of the cover.
+    near(frontAt(post.solid, 88, 27), standoff + 2.4);
+    // Nothing overlaps: the rail in its hooks, the cover over the rail, its tab in the groove.
+    near(overlap(post.solid, rail.solid), 0, 1e-6);
+    near(overlap(cover.solid, rail.solid), 0, 1e-6);
+    near(overlap(cover.solid, post.solid), 0, 1e-6);
+    // The tab reaches through the valley into the post.
+    assert.ok(cover.solid.boundingBox().max[1] > 50 + standoff + 2);
+    for (const other of parts.filter((q) => ['road', 'clip', 'retainer'].includes(q.role)))
+      for (const part of [post, rail, cover]) near(overlap(part.solid, other.solid), 0, 1e-6);
+  });
+});
+
+test('a double W-beam is one sheet with four crests, a taller cover and two tabs', () => {
+  const p = beamPiece({ tracksideShape: 'wrail2', tracksideRise: 24, tracksideStartPost: true });
+  build(p, (parts) => {
+    const { posts, rails, covers } = beamParts(parts);
+    assert.equal(posts.length, 2);
+    assert.equal(rails.length, 1);
+    assert.equal(covers.length, 2, 'a cover on every post');
+    const box = rails[0].solid.boundingBox();
+    near(box.min[2], 12 + 1.5);
+    near(box.max[2], 36);
+    // Four crests: half way up each W the cut crosses nothing but the valley strip.
+    near(rails[0].solid.boundingBox().max[1] - rails[0].solid.boundingBox().min[1], 2.7);
+    // Each post has a groove behind both valleys.
+    const standoff = 2.7 + 0.1 + 0.8 + 0.4;
+    const one = (36 - 13.5) / 2;
+    for (const z of [13.5 + one / 2, 13.5 + one * 1.5])
+      near(frontAt(posts[1].solid, 88, z), standoff + 2.4);
+    near(frontAt(posts[1].solid, 88, 13.5 + one), standoff, 1e-6);
+    for (const cover of covers) {
+      near(overlap(cover.solid, rails[0].solid), 0, 1e-6);
+      for (const post of posts) near(overlap(cover.solid, post.solid), 0, 1e-6);
+    }
+  });
+});
+
+test('a W-beam rail, its post and its cover each print without support', () => {
+  const p = beamPiece();
+  build(p, (parts) => {
+    const { posts, rails, covers } = beamParts(parts);
+    const project = { mode: 'track', track: { params: p } };
+    // The rail lies on its lips and valley, crests up.
+    const rail = laidSize(rails[0], p);
+    near(rail[2], 2.7);
+    near(Math.max(rail[0], rail[1]), 200 - 0.1);
+    near(Math.min(rail[0], rail[1]), 10);
+    const [bed, mid] = printableSTL(rails[0], (solid) => [0.05, 1.5].map((z) => {
+      const cut = solid.slice(z);
+      try {
+        return cut.area();
+      } finally {
+        cut.delete();
+      }
+    }), undefined, project);
+    // On the bed: the backs of two lips and of the valley, three strips that
+    // are each a little wider than their face, less the two notches for the tab.
+    assert.ok(bed > 199.9 * 4.6 * 0.95 && bed < 199.9 * 4.6 * 1.08, 'lips and valley on the bed: ' + bed);
+    assert.ok(bed < 0.5 * 199.9 * 10, 'not a flat plate');
+    // Half way up there are only the four sloped walls.
+    assert.ok(mid < bed, 'thin walls above the bed: ' + mid);
+    // The post lies on its side, as wide as its tab; the cover on its side, as wide as the post.
+    near(laidSize(posts[0], p)[2], 6);
+    const cover = laidSize(covers[0], p);
+    near(cover[2], 6);
+    // Its outline is the same at every height of the print: one flat shape pulled up.
+    const areas = printableSTL(covers[0], (solid) => [0.5, 3, 5.5].map((z) => {
+      const cut = solid.slice(z);
+      try {
+        return cut.area();
+      } finally {
+        cut.delete();
+      }
+    }), undefined, project);
+    near(areas[0], areas[1], 1e-6);
+    near(areas[1], areas[2], 1e-6);
+  });
+});
+
+test('the W-beam sizes are settings with limits', () => {
+  const p = beamPiece({ tracksideBeamDepth: 4, tracksideBeamWall: 1, tracksideHook: 0.5, tracksideRailHeight: 14 });
+  build(p, (parts) => {
+    const { rails, posts } = beamParts(parts);
+    const box = rails[0].solid.boundingBox();
+    near(box.max[1] - box.min[1], 4);
+    near(box.max[2] - box.min[2], 14);
+    const standoff = 4 + 0.1 + 0.8 + 0.4;
+    near(frontAt(posts[0].solid, 88, 32 - 0.4), standoff - 1 - 0.1 - 0.8);
+    near(frontAt(posts[0].solid, 88, 32 - 0.6), standoff, 1e-6);
+  });
+  for (const [changes, text] of [
+    [{ tracksideBeamDepth: 1 }, /W-beam depth must be between 1.5 and 8 mm/],
+    [{ tracksideBeamWall: 3 }, /W-beam wall must be between 0.4 and 2 mm/],
+    [{ tracksideHook: 2 }, /reach of the hooks must be between 0.2 and 1 mm/],
+    [{ tracksideHook: 0.9 }, /hooks reach further than the lip of the rail is wide\. Use at most 0\.6 mm/],
+    [{ tracksideBeamDepth: 1.5, tracksideBeamWall: 1 }, /at least twice as deep as its wall is thick/],
+    [{ tracksidePostDepth: 3 }, /at least 3\.6 mm deep for the tab of the cover/],
+    [{ tracksideRailHeight: 30 }, /cannot be taller than its height above the road/],
+  ])
+    assert.throws(() => validateTrack(trackParameters(beamPiece(changes))), text);
+  // The flat rails are still there, unchanged, beside the W-beams.
+  build(railPiece(), (parts) => assert.equal(beamParts(parts).covers.length, 0));
+  const project = newProject();
+  project.mode = 'track';
+  project.track.params = trackParameters(beamPiece());
+  const html = trackInspector(project, 'trackside');
+  for (const label of ['Single guard rail', 'Double guard rail', 'Single W-beam guard rail', 'Double W-beam guard rail'])
+    assert.match(html, new RegExp('>' + label + '<'));
+  assert.match(html, /data-trackside-shape="wrail wrail2" data-trackside-set="">/);
+  assert.match(html, /data-trackside-shape="rail rail2" data-trackside-set="" hidden/);
+});
+
+test('W-beam rails follow a bend and a tapered border and still print straight', () => {
+  const bend = { ...defaultTrack(), angle: 45, tracksideSide: 'both', tracksideShape: 'wrail2' };
+  build(bend, (parts) => {
+    const { posts, rails, covers } = beamParts(parts);
+    assert.equal(rails.length, 2);
+    assert.equal(covers.length, 2);
+    for (const part of [...posts, ...rails, ...covers]) {
+      assert.equal(part.solid.status(), 'NoError');
+      assert.ok(part.solid.volume() > 0);
+    }
+    const road = parts.find((part) => part.role === 'road');
+    for (const part of [...posts, ...rails, ...covers]) near(overlap(part.solid, road.solid), 0, 0.01);
+    // A rail drawn round the bend touches its straight hooks by a hair at most.
+    for (const post of posts) for (const rail of rails) assert.ok(overlap(post.solid, rail.solid) < 1.5);
+    for (const rail of rails) near(laidSize(rail, bend)[2], 2.7);
+  });
+  const bordered = piece({ borderSide: 'both', borderMount: 'tabs', tracksideSide: 'both', tracksideShape: 'wrail' });
+  build(bordered, (parts) => {
+    const { posts, rails, covers } = beamParts(parts);
+    for (const part of [...posts, ...rails, ...covers])
+      for (const other of parts.filter((q) => ['road', 'border'].includes(q.role)))
+        near(overlap(part.solid, other.solid), 0, 0.01);
+  });
+});

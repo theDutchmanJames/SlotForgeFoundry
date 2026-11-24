@@ -10,6 +10,8 @@ export const TRACKSIDE_SHAPES = Object.freeze([
   ['board', 'Advertising board'],
   ['rail', 'Single guard rail'],
   ['rail2', 'Double guard rail'],
+  ['wrail', 'Single W-beam guard rail'],
+  ['wrail2', 'Double W-beam guard rail'],
 ]);
 export const TRACKSIDE_SIDES = Object.freeze(['none', 'inner', 'outer', 'both']);
 export const TRACKSIDE_TAB_CHOICES = Object.freeze([
@@ -48,6 +50,11 @@ const SIDE_DEFAULTS = {
   tracksidePostInset: 12,
   tracksideRailGround: 1.5,
   tracksidePinch: 0.05,
+  // The W-beam: how deep the folded profile is, the wall of its sheet, and
+  // how far the hooks of the post reach over its lips.
+  tracksideBeamDepth: 2.7,
+  tracksideBeamWall: 0.8,
+  tracksideHook: 0.4,
 };
 export const TRACKSIDE_SIDE_KEYS = Object.freeze(Object.keys(SIDE_DEFAULTS));
 export const TRACKSIDE_DEFAULTS = Object.freeze({
@@ -75,6 +82,9 @@ export const TRACKSIDE_LIMITS = Object.freeze({
   tracksidePostInset: [8, 60],
   tracksideRailGround: [0, 30],
   tracksidePinch: [0, 0.3],
+  tracksideBeamDepth: [1.5, 8],
+  tracksideBeamWall: [0.4, 2],
+  tracksideHook: [0.2, 1],
 });
 // A board end with a rounded top corner, as on the measured board.
 export const BOARD_CORNER = 25;
@@ -188,6 +198,9 @@ function validateSide(p) {
     ['tracksidePostInset', 'distance of the post from the end'],
     ['tracksideRailGround', 'clearance of a double rail above the road'],
     ['tracksidePinch', 'pinch of the T on the rail'],
+    ['tracksideBeamDepth', 'W-beam depth'],
+    ['tracksideBeamWall', 'W-beam wall'],
+    ['tracksideHook', 'reach of the hooks'],
   ]) {
     const [low, high] = TRACKSIDE_LIMITS[key];
     if (!Number.isFinite(p[key]) || p[key] < low || p[key] > high)
@@ -198,6 +211,22 @@ function validateSide(p) {
   const [lowest, tallest] = TRACKSIDE_LIMITS.tracksideRailHeight;
   if (!Number.isFinite(p.tracksideRailHeight) || p.tracksideRailHeight < lowest || p.tracksideRailHeight > tallest)
     throw new Error(`The guard rail height must be between ${lowest} and ${tallest} mm.`);
+  if (isBeamRail(p.tracksideShape)) {
+    const single = p.tracksideShape === 'wrail';
+    if (single && p.tracksideRailHeight > p.tracksideRise)
+      throw new Error('A single guard rail cannot be taller than its height above the road. Raise the height above the road or lower the rail.');
+    if (!single && p.tracksideRise < 2 * lowest + p.tracksideRailGround)
+      throw new Error('A double guard rail needs at least ' + (2 * lowest + p.tracksideRailGround) + ' mm above the road for its two rails. Raise the height above the road or lower the clearance.');
+    const height = single ? p.tracksideRailHeight : p.tracksideRise - p.tracksideRailGround,
+      units = single ? 1 : 2;
+    if (p.tracksideBeamDepth < p.tracksideBeamWall * 2)
+      throw new Error('The W-beam must be at least twice as deep as its wall is thick.');
+    const profile = beamProfile({ height, depth: p.tracksideBeamDepth, wall: p.tracksideBeamWall, units });
+    if (p.tracksideHook > profile.lip)
+      throw new Error('The hooks reach further than the lip of the rail is wide. Use at most ' + Math.floor(profile.lip * 100) / 100 + ' mm, or a taller rail.');
+    if (p.tracksidePostDepth < BEAM.groove + 1.2)
+      throw new Error('A post for a W-beam needs to be at least ' + Number((BEAM.groove + 1.2).toFixed(1)) + ' mm deep for the tab of the cover.');
+  }
   if (p.tracksideShape === 'rail' && p.tracksideRailHeight > p.tracksideRise)
     throw new Error('A single guard rail cannot be taller than its height above the road. Raise the height above the road or lower the rail.');
   if (p.tracksideShape === 'rail2' && p.tracksideRise < 2 * lowest + p.tracksideRailGround + RAIL.gap)
@@ -422,7 +451,7 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
     }),
   );
   const at = edgePoints(path, edgeAt, sign, spans.flat());
-  if (isGuardRail(p.tracksideShape))
+  if (isGuardRail(p.tracksideShape) || isBeamRail(p.tracksideShape))
     return addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit);
   runs.forEach(([host, a, b], i) => {
     let stations = [
@@ -769,9 +798,139 @@ function sideDownPose(along) {
   };
 }
 
+// ---- W-beam guard rails ----
+// The rail is a thin sheet folded into a W, as a real guard rail is. It snaps
+// between two hooks on the post, and a cover over the joint holds two rail
+// ends in line with a tab that passes through their valley into the post.
+export const BEAM = Object.freeze({
+  // Across one W: lip, sloped side, crest, sloped side, then half the valley.
+  lip: 0.06,
+  side: 0.11,
+  crest: 0.14,
+  valley: 0.16,
+  // The hooks: how thick they are and their play around the lip of the rail.
+  hook: 0.8,
+  play: 0.1,
+  // The cover: its wall, its play over the rail, and how deep its tab goes.
+  wall: 0.8,
+  groove: 2.4,
+});
+export const isBeamRail = (shape) => shape === 'wrail' || shape === 'wrail2';
+// The W-beam as [bottom, top] above the table, and how many Ws it has. A
+// double rail is one sheet with four crests.
+export function beamSpan(p) {
+  const top = p.height + p.tracksideRise;
+  return p.tracksideShape === 'wrail'
+    ? { low: top - p.tracksideRailHeight, top, units: 1 }
+    : { low: p.height + p.tracksideRailGround, top, units: 2 };
+}
+
+/**
+ * The folded section as two outlines of [height, depth]: the face towards
+ * the track, and the back that lies against the post at depth 0. Each W has
+ * a lip, a crest, a valley, a crest and a lip.
+ */
+export function beamProfile({ height, depth, wall, units }) {
+  const one = height / units;
+  const run = BEAM.side * one,
+    rise = depth - wall,
+    slope = Math.hypot(run, rise);
+  // The back of a sloped side runs parallel to its face, one wall behind it.
+  const shift = (wall * rise) / slope,
+    drop = (wall * run) / slope;
+  const foot = (wall - drop) * (run / rise),
+    head = (depth - wall - (wall - drop)) * (run / rise);
+  const face = [],
+    back = [];
+  for (let n = 0; n < units; n++) {
+    const y0 = n * one;
+    let y = y0 + BEAM.lip * one;
+    for (const [flat, last] of [[BEAM.valley, false], [BEAM.lip, true]]) {
+      // Up a sloped side, along the crest, down the other side.
+      const up = y,
+        crest = up + run,
+        over = crest + BEAM.crest * one,
+        down = over + run;
+      face.push([up, wall], [crest, depth], [over, depth], [down, wall]);
+      back.push(
+        [up + shift - foot, 0],
+        [up + shift + head, depth - wall],
+        [down - shift - head, depth - wall],
+        [down - shift + foot, 0],
+      );
+      y = down + (last ? 0 : flat * one);
+    }
+  }
+  if (back.some(([y], i) => i > 0 && y <= back[i - 1][0] + 1e-6))
+    throw new Error('The guard rail wall is too thick for its height and depth. Use a thinner wall, a taller rail or a deeper profile.');
+  return {
+    face: [[0, wall], ...face, [height, wall]],
+    back: [[0, 0], ...back, [height, 0]],
+    // The middle of each valley, for the tab of the cover.
+    valleys: Array.from({ length: units }, (_, n) => n * one + one / 2),
+    tab: BEAM.valley * one - 0.4,
+    lip: BEAM.lip * one,
+  };
+}
+
+// A section in [height, depth], pulled out along x: length along x, height
+// along y and depth along z, as the flat rails are.
+function pulled(work, section, from, to) {
+  return work.own(
+    work.prism(section, from, to).warp((v) => {
+      const [y, z, x] = v;
+      v[0] = x;
+      v[1] = y;
+      v[2] = z;
+    }),
+  );
+}
+
+/** A W-beam rail as it prints: on its lips and valleys, crests up. Each end
+ * has a notch in every valley for the tab of the cover. */
+export function beamFlat(work, { length, height, depth, wall, units, notch }) {
+  const { face, back, valleys, tab } = beamProfile({ height, depth, wall, units });
+  const sheet = work.section([[...back, ...face.slice().reverse()]]);
+  let solid = pulled(work, sheet, 0.05, length - 0.05);
+  const slot = (x0, x1, y) =>
+    work.prism(
+      work.section([[[x0, y - tab / 2 - 0.15], [x1, y - tab / 2 - 0.15], [x1, y + tab / 2 + 0.15], [x0, y + tab / 2 + 0.15]]]),
+      -1,
+      depth + 1,
+    );
+  for (const y of valleys)
+    solid = work.own(solid.subtract(slot(-1, notch, y)).subtract(slot(length - notch, length + 1, y)));
+  return solid;
+}
+
+/** The cover of a joint as it prints: on its side, its W and its tabs one
+ * flat outline. Laid out it is `width` along x, with the back of the rail at
+ * depth 0 and its tabs reaching behind it. */
+export function beamCover(work, { height, depth, wall, units, width, fit }, laid = false) {
+  const { face, valleys, tab, lip } = beamProfile({ height, depth, wall, units });
+  // Everything in front of the rail between its two lips, a play away from
+  // it and one cover wall thick.
+  const front = work.section([[[0, -1], ...face, [height, -1]]]);
+  const band = work.own(
+    work
+      .own(front.offset(BEAM.play + BEAM.wall, 'Miter'))
+      .subtract(work.own(front.offset(BEAM.play, 'Miter'))),
+  );
+  const box = (y0, z0, y1, z1) => work.section([[[y0, z0], [y1, z0], [y1, z1], [y0, z1]]]);
+  let outline = work.own(band.intersect(box(lip + 0.2, wall + BEAM.play, height - lip - 0.2, depth + 5)));
+  for (const y of valleys)
+    outline = work.own(
+      outline.add(box(y - tab / 2 + fit / 2, -(BEAM.groove - 0.3), y + tab / 2 - fit / 2, wall + BEAM.play + 0.01)),
+    );
+  if (laid) return work.prism(outline, 0, width);
+  return pulled(work, outline, -width / 2, width / 2);
+}
+
 function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit) {
   const label = side === 'outer' ? 'Outer' : 'Inner';
-  const rows = railRows(p),
+  // A W-beam is one folded sheet, single or double; a flat rail has a row for each rail.
+  const beam = isBeamRail(p.tracksideShape) ? beamSpan(p) : null;
+  const rows = beam ? [[beam.low, beam.top]] : railRows(p),
     top = p.height + p.tracksideRise;
   // On its side the post lies on the bed with its tab: never narrower than the tab.
   const width = Math.max(p.tracksidePostWidth, fit.tabWidth),
@@ -780,8 +939,15 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
     inset = p.tracksidePostInset;
   // The post stands off the track edge, so the rail and the head of the T in
   // front of it stay clear of the road.
-  const standoff = thickness + RAIL.head + 0.4,
+  const standoff =
+      (beam ? p.tracksideBeamDepth + BEAM.play + BEAM.wall : thickness + RAIL.head) + 0.4,
     back = standoff + p.tracksidePostDepth;
+  const sheet = beam && {
+    height: beam.top - beam.low,
+    depth: p.tracksideBeamDepth,
+    wall: p.tracksideBeamWall,
+    units: beam.units,
+  };
   const warn = (name, reason, advice) =>
     connectorWarning(name, reason, advice, {
       tab: 'trackside',
@@ -812,8 +978,17 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
   // Before the start of the piece the line carries straight on: the first
   // rail comes from the post of the piece before this one.
   const lead = unit(minus(at(base[1]), at(base[0])));
-  const pos = (s, d = 0) =>
-    s >= 0 ? at(tOf(Math.min(total, s)), d) : move(at(base[0], d), lead, s);
+  const edge = (s) =>
+    s >= 0 ? at(tOf(Math.min(total, s))) : move(at(base[0]), lead, s);
+  // Away from the track, square to the edge. The posts and the rails both
+  // measure from the edge this way, so a rail sits true in its post on a
+  // bend and beside a tapered border.
+  const outwardAt = (s) => {
+    const normal = left(unit(minus(edge(s + 0.5), edge(s - 0.5))));
+    const t = tOf(Math.max(0, Math.min(total, s)));
+    return dot(normal, minus(at(t, 1), at(t))) < 0 ? normal.map((v) => -v) : normal;
+  };
+  const pos = (s, d = 0) => (d ? move(edge(s), outwardAt(s), d) : edge(s));
   const name = (what, n) => label + ' ' + what + ' ' + n;
   const posts = [];
   if (p.tracksideStartPost) posts.push({ s: inset, host: runs[0][0] });
@@ -866,13 +1041,31 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
         // The foot, as high as the track, and the post behind the rail. The
         // post ends flush with the top of the rail.
         work.prism(foot, 0, p.height),
-        box(standoff, back, -half, half, 0, top - p.tracksidePostDrop),
+        // A W-beam post carries a hook over the rail instead.
+        box(standoff, back, -half, half, 0, beam ? top + BEAM.play + BEAM.hook : top - p.tracksidePostDrop),
       ],
       cuts: [],
       feedCuts: [],
     };
+    if (beam) {
+      // A hook over the top lip and one under the bottom lip, and a groove
+      // behind every valley for the tab of the cover.
+      const channel = p.tracksideBeamWall + BEAM.play,
+        reach = p.tracksideHook;
+      part.additions.push(
+        box(standoff - channel - BEAM.hook, standoff, -half, half, beam.top + BEAM.play, beam.top + BEAM.play + BEAM.hook),
+        box(standoff - channel - BEAM.hook, standoff - channel, -half, half, beam.top - reach, beam.top + BEAM.play),
+        box(standoff - channel - BEAM.hook, standoff, -half, half, beam.low - BEAM.play - BEAM.hook, beam.low - BEAM.play),
+        box(standoff - channel - BEAM.hook, standoff - channel, -half, half, beam.low - BEAM.play, beam.low + reach),
+      );
+      const { valleys, tab } = beamProfile(sheet);
+      for (const y of valleys)
+        part.cuts.push(
+          box(standoff - 0.01, standoff + BEAM.groove, -half - 1, half + 1, beam.low + y - tab / 2, beam.low + y + tab / 2),
+        );
+    }
     const grip = standoff - (thickness - p.tracksidePinch);
-    for (const [low, high] of rows) {
+    for (const [low, high] of beam ? [] : rows) {
       const tall = high - low,
         centre = (low + high) / 2;
       part.additions.push(
@@ -888,7 +1081,7 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
       jointGuides: part.jointGuides,
       tabCount: 1,
       ...(work.planning && { outline: part.section.toPolygons() }),
-      solid: work.union(part.additions),
+      solid: work.cut(work.union(part.additions), part.cuts),
       printPose: sideDownPose(along),
     });
   });
@@ -909,8 +1102,11 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
     // The ridges face the track. A turn that would mirror the rail runs the other way.
     const reversed = forward[1] * outward[0] - forward[0] * outward[1] > 0;
     rows.forEach(([low, high], k) => {
-      const spec = { length, height: high - low, thickness };
-      const flat = railFlat(work, spec);
+      const spec = beam
+        ? { ...sheet, length, notch: half + RAIL.play }
+        : { length, height: high - low, thickness };
+      const laid = beam ? beamFlat : railFlat;
+      const flat = laid(work, spec);
       const source = straight ? flat : work.own(flat.refineToLength(8));
       const solid = work.own(
         source.warp((v) => {
@@ -928,7 +1124,7 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
         role: 'barrier',
         ...(work.planning && {
           outline: work
-            .section([[...marks.map((s) => pos(s, standoff - thickness)), ...line.slice().reverse()]])
+            .section([[...marks.map((s) => pos(s, standoff - (beam ? p.tracksideBeamDepth : thickness))), ...line.slice().reverse()]])
             .toPolygons(),
         }),
         solid,
@@ -937,12 +1133,45 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
           if (!sideDown) return callback(this.solid);
           const stock = new SolidWorkshop(wasm);
           try {
-            return callback(railFlat(stock, spec));
+            return callback(laid(stock, spec));
           } finally {
             stock.close();
           }
         },
       });
+    });
+  });
+  if (!beam) return;
+  // A cover over every joint: its tabs pass through the valleys of both rail
+  // ends into the grooves of the post.
+  posts.forEach(({ s }, i) => {
+    const spec = { ...sheet, width, fit: Math.max(0, 0.05 - p.tracksidePinch) };
+    const forward = unit(minus(pos(s + 0.5), pos(s - 0.5))),
+      outward = unit(minus(pos(s, 1), pos(s)));
+    const reversed = forward[1] * outward[0] - forward[0] * outward[1] > 0;
+    const solid = work.own(
+      beamCover(work, spec).warp((v) => {
+        const [px, py] = pos(s + (reversed ? -v[0] : v[0]), standoff - v[2]);
+        v[2] = beam.low + v[1];
+        v[0] = px;
+        v[1] = py;
+      }),
+    );
+    loose.push({
+      id: 'cover-' + side + '-' + (i + 1),
+      name: name('rail cover', i + 1),
+      role: 'barrier',
+      solid,
+      // A cover prints on its side: its W and its tabs are one flat outline.
+      printPose(callback, sideDown) {
+        if (!sideDown) return callback(this.solid);
+        const stock = new SolidWorkshop(wasm);
+        try {
+          return callback(beamCover(stock, spec, true));
+        } finally {
+          stock.close();
+        }
+      },
     });
   });
 }
