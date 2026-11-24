@@ -417,6 +417,8 @@ export const BARRIER_TYPES = [
   ['none', 'None'],
   ['barrier', 'Concrete barrier'],
   ['board', 'Advertising board'],
+  ['rail', 'Single guard rail'],
+  ['rail2', 'Double guard rail'],
 ];
 export const BARRIER_ENDS = [
   ['none', 'Plain ends'],
@@ -438,6 +440,7 @@ const BARRIER_FIELDS = {
   angle: 'tracksideFaceAngle',
   fence: 'tracksideFence',
   fenceHeight: 'tracksideFenceHeight',
+  startPost: 'tracksideStartPost',
 };
 const readBarrier = (params, set) =>
   Object.fromEntries(

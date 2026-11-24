@@ -581,3 +581,212 @@ test('the planner reads and writes barriers per side of a piece recipe', async (
     'board',
   );
 });
+
+// ---- Guard rails ----
+const railPiece = (changes = {}) =>
+  piece({ tracksideSide: 'outer', tracksideShape: 'rail', ...changes });
+const railParts = (parts) => ({
+  posts: parts.filter((part) => part.id.startsWith('post-')),
+  rails: parts.filter((part) => part.id.startsWith('rail-')),
+});
+const laidSize = (part, p) =>
+  printableSTL(part, (solid) => size(solid), undefined, { mode: 'track', track: { params: p } });
+
+test('a single guard rail hangs on one post near the finish end, flush with its top', () => {
+  const p = railPiece();
+  build(p, (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.deepEqual(posts.map((part) => part.name), ['Outer rail post 1']);
+    assert.deepEqual(rails.map((part) => part.name), ['Outer guard rail 1']);
+    const [post] = posts,
+      [rail] = rails;
+    for (const part of [post, rail]) assert.equal(part.solid.status(), 'NoError');
+    // The rail: 10 mm tall with its top 20 mm above the 12 mm road, open below.
+    const box = rail.solid.boundingBox();
+    near(box.max[2], 32);
+    near(box.min[2], 22);
+    // The post ends flush with the top of the rail: it does not stick out above it.
+    near(post.solid.boundingBox().max[2], 32);
+    near(post.solid.boundingBox().min[2], 0);
+    // The post stands 12 mm in from the finish end, and the rail comes from
+    // where the post of the piece before this one stands: 12 mm before the start.
+    near((post.solid.boundingBox().min[0] + post.solid.boundingBox().max[0]) / 2, 100 - 12);
+    near(box.min[0], -100 - 12 + 0.1);
+    near(box.max[0], 100 - 12 - 0.1);
+    // In front of the post, clear of the road edge: nothing above the road.
+    assert.ok(box.min[1] > 50);
+    for (const other of parts.filter((part) => !part.id.startsWith('post-') && !part.id.startsWith('rail-')))
+      for (const part of [post, rail]) near(overlap(part.solid, other.solid), 0, 1e-6);
+    // The T pinches the rail: they overlap by the pinch only.
+    const squeeze = overlap(post.solid, rail.solid);
+    assert.ok(squeeze > 0 && squeeze < 1, 'pinched, not buried: ' + squeeze);
+    assert.equal(post.jointGuides.filter((g) => g.kind === 'Tab').length, 1);
+  });
+});
+
+test('a start post gives the first piece of a row a rail between its own two posts', () => {
+  build(railPiece({ tracksideStartPost: true }), (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.equal(posts.length, 2);
+    assert.equal(rails.length, 1);
+    const box = rails[0].solid.boundingBox();
+    near(box.min[0], -100 + 12 + 0.1);
+    near(box.max[0], 100 - 12 - 0.1);
+  });
+  // More posts on a long piece: a rail from each post back to the one before it.
+  build(railPiece({ length: 400, tracksideSegments: 2 }), (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.equal(posts.length, 2);
+    assert.equal(rails.length, 2);
+    for (const rail of rails) near(size(rail.solid)[0], 200 - 0.2);
+  });
+  assert.throws(
+    () => build(railPiece({ length: 60, tracksideSegments: 4 }), () => {}),
+    /Outer rail post 1\. This edge is too short for a guard rail between its posts/,
+  );
+});
+
+test('a double guard rail fills from the top to just above the road', () => {
+  const p = railPiece({ tracksideShape: 'rail2', tracksideRise: 24 });
+  build(p, (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.deepEqual(rails.map((part) => part.name), ['Outer guard rail 1 lower', 'Outer guard rail 1 upper']);
+    const [lower, upper] = rails.map((part) => part.solid.boundingBox());
+    // 1.5 mm above the road, two equal rails with 0.4 mm between them, up to the top.
+    near(lower.min[2], 12 + 1.5);
+    near(upper.max[2], 12 + 24);
+    near(upper.min[2] - lower.max[2], 0.4);
+    near(lower.max[2] - lower.min[2], upper.max[2] - upper.min[2]);
+    near(lower.max[2] - lower.min[2], (24 - 1.5 - 0.4) / 2);
+    // One post, flush with the top, with a T for each rail.
+    assert.equal(posts.length, 1);
+    near(posts[0].solid.boundingBox().max[2], 36);
+    for (const rail of rails) {
+      const squeeze = overlap(posts[0].solid, rail.solid);
+      assert.ok(squeeze > 0 && squeeze < 1);
+    }
+  });
+  assert.throws(
+    () => validateTrack(trackParameters(railPiece({ tracksideShape: 'rail2', tracksideRise: 9 }))),
+    /A double guard rail needs at least 9\.9 mm above the road/,
+  );
+  assert.throws(
+    () => validateTrack(trackParameters(railPiece({ tracksideRailHeight: 25 }))),
+    /A single guard rail cannot be taller than its height above the road/,
+  );
+});
+
+test('a post prints on its side and a rail prints flat with a notch at each end', () => {
+  const p = railPiece();
+  build(p, (parts) => {
+    const { posts, rails } = railParts(parts);
+    // On its side the post is as high as it is wide: the tab, the post and the T lie flat.
+    const post = laidSize(posts[0], p);
+    near(post[2], 6);
+    near(Math.max(post[0], post[1]), 32);
+    // Foot depth: the rail, the head of the T and 0.4 mm in front of a 4 mm post, plus the tab.
+    near(Math.min(post[0], post[1]), 1.6 + 1.2 + 0.4 + 4 + 6);
+    const rail = laidSize(rails[0], p);
+    near(rail[2], 1.6);
+    near(Math.max(rail[0], rail[1]), 200 - 0.2);
+    near(Math.min(rail[0], rail[1]), 10);
+    // The flat back covers the bed except for the two corner notches.
+    const bed = printableSTL(rails[0], (solid) => {
+      const cut = solid.slice(0.1);
+      try {
+        return cut.area();
+      } finally {
+        cut.delete();
+      }
+    }, undefined, { mode: 'track', track: { params: p } });
+    const notch = (2 / 2 + 0.15 - 0.1) * (10 * 0.7 + 0.15);
+    near(bed, 199.8 * 10 - 2 * notch, 0.01);
+  });
+});
+
+test('every guard rail size is a setting', () => {
+  const p = railPiece({
+    tracksideRailHeight: 14,
+    tracksideRailThickness: 2.4,
+    tracksidePostWidth: 9,
+    tracksidePostDepth: 6,
+    tracksidePostDrop: 3,
+    tracksidePostInset: 20,
+    tracksidePinch: 0.1,
+  });
+  build(p, (parts) => {
+    const { posts, rails } = railParts(parts);
+    const rail = rails[0].solid.boundingBox(),
+      post = posts[0].solid.boundingBox();
+    near(rail.max[2] - rail.min[2], 14);
+    // The post top is 3 mm lower; the head of the T on the 14 mm rail is the highest point left.
+    near(post.max[2], 32 - 7 + 14 * 0.35);
+    near((post.min[0] + post.max[0]) / 2, 100 - 20);
+    near(post.max[0] - post.min[0], 9);
+    near(rail.min[0], -100 - 20 + 0.1);
+    near(laidSize(rails[0], p)[2], 2.4);
+    near(laidSize(posts[0], p)[2], 9);
+    near(Math.min(...laidSize(posts[0], p).slice(0, 2)), 2.4 + 1.2 + 0.4 + 6 + 6);
+  });
+  // A post is never narrower than its tab, so it can lie on its side with it.
+  build(railPiece({ tracksidePostWidth: 3 }), (parts) =>
+    near(laidSize(railParts(parts).posts[0], railPiece({ tracksidePostWidth: 3 }))[2], 6));
+  build(railPiece({ tracksideShape: 'rail2', tracksideRailGround: 4 }), (parts) =>
+    near(railParts(parts).rails[0].solid.boundingBox().min[2], 12 + 4));
+  for (const [key, text] of [
+    ['tracksideRailThickness', /guard rail thickness must be between 1 and 4 mm/],
+    ['tracksidePostWidth', /rail post width must be between 3 and 20 mm/],
+    ['tracksidePostDepth', /rail post depth must be between 2 and 15 mm/],
+    ['tracksidePostInset', /distance of the post from the end must be between 8 and 60 mm/],
+    ['tracksidePinch', /pinch of the T on the rail must be between 0 and 0.3 mm/],
+  ])
+    assert.throws(() => validateTrack(trackParameters(railPiece({ [key]: 99 }))), text);
+});
+
+test('on a bend and beside a border the posts sit flush and the rails still print straight', () => {
+  const bend = { ...defaultTrack(), angle: 45, tracksideSide: 'both', tracksideShape: 'rail2' };
+  build(bend, (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.equal(posts.length, 2);
+    assert.equal(rails.length, 4);
+    for (const part of [...posts, ...rails]) {
+      assert.equal(part.solid.status(), 'NoError');
+      assert.ok(part.solid.volume() > 0);
+    }
+    const road = parts.find((part) => part.role === 'road');
+    for (const part of [...posts, ...rails]) near(overlap(part.solid, road.solid), 0, 0.01);
+    for (const rail of rails) near(laidSize(rail, bend)[2], 1.6);
+  });
+  const bordered = piece({
+    borderSide: 'both', borderMount: 'tabs', tracksideSide: 'both', tracksideShape: 'rail',
+  });
+  build(bordered, (parts) => {
+    const { posts, rails } = railParts(parts);
+    assert.equal(posts.length, 2);
+    for (const part of [...posts, ...rails])
+      for (const other of parts.filter((q) => ['road', 'border'].includes(q.role)))
+        near(overlap(part.solid, other.solid), 0, 0.01);
+  });
+});
+
+test('a guard rail on one side and another barrier on the other', () => {
+  const p = piece({
+    tracksideSide: 'both', tracksideInnerOwn: true,
+    tracksideShape: 'rail2', tracksideShapeInner: 'barrier',
+  });
+  build(p, (parts) => {
+    assert.deepEqual(
+      barriers(parts).map((part) => part.id),
+      ['post-outer-1', 'rail-outer-1-a', 'rail-outer-1-b', 'barrier-inner-1'],
+    );
+    assert.equal(groupTrackParts(parts).find((g) => g.role === 'barrier').parts.length, 4);
+  });
+  const project = newProject();
+  project.mode = 'track';
+  project.track.params = trackParameters(railPiece({ tracksideShape: 'rail2' }));
+  const html = trackInspector(project, 'trackside');
+  assert.match(html, /Double guard rail/);
+  assert.match(html, /name="tracksideStartPost"/);
+  assert.match(html, /data-trackside-shape="rail rail2" data-trackside-set="">/);
+  assert.match(html, /data-trackside-shape="barrier board" data-trackside-set="" hidden/);
+});

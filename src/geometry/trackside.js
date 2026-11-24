@@ -8,6 +8,8 @@ import { connectorWarning } from './connector-warning.js';
 export const TRACKSIDE_SHAPES = Object.freeze([
   ['barrier', 'Concrete barrier'],
   ['board', 'Advertising board'],
+  ['rail', 'Single guard rail'],
+  ['rail2', 'Double guard rail'],
 ]);
 export const TRACKSIDE_SIDES = Object.freeze(['none', 'inner', 'outer', 'both']);
 export const TRACKSIDE_TAB_CHOICES = Object.freeze([
@@ -33,6 +35,19 @@ const SIDE_DEFAULTS = {
   tracksidePost: 3,
   tracksideCable: 10,
   tracksideMesh: 5,
+  // Guard rails: the height of a single rail, and a post at the start of a row.
+  tracksideRailHeight: 10,
+  tracksideStartPost: false,
+  // The rail's thickness, the post (along the edge, deep, and how far its
+  // top stays under the top of the rail), where it stands from the end of a
+  // piece, the clearance of a double rail above the road, and the pinch.
+  tracksideRailThickness: 1.6,
+  tracksidePostWidth: 6,
+  tracksidePostDepth: 4,
+  tracksidePostDrop: 0,
+  tracksidePostInset: 12,
+  tracksideRailGround: 1.5,
+  tracksidePinch: 0.05,
 };
 export const TRACKSIDE_SIDE_KEYS = Object.freeze(Object.keys(SIDE_DEFAULTS));
 export const TRACKSIDE_DEFAULTS = Object.freeze({
@@ -52,6 +67,14 @@ export const TRACKSIDE_LIMITS = Object.freeze({
   tracksidePost: [2, 6],
   tracksideCable: [3, 100],
   tracksideMesh: [2, 30],
+  tracksideRailHeight: [4, 40],
+  tracksideRailThickness: [1, 4],
+  tracksidePostWidth: [3, 20],
+  tracksidePostDepth: [2, 15],
+  tracksidePostDrop: [0, 10],
+  tracksidePostInset: [8, 60],
+  tracksideRailGround: [0, 30],
+  tracksidePinch: [0, 0.3],
 });
 // A board end with a rounded top corner, as on the measured board.
 export const BOARD_CORNER = 25;
@@ -158,12 +181,27 @@ function validateSide(p) {
     ['tracksidePost', 'fence post size'],
     ['tracksideCable', 'fence cable spacing'],
     ['tracksideMesh', 'fence mesh size'],
+    ['tracksideRailThickness', 'guard rail thickness'],
+    ['tracksidePostWidth', 'rail post width'],
+    ['tracksidePostDepth', 'rail post depth'],
+    ['tracksidePostDrop', 'distance of the post below the rail top'],
+    ['tracksidePostInset', 'distance of the post from the end'],
+    ['tracksideRailGround', 'clearance of a double rail above the road'],
+    ['tracksidePinch', 'pinch of the T on the rail'],
   ]) {
     const [low, high] = TRACKSIDE_LIMITS[key];
     if (!Number.isFinite(p[key]) || p[key] < low || p[key] > high)
       throw new Error(`The ${name} must be between ${low} and ${high} mm.`);
   }
   if (typeof p.tracksideFence !== 'boolean') throw new Error('Unknown fence setting.');
+  if (typeof p.tracksideStartPost !== 'boolean') throw new Error('Unknown start post setting.');
+  const [lowest, tallest] = TRACKSIDE_LIMITS.tracksideRailHeight;
+  if (!Number.isFinite(p.tracksideRailHeight) || p.tracksideRailHeight < lowest || p.tracksideRailHeight > tallest)
+    throw new Error(`The guard rail height must be between ${lowest} and ${tallest} mm.`);
+  if (p.tracksideShape === 'rail' && p.tracksideRailHeight > p.tracksideRise)
+    throw new Error('A single guard rail cannot be taller than its height above the road. Raise the height above the road or lower the rail.');
+  if (p.tracksideShape === 'rail2' && p.tracksideRise < 2 * lowest + p.tracksideRailGround + RAIL.gap)
+    throw new Error('A double guard rail needs at least ' + (2 * lowest + p.tracksideRailGround + RAIL.gap) + ' mm above the road for its two rails. Raise the height above the road or lower the clearance.');
   const [fewest, most] = TRACKSIDE_LIMITS.tracksideSegments;
   if (!Number.isInteger(p.tracksideSegments) || p.tracksideSegments < fewest || p.tracksideSegments > most)
     throw new Error(`Barrier segments must be a whole number between ${fewest} and ${most}.`);
@@ -263,6 +301,22 @@ function sweep(work, rings, caps = capTriangles) {
     triVerts: Uint32Array.from(triangles.flat()),
   });
   return work.own(new work.wasm.Manifold(mesh));
+}
+
+// A point on (or beside) the free edge of the host. The host is printed as a
+// polygon through its stations, so between two stations the edge is the
+// straight line between them, not the smooth curve the widths come from.
+function edgePoints(path, edgeAt, sign, ends) {
+  const exact = (t, d) => path.point(t, edgeAt(t) + sign * d);
+  const base = [...new Set([...path.stations, ...ends])].sort((x, y) => x - y);
+  return (t, d = 0) => {
+    const j = base.findIndex((v) => v >= t - 1e-12);
+    if (j < 0) return exact(base.at(-1), d);
+    if (j === 0 || Math.abs(base[j] - t) < 1e-12) return exact(base[j], d);
+    const [p, q] = [exact(base[j - 1], d), exact(base[j], d)],
+      part = (t - base[j - 1]) / (base[j] - base[j - 1]);
+    return [p[0] + (q[0] - p[0]) * part, p[1] + (q[1] - p[1]) * part];
+  };
 }
 
 function edgeLength(points) {
@@ -367,11 +421,13 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       ];
     }),
   );
+  const at = edgePoints(path, edgeAt, sign, spans.flat());
+  if (isGuardRail(p.tracksideShape))
+    return addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit);
   runs.forEach(([host, a, b], i) => {
     let stations = [
       ...new Set([a, ...path.stations.filter((t) => t > a && t < b), b]),
     ];
-    const at = (t, d = 0) => path.point(t, edgeAt(t) + sign * d);
     const length = edgeLength(stations.map((t) => at(t)));
     // A sloped end: the top runs down to the foot over the last stretch of
     // the first or last barrier on this side.
@@ -643,5 +699,250 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
         },
       });
     }
+  });
+}
+
+// ---- Guard rails ----
+// A post on a tab carries a T-shaped peg for each rail. Two rail ends butt
+// at the stem of the T and are pinched between its head and the post.
+export const RAIL = Object.freeze({
+  // The T: its head and its stem.
+  head: 1.2,
+  stem: 2,
+  // The play between the two rails of a double rail, and around a stem.
+  gap: 0.4,
+  play: 0.15,
+});
+export const isGuardRail = (shape) => shape === 'rail' || shape === 'rail2';
+// The rails of one post as [bottom, top] above the table. A single rail hangs
+// under the top; a double rail fills from the top to just above the road.
+export function railRows(p) {
+  const top = p.height + p.tracksideRise;
+  if (p.tracksideShape === 'rail') return [[top - p.tracksideRailHeight, top]];
+  const each = (p.tracksideRise - p.tracksideRailGround - RAIL.gap) / 2,
+    low = p.height + p.tracksideRailGround;
+  return [
+    [low, low + each],
+    [top - each, top],
+  ];
+}
+
+/**
+ * A rail as it prints: flat on its back, its length along x and its height
+ * along y, ridges up: a flat back of half the thickness with two raised
+ * ridges on it. Each end has a corner notch that drops over the stem of the
+ * T on its post.
+ */
+export function railFlat(work, { length, height, thickness }) {
+  const end = 0.1,
+    notch = RAIL.stem / 2 + RAIL.play,
+    reach = height * 0.7 + RAIL.play;
+  const box = (x0, y0, x1, y1) => work.section([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]);
+  const notches = work.own(
+    box(-1, -1, notch, reach).add(box(length - notch, -1, length + 1, reach)),
+  );
+  const plate = work.own(box(end, 0, length - end, height).subtract(notches));
+  const ridges = work.own(
+    box(end, height * 0.14, length - end, height * 0.4)
+      .add(box(end, height * 0.6, length - end, height * 0.86))
+      .subtract(notches),
+  );
+  return work.own(
+    work.prism(plate, 0, thickness / 2).add(work.prism(ridges, thickness / 2, thickness)),
+  );
+}
+
+// Lay a post on its side: the T, the post, its foot and its tab then all lie
+// flat on the bed, and the layers run through the stem into the head.
+function sideDownPose(along) {
+  const turn = (-Math.atan2(along[1], along[0]) * 180) / Math.PI;
+  return function printPose(callback, sideDown) {
+    if (!sideDown) return callback(this.solid);
+    const turned = this.solid.rotate([0, 0, turn]);
+    const laid = turned.rotate([0, -90, 0]);
+    try {
+      return callback(laid);
+    } finally {
+      laid.delete();
+      turned.delete();
+    }
+  };
+}
+
+function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit) {
+  const label = side === 'outer' ? 'Outer' : 'Inner';
+  const rows = railRows(p),
+    top = p.height + p.tracksideRise;
+  // On its side the post lies on the bed with its tab: never narrower than the tab.
+  const width = Math.max(p.tracksidePostWidth, fit.tabWidth),
+    half = width / 2;
+  const thickness = p.tracksideRailThickness,
+    inset = p.tracksidePostInset;
+  // The post stands off the track edge, so the rail and the head of the T in
+  // front of it stay clear of the road.
+  const standoff = thickness + RAIL.head + 0.4,
+    back = standoff + p.tracksidePostDepth;
+  const warn = (name, reason, advice) =>
+    connectorWarning(name, reason, advice, {
+      tab: 'trackside',
+      field: 'tracksideSegments',
+      label: 'Edit trackside',
+    });
+  // One line along this side of the piece, measured from its start.
+  const first = runs[0][1],
+    last = runs.at(-1)[2];
+  const base = [
+    ...new Set([
+      first,
+      ...path.stations.filter((t) => t > first && t < last),
+      ...runs.flatMap(([, a, b]) => [a, b]),
+    ]),
+  ].sort((x, y) => x - y);
+  const run = [0];
+  for (let k = 1; k < base.length; k++)
+    run.push(run[k - 1] + Math.hypot(...minus(at(base[k]), at(base[k - 1]))));
+  const total = run.at(-1);
+  const tOf = (s) => {
+    const found = run.findIndex((d) => d >= s - 1e-9);
+    const j = found < 0 ? run.length - 1 : Math.max(1, found);
+    const span = run[j] - run[j - 1] || 1;
+    return base[j - 1] + ((base[j] - base[j - 1]) * (s - run[j - 1])) / span;
+  };
+  const sOf = (t) => run[base.indexOf(t)];
+  // Before the start of the piece the line carries straight on: the first
+  // rail comes from the post of the piece before this one.
+  const lead = unit(minus(at(base[1]), at(base[0])));
+  const pos = (s, d = 0) =>
+    s >= 0 ? at(tOf(Math.min(total, s)), d) : move(at(base[0], d), lead, s);
+  const name = (what, n) => label + ' ' + what + ' ' + n;
+  const posts = [];
+  if (p.tracksideStartPost) posts.push({ s: inset, host: runs[0][0] });
+  for (const [host, a, b] of runs) {
+    const from = posts.length ? posts.at(-1).s : sOf(a) - inset,
+      s = sOf(b) - inset;
+    if (s - from < 2 * width + 4 || sOf(b) - sOf(a) < inset + width)
+      throw warn(
+        name('rail post', posts.length + 1),
+        'This edge is too short for a guard rail between its posts.',
+        'Use fewer posts per segment, a smaller distance from the end, or leave the start post off.',
+      );
+    posts.push({ s, host });
+  }
+  posts.forEach(({ s, host }, i) => {
+    const title = name('rail post', i + 1);
+    const origin = pos(s),
+      along = unit(minus(pos(s + 0.5), pos(s - 0.5)));
+    const t = tOf(s);
+    let inward = left(along);
+    if (dot(inward, minus(at(t, -1), at(t))) < 0) inward = inward.map((v) => -v);
+    const outward = inward.map((v) => -v);
+    const corner = (d, y) => move(move(origin, outward, d), along, y);
+    const box = (d0, d1, y0, y1, z0, z1) =>
+      work.prism(
+        work.section([[corner(d0, y0), corner(d1, y0), corner(d1, y1), corner(d0, y1)]]),
+        z0,
+        z1,
+      );
+    // Room in the host for the socket of the tab, as for a barrier.
+    if (widthAt(t) < fit.tabSocketSupportDepth + 1)
+      throw warn(title, 'The border is too narrow here for the socket of its tab.', 'Use a wider border, or change the posts per segment.');
+    const reachIn = fit.tabSocketSupportDepth,
+      pad = work.prism(
+        work.section([
+          [corner(0.5, -fit.tabSupportHalfWidth), corner(-reachIn, -fit.tabSupportHalfWidth), corner(-reachIn, fit.tabSupportHalfWidth), corner(0.5, fit.tabSupportHalfWidth)],
+        ]),
+        Math.max(0, fit.tabBottom - fit.tabClearance - Math.max(0.4, p.wall)),
+        Math.min(p.height, fit.tabTop + fit.tabClearance + 0.4),
+      );
+    for (const cut of [...host.cuts, ...(host.feedCuts ?? [])])
+      if (work.and(cut, pad).volume() > 0.001)
+        throw warn(title, 'A connector, slot or pocket is in the way of the socket of its tab.', 'Change the posts per segment, or move the connectors on this edge.');
+    // The front of the foot follows the edge of the host, bend or taper included.
+    const front = [s - half, ...run.filter((d) => d > s - half && d < s + half), s + half].map((d) => pos(d));
+    const foot = work.section([[...front, corner(back, half), corner(back, -half)]]);
+    const part = {
+      section: foot,
+      additions: [
+        // The foot, as high as the track, and the post behind the rail. The
+        // post ends flush with the top of the rail.
+        work.prism(foot, 0, p.height),
+        box(standoff, back, -half, half, 0, top - p.tracksidePostDrop),
+      ],
+      cuts: [],
+      feedCuts: [],
+    };
+    const grip = standoff - (thickness - p.tracksidePinch);
+    for (const [low, high] of rows) {
+      const tall = high - low,
+        centre = (low + high) / 2;
+      part.additions.push(
+        box(grip - 0.01, standoff, -RAIL.stem / 2, RAIL.stem / 2, centre - tall * 0.2, centre + tall * 0.2),
+        box(grip - RAIL.head, grip, -half, half, centre - tall * 0.35, centre + tall * 0.35),
+      );
+    }
+    tabPair(work, p, origin, inward, part, host);
+    loose.push({
+      id: 'post-' + side + '-' + (i + 1),
+      name: title,
+      role: 'barrier',
+      jointGuides: part.jointGuides,
+      tabCount: 1,
+      ...(work.planning && { outline: part.section.toPolygons() }),
+      solid: work.union(part.additions),
+      printPose: sideDownPose(along),
+    });
+  });
+  // A rail from each post back to the one before it.
+  const wasm = work.wasm;
+  posts.forEach(({ s: s1 }, i) => {
+    const s0 = i ? posts[i - 1].s : p.tracksideStartPost ? null : -inset;
+    if (s0 === null) return;
+    const marks = [s0, ...run.filter((d) => d > s0 && d < s1), s1];
+    const line = marks.map((s) => pos(s, standoff));
+    const length = edgeLength(line);
+    const straight = line.every(
+      (q) => Math.abs(dot(minus(q, line[0]), left(unit(minus(line.at(-1), line[0]))))) < 1e-6,
+    );
+    const middle = (s0 + s1) / 2;
+    const forward = unit(minus(pos(middle + 0.5), pos(middle - 0.5))),
+      outward = unit(minus(pos(middle, 1), pos(middle)));
+    // The ridges face the track. A turn that would mirror the rail runs the other way.
+    const reversed = forward[1] * outward[0] - forward[0] * outward[1] > 0;
+    rows.forEach(([low, high], k) => {
+      const spec = { length, height: high - low, thickness };
+      const flat = railFlat(work, spec);
+      const source = straight ? flat : work.own(flat.refineToLength(8));
+      const solid = work.own(
+        source.warp((v) => {
+          const x = Math.max(0, Math.min(length, reversed ? length - v[0] : v[0]));
+          const [px, py] = pos(s0 + ((s1 - s0) * x) / length, standoff - v[2]);
+          v[2] = low + v[1];
+          v[0] = px;
+          v[1] = py;
+        }),
+      );
+      const number = i + (p.tracksideStartPost ? 0 : 1);
+      loose.push({
+        id: 'rail-' + side + '-' + number + (rows.length > 1 ? '-' + 'ab'[k] : ''),
+        name: name('guard rail', number) + (rows.length > 1 ? (k ? ' upper' : ' lower') : ''),
+        role: 'barrier',
+        ...(work.planning && {
+          outline: work
+            .section([[...marks.map((s) => pos(s, standoff - thickness)), ...line.slice().reverse()]])
+            .toPolygons(),
+        }),
+        solid,
+        // A rail prints flat and straight, whatever the bend it follows.
+        printPose(callback, sideDown) {
+          if (!sideDown) return callback(this.solid);
+          const stock = new SolidWorkshop(wasm);
+          try {
+            return callback(railFlat(stock, spec));
+          } finally {
+            stock.close();
+          }
+        },
+      });
+    });
   });
 }

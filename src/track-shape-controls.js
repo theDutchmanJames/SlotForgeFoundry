@@ -165,7 +165,7 @@ export function syncTrackShapeControls(form) {
       if (set && !own) continue;
       const shape = e['tracksideShape' + set].value;
       for (const part of form.querySelectorAll('[data-trackside-shape][data-trackside-set="' + set + '"]'))
-        part.hidden = part.disabled = part.dataset.tracksideShape !== shape;
+        part.hidden = part.disabled = !part.dataset.tracksideShape.split(' ').includes(shape);
       const fence = form.querySelector('[data-trackside-fence="' + set + '"]');
       fence.hidden = fence.disabled = shape !== 'board' || !e['tracksideFence' + set].checked;
     }

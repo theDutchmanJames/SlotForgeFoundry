@@ -369,7 +369,9 @@ export function createPlanner({ host, call, download, current, promote }) {
     '<label>Face angle · °<input data-pl-field="' + side + 'Angle" type="number" min="0" max="45" step="any" value="' + now.angle + '"></label>' +
     '<label>Fence on a board<select data-pl-field="' + side + 'Fence">' +
     barrierOptions([['off', 'No fence'], ['on', 'Catch fence']], now.fence ? 'on' : 'off') + '</select></label>' +
-    '<label>Fence height · mm<input data-pl-field="' + side + 'FenceHeight" type="number" min="10" max="250" step="any" value="' + now.fenceHeight + '"></label>';
+    '<label>Fence height · mm<input data-pl-field="' + side + 'FenceHeight" type="number" min="10" max="250" step="any" value="' + now.fenceHeight + '"></label>' +
+    '<label>Guard rail start post<select data-pl-field="' + side + 'StartPost">' +
+    barrierOptions([['off', 'No start post'], ['on', 'Post at the start']], now.startPost ? 'on' : 'off') + '</select></label>';
   const readBarrierFields = (side) =>
     plainBarrier({
       kind: field(side + 'Kind').value,
@@ -379,6 +381,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       angle: field(side + 'Angle').valueAsNumber,
       fence: field(side + 'Fence').value === 'on',
       fenceHeight: field(side + 'FenceHeight').valueAsNumber,
+      startPost: field(side + 'StartPost').value === 'on',
     });
   async function setBarriers(wanted) {
     const ids = chosenIds();
@@ -865,7 +868,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         (chosenIds().size > 1
           ? chosenIds().size + ' sections are selected. '
           : 'Only this section gets the barriers. ') +
-        'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board.</small>' +
+        'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. A guard rail comes from the post of the section before it: give the first section of a row a start post.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
