@@ -436,9 +436,15 @@ export const BARRIER_KEYS = {
   rise: ['tracksideRise', 20],
   angle: ['tracksideFaceAngle', 17.1],
   kind: ['tracksideShape', 'barrier'],
+  kindInner: ['tracksideShapeInner', 'same'],
   fence: ['tracksideFence', false],
   fenceHeight: ['tracksideFenceHeight', 50],
 };
+export const BARRIER_INNER_KINDS = [
+  ['same', 'Same as the outside'],
+  ['barrier', 'Concrete barrier'],
+  ['board', 'Advertising board'],
+];
 export const BARRIER_KINDS = [
   ['barrier', 'Concrete barrier'],
   ['board', 'Advertising board'],

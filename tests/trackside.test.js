@@ -480,3 +480,52 @@ test('fences have their own family and join the barrier export', () => {
   // A tall board does not have to satisfy the face angle of a concrete barrier.
   validateTrack(trackParameters(boardPiece({ tracksideRise: 60 })));
 });
+
+test('with barriers on both sides the inside can have another shape', () => {
+  const p = piece({
+    length: 172.5,
+    tracksideSide: 'both',
+    tracksideShape: 'board',
+    tracksideShapeInner: 'barrier',
+    tracksideFence: true,
+  });
+  build(p, (parts) => {
+    // An advertising board with its fence outside, a concrete barrier inside.
+    assert.deepEqual(
+      parts.filter((part) => ['barrier', 'fence'].includes(part.role)).map((part) => part.id),
+      ['board-outer-1', 'fence-outer-1', 'barrier-inner-1'],
+    );
+    const [board, barrier] = barriers(parts);
+    near(board.solid.boundingBox().max[1], 50 + 5.8);
+    near(barrier.solid.boundingBox().min[1], -50 - BARRIER_FOOT);
+    for (const part of [board, barrier, ...fences(parts)]) assert.equal(part.solid.status(), 'NoError');
+  });
+  // The other way round.
+  build({ ...p, tracksideShape: 'barrier', tracksideShapeInner: 'board' }, (parts) =>
+    assert.deepEqual(
+      parts.filter((part) => ['barrier', 'fence'].includes(part.role)).map((part) => part.id),
+      ['barrier-outer-1', 'board-inner-1', 'fence-inner-1'],
+    ));
+  // "Same as the outside", and one side only: the one Shape decides.
+  build({ ...p, tracksideShapeInner: 'same' }, (parts) =>
+    assert.deepEqual(barriers(parts).map((part) => part.id), ['board-outer-1', 'board-inner-1']));
+  build({ ...p, tracksideSide: 'inner' }, (parts) =>
+    assert.deepEqual(barriers(parts).map((part) => part.id), ['board-inner-1']));
+  assert.throws(
+    () => validateTrack(trackParameters({ ...p, tracksideShapeInner: 'hedge' })),
+    /Unknown trackside shape for the inside/,
+  );
+  // The face angle limit of a concrete barrier counts as soon as one side has one.
+  validateTrack(trackParameters({ ...p, tracksideShapeInner: 'same', tracksideRise: 60 }));
+  assert.throws(
+    () => validateTrack(trackParameters({ ...p, tracksideRise: 60 })),
+    /top would be thinner than 2 mm/,
+  );
+  // Track Set shows the settings of both shapes together.
+  const project = newProject();
+  project.mode = 'track';
+  project.track.params = p;
+  const html = trackInspector(project, 'trackside');
+  assert.match(html, /name="tracksideShapeInner"/);
+  assert.doesNotMatch(html, /data-trackside-shape="(barrier|board)" hidden/);
+});

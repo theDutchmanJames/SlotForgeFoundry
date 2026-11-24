@@ -18,6 +18,8 @@ export const TRACKSIDE_TAB_CHOICES = Object.freeze([
 export const TRACKSIDE_DEFAULTS = Object.freeze({
   tracksideSide: 'none',
   tracksideShape: 'barrier',
+  // With barriers on both sides the inside can have a shape of its own.
+  tracksideShapeInner: 'same',
   tracksideRise: 20,
   tracksideTabs: 'auto',
   tracksideSegments: 1,
@@ -104,12 +106,29 @@ const BARRIER_FACE = [
 
 export const tracksideOn = (p, side) =>
   p.tracksideSide === 'both' || p.tracksideSide === side;
+export const TRACKSIDE_INNER_SHAPES = Object.freeze([
+  ['same', 'Same as the outside'],
+  ...TRACKSIDE_SHAPES,
+]);
+// The shape on one side. The inside has its own only next to an outside one.
+export const tracksideShapeOf = (p, side) =>
+  side === 'inner' && p.tracksideSide === 'both' && p.tracksideShapeInner !== 'same'
+    ? p.tracksideShapeInner
+    : p.tracksideShape;
+// The shapes a piece uses, on whichever sides are on.
+export const tracksideShapesUsed = (p) => [
+  ...new Set(
+    ['outer', 'inner'].filter((side) => tracksideOn(p, side)).map((side) => tracksideShapeOf(p, side)),
+  ),
+];
 
 export function validateTrackside(p) {
   if (!TRACKSIDE_SIDES.includes(p.tracksideSide))
     throw new Error('Unknown trackside side.');
   if (!TRACKSIDE_SHAPES.some(([id]) => id === p.tracksideShape))
     throw new Error('Unknown trackside shape.');
+  if (!TRACKSIDE_INNER_SHAPES.some(([id]) => id === p.tracksideShapeInner))
+    throw new Error('Unknown trackside shape for the inside.');
   if (!TRACKSIDE_TAB_CHOICES.some(([id]) => id === String(p.tracksideTabs)))
     throw new Error('Choose one tab, two tabs or an automatic count for the barrier.');
   const [min, max] = TRACKSIDE_LIMITS.tracksideRise;
@@ -127,7 +146,8 @@ export function validateTrackside(p) {
   )
     throw new Error(`The barrier face angle must be between ${upright} and ${flattest} degrees.`);
   const widest = maxFaceAngle(p.tracksideRise);
-  if (p.tracksideShape === 'barrier' && p.tracksideFaceAngle > widest + 1e-9)
+  const shapes = p.tracksideSide === 'none' ? [p.tracksideShape] : tracksideShapesUsed(p);
+  if (shapes.includes('barrier') && p.tracksideFaceAngle > widest + 1e-9)
     throw new Error(
       'The barrier face leans too far for its height: the top would be thinner than ' +
         TOP_FLAT + ' mm. Use at most ' + Math.floor(widest * 10) / 10 +
@@ -312,7 +332,7 @@ export function fenceFlat(work, { length, height, post, cable, mesh }) {
  */
 export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, widthAt, loose) {
   const fit = resolveJointFit(p);
-  const board = p.tracksideShape === 'board';
+  const board = tracksideShapeOf(p, side) === 'board';
   const thick = boardThickness(p),
     top = p.height + p.tracksideRise;
   const profile = board

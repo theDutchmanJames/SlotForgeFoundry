@@ -23,6 +23,7 @@ import {
   supportStyleOf,
   BARRIER_ENDS,
   BARRIER_END_SHAPES,
+  BARRIER_INNER_KINDS,
   BARRIER_KEYS,
   BARRIER_KINDS,
   BARRIER_SIDES,
@@ -703,6 +704,12 @@ export function createPlanner({ host, call, download, current, promote }) {
             '<option value="' + value + '"' + (barrierOf(def).side === value ? ' selected' : '') + '>' + label + '</option>',
         ).join('') +
         '</select></label>' +
+        '<label>Type on the inside<select data-pl-field="barrierKindInner">' +
+        BARRIER_INNER_KINDS.map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + (barrierOf(def).kindInner === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
         '<label>Barrier ends<select data-pl-field="barrierEnds">' +
         BARRIER_ENDS.map(
           ([value, label]) =>
@@ -734,7 +741,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         (chosenIds().size > 1
           ? chosenIds().size + ' sections are selected. '
           : 'Only this section gets the barriers. ') +
-        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board.</small>' +
+        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. With Both sides, Type is the outside and the inside can have its own.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
@@ -1196,6 +1203,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         rise: field('barrierRise').valueAsNumber,
         angle: field('barrierAngle').valueAsNumber,
         kind: field('barrierKind').value,
+        kindInner: field('barrierKindInner').value,
         fence: field('barrierFence').value === 'on',
         fenceHeight: field('barrierFenceHeight').valueAsNumber,
       });

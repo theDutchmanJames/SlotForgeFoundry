@@ -27,6 +27,7 @@ import { TRACK_PROFILE_LIMITS } from './track.js';
 import {
   TRACKSIDE_END_CHOICES,
   TRACKSIDE_END_SHAPES,
+  TRACKSIDE_INNER_SHAPES,
   TRACKSIDE_LIMITS,
   TRACKSIDE_SHAPES,
   TRACKSIDE_TAB_CHOICES,
@@ -238,11 +239,14 @@ export function syncPitAssemblyNotes(form, params) {
 function tracksideControls(p, draft) {
   const side = draft.tracksideSide ?? p.tracksideSide,
     shape = draft.tracksideShape ?? p.tracksideShape,
+    inner = draft.tracksideShapeInner ?? p.tracksideShapeInner,
     fence = draft.tracksideFence ?? p.tracksideFence;
+  // The settings of a shape show when either side uses it.
+  const used = [shape, ...(side === 'both' && inner !== 'same' ? [inner] : [])];
   const limit = (key) => ({ min: TRACKSIDE_LIMITS[key][0], max: TRACKSIDE_LIMITS[key][1] });
   const only = (name, body) =>
     '<fieldset class="border-apex-fields" data-trackside-shape="' + name + '"' +
-    (shape === name ? '>' : ' hidden disabled>') + body + '</fieldset>';
+    (used.includes(name) ? '>' : ' hidden disabled>') + body + '</fieldset>';
   return (
     choice('tracksideSide', 'Barrier side', p.tracksideSide, [
       ['none', 'None'],
@@ -254,6 +258,9 @@ function tracksideControls(p, draft) {
     details(
       'Barrier',
       choice('tracksideShape', 'Shape', p.tracksideShape, TRACKSIDE_SHAPES) +
+        '<fieldset class="border-apex-fields" data-trackside-inner' + (side === 'both' ? '>' : ' hidden disabled>') +
+        choice('tracksideShapeInner', 'Shape on the inside', p.tracksideShapeInner, TRACKSIDE_INNER_SHAPES) +
+        '<p class="hint">With barriers on both sides, Shape is the outside (left) and the inside (right) can be another: an advertising board on one side and a concrete barrier on the other, for example. Height, tabs, ends and segments are shared.</p></fieldset>' +
         num(p, 'tracksideRise', 'Height above the road', 'mm', limit('tracksideRise')) +
         only(
           'barrier',

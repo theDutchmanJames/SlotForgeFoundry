@@ -150,8 +150,13 @@ export function syncTrackShapeControls(form) {
   if (e.tracksideSide) {
     const group = form.querySelector('[data-trackside]');
     group.hidden = group.disabled = e.tracksideSide.value === 'none';
+    const inner = form.querySelector('[data-trackside-inner]');
+    inner.hidden = inner.disabled = e.tracksideSide.value !== 'both';
+    const used = [e.tracksideShape.value];
+    if (!inner.disabled && e.tracksideShapeInner.value !== 'same')
+      used.push(e.tracksideShapeInner.value);
     for (const part of form.querySelectorAll('[data-trackside-shape]'))
-      part.hidden = part.disabled = part.dataset.tracksideShape !== e.tracksideShape.value;
+      part.hidden = part.disabled = !used.includes(part.dataset.tracksideShape);
     const fence = form.querySelector('[data-trackside-fence]');
     if (fence) fence.hidden = fence.disabled = !e.tracksideFence?.checked;
   }
