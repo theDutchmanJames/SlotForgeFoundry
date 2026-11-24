@@ -95,8 +95,8 @@ test('a climb is one solid piece on the table, with its slot as deep as on a lev
     near(box.min[2], 0, 1e-6);
     near(box.max[2], p.height + profile.rise, 0.01);
     near(box.min[0], -100, 1e-6);
-    // End B is square to the road: its lower edge reaches further than its upper edge.
-    near(box.max[0], -100 + profile.run + p.height * Math.sin(profile.climb), 0.01);
+    // End B ends in an upright plane through its top edge, where a tilted straight meets it.
+    near(box.max[0], -100 + profile.run, 1e-6);
     // Level at end A, and on the curve everywhere else.
     near(topAt(road.solid, -95, 20), p.height, 1e-6);
     for (const d of [40, 90, 140, 190]) {
@@ -587,4 +587,38 @@ test('the controls name all four forms and say whether end B is higher or lower'
   assert.match(over, /data-slope-base hidden disabled>/);
   assert.match(over, /End B is 17\.5 mm lower/);
   assert.match(over, /A hill takes four pieces/);
+});
+
+test('a sloped end has an upright end face on the joint line, so a tilted straight meets it without overlap or gap', () => {
+  for (const slopeForm of ['up', 'down', 'over', 'out'])
+    for (const extra of [{ hollow: false }, { lanes: 2, width: 200, borderSide: 'both' }]) {
+      const p = sloped({ slopeForm, slopeFill: false, joint: 'clips', ...extra }),
+        profile = slopeProfile(p);
+      const label = slopeForm + ' ' + JSON.stringify(extra);
+      built(p, (parts) => {
+        for (const part of parts.filter((item) => item.role === 'road' || item.role === 'border')) {
+          assert.equal(part.solid.status(), 'NoError', label);
+          const box = part.solid.boundingBox();
+          // Nothing of the road or its borders reaches past either joint line.
+          near(box.min[0], -p.length / 2, 1e-6);
+          near(box.max[0], -p.length / 2 + profile.run, 1e-6);
+          const pieces = part.solid.decompose();
+          assert.equal(pieces.length, 1, label + ' ' + part.id);
+          pieces.forEach((piece) => piece.delete());
+        }
+        if (p.hollow) return;
+        // At the sloped end the road is as thick, measured upright, as a tilted
+        // straight is: its height over the cosine of the climb. It is cut back
+        // or made longer underneath to reach the joint line.
+        const road = roadOf(parts).solid;
+        const atEnd = ['up', 'over'].includes(slopeForm);
+        const x = atEnd ? -p.length / 2 + profile.run - 0.2 : -p.length / 2 + 0.2;
+        const y = p.width / 2 - 6;
+        const thick = topAt(road, x, y) - underAt(road, x, y);
+        near(thick, p.height / Math.cos(profile.climb), 0.08);
+        // The level end is as it was.
+        const other = atEnd ? -p.length / 2 + 0.2 : -p.length / 2 + profile.run - 0.2;
+        near(topAt(road, other, y) - underAt(road, other, y), p.height, 1e-6);
+      });
+    }
 });

@@ -1,6 +1,6 @@
 import { plannerStrip } from './planner-strip.js';
 import { hasRoadTexture, roadStones, validateRoadTexture } from './geometry/road-texture.js';
-import { bendToSlope, hasSlope, onItsSide, slopeBase, slopeFilled, slopeProfile, validateSlope } from './geometry/slope.js';
+import { bendToSlope, hasSlope, onItsSide, slopeBase, slopeFilled, slopeProfile, uprightEnds, validateSlope } from './geometry/slope.js';
 import {
   SolidWorkshop,
   addSlot,
@@ -1002,8 +1002,12 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
     if (hasSlope(p) && couponStation === undefined && !samplePath) {
       const profile = slopeProfile(p);
       for (const result of results) {
-        result.solid = bendToSlope(work, result.solid, p, profile);
-        if (result.role === 'road' || result.role === 'border') onItsSide(result, wasm);
+        const flat = result.solid;
+        result.solid = bendToSlope(work, flat, p, profile);
+        if (result.role !== 'road' && result.role !== 'border') continue;
+        // Its sloped end meets a tilted straight in an upright plane.
+        result.solid = uprightEnds(work, flat, result.solid, p, profile);
+        onItsSide(result, wasm);
       }
       const road = results.find((result) => result.role === 'road');
       const base = slopeFilled(p) && slopeBase(work, p, profile);

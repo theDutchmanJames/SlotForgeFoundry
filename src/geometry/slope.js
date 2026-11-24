@@ -5,8 +5,9 @@
 // connectors. Then every part is bent along the curve of the road surface:
 // a point keeps its distance along the surface and its depth below it. So
 // the slot stays as deep as it was, measured square to the road, and both end
-// faces stay square to the road: the level end meets a level piece, and the
-// sloped end meets a straight that is tilted to the climb angle.
+// faces stay square to the road. The level end meets a level piece. The
+// sloped end meets a straight that is tilted to the climb angle; its end
+// face is then made upright, as the end faces of a tilted straight are.
 //
 //   up    level at end A, climbing at end B: the foot of a climb
 //   down  climbing at end A, level at end B: the top of a climb
@@ -194,6 +195,66 @@ export function bendToSlope(work, solid, p, profile = slopeProfile(p)) {
       v[2] = top + z + over * Math.sin(angle) - depth * Math.cos(angle);
     }),
   );
+}
+
+// A shape drawn from the side, in [x, z], pulled across the road from y = from to y = to.
+function pulledAcross(work, loop, from, to) {
+  let area = 0;
+  loop.forEach((a, i) => {
+    const b = loop[(i + 1) % loop.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  });
+  const side = work.own(new work.wasm.CrossSection([area < 0 ? loop.slice().reverse() : loop], 'Positive'));
+  return work.own(
+    work.own(side.extrude(to - from)).warp((v) => {
+      const across = to - v[2];
+      v[2] = v[1];
+      v[1] = across;
+    }),
+  );
+}
+
+/**
+ * Give the sloped end of a bent road or border an upright end face.
+ *
+ * Bent, the end face is square to the road, so it leans. The Track Planner
+ * tilts a straight with upright end faces: the two meet in an upright plane
+ * through the top edge of the joint. Where the foot of the leaning face lies
+ * beyond that plane, the wedge beyond it is cut off. Where it lies short of
+ * it, the piece is made that much longer underneath, with the outline of its
+ * own end face, so slots and connector pockets stay open. flat is the part
+ * before it was bent.
+ */
+export function uprightEnds(work, flat, bent, p, profile = slopeProfile(p)) {
+  const { length } = profile,
+    height = p.height;
+  let solid = bent;
+  for (const end of [0, 1]) {
+    const [x, z, angle] = profile.at(end ? length : 0);
+    if (Math.abs(angle) < 1e-9) continue;
+    const plane = -length / 2 + x,
+      top = height + z,
+      outward = end ? 1 : -1;
+    if (outward * Math.sin(angle) > 0) {
+      // Between the upright plane and the leaning face, below the top edge.
+      const reach = 4 * height;
+      const foot = [plane + reach * Math.sin(angle), top - reach * Math.cos(angle)];
+      const wedge = pulledAcross(work, [[plane, top], foot, [plane, foot[1]]], -1e4, 1e4);
+      solid = work.own(solid.subtract(wedge));
+      continue;
+    }
+    // The outline of the end face, run on beyond the end and bent with the road.
+    const more = height * Math.abs(Math.tan(angle)) + 0.3;
+    const station = (end ? 1 : -1) * (length / 2 - 0.02);
+    const face = work.own(work.own(flat.rotate([0, -90, 0])).slice(station));
+    if (face.isEmpty()) continue;
+    const run = work.own(
+      work.own(work.own(face.extrude(more)).translate([0, 0, end ? station : station - more])).rotate([0, 90, 0]),
+    );
+    const added = work.own(bendToSlope(work, run, p, profile).trimByPlane([-outward, 0, 0], -outward * plane));
+    if (!added.isEmpty()) solid = work.own(solid.add(added));
+  }
+  return solid;
 }
 
 /**
