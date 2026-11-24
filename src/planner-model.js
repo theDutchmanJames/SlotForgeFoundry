@@ -435,7 +435,14 @@ export const BARRIER_KEYS = {
   shape: ['tracksideEndShape', 'ramp'],
   rise: ['tracksideRise', 20],
   angle: ['tracksideFaceAngle', 17.1],
+  kind: ['tracksideShape', 'barrier'],
+  fence: ['tracksideFence', false],
+  fenceHeight: ['tracksideFenceHeight', 50],
 };
+export const BARRIER_KINDS = [
+  ['barrier', 'Concrete barrier'],
+  ['board', 'Advertising board'],
+];
 // The barriers a placed section carries come from its piece recipe.
 export const barrierOf = (def) =>
   Object.fromEntries(

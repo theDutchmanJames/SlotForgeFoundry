@@ -150,6 +150,10 @@ export function syncTrackShapeControls(form) {
   if (e.tracksideSide) {
     const group = form.querySelector('[data-trackside]');
     group.hidden = group.disabled = e.tracksideSide.value === 'none';
+    for (const part of form.querySelectorAll('[data-trackside-shape]'))
+      part.hidden = part.disabled = part.dataset.tracksideShape !== e.tracksideShape.value;
+    const fence = form.querySelector('[data-trackside-fence]');
+    if (fence) fence.hidden = fence.disabled = !e.tracksideFence?.checked;
   }
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))

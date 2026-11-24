@@ -24,6 +24,7 @@ import {
   BARRIER_ENDS,
   BARRIER_END_SHAPES,
   BARRIER_KEYS,
+  BARRIER_KINDS,
   BARRIER_SIDES,
   barrierOf,
   pegSizeOf,
@@ -690,6 +691,12 @@ export function createPlanner({ host, call, download, current, promote }) {
         btn('elevate', 'Apply heights', 'check') +
         '</div></details>' +
         '<details class="pl-bridge pl-barriers"><summary>Barriers</summary><div>' +
+        '<label>Type<select data-pl-field="barrierKind">' +
+        BARRIER_KINDS.map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + (barrierOf(def).kind === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
         '<label>Barrier side<select data-pl-field="barrierSide">' +
         BARRIER_SIDES.map(
           ([value, label]) =>
@@ -714,11 +721,20 @@ export function createPlanner({ host, call, download, current, promote }) {
         '<label>Face angle · °<input data-pl-field="barrierAngle" type="number" min="0" max="45" step="any" value="' +
         barrierOf(def).angle +
         '"></label>' +
+        '<label>Fence on a board<select data-pl-field="barrierFence">' +
+        [['off', 'No fence'], ['on', 'Catch fence']].map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + ((barrierOf(def).fence ? 'on' : 'off') === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
+        '<label>Fence height · mm<input data-pl-field="barrierFenceHeight" type="number" min="10" max="250" step="any" value="' +
+        barrierOf(def).fenceHeight +
+        '"></label>' +
         '<small>' +
         (chosenIds().size > 1
           ? chosenIds().size + ' sections are selected. '
           : 'Only this section gets the barriers. ') +
-        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops.</small>' +
+        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
@@ -1179,6 +1195,9 @@ export function createPlanner({ host, call, download, current, promote }) {
         shape: field('barrierShape').value,
         rise: field('barrierRise').valueAsNumber,
         angle: field('barrierAngle').valueAsNumber,
+        kind: field('barrierKind').value,
+        fence: field('barrierFence').value === 'on',
+        fenceHeight: field('barrierFenceHeight').valueAsNumber,
       });
       message('');
       $('.pl-barriers').open = true;

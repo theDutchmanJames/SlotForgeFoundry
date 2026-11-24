@@ -340,3 +340,143 @@ test('a rounded end also narrows to a tip at the track edge', () => {
   });
   assert.throws(() => validateTrack(trackParameters(piece({ tracksideEndShape: 'point' }))), /Unknown barrier end shape/);
 });
+
+// ---- Advertising boards and catch fences ----
+const boardPiece = (changes = {}) =>
+  piece({ length: 172.5, tracksideSide: 'outer', tracksideShape: 'board', ...changes });
+const fences = (parts) => parts.filter((part) => part.role === 'fence');
+
+test('an advertising board is a flat wall of the set thickness, on tabs', () => {
+  build(boardPiece(), (parts) => {
+    const [board] = barriers(parts);
+    assert.equal(board.id, 'board-outer-1');
+    assert.equal(board.name, 'Outer board 1');
+    assert.equal(board.solid.status(), 'NoError');
+    const fit = resolveJointFit(trackParameters(boardPiece()));
+    const [length, depth, height] = size(board.solid);
+    near(length, 172.5);
+    // 2 mm of board and the tab in front of it: the tab root is trimmed at the back.
+    near(depth, 2 + fit.tabLength);
+    near(height, 12 + 20);
+    near(board.solid.boundingBox().max[1], 50 + 2);
+    assert.equal(fences(parts).length, 0);
+    const road = parts.find((part) => part.role === 'road');
+    near(overlap(board.solid, road.solid), 0, 1e-6);
+    // Flat on its back: the thickness of the board and its tab stand up from the bed.
+    const laid = printableSTL(board, (solid) => size(solid), undefined, { mode: 'track', track: { params: boardPiece() } });
+    near(laid[2], 2 + fit.tabLength);
+  });
+  build(boardPiece({ tracksideThickness: 4, tracksideRise: 40 }), (parts) => {
+    const [, depth, height] = size(barriers(parts)[0].solid);
+    near(depth, 4 + 6);
+    near(height, 52);
+  });
+  assert.throws(() => validateTrack(trackParameters(boardPiece({ tracksideThickness: 1 }))), /board thickness must be between 1.2 and 15 mm/);
+});
+
+test('a board end has a rounded top corner', () => {
+  const top = (solid, x) => solid.rayCast([x, 51, 90], [x, 51, -1])[0]?.position[2];
+  build(boardPiece({ tracksideEnds: 'start' }), (parts) => {
+    const [board] = barriers(parts);
+    assert.equal(board.solid.status(), 'NoError');
+    // A 25 mm quarter round: 25 mm lower at the very end, full height after it.
+    near(top(board.solid, -86.24), 32 - 25, 0.8);
+    near(top(board.solid, -86.25 + 25 * 0.48), 32 - 25 + 25 * Math.sqrt(1 - 0.52 ** 2), 0.05);
+    near(top(board.solid, -86.25 + 25.5), 32);
+    near(top(board.solid, 86), 32);
+  });
+});
+
+test('a fence stands in two sockets in the top of a thicker board', () => {
+  const p = boardPiece({ tracksideFence: true });
+  build(p, (parts) => {
+    const [board] = barriers(parts),
+      [fence] = fences(parts);
+    assert.equal(fence.id, 'fence-outer-1');
+    assert.equal(fence.name, 'Outer fence 1');
+    assert.equal(fence.solid.status(), 'NoError');
+    // Thick enough for a 1.25 mm wall and 0.15 mm of play on both sides of a 3 mm post.
+    near(board.solid.boundingBox().max[1], 50 + 5.8);
+    // The fence: 50 mm above the board, its pegs 9.5 mm into it, nothing touching.
+    const box = fence.solid.boundingBox();
+    near(box.max[2], 32 + 50);
+    near(box.min[2], 32 - 9.5);
+    near(overlap(fence.solid, board.solid), 0, 1e-6);
+    // A post at a quarter and at three quarters of the length, in the middle of the board.
+    for (const x of [-43.125, 43.125]) {
+      const post = fence.solid.slice(32 - 5);
+      try {
+        const corners = post.toPolygons().flat().filter(([px]) => Math.abs(px - x) < 2);
+        assert.ok(corners.length >= 4, 'a post in the socket: ' + corners.length);
+        near(Math.min(...corners.map(([px]) => px)), x - 1.5);
+        near(Math.max(...corners.map(([px]) => px)), x + 1.5);
+        near(Math.min(...corners.map(([, y]) => y)), 50 + 2.9 - 1.5);
+        near(Math.max(...corners.map(([, y]) => y)), 50 + 2.9 + 1.5);
+      } finally {
+        post.delete();
+      }
+      // The socket: 10 mm deep and open at the top.
+      near(board.solid.rayCast([x, 52.9, 90], [x, 52.9, -1])[0].position[2], 32 - 10);
+    }
+  });
+  // No fence on a concrete barrier, and none on a board too short for two posts.
+  build(piece({ tracksideSide: 'outer', tracksideFence: true }), (parts) => assert.equal(fences(parts).length, 0));
+  build(boardPiece({ length: 35, tracksideFence: true, tracksideTabs: '1' }), (parts) => assert.equal(fences(parts).length, 0));
+});
+
+test('a fence prints flat in one piece: posts full thickness, mesh a thin skin', () => {
+  const p = boardPiece({ tracksideFence: true, tracksideFenceHeight: 60, tracksidePost: 3 });
+  build(p, (parts) => {
+    const [fence] = fences(parts);
+    const project = { mode: 'track', track: { params: p } };
+    const laid = printableSTL(fence, (solid) => size(solid), undefined, project);
+    near(laid[2], 3);
+    near(Math.max(laid[0], laid[1]), 172.5 - 0.6);
+    near(Math.min(laid[0], laid[1]), 60 + 9.5);
+    // Everything starts on the bed, and only the posts reach above the skin.
+    const areas = printableSTL(fence, (solid) => [0.4, 2].map((z) => {
+      const cut = solid.slice(z);
+      try {
+        return cut.area();
+      } finally {
+        cut.delete();
+      }
+    }), undefined, project);
+    near(areas[1], 2 * 3 * 69.5, 0.5);
+    assert.ok(areas[0] > areas[1] * 3, 'the mesh, cables and frame lie on the bed');
+    assert.equal(printableSTL(fence, (solid) => solid.decompose().length, undefined, project), 1);
+  });
+});
+
+test('on a bend the fence follows the board and still prints flat', () => {
+  const p = { ...defaultTrack(), angle: 45, tracksideSide: 'both', tracksideShape: 'board', tracksideFence: true };
+  build(p, (parts) => {
+    assert.equal(fences(parts).length, 2);
+    for (const fence of fences(parts)) {
+      assert.equal(fence.solid.status(), 'NoError');
+      assert.ok(fence.solid.volume() > 0);
+      for (const other of parts)
+        if (other !== fence) near(overlap(fence.solid, other.solid), 0, 0.02);
+      const laid = printableSTL(fence, (solid) => size(solid), undefined, { mode: 'track', track: { params: p } });
+      near(laid[2], 3);
+    }
+  });
+});
+
+test('fences have their own family and join the barrier export', () => {
+  const p = boardPiece({ tracksideFence: true });
+  build(p, (parts) => {
+    assert.equal(groupTrackParts(parts).find((g) => g.role === 'fence').label, 'Fences');
+    const files = unzipSync(packBarrierSTLs(parts, encodeSTL, { mode: 'track', track: { params: p } }));
+    assert.deepEqual(Object.keys(files).sort(), ['board-outer-1.stl', 'fence-outer-1.stl']);
+  });
+  for (const [key, text] of [
+    ['tracksideFenceHeight', /fence height must be between 10 and 250 mm/],
+    ['tracksidePost', /fence post size must be between 2 and 6 mm/],
+    ['tracksideCable', /fence cable spacing must be between 3 and 100 mm/],
+    ['tracksideMesh', /fence mesh size must be between 2 and 30 mm/],
+  ])
+    assert.throws(() => validateTrack(trackParameters(boardPiece({ [key]: 1 }))), text);
+  // A tall board does not have to satisfy the face angle of a concrete barrier.
+  validateTrack(trackParameters(boardPiece({ tracksideRise: 60 })));
+});

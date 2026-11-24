@@ -1,11 +1,14 @@
-import { dot, left, minus, move, unit } from './solids.js';
+import { SolidWorkshop, dot, left, minus, move, unit } from './solids.js';
 import { tabPair } from './joints.js';
 import { resolveJointFit } from './joint-fit.js';
 import { connectorWarning } from './connector-warning.js';
 
 // Trackside accessories stand on the table beside the track and plug into
 // sockets in the free edge of a border, or of the road where it has none.
-export const TRACKSIDE_SHAPES = Object.freeze([['barrier', 'Concrete barrier']]);
+export const TRACKSIDE_SHAPES = Object.freeze([
+  ['barrier', 'Concrete barrier'],
+  ['board', 'Advertising board'],
+]);
 export const TRACKSIDE_SIDES = Object.freeze(['none', 'inner', 'outer', 'both']);
 export const TRACKSIDE_TAB_CHOICES = Object.freeze([
   ['auto', 'Automatic'],
@@ -21,12 +24,44 @@ export const TRACKSIDE_DEFAULTS = Object.freeze({
   tracksideEnds: 'none',
   tracksideEndShape: 'ramp',
   tracksideFaceAngle: 17.1,
+  // The advertising board: a flat wall for a paper sign, and a catch fence
+  // whose posts drop into sockets in its top.
+  tracksideThickness: 2,
+  tracksideFence: false,
+  tracksideFenceHeight: 50,
+  tracksidePost: 3,
+  tracksideCable: 10,
+  tracksideMesh: 5,
 });
 export const TRACKSIDE_LIMITS = Object.freeze({
   tracksideRise: [5, 100],
   tracksideSegments: [1, 16],
   tracksideFaceAngle: [0, 45],
+  tracksideThickness: [1.2, 15],
+  tracksideFenceHeight: [10, 250],
+  tracksidePost: [2, 6],
+  tracksideCable: [3, 100],
+  tracksideMesh: [2, 30],
 });
+// A board end with a rounded top corner, as on the measured board.
+export const BOARD_CORNER = 25;
+// The fence: how deep its posts sit in the board, the play around a post,
+// the wall left on either side of a socket, and its printed strands.
+export const FENCE_SOCKET = 10;
+export const FENCE_PLAY = 0.15;
+export const FENCE_WALL = 1.25;
+export const FENCE_SKIN = 0.8;
+export const FENCE_STRAND = 0.6;
+export const FENCE_RAIL = 1.2;
+export const FENCE_CABLE = 1;
+// A board shorter than this is too short for two fence posts.
+export const FENCE_MIN_LENGTH = 40;
+
+// A board with a fence is at least thick enough for a wall on both sides of a post.
+export const boardThickness = (p) =>
+  p.tracksideFence
+    ? Math.max(p.tracksideThickness, p.tracksidePost + 2 * (FENCE_PLAY + FENCE_WALL))
+    : p.tracksideThickness;
 // A barrier this long or longer takes two tabs when the count is automatic.
 export const TWO_TAB_LENGTH = 150;
 export const BARRIER_FOOT = 15;
@@ -92,12 +127,24 @@ export function validateTrackside(p) {
   )
     throw new Error(`The barrier face angle must be between ${upright} and ${flattest} degrees.`);
   const widest = maxFaceAngle(p.tracksideRise);
-  if (p.tracksideFaceAngle > widest + 1e-9)
+  if (p.tracksideShape === 'barrier' && p.tracksideFaceAngle > widest + 1e-9)
     throw new Error(
       'The barrier face leans too far for its height: the top would be thinner than ' +
         TOP_FLAT + ' mm. Use at most ' + Math.floor(widest * 10) / 10 +
         ' degrees at this height, or lower the barrier.',
     );
+  for (const [key, name] of [
+    ['tracksideThickness', 'board thickness'],
+    ['tracksideFenceHeight', 'fence height'],
+    ['tracksidePost', 'fence post size'],
+    ['tracksideCable', 'fence cable spacing'],
+    ['tracksideMesh', 'fence mesh size'],
+  ]) {
+    const [low, high] = TRACKSIDE_LIMITS[key];
+    if (!Number.isFinite(p[key]) || p[key] < low || p[key] > high)
+      throw new Error(`The ${name} must be between ${low} and ${high} mm.`);
+  }
+  if (typeof p.tracksideFence !== 'boolean') throw new Error('Unknown fence setting.');
   const [fewest, most] = TRACKSIDE_LIMITS.tracksideSegments;
   if (!Number.isInteger(p.tracksideSegments) || p.tracksideSegments < fewest || p.tracksideSegments > most)
     throw new Error(`Barrier segments must be a whole number between ${fewest} and ${most}.`);
@@ -146,7 +193,11 @@ function capTriangles(count) {
   return triangles;
 }
 
-function sweep(work, rings) {
+// A convex ring: a fan from its first corner.
+const fanTriangles = (count) =>
+  Array.from({ length: count - 2 }, (_, j) => [0, j + 1, j + 2]);
+
+function sweep(work, rings, caps = capTriangles) {
   const count = rings[0].length,
     vertices = rings.flat(),
     triangles = [];
@@ -159,7 +210,7 @@ function sweep(work, rings) {
       triangles.push([a, b, d], [a, d, c]);
     }
   const last = (rings.length - 1) * count;
-  for (const [a, b, c] of capTriangles(count)) {
+  for (const [a, b, c] of caps(count)) {
     triangles.push([a, c, b]);
     triangles.push([last + a, last + b, last + c]);
   }
@@ -205,6 +256,53 @@ function backDownPose(outward) {
   };
 }
 
+// Where the two posts stand along a fence: a quarter and three quarters of
+// the way, so boards in a row give an even rhythm of posts.
+export const fencePosts = ({ length }) => [length / 4, (length * 3) / 4];
+
+/**
+ * The fence as it prints: flat on the bed, its length along x and its height
+ * along y. Two posts with pegs below the panel, a frame, horizontal cables
+ * and diamond mesh. The posts are as thick as they are wide; the rest is a
+ * thin skin flush with one face.
+ */
+export function fenceFlat(work, { length, height, post, cable, mesh }) {
+  const peg = FENCE_SOCKET - 0.5,
+    low = peg + 0.2,
+    high = peg + height,
+    from = 0.3,
+    to = length - 0.3;
+  const box = (x0, y0, x1, y1) => work.section([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]);
+  const union = (sections) => work.own(work.wasm.CrossSection.union(sections));
+  const posts = union(
+    fencePosts({ length }).map((s) => box(s - post / 2, 0, s + post / 2, high)),
+  );
+  const rails = [
+    box(from, low, to, low + FENCE_RAIL),
+    box(from, high - FENCE_RAIL, to, high),
+    box(from, low, from + FENCE_RAIL, high),
+    box(to - FENCE_RAIL, low, to, high),
+  ];
+  for (let y = low + cable; y < high - FENCE_RAIL - FENCE_CABLE; y += cable)
+    rails.push(box(from, y - FENCE_CABLE / 2, to, y + FENCE_CABLE / 2));
+  // Diamond mesh: strands at 45 degrees both ways, `mesh` apart.
+  const strands = [],
+    step = mesh * Math.SQRT2,
+    tall = high - low,
+    half = (FENCE_STRAND / 2) * Math.SQRT2;
+  for (let x = from - tall; x < to + tall; x += step) {
+    strands.push(
+      work.section([[[x - half, low], [x + half, low], [x + half + tall, high], [x - half + tall, high]]]),
+      work.section([[[x - half + tall, low], [x + half + tall, low], [x + half, high], [x - half, high]]]),
+    );
+  }
+  const panel = box(from, low, to, high);
+  const skin = work.own(union([...rails, work.own(union(strands).intersect(panel))]));
+  return work.own(
+    work.prism(skin, 0, FENCE_SKIN).add(work.prism(posts, 0, post)),
+  );
+}
+
 /**
  * Barriers beside each host (a border segment, or a road segment on a side
  * without a border). Together they are as long as that host's edge, which
@@ -214,9 +312,14 @@ function backDownPose(outward) {
  */
 export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, widthAt, loose) {
   const fit = resolveJointFit(p);
-  const profile = barrierProfile(p.height, p.tracksideRise, p.tracksideFaceAngle);
-  const round = p.tracksideEndShape === 'round';
-  const label = side === 'outer' ? 'Outer' : 'Inner';
+  const board = p.tracksideShape === 'board';
+  const thick = boardThickness(p),
+    top = p.height + p.tracksideRise;
+  const profile = board
+    ? [[0, 0], [thick, 0], [thick, top], [0, top]]
+    : barrierProfile(p.height, p.tracksideRise, p.tracksideFaceAngle);
+  const round = !board && p.tracksideEndShape === 'round';
+  const label = (side === 'outer' ? 'Outer' : 'Inner') + (board ? ' board ' : ' barrier ');
   const half = fit.tabSupportHalfWidth;
   const count = p.tracksideSegments;
   const runs = hosts.flatMap((host, n) =>
@@ -237,7 +340,10 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
     const length = edgeLength(stations.map((t) => at(t)));
     // A sloped end: the top runs down to the foot over the last stretch of
     // the first or last barrier on this side.
-    const ramp = Math.min(END_RAMP, length * 0.4);
+    // A board end has a rounded top corner instead.
+    const ramp = board
+      ? Math.min(BOARD_CORNER, length * 0.2, top - 3)
+      : Math.min(END_RAMP, length * 0.4);
     const sloped = [
       i === 0 && ['start', 'both'].includes(p.tracksideEnds),
       i === runs.length - 1 && ['finish', 'both'].includes(p.tracksideEnds),
@@ -255,7 +361,7 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       if (!on) continue;
       // The slope starts at a station of its own. A rounded end needs more
       // of them, closest together at the tip where the outline turns most.
-      for (const u of round ? [0.02, 0.06, 0.12, 0.2, 0.32, 0.48, 0.66, 0.84, 1] : [1]) {
+      for (const u of round || board ? [0.02, 0.06, 0.12, 0.2, 0.32, 0.48, 0.66, 0.84, 1] : [1]) {
         const distances = along(),
           target = end ? length - ramp * u : ramp * u;
         const k = distances.findIndex((d) => d > target + 1e-6);
@@ -282,13 +388,17 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       // A quarter-round outline in plan, narrowing towards the track edge.
       const tip = END_TIP / BARRIER_FOOT;
       const width = round ? tip + (1 - tip) * Math.sqrt(1 - (1 - u) ** 2) : 1;
+      // The quarter-round top corner of a board end.
+      const corner = top - ramp + ramp * Math.sqrt(1 - (1 - u) ** 2);
       return profile.map(([d, z]) => [
         ...at(t, d * width),
-        z > p.height ? p.height + (z - p.height) * scale : z,
+        board
+          ? z > 0 ? corner : 0
+          : z > p.height ? p.height + (z - p.height) * scale : z,
       ]);
     });
     const edge = stations.map((t) => at(t));
-    const name = label + ' barrier ' + (i + 1);
+    const name = label + (i + 1);
     const warn = (reason, advice) =>
       connectorWarning(name, reason, advice, {
         tab: 'trackside',
@@ -309,7 +419,7 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       section: work.section([
         [...edge, ...rings.map((ring) => ring[1].slice(0, 2)).reverse()],
       ]),
-      additions: [sweep(work, rings)],
+      additions: [sweep(work, rings, board ? fanTriangles : capTriangles)],
       cuts: [],
       feedCuts: [],
     };
@@ -390,16 +500,113 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
     const straight = edge.every(
       (q) => Math.abs(dot(minus(q, edge[0]), left(unit(minus(edge.at(-1), edge[0]))))) < 1e-6,
     );
+    let solid = work.union(part.additions);
+    if (board) {
+      // The root of a tab is longer than a thin board is thick: trim it flush
+      // with the back of the board.
+      const reach = fit.tabLength + fit.tabRootLength + 4;
+      const keep = work.section([
+        [
+          ...stations.map((t) => at(t, -reach)),
+          ...rings.map((ring) => ring[1].slice(0, 2)).reverse(),
+        ],
+      ]);
+      solid = work.and(solid, work.prism(keep, 0, top + 1));
+    }
+    const fenced = board && p.tracksideFence && length >= FENCE_MIN_LENGTH;
+    let fence, fenceSpec;
+    if (fenced) {
+      // Distance along the edge to a point on (or beside) it.
+      const base = [...new Set([a, ...path.stations.filter((t) => t > a && t < b), b])];
+      const run = [0];
+      for (let k = 1; k < base.length; k++)
+        run.push(run[k - 1] + Math.hypot(...minus(at(base[k]), at(base[k - 1]))));
+      const tOf = (s) => {
+        const found = run.findIndex((d) => d >= s - 1e-9);
+        const j = found < 0 ? run.length - 1 : Math.max(1, found);
+        const span = run[j] - run[j - 1] || 1;
+        return base[j - 1] + ((base[j] - base[j - 1]) * (s - run[j - 1])) / span;
+      };
+      // The fence is as long as the line its posts stand on, which on a bend
+      // is a little longer or shorter than the track edge.
+      const middle = thick / 2;
+      const postLine = edgeLength(base.map((t) => at(t, middle))),
+        ratio = length / postLine;
+      fenceSpec = {
+        length: postLine,
+        height: p.tracksideFenceHeight,
+        post: p.tracksidePost,
+        cable: p.tracksideCable,
+        mesh: p.tracksideMesh,
+      };
+      const spec = fenceSpec;
+      const posts = fencePosts(spec);
+      const
+        hole = p.tracksidePost / 2 + FENCE_PLAY;
+      for (const s of posts) {
+        // Laid out along the edge exactly as the fence is stood on it.
+        const corner = (x, y) => at(tOf((s + x) * ratio), middle + y);
+        solid = work.own(
+          solid.subtract(
+            work.prism(
+              work.section([[corner(-hole, -hole), corner(hole, -hole), corner(hole, hole), corner(-hole, hole)]]),
+              top - FENCE_SOCKET,
+              top + 1,
+            ),
+          ),
+        );
+      }
+      // The flat panel lies with its length along x, its height along y and
+      // its thickness along z. Stand it on the board: the mesh on the track
+      // side of the posts. A turn that would mirror it runs the other way.
+      const flat = fenceFlat(work, spec);
+      const outward = unit(minus(at(tOf(length / 2), 1), at(tOf(length / 2))));
+      const forward = unit(minus(at(tOf(length / 2 + 0.5)), at(tOf(length / 2 - 0.5))));
+      const reversed = forward[1] * outward[0] - forward[0] * outward[1] < 0;
+      const bottom = top - FENCE_SOCKET + 0.5;
+      const source = straight ? flat : work.own(flat.refineToLength(8));
+      fence = work.own(
+        source.warp((v) => {
+          const s = Math.max(0, Math.min(length, (reversed ? postLine - v[0] : v[0]) * ratio));
+          const [x, y] = at(tOf(s), middle - p.tracksidePost / 2 + v[2]);
+          v[2] = bottom + v[1];
+          v[0] = x;
+          v[1] = y;
+        }),
+      );
+    }
+    const number = i + 1;
     loose.push({
-      id: 'barrier-' + side + '-' + (i + 1),
+      id: (board ? 'board-' : 'barrier-') + side + '-' + number,
       name,
       role: 'barrier',
       jointGuides: part.jointGuides,
       tabCount: places.length,
       // The Track Planner draws its parts from their outlines.
       ...(work.planning && { outline: part.section.toPolygons() }),
-      solid: work.union(part.additions),
+      solid,
       ...(straight && { printPose: backDownPose(slide.map((v) => -v)) }),
     });
+    if (fence) {
+      const wasm = work.wasm,
+        spec = fenceSpec;
+      loose.push({
+        id: 'fence-' + side + '-' + number,
+        name: (side === 'outer' ? 'Outer' : 'Inner') + ' fence ' + number,
+        role: 'fence',
+        ...(work.planning && { outline: part.section.toPolygons() }),
+        solid: fence,
+        // A fence prints flat on the bed, whatever the bend it stands on.
+        printPose(callback, sideDown) {
+          if (!sideDown) return callback(this.solid);
+          const stock = new SolidWorkshop(wasm);
+          try {
+            return callback(fenceFlat(stock, spec));
+          } finally {
+            stock.close();
+          }
+        },
+      });
+    }
   });
 }

@@ -236,8 +236,13 @@ export function syncPitAssemblyNotes(form, params) {
 }
 
 function tracksideControls(p, draft) {
-  const side = draft.tracksideSide ?? p.tracksideSide;
-  const [min, max] = TRACKSIDE_LIMITS.tracksideRise;
+  const side = draft.tracksideSide ?? p.tracksideSide,
+    shape = draft.tracksideShape ?? p.tracksideShape,
+    fence = draft.tracksideFence ?? p.tracksideFence;
+  const limit = (key) => ({ min: TRACKSIDE_LIMITS[key][0], max: TRACKSIDE_LIMITS[key][1] });
+  const only = (name, body) =>
+    '<fieldset class="border-apex-fields" data-trackside-shape="' + name + '"' +
+    (shape === name ? '>' : ' hidden disabled>') + body + '</fieldset>';
   return (
     choice('tracksideSide', 'Barrier side', p.tracksideSide, [
       ['none', 'None'],
@@ -249,21 +254,46 @@ function tracksideControls(p, draft) {
     details(
       'Barrier',
       choice('tracksideShape', 'Shape', p.tracksideShape, TRACKSIDE_SHAPES) +
-        num(p, 'tracksideRise', 'Height above the road', 'mm', { min, max }) +
-        num(p, 'tracksideFaceAngle', 'Face angle', '°', {
-          min: TRACKSIDE_LIMITS.tracksideFaceAngle[0], max: TRACKSIDE_LIMITS.tracksideFaceAngle[1],
-        }) +
+        num(p, 'tracksideRise', 'Height above the road', 'mm', limit('tracksideRise')) +
+        only(
+          'barrier',
+          num(p, 'tracksideFaceAngle', 'Face angle', '°', limit('tracksideFaceAngle')) +
+            '<p class="hint">The foot of a concrete barrier is as high as the track, so the sloped face starts at the road surface. Face angle is how far that face leans back from upright: 0° is a straight wall, and the measured barrier leans 17.1°.</p>',
+        ) +
+        only(
+          'board',
+          num(p, 'tracksideThickness', 'Board thickness', 'mm', limit('tracksideThickness')) +
+            '<p class="hint">A flat wall for a paper sign: print your sign and glue it to the face. With a fence, the board is at least thick enough for a wall on both sides of each post.</p>',
+        ) +
         choice('tracksideTabs', 'Tabs per barrier', String(p.tracksideTabs), TRACKSIDE_TAB_CHOICES) +
         choice('tracksideEnds', 'Barrier ends', p.tracksideEnds, TRACKSIDE_END_CHOICES) +
-        choice('tracksideEndShape', 'End shape', p.tracksideEndShape, TRACKSIDE_END_SHAPES) +
+        only(
+          'barrier',
+          choice('tracksideEndShape', 'End shape', p.tracksideEndShape, TRACKSIDE_END_SHAPES),
+        ) +
         num(p, 'tracksideSegments', 'Barriers per segment', '', {
-          min: TRACKSIDE_LIMITS.tracksideSegments[0], max: TRACKSIDE_LIMITS.tracksideSegments[1], step: 1,
+          ...limit('tracksideSegments'), step: 1,
         }) +
-        '<p class="hint">A barrier stands on the table beside each border segment, or beside each road segment on a side without a border, and is as long as that edge. Raise Barriers per segment to cut each one into shorter, equal barriers for your print plate. A sloped end runs the top of the first or last barrier down to track height over 25 mm, for where a row of barriers stops. Sloped and rounded also narrows that end to a rounded tip at the track edge. Its foot is as high as the track, so the sloped face starts at the road surface. Face angle is how far that face leans back from upright: 0° is a straight wall, and the measured barrier leans 17.1°.</p>' +
+        '<p class="hint">A barrier stands on the table beside each border segment, or beside each road segment on a side without a border, and is as long as that edge. Raise Barriers per segment to cut each one into shorter, equal barriers for your print plate. A sloped end is for where a row stops: a concrete barrier runs down to track height over 25 mm, sloped or sloped and rounded, and an advertising board gets a rounded top corner.</p>' +
         '<p class="hint">The tabs and their sockets use the tab size and clearance under Joints. An automatic count gives two tabs from ' +
         TWO_TAB_LENGTH + ' mm of edge.</p>' +
         '<p class="hint">A straight barrier prints on its flat back with the tabs up. A curved one prints standing and needs support under each tab.</p>',
       true, 'trackside',
+    ) +
+    only(
+      'board',
+      details(
+        'Catch fence',
+        check('tracksideFence', 'Fence on the board', p.tracksideFence) +
+          '<fieldset class="border-apex-fields" data-trackside-fence' + (fence ? '>' : ' hidden disabled>') +
+          num(p, 'tracksideFenceHeight', 'Fence height above the board', 'mm', limit('tracksideFenceHeight')) +
+          num(p, 'tracksidePost', 'Post size', 'mm', limit('tracksidePost')) +
+          num(p, 'tracksideCable', 'Cable spacing', 'mm', limit('tracksideCable')) +
+          num(p, 'tracksideMesh', 'Mesh size', 'mm', limit('tracksideMesh')) +
+          '<p class="hint">Each board gets its own fence: diamond mesh and horizontal cables between two square posts, a quarter and three quarters of the way along. The posts drop 10 mm into sockets in the top of the board.</p>' +
+          '<p class="hint">A fence prints flat on the bed in one piece, with no support. On a bend it is still printed flat: its thin mesh bends to follow the board.</p></fieldset>',
+        fence, 'fence',
+      ),
     ) +
     '</fieldset>'
   );

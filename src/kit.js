@@ -24,6 +24,7 @@ const PREFIXES = {
   turnoutBearing: 'J',
   motorMount: 'M',
   barrier: 'W',
+  fence: 'F',
   body: 'P',
   addition: 'A',
 };
@@ -38,6 +39,7 @@ const COLORS = {
   turnoutBearing: '#bf9653',
   motorMount: '#56a0a6',
   barrier: '#c9c4b8',
+  fence: '#8d949c',
   body: '#a6b8c4',
   addition: '#80bda7',
 };
@@ -246,7 +248,7 @@ export function packBorderSTLs(parts, encodeSTL, project) {
 }
 
 export function packBarrierSTLs(parts, encodeSTL, project) {
-  const barriers = parts.filter((part) => part.role === 'barrier');
+  const barriers = parts.filter((part) => part.role === 'barrier' || part.role === 'fence');
   if (!barriers.length)
     throw Error('Switch on a barrier under Trackside before exporting barrier STLs.');
   return packRoleSTLs(barriers, encodeSTL, project);

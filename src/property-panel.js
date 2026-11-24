@@ -49,6 +49,8 @@ const readouts = {
   clip: (f) => ({ 'draw-key': 'Dovetail', 'side-screw': 'Kevan Sideclip' })[value(f, 'clipType')] ?? 'Carrera',
   tab: (f) => size(f, 'tabWidth', 'tabLength'),
   trackside: (f) => value(f, 'tracksideRise') + ' mm above the road',
+  fence: (f) =>
+    f.elements.tracksideFence?.checked ? value(f, 'tracksideFenceHeight') + ' mm high' : 'Off',
 };
 
 export function syncPropertyReadouts(form) {

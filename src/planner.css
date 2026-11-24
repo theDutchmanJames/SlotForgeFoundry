@@ -247,6 +247,12 @@
   fill: #b9b5aa;
   stroke: var(--d-track-edge);
 }
+/* A fence stands on its board: draw only a line along it. */
+.pm-fence {
+  fill: none;
+  stroke: #5f666e;
+  stroke-dasharray: 2 2;
+}
 /* Sections added to the selection with Ctrl-click. */
 .marked .pm-road {
   fill: #3f4c5f;
