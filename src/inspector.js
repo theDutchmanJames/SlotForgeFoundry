@@ -25,6 +25,7 @@ import { slotPositionControls, slotSpacingHint } from './slot-position-controls.
 import { startingGridControls } from './starting-grid-controls.js';
 import { TRACK_PROFILE_LIMITS } from './track.js';
 import {
+  TRACKSIDE_END_CHOICES,
   TRACKSIDE_LIMITS,
   TRACKSIDE_SHAPES,
   TRACKSIDE_TAB_CHOICES,
@@ -249,10 +250,11 @@ function tracksideControls(p, draft) {
       choice('tracksideShape', 'Shape', p.tracksideShape, TRACKSIDE_SHAPES) +
         num(p, 'tracksideRise', 'Height above the road', 'mm', { min, max }) +
         choice('tracksideTabs', 'Tabs per barrier', String(p.tracksideTabs), TRACKSIDE_TAB_CHOICES) +
+        choice('tracksideEnds', 'Barrier ends', p.tracksideEnds, TRACKSIDE_END_CHOICES) +
         num(p, 'tracksideSegments', 'Barriers per segment', '', {
           min: TRACKSIDE_LIMITS.tracksideSegments[0], max: TRACKSIDE_LIMITS.tracksideSegments[1], step: 1,
         }) +
-        '<p class="hint">A barrier stands on the table beside each border segment, or beside each road segment on a side without a border, and is as long as that edge. Raise Barriers per segment to cut each one into shorter, equal barriers for your print plate. Its foot is as high as the track, so the sloped face starts at the road surface.</p>' +
+        '<p class="hint">A barrier stands on the table beside each border segment, or beside each road segment on a side without a border, and is as long as that edge. Raise Barriers per segment to cut each one into shorter, equal barriers for your print plate. A sloped end runs the top of the first or last barrier down to track height over 25 mm, for where a row of barriers stops. Its foot is as high as the track, so the sloped face starts at the road surface.</p>' +
         '<p class="hint">The tabs and their sockets use the tab size and clearance under Joints. An automatic count gives two tabs from ' +
         TWO_TAB_LENGTH + ' mm of edge.</p>' +
         '<p class="hint">A straight barrier prints on its flat back with the tabs up. A curved one prints standing and needs support under each tab.</p>',

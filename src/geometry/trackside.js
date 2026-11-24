@@ -18,6 +18,7 @@ export const TRACKSIDE_DEFAULTS = Object.freeze({
   tracksideRise: 20,
   tracksideTabs: 'auto',
   tracksideSegments: 1,
+  tracksideEnds: 'none',
 });
 export const TRACKSIDE_LIMITS = Object.freeze({
   tracksideRise: [5, 100],
@@ -26,6 +27,15 @@ export const TRACKSIDE_LIMITS = Object.freeze({
 // A barrier this long or longer takes two tabs when the count is automatic.
 export const TWO_TAB_LENGTH = 150;
 export const BARRIER_FOOT = 15;
+export const TRACKSIDE_END_CHOICES = Object.freeze([
+  ['none', 'Plain ends'],
+  ['start', 'Sloped at the start'],
+  ['finish', 'Sloped at the finish'],
+  ['both', 'Sloped at both ends'],
+]);
+// The top of a sloped end runs down over this length, to just above the foot.
+export const END_RAMP = 25;
+export const END_HEIGHT = 0.5;
 
 // The face of the barrier above the road, measured on a barrier that stands
 // 20 mm above an 8.3 mm track: [distance from the track edge, height above
@@ -57,6 +67,8 @@ export function validateTrackside(p) {
   const [min, max] = TRACKSIDE_LIMITS.tracksideRise;
   if (!Number.isFinite(p.tracksideRise) || p.tracksideRise < min || p.tracksideRise > max)
     throw new Error(`The barrier height above the road must be between ${min} and ${max} mm.`);
+  if (!TRACKSIDE_END_CHOICES.some(([id]) => id === p.tracksideEnds))
+    throw new Error('Unknown barrier end.');
   const [fewest, most] = TRACKSIDE_LIMITS.tracksideSegments;
   if (!Number.isInteger(p.tracksideSegments) || p.tracksideSegments < fewest || p.tracksideSegments > most)
     throw new Error(`Barrier segments must be a whole number between ${fewest} and ${most}.`);
@@ -175,15 +187,52 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
     }),
   );
   runs.forEach(([host, a, b], i) => {
-    const stations = [
+    let stations = [
       ...new Set([a, ...path.stations.filter((t) => t > a && t < b), b]),
     ];
     const at = (t, d = 0) => path.point(t, edgeAt(t) + sign * d);
-    const rings = stations.map((t) =>
-      profile.map(([d, z]) => [...at(t, d), z]),
-    );
+    const length = edgeLength(stations.map((t) => at(t)));
+    // A sloped end: the top runs down to the foot over the last stretch of
+    // the first or last barrier on this side.
+    const ramp = Math.min(END_RAMP, length * 0.4);
+    const sloped = [
+      i === 0 && ['start', 'both'].includes(p.tracksideEnds),
+      i === runs.length - 1 && ['finish', 'both'].includes(p.tracksideEnds),
+    ];
+    const along = () => {
+      const distances = [0];
+      for (let k = 1; k < stations.length; k++)
+        distances.push(
+          distances[k - 1] +
+            Math.hypot(...minus(at(stations[k]), at(stations[k - 1]))),
+        );
+      return distances;
+    };
+    for (const [end, on] of sloped.entries()) {
+      if (!on) continue;
+      // The slope starts at a station of its own.
+      const distances = along(),
+        target = end ? length - ramp : ramp;
+      const k = distances.findIndex((d) => d > target + 1e-6);
+      if (k > 0 && target - distances[k - 1] > 1e-6) {
+        const part = (target - distances[k - 1]) / (distances[k] - distances[k - 1]);
+        stations.splice(k, 0, stations[k - 1] + (stations[k] - stations[k - 1]) * part);
+      }
+    }
+    const distances = along();
+    const lowest = END_HEIGHT / p.tracksideRise;
+    const rings = stations.map((t, k) => {
+      const scale = Math.min(
+        1,
+        sloped[0] ? lowest + ((1 - lowest) * distances[k]) / ramp : 1,
+        sloped[1] ? lowest + ((1 - lowest) * (length - distances[k])) / ramp : 1,
+      );
+      return profile.map(([d, z]) => [
+        ...at(t, d),
+        z > p.height ? p.height + (z - p.height) * scale : z,
+      ]);
+    });
     const edge = stations.map((t) => at(t));
-    const length = edgeLength(edge);
     const name = label + ' barrier ' + (i + 1);
     const warn = (reason, advice) =>
       connectorWarning(name, reason, advice, {
@@ -292,6 +341,8 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       role: 'barrier',
       jointGuides: part.jointGuides,
       tabCount: places.length,
+      // The Track Planner draws its parts from their outlines.
+      ...(work.planning && { outline: part.section.toPolygons() }),
       solid: work.union(part.additions),
       ...(straight && { printPose: backDownPose(slide.map((v) => -v)) }),
     });

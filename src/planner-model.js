@@ -412,6 +412,23 @@ export const SUPPORT_STYLES = Object.freeze([
   ['block', 'Full-width block'],
   ['pegs', 'Two pegs'],
 ]);
+export const BARRIER_SIDES = [
+  ['none', 'None'],
+  ['outer', 'Outside / left'],
+  ['inner', 'Inside / right'],
+  ['both', 'Both sides'],
+];
+export const BARRIER_ENDS = [
+  ['none', 'Plain ends'],
+  ['start', 'Sloped at end A'],
+  ['finish', 'Sloped at end B'],
+  ['both', 'Sloped at both ends'],
+];
+// The barriers a placed section carries come from its piece recipe.
+export const barrierOf = (def) => ({
+  side: def.track.params.tracksideSide ?? 'none',
+  ends: def.track.params.tracksideEnds ?? 'none',
+});
 export const supportStyleOf = (n) =>
   n.supportStyle === 'pegs' ? 'pegs' : 'block';
 // A peg's size as [across the road, along the road].

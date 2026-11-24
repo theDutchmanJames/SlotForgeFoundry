@@ -101,10 +101,10 @@ export function createPlanView(host, onPick) {
     if (mode === 'solid') viewport?.fit();
   }
   function draw(
-    { rows, ends, chosen, selected, defs, blocks, blocked = [] },
+    { rows, ends, chosen, selected, defs, blocks, blocked = [], marked = new Set() },
     refit = false,
   ) {
-    current = { rows, ends, chosen, selected, defs, blocks, blocked };
+    current = { rows, ends, chosen, selected, defs, blocks, blocked, marked };
     if (mode === 'solid') {
       viewport ??= new Viewport(solid, (id) => onPick(id.split('/')[0]));
       const free = new Set(ends.map((e) => e.key));
@@ -145,7 +145,7 @@ export function createPlanView(host, onPick) {
       .sort((a, b) => elevation(a) - elevation(b))
       .map(({ n, def, key }) => {
         // Unchanged sections reuse their markup from the last drawing.
-        const id = n.id + '|' + key + '|' + (n.id === selected) + '|' + def.name;
+        const id = n.id + '|' + key + '|' + (n.id === selected) + '|' + marked.has(n.id) + '|' + def.name;
         const known = markup.get(id);
         if (known !== undefined) {
           used.set(id, known);
@@ -189,6 +189,7 @@ export function createPlanView(host, onPick) {
           n.id +
           '" class="pm-piece' +
           (n.id === selected ? ' selected' : '') +
+          (marked.has(n.id) ? ' marked' : '') +
           (Math.max(...n.h) > 0 ? ' elevated' : '') +
           '"><title>' +
           esc(def.name) +
@@ -302,6 +303,8 @@ export function createPlanView(host, onPick) {
       target: e.target,
       box: [...box],
       moved: false,
+      // Ctrl, Cmd or Shift adds the section to the selection.
+      extend: e.ctrlKey || e.metaKey || e.shiftKey,
     };
     svg.setPointerCapture(e.pointerId);
   };
@@ -327,7 +330,7 @@ export function createPlanView(host, onPick) {
       const end = drag.target.closest('[data-end]')?.dataset.end;
       const id =
         end?.split(':')[0] ?? drag.target.closest('[data-node]')?.dataset.node;
-      if (id) onPick(id, end);
+      if (id) onPick(id, end, drag.extend && !end);
     }
     drag = null;
   };

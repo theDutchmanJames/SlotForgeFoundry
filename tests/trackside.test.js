@@ -251,3 +251,32 @@ test('barriers follow the segments of their edge and can be cut shorter', () => 
       /Barrier segments must be a whole number between 1 and 16/,
     );
 });
+
+test('a sloped end runs the top down to the foot at the chosen end only', () => {
+  const top = (solid, x, y) => solid.rayCast([x, y, 60], [x, y, -1])[0]?.position[2];
+  const y = 50 + 12;
+  const p = piece({ tracksideSide: 'outer', tracksideEnds: 'start' });
+  build(p, (parts) => {
+    const [barrier] = barriers(parts);
+    assert.equal(barrier.solid.status(), 'NoError');
+    // Just above the 12 mm foot at the very end, half way up half way along
+    // the 25 mm slope, full height from there on and at the other end.
+    near(top(barrier.solid, -99.99, y), 12.5, 0.02);
+    near(top(barrier.solid, -100 + 12.5, y), 12 + (0.5 + 20) / 2, 0.02);
+    near(top(barrier.solid, -100 + 25.5, y), 32);
+    near(top(barrier.solid, 99.9, y), 32);
+    near(size(barrier.solid)[0], 200);
+  });
+  build({ ...p, tracksideEnds: 'both', tracksideSegments: 2 }, (parts) => {
+    const [first, second] = barriers(parts);
+    // The slopes are at the two outer ends of the row, not where barriers meet.
+    near(top(first.solid, -99.99, y), 12.5, 0.02);
+    near(top(first.solid, -0.1, y), 32);
+    near(top(second.solid, 0.1, y), 32);
+    near(top(second.solid, 99.99, y), 12.5, 0.02);
+  });
+  build({ ...defaultTrack(), angle: 45, tracksideSide: 'both', tracksideEnds: 'both' }, (parts) => {
+    for (const part of barriers(parts)) assert.equal(part.solid.status(), 'NoError');
+  });
+  assert.throws(() => validateTrack(trackParameters(piece({ tracksideEnds: 'round' }))), /Unknown barrier end/);
+});

@@ -243,6 +243,17 @@
 .elevated .pm-road {
   fill: #4a5059;
 }
+.pm-barrier {
+  fill: #b9b5aa;
+  stroke: var(--d-track-edge);
+}
+/* Sections added to the selection with Ctrl-click. */
+.marked .pm-road {
+  fill: #3f4c5f;
+  stroke: var(--focus);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
 /* The selected section: focus blue edge, as in the 3D view. */
 .selected .pm-road {
   fill: #45546a;

@@ -21,6 +21,9 @@ import {
   supportRequests,
   SUPPORT_STYLES,
   supportStyleOf,
+  BARRIER_ENDS,
+  BARRIER_SIDES,
+  barrierOf,
   pegSizeOf,
   totalLength,
   tally,
@@ -171,9 +174,9 @@ export function createPlanner({ host, call, download, current, promote }) {
   }
   const $ = (s) => host.querySelector(s),
     field = (k) => $('[data-pl-field="' + k + '"]');
-  const view = createPlanView($('.pl-stage'), (id, end) => {
+  const view = createPlanView($('.pl-stage'), (id, end, extend) => {
     if (busy) return;
-    select(id, end);
+    select(id, end, extend);
   });
   const recipe = (n) => defs.get(n.source);
   const selected = () => layout.nodes.find((n) => n.id === choice.selected);
@@ -185,10 +188,61 @@ export function createPlanner({ host, call, download, current, promote }) {
   };
   const activeBtn = (key, state) =>
     $('[data-pl="' + key + '"]').setAttribute('aria-pressed', String(state));
-  function select(id, end) {
+  // Sections picked with Ctrl-click, besides the selected one. Settings that
+  // can apply to several sections (barriers) use both.
+  let marked = new Set();
+  const chosenIds = () => {
+    const live = new Set(layout.nodes.map((n) => n.id));
+    return new Set([choice.selected, ...marked].filter((id) => live.has(id)));
+  };
+  function select(id, end, extend = false) {
+    if (extend && choice.selected && id !== choice.selected) {
+      if (marked.has(id)) marked.delete(id);
+      else marked.add(id);
+      render();
+      return;
+    }
+    if (!extend) marked = new Set();
     const open = net.open.filter((e) => e.id === id);
     choice = { selected: id, end: end ?? open.at(-1)?.key ?? choice.end };
     render();
+  }
+  // Barriers belong to a piece recipe. A section that gets its own barriers
+  // moves to a copy of its recipe with that setting; unused copies are
+  // dropped when the layout is saved.
+  async function setBarriers(side, ends) {
+    const ids = chosenIds();
+    const models = new Map(defs),
+      additions = {},
+      swaps = new Map();
+    for (const key of new Set(
+      layout.nodes.filter((n) => ids.has(n.id)).map((n) => n.source),
+    )) {
+      const entry = layout.sources[key],
+        now = barrierOf(entry);
+      if (now.side === side && now.ends === ends) continue;
+      const track = structuredClone(entry.track);
+      track.params.tracksideSide = side;
+      track.params.tracksideEnds = ends;
+      const def = await build(track, false);
+      if (def.sections.length !== defs.get(key).sections.length)
+        throw Error('The barriers change how this piece is divided. Set them in Track Set instead.');
+      const same = Object.entries({ ...layout.sources, ...additions }).find(
+        ([, s]) =>
+          s.name === entry.name &&
+          JSON.stringify(s.track) === JSON.stringify(def.track),
+      );
+      const next = same?.[0] ?? 's' + ++serial;
+      models.set(next, { ...def, name: entry.name });
+      additions[next] = { ...entry, track: def.track };
+      swaps.set(key, next);
+    }
+    if (!swaps.size) return;
+    await edit((next) => {
+      Object.assign(next.sources, additions);
+      for (const n of next.nodes)
+        if (ids.has(n.id) && swaps.has(n.source)) n.source = swaps.get(n.source);
+    }, models);
   }
   // A built piece comes from memory, then from this device's cache, then from
   // the geometry worker. A request for a piece that is already being built
@@ -632,6 +686,26 @@ export function createPlanner({ host, call, download, current, promote }) {
         '"></label>' +
         '<small>Pegs stand in pairs, one under each road edge, so a count of 2 gives four pegs. Width is across the road and length is along it. Their tops follow the slope of the road. New pieces carry on the climb and the supports of the piece they join.</small><small>Lift is measured under the road. Connected ends follow the lift. Use a straight for a ramp.</small>' +
         btn('elevate', 'Apply heights', 'check') +
+        '</div></details>' +
+        '<details class="pl-bridge pl-barriers"><summary>Barriers</summary><div>' +
+        '<label>Barrier side<select data-pl-field="barrierSide">' +
+        BARRIER_SIDES.map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + (barrierOf(def).side === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
+        '<label>Barrier ends<select data-pl-field="barrierEnds">' +
+        BARRIER_ENDS.map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + (barrierOf(def).ends === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
+        '<small>' +
+        (chosenIds().size > 1
+          ? chosenIds().size + ' sections are selected. '
+          : 'Only this section gets the barriers. ') +
+        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops.</small>' +
+        btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
     const from = net.open.find((e) => e.key === choice.end),
@@ -758,6 +832,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         defs,
         blocks,
         blocked: misfits,
+        marked: new Set([...marked].filter((id) => id !== n?.id)),
       },
       fit,
     );
@@ -800,6 +875,9 @@ export function createPlanner({ host, call, download, current, promote }) {
           };
         track.params.segments = source.track.params.segments;
         track.params.borderSegments = source.track.params.borderSegments;
+        // Barriers set in the layout stay with the layout.
+        for (const key of ['tracksideSide', 'tracksideEnds'])
+          if (source.track.params[key] !== undefined) track.params[key] = source.track.params[key];
         const def = await build(track, false);
         source.track = def.track;
         source.name = piece.name;
@@ -1077,6 +1155,13 @@ export function createPlanner({ host, call, download, current, promote }) {
         ]);
       });
       $('.pl-bridge').open = true;
+      return;
+    }
+    if (key === 'barriers') {
+      message('Fitting the barriers…');
+      await setBarriers(field('barrierSide').value, field('barrierEnds').value);
+      message('');
+      $('.pl-barriers').open = true;
       return;
     }
     if (key === 'new')

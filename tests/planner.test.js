@@ -974,3 +974,33 @@ test('pegs take the width and length that are set, and new pieces keep that size
       [50, 30, 40],
     );
 });
+
+test('a piece recipe with barriers gives its sections their own barrier parts', () => {
+  const plain = source(0),
+    walled = source(0, { tracksideSide: 'outer', tracksideEnds: 'finish' });
+  assert.equal(walled.sections.length, plain.sections.length);
+  const barriers = walled.meshes.filter((m) => m.role === 'barrier');
+  assert.ok(barriers.length >= 1);
+  // Drawn on the plan from their outline, and issued with a section.
+  for (const mesh of barriers) {
+    assert.ok(mesh.outline?.length, 'the barrier has an outline for the plan');
+    assert.ok(walled.sections.some((s) => s.parts.includes(mesh.id)));
+  }
+  assert.equal(plain.meshes.filter((m) => m.role === 'barrier').length, 0);
+  // The two recipes sit side by side in one layout: only the section that
+  // uses the walled recipe prints a barrier.
+  const { layout, defs } = setup([['s1', plain], ['s2', walled]]);
+  placeSource(layout, defs, 's1');
+  placeSource(layout, defs, 's2');
+  const printed = tally(layout, defs).filter((g) => g.role === 'barrier');
+  assert.equal(printed.length, barriers.length);
+  assert.ok(printed.every((g) => g.source === 's2'));
+  const bytes = engine.plannerPrint({
+    track: walled.track,
+    items: printed.map((g) => ({ id: g.id, mirror: g.mirror, pose: g.pose })),
+  });
+  const print = parseSTL(wasm, bytes[0]);
+  assert.equal(print.status(), 'NoError');
+  assert.ok(Math.abs(print.boundingBox().min[2]) < 0.001);
+  print.delete();
+});
