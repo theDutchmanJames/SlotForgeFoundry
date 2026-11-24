@@ -147,6 +147,10 @@ export function syncTrackShapeControls(form) {
     ribs.hidden = ribs.disabled = !e.hollow.checked;
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
+  if (e.tracksideSide) {
+    const group = form.querySelector('[data-trackside]');
+    group.hidden = group.disabled = e.tracksideSide.value === 'none';
+  }
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))
       group.hidden = group.disabled = group.dataset.braidStyle !== e.braidStyle.value;

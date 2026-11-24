@@ -30,7 +30,7 @@ test('every piece setting lives in exactly one section, once', () => {
   const components = [
     ...trackNavigation('geometry').matchAll(/data-tab="([^"]+)"/g),
   ].map(([, id]) => id);
-  assert.deepEqual(components, ['geometry', 'profile', 'borders', 'markings', 'joints', 'print']);
+  assert.deepEqual(components, ['geometry', 'profile', 'borders', 'markings', 'trackside', 'joints', 'print']);
   for (const component of components) {
     const controls = trackInspector(project, component).matchAll(
       /\bname="([^"]+)"/g,
@@ -42,6 +42,7 @@ test('every piece setting lives in exactly one section, once', () => {
   assert.deepEqual(Object.fromEntries(shared), {}, 'a setting shown twice');
   for (const [component, settings] of Object.entries({
     geometry: ['kind', 'radius', 'angle', 'width', 'lanes', 'laneSpacing'],
+    trackside: ['tracksideSide', 'tracksideShape', 'tracksideRise', 'tracksideTabs', 'tracksideSegments'],
     markings: [
       'whiteLineRoad',
       'roadCentreLine',

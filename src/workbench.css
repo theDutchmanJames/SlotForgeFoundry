@@ -156,7 +156,7 @@ body:has(.track-library[open]) .appbar nav .active {
 }
 #track-sections .component-nav {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 5px;
   padding: 0;
 }
@@ -286,7 +286,7 @@ body:has(.track-library[open]) .appbar nav .active {
   .stage { min-height: 380px; height: 54dvh; }
   .stage-head { min-height: 44px; padding: 6px 9px; }
   #track-sections { padding-bottom: 8px; }
-  #track-sections .component-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  #track-sections .component-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
   #track-sections .component-nav button { flex-direction: row; min-height: 36px; gap: 5px; font-size: 11px; }
   #track-sections .component-nav button .i { width: 15px; height: 15px; }
   .part-summary { min-height: 40px; gap: 6px; }

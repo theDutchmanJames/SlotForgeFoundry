@@ -23,6 +23,7 @@ const PREFIXES = {
   turnoutArm: 'K',
   turnoutBearing: 'J',
   motorMount: 'M',
+  barrier: 'W',
   body: 'P',
   addition: 'A',
 };
@@ -36,6 +37,7 @@ const COLORS = {
   turnoutArm: '#8b80bb',
   turnoutBearing: '#bf9653',
   motorMount: '#56a0a6',
+  barrier: '#c9c4b8',
   body: '#a6b8c4',
   addition: '#80bda7',
 };
@@ -241,6 +243,13 @@ export function packBorderSTLs(parts, encodeSTL, project) {
   if (!borders.length)
     throw Error('Add a border before exporting border STLs.');
   return packRoleSTLs(borders, encodeSTL, project);
+}
+
+export function packBarrierSTLs(parts, encodeSTL, project) {
+  const barriers = parts.filter((part) => part.role === 'barrier');
+  if (!barriers.length)
+    throw Error('Switch on a barrier under Trackside before exporting barrier STLs.');
+  return packRoleSTLs(barriers, encodeSTL, project);
 }
 
 export function packSupportSTLs(parts, encodeSTL, project) {

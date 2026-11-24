@@ -24,6 +24,12 @@ import { borderEndControls, laneLayoutControls } from './track-shape-controls.js
 import { slotPositionControls, slotSpacingHint } from './slot-position-controls.js';
 import { startingGridControls } from './starting-grid-controls.js';
 import { TRACK_PROFILE_LIMITS } from './track.js';
+import {
+  TRACKSIDE_LIMITS,
+  TRACKSIDE_SHAPES,
+  TRACKSIDE_TAB_CHOICES,
+  TWO_TAB_LENGTH,
+} from './geometry/trackside.js';
 import { specialControls, specialName } from './special-piece-controls.js';
 import { specialAssemblyNotes } from './special-pieces.js';
 import {
@@ -163,13 +169,14 @@ export function syncOperationControls(form, facePlan) {
   hint.hidden = !removing;
 }
 
-// The six sections of a piece. The ids are the older tab names, kept so saved
+// The seven sections of a piece. The ids are the older tab names, kept so saved
 // views, warnings and guides still find their settings.
 const trackTasks = [
   ['geometry', 'Shape', 'track'],
   ['profile', 'Cross-section', 'layers'],
   ['borders', 'Borders', 'move'],
   ['markings', 'Markings', 'markings'],
+  ['trackside', 'Trackside', 'trackside'],
   ['joints', 'Joints', 'join'],
   ['print', 'Print', 'plate'],
 ];
@@ -178,6 +185,7 @@ const trackNotes = {
   profile: 'The road body, the guide slot and the braid.',
   borders: 'The borders beside the road and how they end.',
   markings: 'White lines, kerbs and grid marks, and the grooves to paint them.',
+  trackside: 'Accessories that stand beside the track and plug into its edge.',
   joints: 'How pieces and borders join: keys, clips or tabs, and their fit.',
   print: 'How the piece is cut into printable parts for your plate.',
 };
@@ -185,6 +193,7 @@ const trackNotes = {
 const SECTION_OF_FIELD = [
   [/^(whiteLine|roadCentreLine|dash|roadKerb|kerb|groove|grid|roadLineGroove|borderLineGroove|spPitWhiteLine|spPitCrossingStyle|spPitGrid)/, 'markings'],
   [/^(segments|borderSegments)$/, 'print'],
+  [/^trackside/, 'trackside'],
   [/^slot(Edge|Start|End|Lanes|Lane[1-8](Start|End))$/, 'geometry'],
 ];
 export function sectionForField(field, fallback) {
@@ -222,6 +231,35 @@ export function syncPitAssemblyNotes(form, params) {
   if (!notes || params.special?.type !== 'pit') return;
   const markup = assemblyNotesMarkup(params);
   if (notes.innerHTML !== markup) notes.innerHTML = markup;
+}
+
+function tracksideControls(p, draft) {
+  const side = draft.tracksideSide ?? p.tracksideSide;
+  const [min, max] = TRACKSIDE_LIMITS.tracksideRise;
+  return (
+    choice('tracksideSide', 'Barrier side', p.tracksideSide, [
+      ['none', 'None'],
+      ['outer', 'Outside / left'],
+      ['inner', 'Inside / right'],
+      ['both', 'Both'],
+    ]) +
+    '<fieldset class="border-apex-fields" data-trackside' + (side === 'none' ? ' hidden disabled>' : '>') +
+    details(
+      'Barrier',
+      choice('tracksideShape', 'Shape', p.tracksideShape, TRACKSIDE_SHAPES) +
+        num(p, 'tracksideRise', 'Height above the road', 'mm', { min, max }) +
+        choice('tracksideTabs', 'Tabs per barrier', String(p.tracksideTabs), TRACKSIDE_TAB_CHOICES) +
+        num(p, 'tracksideSegments', 'Barriers per segment', '', {
+          min: TRACKSIDE_LIMITS.tracksideSegments[0], max: TRACKSIDE_LIMITS.tracksideSegments[1], step: 1,
+        }) +
+        '<p class="hint">A barrier stands on the table beside each border segment, or beside each road segment on a side without a border, and is as long as that edge. Raise Barriers per segment to cut each one into shorter, equal barriers for your print plate. Its foot is as high as the track, so the sloped face starts at the road surface.</p>' +
+        '<p class="hint">The tabs and their sockets use the tab size and clearance under Joints. An automatic count gives two tabs from ' +
+        TWO_TAB_LENGTH + ' mm of edge.</p>' +
+        '<p class="hint">A straight barrier prints on its flat back with the tabs up. A curved one prints standing and needs support under each tab.</p>',
+      true, 'trackside',
+    ) +
+    '</fieldset>'
+  );
 }
 
 export function trackInspector(project, tab, draft = {}) {
@@ -406,6 +444,8 @@ export function trackInspector(project, tab, draft = {}) {
       false, 'braid',
     );
     html += braidFeedControls(p);
+  } else if (tab === 'trackside') {
+    html += tracksideControls(p, draft);
   } else if (tab === 'borders') {
     html += choice('borderSide', 'Border side', p.borderSide, [
       ['none', 'None'],

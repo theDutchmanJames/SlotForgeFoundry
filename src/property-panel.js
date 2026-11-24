@@ -48,6 +48,7 @@ const readouts = {
     value(f, 'connectorOffset') === '0' ? 'Automatic' : value(f, 'connectorOffset') + ' mm',
   clip: (f) => ({ 'draw-key': 'Dovetail', 'side-screw': 'Kevan Sideclip' })[value(f, 'clipType')] ?? 'Carrera',
   tab: (f) => size(f, 'tabWidth', 'tabLength'),
+  trackside: (f) => value(f, 'tracksideRise') + ' mm above the road',
 };
 
 export function syncPropertyReadouts(form) {

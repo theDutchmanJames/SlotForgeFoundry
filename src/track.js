@@ -46,6 +46,12 @@ import {
   validateSlotPosition,
 } from './slot-position.js';
 import { finishBridges, prepareBridges } from './geometry/bridge-build.js';
+import {
+  TRACKSIDE_DEFAULTS,
+  addTrackside,
+  tracksideOn,
+  validateTrackside,
+} from './geometry/trackside.js';
 import { layOutKerbstones, layOutRoadKerbs, WHITE_LINE_COLOR } from './geometry/kerbstones.js';
 import { pitGridLayout, startingGridLayout } from './geometry/starting-grid.js';
 import { applyRoadCentreLine, centreLinePaint } from './geometry/road-centre-line.js';
@@ -161,6 +167,7 @@ export function defaultTrack() {
     connectorOffset: 0,
     clipType: 'draw-key',
     ...JOINT_FIT_DEFAULTS,
+    ...TRACKSIDE_DEFAULTS,
   };
 }
 
@@ -212,6 +219,7 @@ export function validateTrack(p) {
   }
   if (!['none', 'inner', 'outer', 'both'].includes(p.borderSide))
     throw new Error('Unknown border side.');
+  validateTrackside(p);
   if (!['none', 'road', 'free', 'both'].includes(p.kerbEdge))
     throw new Error('Choose a valid edge for the kerbstone markings.');
   if (!['inner', 'outer', 'both'].includes(p.kerbSide))
@@ -732,7 +740,16 @@ function nativePieces(
       roadStations,
     );
     if (roadKerbs) layOutRoadKerbs(work, p, side, roads, roadLayout, roadStations);
-    if (!active) continue;
+    if (!active) {
+      // Without a border the barrier plugs into the road edge itself.
+      if (tracksideOn(p, side))
+        addTrackside(
+          work, p, path, side, sign, roads,
+          roads.map((_, i) => [i / roads.length, (i + 1) / roads.length]),
+          () => (sign * p.width) / 2, () => Infinity, loose,
+        );
+      continue;
+    }
     const borders = [],
       edge = (sign * p.width) / 2,
       free = (t) => edge + sign * profile.widthAt(t);
@@ -804,6 +821,12 @@ function nativePieces(
       line.borderWidth + line.borderGroove,
       stations,
     );
+    if (tracksideOn(p, side))
+      addTrackside(
+        work, p, sidePath, side, sign, borders,
+        borders.map((_, i) => [borderSeam(sidePath, p, i), borderSeam(sidePath, p, i + 1)]),
+        free, (t) => profile.widthAt(t), loose,
+      );
   }
   return { pieces, loose };
 }

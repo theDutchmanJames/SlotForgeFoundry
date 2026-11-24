@@ -1,5 +1,6 @@
 import { BRAID_DEFAULTS, defaultTrack, RIB_DEFAULTS } from './track.js';
 import { braidRaised } from './geometry/solids.js';
+import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { validateSpecialType } from './special-pieces.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
 import { validateConnectorCounts } from './geometry/placements.js';
@@ -564,6 +565,7 @@ export function checkProject(p) {
     params = { ...RIB_DEFAULTS, ...params };
   if (params.braidStyle === undefined || params.braidRaise === undefined)
     params = { ...BRAID_DEFAULTS, ...params };
+  if (params.tracksideSide === undefined) params = { ...TRACKSIDE_DEFAULTS, ...params };
   validateConnectorCounts(params.connectorCounts);
   validateSpecialType(params);
   if (params.special && (p.track.plan || p.track.custom))

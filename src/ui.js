@@ -43,6 +43,7 @@ import {
   LibraryBig,
   Pencil,
   CarFront,
+  Fence,
 } from 'lucide';
 
 export const navigationHint =
@@ -94,6 +95,7 @@ const symbols = {
   library: LibraryBig,
   pencil: Pencil,
   car: CarFront,
+  trackside: Fence,
 };
 export function icon(name) {
   return (

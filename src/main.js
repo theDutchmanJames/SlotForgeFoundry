@@ -1268,6 +1268,7 @@ function choosePart(id, { keepSurface = false } = {}) {
     const keep = ['profile', 'markings', 'print'].includes(trackTab);
     if (role === 'border' && !['markings', 'print'].includes(trackTab)) trackTab = 'borders';
     if (role === 'clip' || role === 'retainer') trackTab = 'joints';
+    if (role === 'barrier') trackTab = 'trackside';
     if (['support', 'turnout', 'turnoutArm', 'turnoutBearing', 'motorMount'].includes(role)) trackTab = 'geometry';
     if (role === 'road' && !keep) trackTab = 'geometry';
     focusedField = '';
@@ -4172,6 +4173,7 @@ function exportMenu() {
   );
   const borders = visibleModel.filter((p) => p.role === 'border');
   const supports = visibleModel.filter((p) => p.role === 'support');
+  const barriers = visibleModel.filter((p) => p.role === 'barrier');
   const track = project.mode === 'track';
   const hasKeepers = track && visibleModel.some((p) => p.role === 'retainer');
   const flatCrossing = isFlatCrossingProject(shownDraft?.trial.next ?? project);
@@ -4226,6 +4228,16 @@ function exportMenu() {
             'Borders only · ZIP',
             borders.length +
               (borders.length === 1 ? ' border segment' : ' border segments') +
+              ', each in its own STL.',
+            'layers',
+          )
+        : '') +
+      (track && barriers.length
+        ? row(
+            'export-barriers',
+            'Barriers only · ZIP',
+            barriers.length +
+              (barriers.length === 1 ? ' barrier' : ' barriers') +
               ', each in its own STL.',
             'layers',
           )
@@ -4777,6 +4789,16 @@ Object.assign(actions, {
       'application/zip',
     );
     status('Border STLs exported');
+  },
+  'export-barriers': async () => {
+    closeDialog();
+    await applyForOutput();
+    download(
+      cleanName(project.name) + '-barriers.zip',
+      await call('barrierSTLs', null),
+      'application/zip',
+    );
+    status('Barrier STLs exported');
   },
   'export-supports': async () => {
     closeDialog();

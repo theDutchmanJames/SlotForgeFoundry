@@ -26,7 +26,7 @@ import { activeOps,
 } from './project.js';
 import { parseDrawing } from './imports.js';
 import { inspectFlatImport } from './drawings/flat-import.js';
-import { packKit, packBorderSTLs, packSupportSTLs, printableSTL } from './kit.js';
+import { packKit, packBarrierSTLs, packBorderSTLs, packSupportSTLs, printableSTL } from './kit.js';
 import { packFitSamples } from './fit-samples.js';
 import { keeperToolSTL } from './keeper-tool-stl.js';
 import { footprintHull } from './geometry/plate.js';
@@ -935,6 +935,8 @@ export function createEngine(wasm) {
     },
     borderSTLs: () =>
       packBorderSTLs(state?.parts ?? [], encodeSTL, state?.project),
+    barrierSTLs: () =>
+      packBarrierSTLs(state?.parts ?? [], encodeSTL, state?.project),
     supportSTLs: () =>
       packSupportSTLs(state?.parts ?? [], encodeSTL, state?.project),
     testJoint: ({ params, which }) => {

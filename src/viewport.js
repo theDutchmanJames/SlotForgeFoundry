@@ -29,6 +29,7 @@ const COLORS = {
   turnoutArm: 0xb93a40,
   turnoutBearing: 0xc9454b,
   motorMount: 0xa8323a,
+  barrier: 0xb9b5aa,
   body: 0x5b626c,
   addition: 0xe5484d,
   section: 0x9aa3ad,
@@ -44,6 +45,7 @@ const SELECTED_TRACK_COLORS = {
   turnoutArm: 0xd25a60,
   turnoutBearing: 0xe0676c,
   motorMount: 0xc4474e,
+  barrier: 0xd6d2c6,
 };
 const EDGE_COLOR = 0x15181c;
 // The selected part is edged in the SlotForge focus blue (red is hardware).

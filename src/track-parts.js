@@ -6,6 +6,7 @@ const families = {
   clip: 'Clips',
   retainer: 'Quarter-turn keepers',
   support: 'Bridge supports',
+  barrier: 'Barriers',
   turnout: 'Pit turnout blades',
   turnoutArm: 'Pit actuator cranks',
   turnoutBearing: 'Pit pivot bearings',
