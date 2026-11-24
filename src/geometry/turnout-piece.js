@@ -183,7 +183,9 @@ function sliderSolid(work, drive, sign) {
 
 // Upside down on the bed, resting on what is its top face in the road.
 function printsTopDown(part) {
-  part.printPose = function printPose(callback) {
+  part.printPose = function printPose(callback, sideDown) {
+    // Only on the bed: anything else wants the part where it sits in the road.
+    if (!sideDown) return callback(this.solid);
     const turned = this.solid.rotate([180, 0, 0]);
     const placed = turned.translate([0, 0, -turned.boundingBox().min[2]]);
     try {
@@ -255,7 +257,9 @@ export function buildTurnout(work, p) {
     );
   core.additions.push(work.prism(driveHousing, 0, H));
   if (p.hollow && p.reinforcement) core.ribKeepouts.push(driveHousing);
-  const trayPilot = work.own(work.wasm.Manifold.cylinder(3.05, M2.pilotRadius, M2.pilotRadius, 40));
+  const trayPilot = work.own(
+    work.wasm.Manifold.cylinder(drive.tray.pilotHeight, M2.pilotRadius, M2.pilotRadius, 40),
+  );
   const driveCuts = [
     work.prism(channel, -0.1, drive.z.channelTop),
     work.prism(chamber, -0.1, drive.z.cavityTop),

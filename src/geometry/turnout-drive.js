@@ -39,10 +39,11 @@ export const TURNOUT_DRIVE = Object.freeze({
   maxSlant: 5.4, // the slant stops growing here; longer strokes get longer flats
   guide: 10, // shortest plain bar between the head and the motor
   neck: 4, // length of the step from the head up to the bar
-  slotWall: 2.5, // road or insert left between a guide slot and the drive
+  slotWall: 2.5, // road or insert left between a guide slot and the drive, where the island allows
   armBottom: 0.4, // the crank arm starts this far above the table
   armThickness: 4, // and is this thick beyond the pivot bearing, where the track allows
   waistRadius: [1.5, 2.3], // half the arm's width where it passes between the slots behind the blade
+  minSlotWall: 2, // least wall beside the arm there, once the arm is at its narrowest
   armGap: 0.4, // crank arm to the wall of its bay, each side
   braidWeb: 0.5, // road left between a braid recess and the drive
   minHeight: 3, // least solid height of the slider
@@ -226,8 +227,32 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
   if (!(radius <= D.maxCrank)) throw Error(NARROW);
 
   const cam = turnoutCam(S, travel);
+  // Behind the tail of the blade the island is at its narrowest for the arm.
+  // It passes midway between the two slots there, at its narrowest. Where the
+  // slot floors lie above the arm's bay there is no wall to keep, and the arm
+  // stays at its full width.
   const waistX = tailEnd + 0.6,
     waistTop = upper(waistX, half + 0.5);
+  let waist;
+  if (H - p.slotDepth < armTop + pivot.armTopClearance + 0.6) {
+    // Half the island there, less the play of the bay and the arm's swing:
+    // what is left for half the arm and the wall beside it.
+    const room = (waistTop - half - 0.5) / 2 - D.armGap - ((waistX - heel[0]) * swing) / 2 - 0.12;
+    // As wide as leaves each slot its full wall, and never thinner than the
+    // pin. A narrow island then takes the difference out of the walls.
+    const waistRadius = Math.max(D.waistRadius[0], Math.min(D.waistRadius[1], room - D.slotWall));
+    if (room - waistRadius < D.minSlotWall - 1e-6)
+      throw Error(
+        'The island between the two slots is too narrow behind the blade for the crank arm and a ' +
+          D.minSlotWall + ' mm wall beside each slot. Use a smaller Branch radius.',
+      );
+    waist = {
+      point: [waistX, (half + 0.5 + waistTop) / 2 - 0.05],
+      radius: waistRadius,
+      // The wall this leaves between the arm's bay and each slot.
+      wall: room - waistRadius,
+    };
+  }
   // The pin at u = 0 (straight on) to u = 1 (branch).
   const pinAt = (u) => {
     const a = phase + (u - 0.5) * swing;
@@ -300,16 +325,7 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
     travel,
     crank: {
       radius, phase, pinRadius: D.pinRadius, pinTop: zTop - 0.2, armBottom: D.armBottom, armTop,
-      // Behind the tail of the blade the island is at its narrowest for the
-      // arm. It passes midway between the two slots there, at its narrowest.
-      // Where the slot floors lie above the arm's bay there is no wall to
-      // keep, and the arm stays at its full width.
-      waist: H - p.slotDepth >= armTop + pivot.armTopClearance + 0.6 ? undefined : {
-        point: [waistX, (half + 0.5 + waistTop) / 2 - 0.05],
-        // As wide as leaves each slot its wall, and never thinner than the pin.
-        radius: Math.max(D.waistRadius[0], Math.min(D.waistRadius[1],
-          (waistTop - half - 0.5) / 2 - D.slotWall - D.armGap - ((waistX - heel[0]) * swing) / 2 - 0.12)),
-      },
+      waist,
       sideClearance: D.armGap,
     },
     pinAt,
@@ -321,7 +337,7 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
     bar: { x0: head.x1, x1: barEnd, y0: axis - barHalf, y1: axis + barHalf },
     tongue,
     pinHole: { x: pinHoleX, y: axis, radius: eyeRadius, depth: Math.min(2, zTop - tongueBottom - 0.6) },
-    z: { bottom: zBottom, top: zTop, headBottom, armBottom: D.armBottom, armTop, neckTop: pivot.armTop, channelTop, cavityTop: tray.cavityTop, shaftZ: tray.shaftZ },
+    z: { bottom: zBottom, top: zTop, headBottom, armBottom: D.armBottom, armTop, channelTop, cavityTop: tray.cavityTop, shaftZ: tray.shaftZ },
     motorFront: front,
     motorCentre: centre,
     // Openings in the road, as [x0, y0, x1, y1], for both ends of the stroke.

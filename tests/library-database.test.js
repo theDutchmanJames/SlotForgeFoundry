@@ -870,3 +870,43 @@ test('a pack keeps white lines and kerbstones in its rules and gives them to eve
   assert.equal(markingsOf({ whiteLineGroove: true }).roadLineGroove, true);
   assert.equal(markingsOf({ whiteLineGroove: true, borderLineGroove: false }).borderLineGroove, false);
 });
+
+test('pack-wide barriers and markings leave a turnout as it is, and say how many pieces they changed', async (t) => {
+  const { setCollectionMarkings, setCollectionTrackside } = await import('../src/library-database.js');
+  const { packSpecialTrack } = await import('../src/pack-specials.js');
+  const db = dbFor(t);
+  const pack = starterPack(1);
+  const turnout = { name: 'Turnout', track: packSpecialTrack(pack, 'turnout') };
+  const id = addCollection(db, 'Single lane', pack.profile, [...pack.pieces, turnout], pack.rules);
+  const before = readCollections(db).find((c) => c.id === id);
+  const plain = before.pieces.length - 1;
+  const stored = () => readCollections(db).find((c) => c.id === id);
+  const turnoutOf = (c) => c.pieces.find((piece) => piece.track.params.special?.type === 'turnout');
+
+  const walls = setCollectionTrackside(db, id, { tracksideSide: 'both' }, { expectedRevision: before.revision });
+  assert.equal(walls.changed, plain, 'the turnout is not counted');
+  const walled = stored();
+  assert.deepEqual(turnoutOf(walled).track.params, turnoutOf(before).track.params);
+  for (const piece of walled.pieces.filter((piece) => !piece.track.params.special))
+    assert.equal(piece.track.params.tracksideSide, 'both', piece.name);
+
+  const lines = setCollectionMarkings(db, id, { whiteLineRoad: 'both', roadKerbSide: 'outer' }, { expectedRevision: walled.revision });
+  assert.equal(lines.changed, plain);
+  const painted = stored();
+  assert.deepEqual(turnoutOf(painted).track.params, turnoutOf(before).track.params);
+  // The turnout still opens and builds from the pack: it asks for nothing it cannot draw.
+  trackWithProfile(turnoutOf(painted).track, painted.profile);
+  // A turnout made from this pack afterwards starts bare as well.
+  const fresh = packSpecialTrack(painted, 'turnout').params;
+  assert.equal(fresh.tracksideSide, 'none');
+  assert.equal(fresh.whiteLineRoad, 'none');
+  assert.equal(fresh.roadKerbSide, 'none');
+  // The turnout open in the editor is saved as edited, still without them.
+  const open = structuredClone(turnoutOf(painted));
+  open.track.params.special.motorStroke = 8;
+  const again = setCollectionTrackside(db, id, { tracksideSide: 'outer' }, { expectedRevision: painted.revision, piece: open });
+  assert.equal(again.changed, plain);
+  const last = turnoutOf(stored()).track.params;
+  assert.equal(last.special.motorStroke, 8);
+  assert.equal(last.tracksideSide, 'none');
+});

@@ -1145,7 +1145,9 @@ function addGuardRails(work, p, path, side, sign, runs, at, widthAt, loose, fit)
   // A cover over every joint: its tabs pass through the valleys of both rail
   // ends into the grooves of the post.
   posts.forEach(({ s }, i) => {
-    const spec = { ...sheet, width, fit: Math.max(0, 0.05 - p.tracksidePinch) };
+    // The tab is as wide as its groove at the default pinch. Less pinch
+    // leaves it play; more makes it wider than the groove, to press in.
+    const spec = { ...sheet, width, fit: TRACKSIDE_DEFAULTS.tracksidePinch - p.tracksidePinch };
     const forward = unit(minus(pos(s + 0.5), pos(s - 0.5))),
       outward = unit(minus(pos(s, 1), pos(s)));
     const reversed = forward[1] * outward[0] - forward[0] * outward[1] > 0;

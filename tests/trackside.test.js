@@ -868,6 +868,42 @@ test('a W-beam rail sits between two hooks on its post, with a cover over the jo
   });
 });
 
+test('the pinch sets how tight the tab of a W-beam cover is in its groove, over its whole range', () => {
+  // Inside the groove of the post, behind the back of the rail.
+  const standoff = 2.7 + 0.1 + 0.8 + 0.4,
+    y = 50 + standoff + 1;
+  const measured = (pinch) => {
+    let result;
+    build(beamPiece({ tracksidePinch: pinch }), (parts) => {
+      const { posts, rails, covers } = beamParts(parts);
+      const cover = covers[0].solid;
+      const low = cover.rayCast([88, y, 20], [88, y, 34])[0].position[2],
+        high = cover.rayCast([88, y, 34], [88, y, 20])[0].position[2];
+      result = {
+        tab: high - low,
+        inPost: overlap(cover, posts[0].solid),
+        inRail: overlap(cover, rails[0].solid),
+      };
+    });
+    return result;
+  };
+  const loose = measured(0),
+    snug = measured(0.05),
+    tighter = measured(0.15),
+    tightest = measured(0.3);
+  // The groove is 1.2 mm wide. Without pinch the tab has 0.05 mm of play.
+  near(loose.tab, 1.15, 1e-6);
+  near(snug.tab, 1.2, 1e-6);
+  // More pinch makes the tab wider than its groove, so it presses in.
+  near(tighter.tab, 1.3, 1e-6);
+  near(tightest.tab, 1.45, 1e-6);
+  near(loose.inPost, 0, 1e-6);
+  near(snug.inPost, 0, 1e-6);
+  assert.ok(tightest.inPost > tighter.inPost && tighter.inPost > 0.01, 'the tab presses on its groove');
+  // The notch in the rail ends still lets the widest tab through.
+  for (const fit of [loose, snug, tighter, tightest]) near(fit.inRail, 0, 1e-6);
+});
+
 test('a double W-beam is one sheet with four crests, a taller cover and two tabs', () => {
   const p = beamPiece({ tracksideShape: 'wrail2', tracksideRise: 24, tracksideStartPost: true });
   build(p, (parts) => {

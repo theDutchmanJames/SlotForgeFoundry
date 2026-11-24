@@ -189,8 +189,8 @@ export async function checkSpecialTrackPieces({
   await openProject(Buffer.from(JSON.stringify(oldPit)), 'pit-check.slotfab');
   await tab('geometry').click();
   assert.equal(await input('spTurnoutPosition').inputValue(), 'main');
-  await page.getByRole('button', { name: 'Pit actuator cranks, 1 part' }).waitFor();
-  await page.getByRole('button', { name: 'Pit pivot bearings, 1 part' }).waitFor();
+  await page.getByRole('button', { name: 'Turnout cranks, 1 part' }).waitFor();
+  await page.getByRole('button', { name: 'Turnout pivot bearings, 1 part' }).waitFor();
   const routeGuide = page.locator('[data-guide="pit-flipper-left"]');
   await routeGuide.getByText('Pit closed · main lane').waitFor();
   await input('spTurnoutPosition').selectOption('pit');
@@ -381,7 +381,7 @@ export async function checkSpecialTrackPieces({
   assert.equal(Number(await input('spMotorStroke').inputValue()), 6);
   assert.equal(Number(await input('spTurnoutPlay').inputValue()), 0.2);
   await page.getByRole('button', { name: 'Turnout inserts, 1 part' }).waitFor();
-  await page.getByRole('button', { name: 'Pit actuator cranks, 1 part' }).waitFor();
+  await page.getByRole('button', { name: 'Turnout cranks, 1 part' }).waitFor();
   assert.ok(await input('spTurnoutPosition').isVisible());
   await insertMode.selectOption('closed');
   assert.match(await modeHint.innerText(), /only go straight on/);
@@ -389,8 +389,8 @@ export async function checkSpecialTrackPieces({
   assert.ok(!(await input('spMotorStroke').isVisible()));
   await live();
   await page.locator('#parts [data-part="turnout-insert"]').waitFor({ state: 'attached' });
-  assert.equal(await page.getByRole('button', { name: /^Pit actuator cranks/ }).count(), 0);
-  assert.equal(await page.getByRole('button', { name: /^Pit turnout blades/ }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: /^Turnout cranks/ }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: /^Turnout blades/ }).count(), 0);
   // Selecting the insert opens the Shape section, like the other turnout parts.
   await tab('profile').click();
   await selectTrackPart(page.locator('#parts [data-part="turnout-insert"]'));

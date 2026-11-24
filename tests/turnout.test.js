@@ -398,6 +398,11 @@ test('settings outside what the piece can be are refused in plain words', () => 
   refuse({}, { lanes: 2, laneSpacing: 40 }, /A turnout is a single-lane piece\. This road has 2 lanes/);
   refuse({}, { segments: 2 }, /prints as one road piece/);
   refuse({}, { borderSide: 'both' }, /cannot have borders yet/);
+  // Nothing draws these on a turnout: asking for them is refused, not ignored.
+  refuse({}, { tracksideSide: 'outer' }, /cannot have trackside accessories yet\. Set Trackside → Barrier side to None/);
+  refuse({}, { whiteLineRoad: 'both' }, /cannot have white lines or kerbstones yet/);
+  refuse({}, { roadKerbSide: 'inner' }, /cannot have white lines or kerbstones yet/);
+  refuse({}, { roadCentreLine: 'solid' }, /cannot have white lines or kerbstones yet/);
   refuse({}, { braidStyle: 'raised' }, /A turnout cannot have raised lands/);
   refuse({}, { braidFeedSide: 'both' }, /no extra braid openings yet/);
   refuse({ side: 'both' }, {}, /Choose Left or Right/);
@@ -697,13 +702,59 @@ test('the slider, the crank and the motor cradle each print on a flat face', () 
         bed.delete();
         relieved.delete();
       }
-    });
+    }, { sideDown: true });
     const groups = groupTrackParts(parts);
     assert.equal(groups.find((group) => group.role === 'turnoutSlider').label, 'Turnout sliders');
+    // A turnout has no pit lane: neither its part families nor its parts are named for one.
+    assert.deepEqual(
+      ['turnout', 'turnoutArm', 'turnoutBearing'].map((role) => groups.find((group) => group.role === role).label),
+      ['Turnout blades', 'Turnout cranks', 'Turnout pivot bearings'],
+    );
+    for (const group of groups) assert.doesNotMatch(group.label, /\bpit\b/i);
+    for (const part of parts) assert.doesNotMatch(part.name, /\bpit\b/i);
   });
   const notes = specialAssemblyNotes(turnout()).join('\n');
   assert.match(notes, /slider/);
   assert.match(notes, /after the insert/);
+});
+
+test('only the print export turns the slider over; any other export leaves it where it sits in the road', () => {
+  assembly(turnout({}, lowTrack), (parts) => {
+    const slider = drivePart(parts, 'turnoutSlider');
+    const inRoad = slider.solid.boundingBox();
+    // As exported in place, for a single selected part.
+    withPrintableSolid(slider, (solid) => {
+      const box = solid.boundingBox();
+      for (let i = 0; i < 3; i++) {
+        near(box.min[i], inRoad.min[i], 1e-9);
+        near(box.max[i], inRoad.max[i], 1e-9);
+      }
+    });
+    // On the bed it is turned over and stands on it.
+    withPrintableSolid(slider, (solid) => {
+      const box = solid.boundingBox();
+      near(box.min[2], 0, 1e-9);
+      near(box.max[2], inRoad.max[2] - inRoad.min[2], 1e-9);
+      assert.ok(Math.abs(box.min[1] + inRoad.max[1]) < 1e-9, 'turned about the road axis');
+    }, { sideDown: true });
+  });
+});
+
+test('the road has a pilot hole above each cradle screw, as deep as the cradle plan says', () => {
+  const p = turnout({}, lowTrack);
+  const { drive } = turnoutLayout(p);
+  assert.equal(drive.screws.length, 2);
+  assert.ok(drive.tray.pilotHeight >= 3, 'deep enough for an M2 screw: ' + drive.tray.pilotHeight);
+  assert.equal(drive.z.neckTop, undefined, 'the layout carries no height it does not use');
+  assembly(p, (parts) => {
+    const road = byRole(parts, 'road')[0].solid;
+    for (const [x, y] of drive.screws) {
+      // From inside the hole upwards to its end.
+      const roof = road.rayCast([x, y, drive.tray.trayTop + 0.5], [x, y, 40])[0].position[2];
+      near(roof, drive.tray.trayTop - 0.01 + drive.tray.pilotHeight, 1e-6);
+      assert.ok(roof < p.height - p.braidDepth - 1, 'the hole stays under the road surface');
+    }
+  });
 });
 
 // --- Stout parts: thicknesses measured from the built solids ---------------
@@ -768,46 +819,91 @@ test('the crank arm, its pin and the slider above it are stout on a 10 mm and on
     }
 });
 
+// The thinnest wall the insert leaves between a guide slot and the crank arm
+// or the head of the slider, measured from the built insert.
+function thinnestSlotWall(p) {
+  const sign = p.special.side === 'left' ? 1 : -1;
+  const { drive, branch, fork } = turnoutLayout(p);
+  const branchY = (x) => {
+    const i = branch.findIndex(([bx]) => bx >= x);
+    const [a, b] = [branch[i - 1], branch[i]];
+    return a[1] + ((b[1] - a[1]) * (x - a[0])) / (b[0] - a[0]);
+  };
+  let thinnest = { wall: Infinity };
+  assembly(p, (parts) => {
+    const insert = byRole(parts, 'turnoutInsert')[0].solid;
+    const end = insert.boundingBox().max[0] - 0.3;
+    const floor = p.height - p.slotDepth;
+    // Behind the tail of the blade: in front of it the blade itself is the wall.
+    const start = fork.guardEndX - 15 + 0.6;
+    for (const z of [floor + 0.3, floor + 1.2, drive.z.headBottom - 0.3, drive.z.headBottom + 1, drive.z.channelTop - 0.3]) {
+      const slice = insert.slice(z);
+      try {
+        for (let x = start; x < end; x += 1) {
+          // What stands between the two slot centres at this X: the first
+          // piece is the wall of the main slot, the last that of the branch slot.
+          const strip = section([[[x - 0.05, 0], [x + 0.05, 0], [x + 0.05, branchY(x)], [x - 0.05, branchY(x)]]]);
+          const runs = freed(() => slice.intersect(strip), (cut) => cut.decompose().map((piece) => {
+            const { min, max } = piece.bounds();
+            piece.delete();
+            return [Math.min(sign * min[1], sign * max[1]), Math.max(sign * min[1], sign * max[1])];
+          })).sort((a, b) => a[0] - b[0]);
+          strip.delete();
+          if (runs.length < 2) continue; // no opening between the slots here
+          const main = runs[0][1] - runs[0][0];
+          const across = (runs.at(-1)[1] - runs.at(-1)[0]) / Math.hypot(1, branchY(x + 0.5) - branchY(x - 0.5));
+          for (const [slot, wall] of [['main', main], ['branch', across]])
+            if (wall < thinnest.wall) thinnest = { wall, slot, x, z };
+        }
+      } finally {
+        slice.delete();
+      }
+    }
+  });
+  return thinnest;
+}
+
 test('the insert keeps at least 2.5 mm of wall between each guide slot and the crank arm or the head of the slider', () => {
   for (const [name, changes] of [['10 mm', lowTrack], ['12 mm', {}]])
     for (const side of ['left', 'right']) {
-      const sign = side === 'left' ? 1 : -1;
-      const p = turnout({ side }, changes);
-      const { drive, branch, fork } = turnoutLayout(p);
-      const branchY = (x) => {
-        const i = branch.findIndex(([bx]) => bx >= x);
-        const [a, b] = [branch[i - 1], branch[i]];
-        return a[1] + ((b[1] - a[1]) * (x - a[0])) / (b[0] - a[0]);
-      };
-      assembly(p, (parts) => {
-        const insert = byRole(parts, 'turnoutInsert')[0].solid;
-        const end = insert.boundingBox().max[0] - 0.3;
-        const floor = p.height - p.slotDepth;
-        // Behind the tail of the blade: in front of it the blade itself is the wall.
-        const start = fork.guardEndX - 15 + 0.6;
-        for (const z of [floor + 0.3, floor + 1.2, drive.z.headBottom - 0.3, drive.z.headBottom + 1, drive.z.channelTop - 0.3]) {
-          const slice = insert.slice(z);
-          try {
-            for (let x = start; x < end; x += 1) {
-              // What stands between the two slot centres at this X: the first
-              // piece is the wall of the main slot, the last that of the branch slot.
-              const strip = section([[[x - 0.05, 0], [x + 0.05, 0], [x + 0.05, branchY(x)], [x - 0.05, branchY(x)]]]);
-              const runs = freed(() => slice.intersect(strip), (cut) => cut.decompose().map((piece) => {
-                const { min, max } = piece.bounds();
-                piece.delete();
-                return [Math.min(sign * min[1], sign * max[1]), Math.max(sign * min[1], sign * max[1])];
-              })).sort((a, b) => a[0] - b[0]);
-              strip.delete();
-              if (runs.length < 2) continue; // no opening between the slots here
-              const main = runs[0][1] - runs[0][0];
-              const across = (runs.at(-1)[1] - runs.at(-1)[0]) / Math.hypot(1, branchY(x + 0.5) - branchY(x - 0.5));
-              assert.ok(main >= 2.5 - 0.03, [name, side, 'main', x, z, main].join(' '));
-              assert.ok(across >= 2.5 - 0.03, [name, side, 'branch', x, z, across].join(' '));
-            }
-          } finally {
-            slice.delete();
-          }
-        }
-      });
+      const found = thinnestSlotWall(turnout({ side }, changes));
+      assert.ok(found.wall >= 2.5 - 0.03, [name, side, JSON.stringify(found)].join(' '));
     }
+});
+
+test('on a wide branch radius the arm keeps its 3 mm and the wall beside it never drops below 2 mm', () => {
+  const D = TURNOUT_DRIVE;
+  // The pack radius leaves the full wall and an arm wider than its pin.
+  const usual = turnoutLayout(turnout({}, lowTrack)).drive.crank.waist;
+  near(usual.wall, D.slotWall, 1e-9);
+  assert.ok(usual.radius > D.waistRadius[0]);
+  // A track with its slot floors above the arm's bay has no wall to keep there.
+  assert.equal(turnoutLayout(turnout()).drive.crank.waist, undefined);
+  // Wider radii narrow the island behind the blade. The arm stops at the
+  // width of its pin, and the walls give way, down to the floor and no further.
+  let thinner = 0,
+    refused = 0;
+  for (const turnoutRadius of [450, 600, 900, 1200, 1500, 2500]) {
+    const p = turnout({ turnoutRadius }, { ...lowTrack, length: 1400 });
+    let waist;
+    try {
+      waist = turnoutLayout(p).drive.crank.waist;
+    } catch (error) {
+      assert.match(error.message, /Use a smaller Branch radius|too narrow/, turnoutRadius + ': ' + error.message);
+      refused++;
+      continue;
+    }
+    near(waist.radius, D.waistRadius[0], 1e-9);
+    assert.ok(waist.wall >= D.minSlotWall - 1e-6, turnoutRadius + ' leaves ' + waist.wall);
+    assert.ok(waist.wall < D.slotWall, turnoutRadius + ' leaves ' + waist.wall);
+    thinner++;
+  }
+  assert.ok(thinner >= 3 && refused >= 1, thinner + ' built thinner, ' + refused + ' refused');
+  // Measured from the built insert, the wall is what the layout says it is.
+  const wide = turnout({ turnoutRadius: 900 }, { ...lowTrack, length: 500 });
+  const stated = turnoutLayout(wide).drive.crank.waist.wall;
+  const found = thinnestSlotWall(wide);
+  assert.ok(stated < 2.2, 'the radius chosen here is past the full wall: ' + stated);
+  assert.ok(found.wall >= D.minSlotWall - 0.03, JSON.stringify(found));
+  assert.ok(found.wall >= stated - 0.05, JSON.stringify(found) + ' against ' + stated);
 });

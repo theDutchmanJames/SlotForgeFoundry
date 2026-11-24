@@ -9,6 +9,8 @@ export const motorMountFit = Object.freeze({
 const trayTop = motorMountFit.tableClearance + motorMountFit.trayThickness;
 const bodyGap = 0.15, lip = 1.2, travelGap = 0.2, rim = 1.1;
 const earReach = 5.6, earHalfLength = 4.5;
+// The pilot holes in the road for a cradle's screws rise this far above it.
+const screwPilotHeight = 3.05;
 
 export function maxPitMotorHeight(p) {
   return p.height - Math.max(2, p.deck) - trayTop - motorMountFit.topClearance;
@@ -164,7 +166,7 @@ export function addPitMotorMount(work, p, mount, road, borders, hardware) {
   for (const bx of fastenerXs) {
     bores.push(slotTool(work, bx, sign * centre, adjust, -0.01, trayTop + 0.1, 1.1, 1.1),
       slotTool(work, bx, sign * centre, adjust, motorMountFit.tableClearance, 0.95, 2.05, 1.1));
-    const pilot = work.own(work.wasm.Manifold.cylinder(3.05, 0.8, 0.8, 40));
+    const pilot = work.own(work.wasm.Manifold.cylinder(screwPilotHeight, 0.8, 0.8, 40));
     pilots.push(work.own(pilot.translate([bx, sign * centre, trayTop - 0.01])));
   }
   const rear = mount.rear - centre;
@@ -222,6 +224,8 @@ export function inlineMotorTrayPlan(settings) {
   return {
     l, w, tabHalf, tabEnd, screws, lip, rim, adjust,
     trayTop,
+    // How far the pilot holes for the cradle's two screws rise into the road.
+    pilotHeight: screwPilotHeight,
     bodyTop: trayTop + motorHeight,
     cavityTop: trayTop + motorHeight + motorMountFit.topClearance,
     shaftZ: trayTop + motorHeight / 2,
@@ -263,5 +267,5 @@ export function inlineMotorTray(work, settings) {
   const wireHalf = Math.min(1.5, motorWidth / 3);
   const notch = box(motorLength / 2 - 0.2, l + 0.1, -wireHalf, wireHalf);
   const solid = work.cut(work.union([tray, ...lips]), [...bores, work.prism(notch, 0, trayTop + 0.01)]);
-  return { plan, solid, pilotHeight: 3.05, pilotRadius: 0.8 };
+  return { plan, solid };
 }

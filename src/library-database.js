@@ -306,10 +306,19 @@ function setCollectionDefaults(db, id, kind, chosen, { expectedRevision, piece }
     'SELECT id, name, track FROM pieces WHERE collection_id=?',
     [id],
   );
+  let changed = 0;
   for (const r of members) {
     // The piece open in the editor arrives as edited, not as last saved.
-    const track = piece && r.id === piece.id ? structuredClone(piece.track) : JSON.parse(r.track);
-    Object.assign(track.params, chosen);
+    const edited = piece && r.id === piece.id;
+    const track = edited ? structuredClone(piece.track) : JSON.parse(r.track);
+    // A turnout is a bare road: it takes no barriers, lines or kerbs, and
+    // keeps the settings it has.
+    const takes = track.params.special?.type !== 'turnout';
+    if (!takes && !edited) continue;
+    if (takes) {
+      Object.assign(track.params, chosen);
+      changed++;
+    }
     validateRecipe({ name: r.name, track }, profile);
     db.run('UPDATE pieces SET track=? WHERE id=?', [savedTrack(track), r.id]);
   }
@@ -319,7 +328,7 @@ function setCollectionDefaults(db, id, kind, chosen, { expectedRevision, piece }
     revision,
     id,
   ]);
-  return { changed: members.length, revision };
+  return { changed, revision };
 }
 /**
  * Every piece of a pack back to one road segment and one border segment.

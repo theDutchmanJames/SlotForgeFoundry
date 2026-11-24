@@ -436,6 +436,12 @@ export function validateTurnout(p) {
     throw Error('A turnout prints as one road piece. Set the road Segments to 1.');
   if (p.borderSide !== 'none')
     throw Error('A turnout cannot have borders yet. Set Borders to None for this piece.');
+  // Nothing draws these on a turnout, so a setting that asks for them is
+  // refused instead of kept and ignored.
+  if ((p.tracksideSide ?? 'none') !== 'none')
+    throw Error('A turnout cannot have trackside accessories yet. Set Trackside → Barrier side to None for this piece.');
+  if ([p.whiteLineRoad, p.roadCentreLine, p.roadKerbSide].some((value) => (value ?? 'none') !== 'none'))
+    throw Error('A turnout cannot have white lines or kerbstones yet. Switch them off under Markings for this piece.');
   if (!['left', 'right'].includes(s.side))
     throw Error('Choose Left or Right for the side the branch leaves on.');
   if (!TURNOUT_MODES.some(([id]) => id === s.turnoutMode))
