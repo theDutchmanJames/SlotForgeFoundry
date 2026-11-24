@@ -42,7 +42,7 @@ test('every piece setting lives in exactly one section, once', () => {
   assert.deepEqual(Object.fromEntries(shared), {}, 'a setting shown twice');
   for (const [component, settings] of Object.entries({
     geometry: ['kind', 'radius', 'angle', 'width', 'lanes', 'laneSpacing'],
-    trackside: ['tracksideSide', 'tracksideShape', 'tracksideShapeInner', 'tracksideRise', 'tracksideTabs', 'tracksideSegments', 'tracksideEnds', 'tracksideEndShape', 'tracksideFaceAngle',
+    trackside: ['tracksideSide', 'tracksideShape', 'tracksideInnerOwn', 'tracksideShapeInner', 'tracksideRiseInner', 'tracksideFenceInner', 'tracksideRise', 'tracksideTabs', 'tracksideSegments', 'tracksideEnds', 'tracksideEndShape', 'tracksideFaceAngle',
       'tracksideThickness', 'tracksideFence', 'tracksideFenceHeight', 'tracksidePost', 'tracksideCable', 'tracksideMesh'],
     markings: [
       'whiteLineRoad',

@@ -150,15 +150,25 @@ export function syncTrackShapeControls(form) {
   if (e.tracksideSide) {
     const group = form.querySelector('[data-trackside]');
     group.hidden = group.disabled = e.tracksideSide.value === 'none';
+    const both = form.querySelector('[data-trackside-both]');
+    both.hidden = both.disabled = e.tracksideSide.value !== 'both';
+    const own = !both.disabled && e.tracksideInnerOwn.checked;
     const inner = form.querySelector('[data-trackside-inner]');
-    inner.hidden = inner.disabled = e.tracksideSide.value !== 'both';
-    const used = [e.tracksideShape.value];
-    if (!inner.disabled && e.tracksideShapeInner.value !== 'same')
-      used.push(e.tracksideShapeInner.value);
-    for (const part of form.querySelectorAll('[data-trackside-shape]'))
-      part.hidden = part.disabled = !used.includes(part.dataset.tracksideShape);
-    const fence = form.querySelector('[data-trackside-fence]');
-    if (fence) fence.hidden = fence.disabled = !e.tracksideFence?.checked;
+    inner.hidden = inner.disabled = !own;
+    // With two sets the first one is the outside.
+    const titles = form.querySelectorAll('[data-trackside-titles] > details > summary > span, [data-trackside-titles] > fieldset > details > summary > span');
+    const names = own ? ['Outside barrier', 'Outside catch fence'] : ['Barrier', 'Catch fence'];
+    titles.forEach((title, i) => {
+      if (names[i] && title.textContent !== names[i]) title.textContent = names[i];
+    });
+    for (const set of ['', 'Inner']) {
+      if (set && !own) continue;
+      const shape = e['tracksideShape' + set].value;
+      for (const part of form.querySelectorAll('[data-trackside-shape][data-trackside-set="' + set + '"]'))
+        part.hidden = part.disabled = part.dataset.tracksideShape !== shape;
+      const fence = form.querySelector('[data-trackside-fence="' + set + '"]');
+      fence.hidden = fence.disabled = shape !== 'board' || !e['tracksideFence' + set].checked;
+    }
   }
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))

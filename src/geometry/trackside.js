@@ -15,11 +15,10 @@ export const TRACKSIDE_TAB_CHOICES = Object.freeze([
   ['1', 'One tab'],
   ['2', 'Two tabs'],
 ]);
-export const TRACKSIDE_DEFAULTS = Object.freeze({
-  tracksideSide: 'none',
+// The settings of one side. With barriers on both sides the inside can have
+// a full set of its own: the same names with Inner behind them.
+const SIDE_DEFAULTS = {
   tracksideShape: 'barrier',
-  // With barriers on both sides the inside can have a shape of its own.
-  tracksideShapeInner: 'same',
   tracksideRise: 20,
   tracksideTabs: 'auto',
   tracksideSegments: 1,
@@ -34,6 +33,15 @@ export const TRACKSIDE_DEFAULTS = Object.freeze({
   tracksidePost: 3,
   tracksideCable: 10,
   tracksideMesh: 5,
+};
+export const TRACKSIDE_SIDE_KEYS = Object.freeze(Object.keys(SIDE_DEFAULTS));
+export const TRACKSIDE_DEFAULTS = Object.freeze({
+  tracksideSide: 'none',
+  tracksideInnerOwn: false,
+  ...SIDE_DEFAULTS,
+  ...Object.fromEntries(
+    Object.entries(SIDE_DEFAULTS).map(([key, value]) => [key + 'Inner', value]),
+  ),
 });
 export const TRACKSIDE_LIMITS = Object.freeze({
   tracksideRise: [5, 100],
@@ -106,29 +114,21 @@ const BARRIER_FACE = [
 
 export const tracksideOn = (p, side) =>
   p.tracksideSide === 'both' || p.tracksideSide === side;
-export const TRACKSIDE_INNER_SHAPES = Object.freeze([
-  ['same', 'Same as the outside'],
-  ...TRACKSIDE_SHAPES,
-]);
-// The shape on one side. The inside has its own only next to an outside one.
-export const tracksideShapeOf = (p, side) =>
-  side === 'inner' && p.tracksideSide === 'both' && p.tracksideShapeInner !== 'same'
-    ? p.tracksideShapeInner
-    : p.tracksideShape;
-// The shapes a piece uses, on whichever sides are on.
-export const tracksideShapesUsed = (p) => [
-  ...new Set(
-    ['outer', 'inner'].filter((side) => tracksideOn(p, side)).map((side) => tracksideShapeOf(p, side)),
-  ),
-];
+// Whether the inside uses its own settings: only next to an outside barrier.
+export const tracksideInnerOwn = (p) =>
+  p.tracksideSide === 'both' && p.tracksideInnerOwn === true;
+// The piece settings as one side reads them.
+export function tracksideFor(p, side) {
+  if (side !== 'inner' || !tracksideInnerOwn(p)) return p;
+  return {
+    ...p,
+    ...Object.fromEntries(TRACKSIDE_SIDE_KEYS.map((key) => [key, p[key + 'Inner']])),
+  };
+}
 
-export function validateTrackside(p) {
-  if (!TRACKSIDE_SIDES.includes(p.tracksideSide))
-    throw new Error('Unknown trackside side.');
+function validateSide(p) {
   if (!TRACKSIDE_SHAPES.some(([id]) => id === p.tracksideShape))
     throw new Error('Unknown trackside shape.');
-  if (!TRACKSIDE_INNER_SHAPES.some(([id]) => id === p.tracksideShapeInner))
-    throw new Error('Unknown trackside shape for the inside.');
   if (!TRACKSIDE_TAB_CHOICES.some(([id]) => id === String(p.tracksideTabs)))
     throw new Error('Choose one tab, two tabs or an automatic count for the barrier.');
   const [min, max] = TRACKSIDE_LIMITS.tracksideRise;
@@ -146,8 +146,7 @@ export function validateTrackside(p) {
   )
     throw new Error(`The barrier face angle must be between ${upright} and ${flattest} degrees.`);
   const widest = maxFaceAngle(p.tracksideRise);
-  const shapes = p.tracksideSide === 'none' ? [p.tracksideShape] : tracksideShapesUsed(p);
-  if (shapes.includes('barrier') && p.tracksideFaceAngle > widest + 1e-9)
+  if (p.tracksideShape === 'barrier' && p.tracksideFaceAngle > widest + 1e-9)
     throw new Error(
       'The barrier face leans too far for its height: the top would be thinner than ' +
         TOP_FLAT + ' mm. Use at most ' + Math.floor(widest * 10) / 10 +
@@ -168,6 +167,20 @@ export function validateTrackside(p) {
   const [fewest, most] = TRACKSIDE_LIMITS.tracksideSegments;
   if (!Number.isInteger(p.tracksideSegments) || p.tracksideSegments < fewest || p.tracksideSegments > most)
     throw new Error(`Barrier segments must be a whole number between ${fewest} and ${most}.`);
+}
+
+export function validateTrackside(p) {
+  if (!TRACKSIDE_SIDES.includes(p.tracksideSide))
+    throw new Error('Unknown trackside side.');
+  if (typeof p.tracksideInnerOwn !== 'boolean')
+    throw new Error('Unknown trackside setting for the inside.');
+  validateSide(p);
+  if (!tracksideInnerOwn(p)) return;
+  try {
+    validateSide(tracksideFor(p, 'inner'));
+  } catch (error) {
+    throw new Error('Inside barrier: ' + error.message, { cause: error });
+  }
 }
 
 /** The cross-section as one ring of [distance from the track edge, height].
@@ -332,7 +345,9 @@ export function fenceFlat(work, { length, height, post, cable, mesh }) {
  */
 export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, widthAt, loose) {
   const fit = resolveJointFit(p);
-  const board = tracksideShapeOf(p, side) === 'board';
+  // The inside may have settings of its own.
+  p = tracksideFor(p, side);
+  const board = p.tracksideShape === 'board';
   const thick = boardThickness(p),
     top = p.height + p.tracksideRise;
   const profile = board

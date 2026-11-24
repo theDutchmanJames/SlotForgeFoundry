@@ -565,7 +565,8 @@ export function checkProject(p) {
     params = { ...RIB_DEFAULTS, ...params };
   if (params.braidStyle === undefined || params.braidRaise === undefined)
     params = { ...BRAID_DEFAULTS, ...params };
-  if (params.tracksideSide === undefined) params = { ...TRACKSIDE_DEFAULTS, ...params };
+  // Every trackside setting, also those added after the piece was saved.
+  params = { ...TRACKSIDE_DEFAULTS, ...params };
   validateConnectorCounts(params.connectorCounts);
   validateSpecialType(params);
   if (params.special && (p.track.plan || p.track.custom))

@@ -23,11 +23,10 @@ import {
   supportStyleOf,
   BARRIER_ENDS,
   BARRIER_END_SHAPES,
-  BARRIER_INNER_KINDS,
-  BARRIER_KEYS,
-  BARRIER_KINDS,
-  BARRIER_SIDES,
+  BARRIER_TYPES,
+  applyBarriers,
   barrierOf,
+  plainBarrier,
   pegSizeOf,
   totalLength,
   tally,
@@ -214,6 +213,34 @@ export function createPlanner({ host, call, download, current, promote }) {
   // Barriers belong to a piece recipe. A section that gets its own barriers
   // moves to a copy of its recipe with that setting; unused copies are
   // dropped when the layout is saved.
+  // The fields of one side in the Barriers panel, and reading them back.
+  const barrierOptions = (list, chosen) =>
+    list
+      .map(
+        ([value, label]) =>
+          '<option value="' + value + '"' + (chosen === value ? ' selected' : '') + '>' + label + '</option>',
+      )
+      .join('');
+  const barrierFields = (side, title, now) =>
+    '<h3>' + title + '</h3>' +
+    '<label>Type<select data-pl-field="' + side + 'Kind">' + barrierOptions(BARRIER_TYPES, now.kind) + '</select></label>' +
+    '<label>Barrier ends<select data-pl-field="' + side + 'Ends">' + barrierOptions(BARRIER_ENDS, now.ends) + '</select></label>' +
+    '<label>End shape<select data-pl-field="' + side + 'Shape">' + barrierOptions(BARRIER_END_SHAPES, now.shape) + '</select></label>' +
+    '<label>Height above road · mm<input data-pl-field="' + side + 'Rise" type="number" min="5" max="100" step="any" value="' + now.rise + '"></label>' +
+    '<label>Face angle · °<input data-pl-field="' + side + 'Angle" type="number" min="0" max="45" step="any" value="' + now.angle + '"></label>' +
+    '<label>Fence on a board<select data-pl-field="' + side + 'Fence">' +
+    barrierOptions([['off', 'No fence'], ['on', 'Catch fence']], now.fence ? 'on' : 'off') + '</select></label>' +
+    '<label>Fence height · mm<input data-pl-field="' + side + 'FenceHeight" type="number" min="10" max="250" step="any" value="' + now.fenceHeight + '"></label>';
+  const readBarrierFields = (side) =>
+    plainBarrier({
+      kind: field(side + 'Kind').value,
+      ends: field(side + 'Ends').value,
+      shape: field(side + 'Shape').value,
+      rise: field(side + 'Rise').valueAsNumber,
+      angle: field(side + 'Angle').valueAsNumber,
+      fence: field(side + 'Fence').value === 'on',
+      fenceHeight: field(side + 'FenceHeight').valueAsNumber,
+    });
   async function setBarriers(wanted) {
     const ids = chosenIds();
     const models = new Map(defs),
@@ -224,10 +251,9 @@ export function createPlanner({ host, call, download, current, promote }) {
     )) {
       const entry = layout.sources[key],
         now = barrierOf(entry);
-      if (Object.keys(BARRIER_KEYS).every((name) => now[name] === wanted[name])) continue;
+      if (JSON.stringify(now) === JSON.stringify(wanted)) continue;
       const track = structuredClone(entry.track);
-      for (const [name, [key]] of Object.entries(BARRIER_KEYS))
-        track.params[key] = wanted[name];
+      applyBarriers(track.params, wanted);
       const def = await build(track, false);
       if (def.sections.length !== defs.get(key).sections.length)
         throw Error('The barriers change how this piece is divided. Set them in Track Set instead.');
@@ -692,56 +718,13 @@ export function createPlanner({ host, call, download, current, promote }) {
         btn('elevate', 'Apply heights', 'check') +
         '</div></details>' +
         '<details class="pl-bridge pl-barriers"><summary>Barriers</summary><div>' +
-        '<label>Type<select data-pl-field="barrierKind">' +
-        BARRIER_KINDS.map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + (barrierOf(def).kind === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>Barrier side<select data-pl-field="barrierSide">' +
-        BARRIER_SIDES.map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + (barrierOf(def).side === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>Type on the inside<select data-pl-field="barrierKindInner">' +
-        BARRIER_INNER_KINDS.map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + (barrierOf(def).kindInner === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>Barrier ends<select data-pl-field="barrierEnds">' +
-        BARRIER_ENDS.map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + (barrierOf(def).ends === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>End shape<select data-pl-field="barrierShape">' +
-        BARRIER_END_SHAPES.map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + (barrierOf(def).shape === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>Height above road · mm<input data-pl-field="barrierRise" type="number" min="5" max="100" step="any" value="' +
-        barrierOf(def).rise +
-        '"></label>' +
-        '<label>Face angle · °<input data-pl-field="barrierAngle" type="number" min="0" max="45" step="any" value="' +
-        barrierOf(def).angle +
-        '"></label>' +
-        '<label>Fence on a board<select data-pl-field="barrierFence">' +
-        [['off', 'No fence'], ['on', 'Catch fence']].map(
-          ([value, label]) =>
-            '<option value="' + value + '"' + ((barrierOf(def).fence ? 'on' : 'off') === value ? ' selected' : '') + '>' + label + '</option>',
-        ).join('') +
-        '</select></label>' +
-        '<label>Fence height · mm<input data-pl-field="barrierFenceHeight" type="number" min="10" max="250" step="any" value="' +
-        barrierOf(def).fenceHeight +
-        '"></label>' +
+        barrierFields('outer', 'Outside / left', barrierOf(def).outer) +
+        barrierFields('inner', 'Inside / right', barrierOf(def).inner) +
         '<small>' +
         (chosenIds().size > 1
           ? chosenIds().size + ' sections are selected. '
           : 'Only this section gets the barriers. ') +
-        'Ctrl-click sections in the plan to select more than one. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. With Both sides, Type is the outside and the inside can have its own.</small>' +
+        'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
@@ -913,8 +896,8 @@ export function createPlanner({ host, call, download, current, promote }) {
         track.params.segments = source.track.params.segments;
         track.params.borderSegments = source.track.params.borderSegments;
         // Barriers set in the layout stay with the layout.
-        for (const [key] of Object.values(BARRIER_KEYS))
-          if (source.track.params[key] !== undefined) track.params[key] = source.track.params[key];
+        for (const key of Object.keys(source.track.params))
+          if (key.startsWith('trackside')) track.params[key] = source.track.params[key];
         const def = await build(track, false);
         source.track = def.track;
         source.name = piece.name;
@@ -1197,15 +1180,8 @@ export function createPlanner({ host, call, download, current, promote }) {
     if (key === 'barriers') {
       message('Fitting the barriers…');
       await setBarriers({
-        side: field('barrierSide').value,
-        ends: field('barrierEnds').value,
-        shape: field('barrierShape').value,
-        rise: field('barrierRise').valueAsNumber,
-        angle: field('barrierAngle').valueAsNumber,
-        kind: field('barrierKind').value,
-        kindInner: field('barrierKindInner').value,
-        fence: field('barrierFence').value === 'on',
-        fenceHeight: field('barrierFenceHeight').valueAsNumber,
+        outer: readBarrierFields('outer'),
+        inner: readBarrierFields('inner'),
       });
       message('');
       $('.pl-barriers').open = true;

@@ -1,6 +1,7 @@
 import polygonClipping from 'polygon-clipping';
 import { sectionStations } from './geometry/bridge-sections.js';
 import { PEG_LIMITS, PEG_SIZE } from './geometry/bridge-supports.js';
+import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
 import { screwFamilyDifference } from './geometry/screw-clip.js';
 
@@ -412,11 +413,10 @@ export const SUPPORT_STYLES = Object.freeze([
   ['block', 'Full-width block'],
   ['pegs', 'Two pegs'],
 ]);
-export const BARRIER_SIDES = [
+export const BARRIER_TYPES = [
   ['none', 'None'],
-  ['outer', 'Outside / left'],
-  ['inner', 'Inside / right'],
-  ['both', 'Both sides'],
+  ['barrier', 'Concrete barrier'],
+  ['board', 'Advertising board'],
 ];
 export const BARRIER_ENDS = [
   ['none', 'Plain ends'],
@@ -428,35 +428,56 @@ export const BARRIER_END_SHAPES = [
   ['ramp', 'Sloped'],
   ['round', 'Sloped and rounded'],
 ];
-// The barrier settings a layout can give a section, with their piece settings.
-export const BARRIER_KEYS = {
-  side: ['tracksideSide', 'none'],
-  ends: ['tracksideEnds', 'none'],
-  shape: ['tracksideEndShape', 'ramp'],
-  rise: ['tracksideRise', 20],
-  angle: ['tracksideFaceAngle', 17.1],
-  kind: ['tracksideShape', 'barrier'],
-  kindInner: ['tracksideShapeInner', 'same'],
-  fence: ['tracksideFence', false],
-  fenceHeight: ['tracksideFenceHeight', 50],
+// The barrier settings a layout can give one side of a section, with the
+// piece settings they are kept in.
+const BARRIER_FIELDS = {
+  kind: 'tracksideShape',
+  ends: 'tracksideEnds',
+  shape: 'tracksideEndShape',
+  rise: 'tracksideRise',
+  angle: 'tracksideFaceAngle',
+  fence: 'tracksideFence',
+  fenceHeight: 'tracksideFenceHeight',
 };
-export const BARRIER_INNER_KINDS = [
-  ['same', 'Same as the outside'],
-  ['barrier', 'Concrete barrier'],
-  ['board', 'Advertising board'],
-];
-export const BARRIER_KINDS = [
-  ['barrier', 'Concrete barrier'],
-  ['board', 'Advertising board'],
-];
-// The barriers a placed section carries come from its piece recipe.
-export const barrierOf = (def) =>
+const readBarrier = (params, set) =>
   Object.fromEntries(
-    Object.entries(BARRIER_KEYS).map(([name, [key, standard]]) => [
+    Object.entries(BARRIER_FIELDS).map(([name, key]) => [
       name,
-      def.track.params[key] ?? standard,
+      params[key + set] ?? TRACKSIDE_DEFAULTS[key],
     ]),
   );
+// A side without a barrier, however its other fields were left.
+export const plainBarrier = (side) =>
+  side.kind === 'none' ? { ...readBarrier({}, ''), kind: 'none' } : side;
+// The barriers a placed section carries come from its piece recipe: one
+// answer for the outside and one for the inside.
+export function barrierOf(def) {
+  const p = def.track.params,
+    side = p.tracksideSide ?? 'none';
+  const none = plainBarrier({ kind: 'none' });
+  return {
+    outer: side === 'outer' || side === 'both' ? readBarrier(p, '') : none,
+    inner:
+      side === 'inner'
+        ? readBarrier(p, '')
+        : side === 'both'
+          ? readBarrier(p, p.tracksideInnerOwn ? 'Inner' : '')
+          : none,
+  };
+}
+// Write that answer back into a piece recipe.
+export function applyBarriers(params, { outer, inner }) {
+  const write = (side, set) => {
+    for (const [name, key] of Object.entries(BARRIER_FIELDS)) params[key + set] = side[name];
+  };
+  const out = outer.kind !== 'none',
+    ins = inner.kind !== 'none';
+  params.tracksideSide = out && ins ? 'both' : out ? 'outer' : ins ? 'inner' : 'none';
+  params.tracksideInnerOwn = out && ins;
+  if (out) write(outer, '');
+  else if (ins) write(inner, '');
+  if (out && ins) write(inner, 'Inner');
+}
 export const supportStyleOf = (n) =>
   n.supportStyle === 'pegs' ? 'pegs' : 'block';
 // A peg's size as [across the road, along the road].

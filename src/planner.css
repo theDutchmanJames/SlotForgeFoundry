@@ -243,6 +243,11 @@
 .elevated .pm-road {
   fill: #4a5059;
 }
+.pl-barriers h3 {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
 .pm-barrier {
   fill: #b9b5aa;
   stroke: var(--d-track-edge);

@@ -481,51 +481,103 @@ test('fences have their own family and join the barrier export', () => {
   validateTrack(trackParameters(boardPiece({ tracksideRise: 60 })));
 });
 
-test('with barriers on both sides the inside can have another shape', () => {
+test('with barriers on both sides the inside can have settings of its own', () => {
   const p = piece({
     length: 172.5,
     tracksideSide: 'both',
+    tracksideInnerOwn: true,
+    // Outside: an advertising board with a fence, 30 mm above the road.
     tracksideShape: 'board',
-    tracksideShapeInner: 'barrier',
+    tracksideRise: 30,
     tracksideFence: true,
+    // Inside: a lower concrete barrier in two halves, sloped at its start.
+    tracksideShapeInner: 'barrier',
+    tracksideRiseInner: 15,
+    tracksideSegmentsInner: 2,
+    tracksideEndsInner: 'start',
+    tracksideTabsInner: '1',
   });
   build(p, (parts) => {
-    // An advertising board with its fence outside, a concrete barrier inside.
     assert.deepEqual(
       parts.filter((part) => ['barrier', 'fence'].includes(part.role)).map((part) => part.id),
-      ['board-outer-1', 'fence-outer-1', 'barrier-inner-1'],
+      ['board-outer-1', 'fence-outer-1', 'barrier-inner-1', 'barrier-inner-2'],
     );
-    const [board, barrier] = barriers(parts);
+    const [board, first, second] = barriers(parts);
     near(board.solid.boundingBox().max[1], 50 + 5.8);
-    near(barrier.solid.boundingBox().min[1], -50 - BARRIER_FOOT);
-    for (const part of [board, barrier, ...fences(parts)]) assert.equal(part.solid.status(), 'NoError');
+    near(size(board.solid)[2], 12 + 30);
+    near(size(board.solid)[0], 172.5);
+    for (const half of [first, second]) {
+      near(size(half.solid)[2], 12 + 15);
+      near(size(half.solid)[0], 172.5 / 2);
+      assert.equal(half.tabCount, 1);
+      near(half.solid.boundingBox().min[1], -50 - BARRIER_FOOT);
+    }
+    // The slope is at the start of the inside row only.
+    const top = (solid, x) => solid.rayCast([x, -62, 90], [x, -62, -1])[0]?.position[2];
+    near(top(first.solid, -86.24), 12.5, 0.02);
+    near(top(second.solid, 86.2), 27);
+    for (const part of [board, first, second, ...fences(parts)]) assert.equal(part.solid.status(), 'NoError');
   });
-  // The other way round.
-  build({ ...p, tracksideShape: 'barrier', tracksideShapeInner: 'board' }, (parts) =>
-    assert.deepEqual(
-      parts.filter((part) => ['barrier', 'fence'].includes(part.role)).map((part) => part.id),
-      ['barrier-outer-1', 'board-inner-1', 'fence-inner-1'],
-    ));
-  // "Same as the outside", and one side only: the one Shape decides.
-  build({ ...p, tracksideShapeInner: 'same' }, (parts) =>
+  // Switched off, or with one side only, the one set decides.
+  build({ ...p, tracksideInnerOwn: false }, (parts) =>
     assert.deepEqual(barriers(parts).map((part) => part.id), ['board-outer-1', 'board-inner-1']));
   build({ ...p, tracksideSide: 'inner' }, (parts) =>
     assert.deepEqual(barriers(parts).map((part) => part.id), ['board-inner-1']));
+  // Each set is checked for itself, and a fault on the inside says so.
   assert.throws(
     () => validateTrack(trackParameters({ ...p, tracksideShapeInner: 'hedge' })),
-    /Unknown trackside shape for the inside/,
+    /Inside barrier: Unknown trackside shape/,
   );
-  // The face angle limit of a concrete barrier counts as soon as one side has one.
-  validateTrack(trackParameters({ ...p, tracksideShapeInner: 'same', tracksideRise: 60 }));
   assert.throws(
-    () => validateTrack(trackParameters({ ...p, tracksideRise: 60 })),
-    /top would be thinner than 2 mm/,
+    () => validateTrack(trackParameters({ ...p, tracksideRiseInner: 60 })),
+    /Inside barrier: The barrier face leans too far/,
   );
-  // Track Set shows the settings of both shapes together.
+  // A tall board outside does not have to meet the face angle of the barrier inside.
+  validateTrack(trackParameters({ ...p, tracksideRise: 60 }));
+  // An unused inside set is not checked.
+  validateTrack(trackParameters({ ...p, tracksideInnerOwn: false, tracksideRiseInner: 60 }));
+  // Track Set shows both sets, each with the fields of its own shape.
   const project = newProject();
   project.mode = 'track';
-  project.track.params = p;
+  project.track.params = trackParameters(p);
   const html = trackInspector(project, 'trackside');
-  assert.match(html, /name="tracksideShapeInner"/);
-  assert.doesNotMatch(html, /data-trackside-shape="(barrier|board)" hidden/);
+  for (const name of ['tracksideInnerOwn', 'tracksideShapeInner', 'tracksideRiseInner', 'tracksideFenceInner'])
+    assert.match(html, new RegExp('name="' + name + '"'));
+  assert.match(html, /Outside barrier/);
+  assert.match(html, /Inside barrier/);
+  assert.match(html, /data-trackside-shape="board" data-trackside-set="">/);
+  assert.match(html, /data-trackside-shape="barrier" data-trackside-set="Inner">/);
+  assert.match(html, /data-trackside-shape="board" data-trackside-set="Inner" hidden/);
+});
+
+test('the planner reads and writes barriers per side of a piece recipe', async () => {
+  const { applyBarriers, barrierOf, plainBarrier } = await import('../src/planner-model.js');
+  const recipe = (params) => ({ track: { params } });
+  const none = plainBarrier({ kind: 'none' });
+  assert.deepEqual(barrierOf(recipe({})), { outer: none, inner: none });
+  const board = { ...none, kind: 'board', rise: 30, fence: true, fenceHeight: 70 },
+    wall = { ...none, kind: 'barrier', rise: 15, ends: 'finish' };
+  for (const wanted of [
+    { outer: board, inner: wall },
+    { outer: wall, inner: none },
+    { outer: none, inner: board },
+    { outer: none, inner: none },
+  ]) {
+    const params = { ...defaultTrack() };
+    applyBarriers(params, wanted);
+    assert.deepEqual(barrierOf(recipe(params)), wanted);
+    validateTrack(trackParameters(params));
+  }
+  const both = { ...defaultTrack() };
+  applyBarriers(both, { outer: board, inner: wall });
+  assert.equal(both.tracksideSide, 'both');
+  assert.equal(both.tracksideInnerOwn, true);
+  assert.equal(both.tracksideShape, 'board');
+  assert.equal(both.tracksideShapeInner, 'barrier');
+  assert.equal(both.tracksideRiseInner, 15);
+  // One shared set on both sides reads as the same answer twice.
+  assert.deepEqual(
+    barrierOf(recipe({ ...defaultTrack(), tracksideSide: 'both', tracksideShape: 'board' })).inner.kind,
+    'board',
+  );
 });
