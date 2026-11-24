@@ -896,3 +896,81 @@ test('2-lane pieces that differ only in their slots are separate kit entries nam
     ],
   );
 });
+
+test('a new piece carries on the climb and the supports of the piece it joins', () => {
+  const { defs, layout } = setup([
+    ['s1', source(0, { joint: 'none' })],
+    ['c1', source(5, { joint: 'none' })],
+  ]);
+  const node = (c) => layout.nodes.find((n) => n.id === c.selected);
+  let c = placeSource(layout, defs, 's1');
+  setElevation(layout, defs, c.selected, 0, 20, 2);
+  c = placeSource(layout, defs, 's1', c.end);
+  assert.deepEqual(node(c).h, [20, 40]);
+  assert.equal(node(c).supports, 2);
+  // A corner stays level at the height it joins, and keeps the supports.
+  c = placeSource(layout, defs, 'c1', c.end);
+  assert.deepEqual(node(c).h, [40, 40]);
+  assert.equal(node(c).supports, 2);
+  // After a level piece the next straight is level too, until a descent is set.
+  c = placeSource(layout, defs, 's1', c.end);
+  assert.deepEqual(node(c).h, [40, 40]);
+  setElevation(layout, defs, c.selected, 40, 10, 1);
+  // The descent stops at the table.
+  c = placeSource(layout, defs, 's1', c.end);
+  assert.deepEqual(node(c).h, [10, 0]);
+  assert.equal(node(c).supports, 1);
+  c = placeSource(layout, defs, 's1', c.end);
+  assert.deepEqual(node(c).h, [0, 0]);
+  assert.equal(node(c).supports, 0);
+});
+
+test('square pegs stand in pairs under the road edges with tops that follow the slope', () => {
+  const { defs, layout } = setup([['s1', source(0, { joint: 'none' })]]);
+  let c = placeSource(layout, defs, 's1');
+  setElevation(layout, defs, c.selected, 30, 50, 2, 'pegs');
+  c = placeSource(layout, defs, 's1', c.end);
+  const next = layout.nodes.find((n) => n.id === c.selected);
+  assert.equal(next.supportStyle, 'pegs');
+  assert.deepEqual(next.h, [50, 70]);
+  setElevation(layout, defs, c.selected, 50, 50, 1, 'block');
+  const requests = supportRequests(surfaces(layout, defs));
+  assert.deepEqual(requests.map((r) => r.style), ['pegs', 'block']);
+  const blocks = engine.plannerSupports({ requests, plate });
+  // Two stations of two pegs on the ramp, one full-width block on the level.
+  assert.equal(blocks.length, 5);
+  const pegs = blocks.filter((b) => / Peg /.test(b.name));
+  assert.equal(pegs.length, 4);
+  for (const peg of pegs) {
+    const [x, y, z] = peg.bounds.max.map((v, i) => v - peg.bounds.min[i]);
+    assert.ok(Math.abs(Math.min(x, y) - 20) < 0.01, peg.name);
+    assert.ok(Math.abs(Math.max(x, y) - 20) < 0.01, peg.name);
+    assert.ok(z > 30 && z < 50.5, peg.name);
+    // The sloping top makes a peg lower on one side than the other.
+    assert.match(peg.name, /\d–\d/);
+  }
+  assert.match(blocks.find((b) => !/ Peg /.test(b.name)).name, /Support 1 · 50 mm/);
+});
+
+test('pegs take the width and length that are set, and new pieces keep that size', () => {
+  const { defs, layout } = setup([['s1', source(0, { joint: 'none' })]]);
+  let c = placeSource(layout, defs, 's1');
+  assert.throws(
+    () => setElevation(layout, defs, c.selected, 40, 40, 1, 'pegs', [30, 200]),
+    /peg width and length from 5 to 100 mm/,
+  );
+  setElevation(layout, defs, c.selected, 40, 40, 1, 'pegs', [30, 50]);
+  c = placeSource(layout, defs, 's1', c.end);
+  assert.deepEqual(layout.nodes.find((n) => n.id === c.selected).peg, [30, 50]);
+  const blocks = engine.plannerSupports({
+    requests: supportRequests(surfaces(layout, defs)),
+    plate,
+  });
+  assert.equal(blocks.length, 4);
+  // The road runs along X: 50 mm along it, 30 mm across it, 40 mm tall.
+  for (const b of blocks)
+    assert.deepEqual(
+      b.bounds.max.map((v, i) => Math.round((v - b.bounds.min[i]) * 100) / 100),
+      [50, 30, 40],
+    );
+});

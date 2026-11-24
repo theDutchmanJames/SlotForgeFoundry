@@ -1,5 +1,6 @@
 import polygonClipping from 'polygon-clipping';
 import { sectionStations } from './geometry/bridge-sections.js';
+import { PEG_LIMITS, PEG_SIZE } from './geometry/bridge-supports.js';
 import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
 import { screwFamilyDifference } from './geometry/screw-clip.js';
 
@@ -407,6 +408,51 @@ function align(port, target, flip) {
   pose.y = target.xy[1] - q[1];
   return pose;
 }
+export const SUPPORT_STYLES = Object.freeze([
+  ['block', 'Full-width block'],
+  ['pegs', 'Two pegs'],
+]);
+export const supportStyleOf = (n) =>
+  n.supportStyle === 'pegs' ? 'pegs' : 'block';
+// A peg's size as [across the road, along the road].
+export const pegSizeOf = (n) => n.peg ?? [...PEG_SIZE];
+const validPeg = (peg) =>
+  Array.isArray(peg) &&
+  peg.length === 2 &&
+  peg.every(
+    (v) => Number.isFinite(v) && v >= PEG_LIMITS[0] && v <= PEG_LIMITS[1],
+  );
+// A new piece carries on from the one it joins: a straight keeps climbing or
+// descending at the same rate, down to the table at most, and a lifted piece
+// takes the same number of supports.
+function continueClimb(layout, defs, target, nodes, def, incoming, exit) {
+  const previous = layout.nodes.find((n) => n.id === target.id);
+  if (!previous) return;
+  const before = defs.get(previous.source),
+    node = nodes[0],
+    lift = node.h[incoming.i];
+  if (
+    nodes.length === 1 &&
+    incoming.id === exit.id &&
+    canRamp(previous, before) &&
+    canRamp(node, def)
+  ) {
+    const rate = pitch(previous, before).slope * (target.i === 1 ? 1 : -1),
+      [a, b] = def.sections[node.index].ports,
+      end = Math.min(500, Math.max(0, lift + rate * distance(a.xy, b.xy))),
+      h = [...node.h];
+    h[exit.i] = Math.round(end * 100) / 100;
+    const p = def.track.params;
+    if (p.slotDepth * Math.hypot(1, pitch({ ...node, h }, def).slope) < p.height)
+      node.h = h;
+  }
+  for (const n of nodes)
+    if (Math.max(...n.h) > 0) {
+      n.supports = previous.supports;
+      n.supportStyle = supportStyleOf(previous);
+      if (previous.peg) n.peg = [...previous.peg];
+    }
+}
 export function placeSource(layout, defs, source, targetKey, hand = 'right') {
   const def = defs.get(source);
   const world = endsOf(layout, defs);
@@ -454,6 +500,7 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right') {
     node.pose = { ...pose };
     node.h = [Math.max(0, h), Math.max(0, h)];
   }
+  if (target) continueClimb(layout, defs, target, nodes, def, incoming, exit);
   if (target) {
     const nodeOf = (end) => nodes.find((n) => n.id === end.id);
     checkMate(target, frameFor(nodeOf(incoming), def)[incoming.i], () =>
@@ -601,7 +648,24 @@ export function canRamp(node, def) {
     )
   );
 }
-export function setElevation(layout, defs, id, start, end, count) {
+export function setElevation(
+  layout,
+  defs,
+  id,
+  start,
+  end,
+  count,
+  style,
+  peg,
+) {
+  if (peg && !validPeg(peg))
+    throw Error(
+      'Enter a peg width and length from ' +
+        PEG_LIMITS[0] +
+        ' to ' +
+        PEG_LIMITS[1] +
+        ' mm.',
+    );
   if (
     ![start, end].every((v) => Number.isFinite(v) && v >= 0 && v <= 500) ||
     !Number.isInteger(count) ||
@@ -659,6 +723,8 @@ export function setElevation(layout, defs, id, start, end, count) {
     if (!Math.max(...h)) n.supports = 0;
   }
   chosen.supports = Math.max(start, end) > 0 ? count : 0;
+  if (style) chosen.supportStyle = style === 'pegs' ? 'pegs' : 'block';
+  if (peg) chosen.peg = [...peg];
 }
 export function sourcePartMap(def) {
   return (def.byPart ??= new Map(def.meshes.map((m) => [m.id, m])));
@@ -794,6 +860,8 @@ export function supportRequests(rows) {
       return {
         node: n.id,
         count: n.supports,
+        style: supportStyleOf(n),
+        peg: pegSizeOf(n),
         start: n.h[0],
         end: n.h[1],
         sides,
@@ -882,7 +950,9 @@ export function validateLayout(data) {
       !n.h.every((v) => Number.isFinite(v) && v >= 0 && v <= 500) ||
       !Number.isInteger(n.supports) ||
       n.supports < 0 ||
-      n.supports > 32
+      n.supports > 32 ||
+      ![undefined, 'block', 'pegs'].includes(n.supportStyle) ||
+      (n.peg !== undefined && !validPeg(n.peg))
     )
       throw Error('Invalid placed section in the layout file.');
     ids.add(n.id);

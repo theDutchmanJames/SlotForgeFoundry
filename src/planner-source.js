@@ -285,7 +285,7 @@ export function plannerSupports(wasm, { requests, plate }, describe) {
       blocks.push(
         ...bridgeBlocks(
           work,
-          { bridgeSupportCount: r.count },
+          { bridgeSupportCount: r.count, bridgeSupportStyle: r.style, bridgePegSize: r.peg },
           { sides: r.sides },
           profile,
           { crossingIndex: index, sectionIndex: r.node, obstacles, occupied },

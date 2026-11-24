@@ -1,6 +1,10 @@
 import { dot, left, length2, minus, move, unit } from './solids.js';
 
 const BLOCK_DEPTH = 10;
+// A peg is a rectangular post under one road edge; pegs stand in pairs.
+// Its size is [across the road, along the road] in millimetres.
+export const PEG_SIZE = Object.freeze([20, 20]);
+export const PEG_LIMITS = Object.freeze([5, 100]);
 const GAP = 1;
 const EPS = 0.000001;
 
@@ -55,12 +59,12 @@ function collides(section, others) {
   return false;
 }
 
-function supportCandidates(work, geometry, zone, obstacles) {
+function supportCandidates(work, geometry, zone, obstacles, shape) {
   const [start, end] = zone.range;
   const { length, frame } = geometry;
   // Both top edges must contact the same planar deck. Keep the full block
   // depth off the boundary between a ramp and its level neighbour.
-  const half = BLOCK_DEPTH / 2;
+  const half = shape.depth / 2;
   const a = start + half / length,
     b = end - half / length;
   if (b < a) return [];
@@ -72,12 +76,22 @@ function supportCandidates(work, geometry, zone, obstacles) {
   for (let i = 0; i <= sampleCount; i++) {
     const station = a + ((b - a) * i) / sampleCount;
     const { center, forward, walls } = frame(station);
-    const corners = [
-      move(walls[0], forward, -half),
-      move(walls[1], forward, -half),
-      move(walls[1], forward, half),
-      move(walls[0], forward, half),
+    const foot = (p, q) => [
+      move(p, forward, -half),
+      move(q, forward, -half),
+      move(q, forward, half),
+      move(p, forward, half),
     ];
+    const across = minus(walls[1], walls[0]),
+      inset = shape.peg / length2(across);
+    // One footprint from wall to wall, or one square under each road edge.
+    const feet = shape.peg
+      ? [
+          foot(walls[0], move(walls[0], across, inset)),
+          foot(move(walls[1], across, -inset), walls[1]),
+        ]
+      : [foot(walls[0], walls[1])];
+    const corners = feet.flat();
     let top = zone.z,
       gradient = [0, 0],
       low = top,
@@ -93,10 +107,10 @@ function supportCandidates(work, geometry, zone, obstacles) {
       gradient = direction.map((q) => q * grade);
     }
     if (low < 0.8) continue;
-    const floor = new work.wasm.CrossSection([corners], 'EvenOdd');
+    const floor = new work.wasm.CrossSection(feet, 'EvenOdd');
     try {
       if (!collides(floor, obstacles))
-        candidates.push({ station, center, gradient, top, low, high, corners });
+        candidates.push({ station, center, gradient, top, low, high, feet });
     } finally {
       floor.delete();
     }
@@ -104,14 +118,14 @@ function supportCandidates(work, geometry, zone, obstacles) {
   return candidates;
 }
 
-function planBlocks(work, geometry, zones, obstacles, count) {
+function planBlocks(work, geometry, zones, obstacles, count, shape) {
   // Establish feasible stations on each side before dividing the requested
   // count. A wide border or an oblique crossing may block only one side.
   const used = [],
     slots = zones.map((zone) => ({
       ...zone,
       count: 0,
-      candidates: supportCandidates(work, geometry, zone, obstacles),
+      candidates: supportCandidates(work, geometry, zone, obstacles, shape),
     }));
   try {
     // Choose a disjoint pool in route order; quantiles of this pool give
@@ -122,13 +136,10 @@ function planBlocks(work, geometry, zones, obstacles, count) {
         if (
           pool.length &&
           (candidate.station - pool.at(-1).station) * geometry.length <
-            BLOCK_DEPTH + GAP
+            shape.depth + GAP
         )
           continue;
-        const floor = new work.wasm.CrossSection(
-          [candidate.corners],
-          'EvenOdd',
-        );
+        const floor = new work.wasm.CrossSection(candidate.feet, 'EvenOdd');
         try {
           if (collides(floor, used)) continue;
           const clearance = floor.offset(GAP, 'Miter');
@@ -188,6 +199,15 @@ export function bridgeBlocks(
   const count = p.bridgeSupportCount;
   if (!count) return [];
   const geometry = roadFrames(section);
+  const width = length2(
+    minus(geometry.frame(0).walls[1], geometry.frame(0).walls[0]),
+  );
+  // Two pegs need room for a gap between them; a narrower road gets blocks.
+  const [across, along] = p.bridgePegSize ?? PEG_SIZE;
+  const pegs = p.bridgeSupportStyle === 'pegs' && width >= 2 * across + GAP;
+  const shape = pegs
+    ? { depth: along, peg: across }
+    : { depth: BLOCK_DEPTH, peg: 0 };
   const crossAt =
     profile.crossingAt ?? (profile.level.start + profile.level.end) / 2;
   const zones = [
@@ -213,7 +233,7 @@ export function bridgeBlocks(
   const forbidden = [obstacles, ...occupied]
     .filter((s) => s && !s.isEmpty())
     .map((solid) => ({ solid, bounds: solid.bounds() }));
-  const blocks = planBlocks(work, geometry, zones, forbidden, count);
+  const blocks = planBlocks(work, geometry, zones, forbidden, count, shape);
   if (!blocks)
     throw Error(
       'Crossing ' +
@@ -222,35 +242,47 @@ export function bridgeBlocks(
         count +
         ' bridge supports. Reduce the support count, lengthen the upper passage, or move nearby roads and borders.',
     );
-  return blocks.map(({ station, center, gradient, top, low, high, corners }, i) => {
-    const floor = work.section([corners]);
-    occupied.push(work.own(floor.offset(GAP, 'Miter')));
-    const prism = work.prism(floor, 0, top);
-    const solid =
-      high - low < EPS
-        ? prism
-        : work.own(
-            prism.warp((vertex) => {
-              if (vertex[2] > 0)
-                vertex[2] = top + dot(minus(vertex, center), gradient);
-            }),
-          );
-    return {
-      id: 'support-' + (crossingIndex + 1) + '-' + (i + 1),
-      name:
-        'Crossing ' +
-        (crossingIndex + 1) +
-        ' · Support ' +
-        (i + 1) +
-        ' · ' +
-        (high - low < EPS
-          ? Number(top.toFixed(1))
-          : Number(low.toFixed(1)) + '–' + Number(high.toFixed(1))) +
-        ' mm',
-      role: 'support',
-      station,
-      crossingSection: sectionIndex,
-      solid,
-    };
+  return blocks.flatMap(({ station, center, gradient, top, feet }, i) => {
+    occupied.push(work.own(work.section(feet).offset(GAP, 'Miter')));
+    return feet.map((corners, side) => {
+      const heights = corners.map(
+          (q) => top + dot(minus(q, center), gradient),
+        ),
+        low = Math.min(...heights),
+        high = Math.max(...heights);
+      const prism = work.prism(work.section([corners]), 0, top);
+      const solid =
+        high - low < EPS
+          ? prism
+          : work.own(
+              prism.warp((vertex) => {
+                if (vertex[2] > 0)
+                  vertex[2] = top + dot(minus(vertex, center), gradient);
+              }),
+            );
+      return {
+        id:
+          'support-' +
+          (crossingIndex + 1) +
+          '-' +
+          (i + 1) +
+          (pegs ? '-' + 'ab'[side] : ''),
+        name:
+          'Crossing ' +
+          (crossingIndex + 1) +
+          (pegs ? ' · Peg ' : ' · Support ') +
+          (i + 1) +
+          (pegs ? ['A', 'B'][side] : '') +
+          ' · ' +
+          (high - low < EPS
+            ? Number(top.toFixed(1))
+            : Number(low.toFixed(1)) + '–' + Number(high.toFixed(1))) +
+          ' mm',
+        role: 'support',
+        station,
+        crossingSection: sectionIndex,
+        solid,
+      };
+    });
   });
 }

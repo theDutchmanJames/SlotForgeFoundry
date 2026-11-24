@@ -354,6 +354,9 @@
 .pl-bed input {
   width: 66px;
 }
+.pl-bridge select {
+  width: 150px;
+}
 .pl-bridge small,
 .pl-bed small {
   display: block;

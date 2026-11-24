@@ -19,6 +19,9 @@ import {
   surfaces,
   crossings,
   supportRequests,
+  SUPPORT_STYLES,
+  supportStyleOf,
+  pegSizeOf,
   totalLength,
   tally,
   validateLayout,
@@ -607,9 +610,27 @@ export function createPlanner({ host, call, download, current, promote }) {
         '" ' +
         (canRamp(n, def) ? '' : 'disabled') +
         '></label>' +
-        '<label>Support blocks<input data-pl-field="supports" type="number" min="0" max="32" value="' +
+        '<label>Supports<input data-pl-field="supports" type="number" min="0" max="32" value="' +
         n.supports +
-        '"></label><small>Lift is measured under the road. Connected ends follow the lift. Use a straight for a ramp.</small>' +
+        '"></label><label>Support type<select data-pl-field="style">' +
+        SUPPORT_STYLES.map(
+          ([value, label]) =>
+            '<option value="' +
+            value +
+            '"' +
+            (supportStyleOf(n) === value ? ' selected' : '') +
+            '>' +
+            label +
+            '</option>',
+        ).join('') +
+        '</select></label>' +
+        '<label>Peg width · mm<input data-pl-field="pegAcross" type="number" min="5" max="100" step="any" value="' +
+        pegSizeOf(n)[0] +
+        '"></label>' +
+        '<label>Peg length · mm<input data-pl-field="pegAlong" type="number" min="5" max="100" step="any" value="' +
+        pegSizeOf(n)[1] +
+        '"></label>' +
+        '<small>Pegs stand in pairs, one under each road edge, so a count of 2 gives four pegs. Width is across the road and length is along it. Their tops follow the slope of the road. New pieces carry on the climb and the supports of the piece they join.</small><small>Lift is measured under the road. Connected ends follow the lift. Use a straight for a ramp.</small>' +
         btn('elevate', 'Apply heights', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
@@ -1050,7 +1071,10 @@ export function createPlanner({ host, call, download, current, promote }) {
         b = field('b').disabled ? a : field('b').valueAsNumber,
         count = field('supports').valueAsNumber;
       await edit((n) => {
-        setElevation(n, defs, choice.selected, a, b, count);
+        setElevation(n, defs, choice.selected, a, b, count, field('style').value, [
+          field('pegAcross').valueAsNumber,
+          field('pegAlong').valueAsNumber,
+        ]);
       });
       $('.pl-bridge').open = true;
       return;
