@@ -7,6 +7,7 @@ import {
   turnoutHasBlade,
   turnoutSettings,
 } from './geometry/turnout-layout.js';
+import { TURNOUT_DRIVE, turnoutMotor } from './geometry/turnout-drive.js';
 import { PIT_MOTOR_LIMITS, pitMotorSettings } from './geometry/pit-motor-settings.js';
 import { maxPitMotorHeight, motorMountFit } from './geometry/pit-motor-mount.js';
 import { pitEyeHardware } from './geometry/pit-turnout.js';
@@ -116,6 +117,25 @@ function syncPitLinkage(form) {
     </svg><figcaption>${travel}<br>${esc(status)}</figcaption>`;
 }
 
+// The slider and the motor of a turnout's Digital insert.
+function turnoutDriveControls(special) {
+  const m = turnoutMotor(special);
+  const size = (key, label) => {
+    const [min, max] = PIT_MOTOR_LIMITS[key];
+    return field(specialFieldName(key), label, m[key], 'mm', { min, max });
+  };
+  const [minStroke, maxStroke] = TURNOUT_DRIVE.strokeLimits, [minPlay, maxPlay] = TURNOUT_DRIVE.playLimits;
+  return '<div data-turnout-drive' + (turnoutSettings(special).turnoutMode === 'digital' ? '' : ' hidden') + '>' +
+    field('spMotorStroke', 'Usable stroke', m.motorStroke, 'mm', { min: minStroke, max: maxStroke }) +
+    '<p class="hint">The travel of your push-pull motor. From about 5 mm the slant is shallow: the motor needs little force, and the flat ends of the slot hold the blade in place. At 2 to 4 mm the slant is steep: it needs more push, and a knock on the blade can push the slider back.</p>' +
+    field('spTurnoutPlay', 'Pin play', m.play, 'mm', { min: minPlay, max: maxPlay, step: 0.05 }) +
+    '<p class="hint">Clearance between the crank pin and the slot in the slider. A little play here becomes two to three times as much at the tip of the blade.</p>' +
+    '<p class="hint">The motor lies under the road between the two slots, in line with the slider. Measure its body along the plunger. Measure retracted reach from the end face to the eye in the plunger.</p>' +
+    size('motorLength', 'Body length') + size('motorWidth', 'Body width') + size('motorHeight', 'Body height') +
+    size('plungerProjection', 'Retracted plunger reach') + size('eyeDiameter', 'Plunger eye diameter') +
+    '</div>';
+}
+
 // The pack creator and the Road inspector edit the same recipe fields.
 export function specialControls(p, { creating = false } = {}) {
   const s = p.special;
@@ -157,7 +177,7 @@ export function specialControls(p, { creating = false } = {}) {
       choice('spTurnoutPosition', 'Blade position', t.turnoutPosition, [
         ['main', 'Straight on'],
         ['pit', 'Branch'],
-      ]) + '</div>';
+      ]) + '</div>' + turnoutDriveControls(s);
   }
   if (s.type === 'chicane') {
     body +=
@@ -242,6 +262,9 @@ export function syncSpecialControls(form) {
     const blade = form.querySelector('[data-turnout-blade]');
     blade.hidden = !turnoutHasBlade(mode);
     blade.querySelector('select').disabled = blade.hidden;
+    const drive = form.querySelector('[data-turnout-drive]');
+    drive.hidden = mode !== 'digital';
+    for (const input of drive.querySelectorAll('input')) input.disabled = drive.hidden;
   }
   const row = form.querySelector('[data-strip-size]');
   if (!row) return;
@@ -284,6 +307,7 @@ export function readSpecialFields(fields, p) {
     'turnoutRadius',
     'turnoutAngle',
     'turnoutLead',
+    'turnoutPlay',
     'motorMount',
     'rodDiameter',
     'eyeDiameter',

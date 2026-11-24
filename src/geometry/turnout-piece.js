@@ -10,6 +10,7 @@ import { laneTools } from './import-track.js';
 import { addRoadJoints } from './track-joints.js';
 import { cutPitBraidFeeds, pitBraidSections } from './pit-braids.js';
 import { M2, buildPitTurnout, pitTurnoutFootprint, turnoutOutline } from './pit-turnout.js';
+import { inlineMotorTray } from './pit-motor-mount.js';
 import {
   TURNOUT_INSERT,
   turnoutBraidLayout,
@@ -57,13 +58,13 @@ function renameHardware(list, prefix) {
 
 // The outline of the insert: around the blade pocket, the handoff reliefs,
 // the pivot and the crank, and around both guide slots over that length.
-function insertOutline(work, p, fork, sleeves) {
+function insertOutline(work, p, fork, sleeves, drive) {
   const { margin } = TURNOUT_INSERT;
-  const span = turnoutInsertSpan(fork);
+  const span = turnoutInsertSpan(fork, drive);
   const lanes = work.own(
     sleeves.intersect(rectangle(work, span.clipStart, -FAR, span.clipEnd, FAR)),
   );
-  const content = union2(work, [pitTurnoutFootprint(work, p, fork), lanes]);
+  const content = union2(work, [pitTurnoutFootprint(work, p, fork, { cam: drive.crank }), lanes]);
   // Close narrow notches between the slots, then keep the outside loop only:
   // one pocket without islands or slivers.
   const closing = 4;
@@ -143,9 +144,61 @@ function bladeDetent(work, p, fork) {
   );
 }
 
+// The slider at its straight-on end: a head with the cam slot, a neck, a plain
+// bar and a tongue that reaches over the motor's plunger. The head and the
+// tongue are relieved from below; the top face is flat all over, so the
+// slider prints upside down on that face without support.
+function sliderSolid(work, drive, sign) {
+  const box = ({ x0, x1, y0, y1 }) =>
+    rectangle(work, x0, Math.min(sign * y0, sign * y1), x1, Math.max(sign * y0, sign * y1));
+  const { head, neck, bar, tongue, pinHole, z } = drive;
+  const tongueBox = box({ ...tongue, y0: bar.y0, y1: bar.y1 });
+  const headBox = union2(work, [box(head), box(neck)]);
+  const line = drive.camLine.map(([x, y]) => [x, sign * y]);
+  const slot = union2(
+    work,
+    line.slice(1).map((q, i) =>
+      work.own(
+        work.wasm.CrossSection.hull([
+          disc(work, line[i], drive.slotHalf, 32),
+          disc(work, q, drive.slotHalf, 32),
+        ]),
+      ),
+    ),
+  );
+  const blank = work.prism(union2(work, [headBox, box(bar), tongueBox]), z.bottom, z.top);
+  return work.cut(blank, [
+    work.prism(slot, z.bottom - 1, z.top + 1),
+    // The crank arm passes under the head.
+    work.prism(headBox, z.bottom - 0.1, z.headBottom),
+    // The plunger passes under the tongue, which carries the pin for its eye.
+    work.prism(tongueBox, z.bottom - 0.1, tongue.z0),
+    work.prism(
+      disc(work, [pinHole.x, sign * pinHole.y], pinHole.radius, 32),
+      tongue.z0 - 0.1,
+      tongue.z0 + pinHole.depth,
+    ),
+  ]);
+}
+
+// Upside down on the bed, resting on what is its top face in the road.
+function printsTopDown(part) {
+  part.printPose = function printPose(callback) {
+    const turned = this.solid.rotate([180, 0, 0]);
+    const placed = turned.translate([0, 0, -turned.boundingBox().min[2]]);
+    try {
+      return callback(placed);
+    } finally {
+      turned.delete();
+      placed.delete();
+    }
+  };
+  return part;
+}
+
 export function buildTurnout(work, p) {
   const layout = turnoutLayout(p),
-    { fork, sign, settings } = layout;
+    { fork, sign, settings, drive } = layout;
   const electrical = turnoutBraidLayout(p, layout);
   const mode = settings.turnoutMode;
   const { fit, roof, lugTop, pilotDepth } = TURNOUT_INSERT;
@@ -169,9 +222,9 @@ export function buildTurnout(work, p) {
   // The pocket for the insert, with a lug on each flank for its two screws.
   // The blade and its pivot are solid parts of the insert whatever the road is.
   const flipperParams = { ...p, hollow: false };
-  const pocket = insertOutline(work, flipperParams, fork, sleeves);
+  const pocket = insertOutline(work, flipperParams, fork, sleeves, drive);
   const insertPlan = grow(work, pocket, -fit);
-  const { start, end } = turnoutInsertSpan(fork);
+  const { start, end } = turnoutInsertSpan(fork, drive);
   const lugs = [
     lugAt(work, pocket, start + 0.72 * (end - start), -sign),
     lugAt(work, pocket, start + 0.3 * (end - start), sign),
@@ -186,20 +239,46 @@ export function buildTurnout(work, p) {
   core.additions.push(work.prism(housing, 0, H));
   if (p.hollow && p.reinforcement) (core.ribKeepouts ??= []).push(housing);
 
-  // The road takes its openings from the digital insert, whichever insert is
-  // fitted: the slot, the window the blade's crown rises through and the
-  // pushrod channel to the branch-side edge. That keeps the road identical.
-  const flipper = (host, linkage, others) =>
+  // The drive of the Digital insert: the slider's channel and the motor's
+  // cavity, in the island between the two slots. They are part of the road
+  // whichever insert is fitted, hollow or solid.
+  const box = ([x0, y0, x1, y1]) =>
+    rectangle(work, x0, Math.min(sign * y0, sign * y1), x1, Math.max(sign * y0, sign * y1));
+  const channel = union2(work, drive.channels.map(box));
+  const chamber = box(drive.chamber),
+    traySlide = box(drive.slide);
+  const driveOpenings = union2(work, [channel, chamber, traySlide]);
+  const driveHousing = grow(work, driveOpenings, Math.max(p.wall, drive.tray.rim));
+  if (work.own(driveHousing.subtract(core.section)).area() > 1e-4)
+    throw Error(
+      'The slider and its motor reach the edge of the road. Use a wider road or a longer Main road length.',
+    );
+  core.additions.push(work.prism(driveHousing, 0, H));
+  if (p.hollow && p.reinforcement) core.ribKeepouts.push(driveHousing);
+  const trayPilot = work.own(work.wasm.Manifold.cylinder(3.05, M2.pilotRadius, M2.pilotRadius, 40));
+  const driveCuts = [
+    work.prism(channel, -0.1, drive.z.channelTop),
+    work.prism(chamber, -0.1, drive.z.cavityTop),
+    work.prism(traySlide, -0.1, drive.tray.trayTop + 0.15),
+    ...drive.screws.map(([x, y]) => work.own(trayPilot.translate([x, sign * y, drive.tray.trayTop - 0.01]))),
+  ];
+  const slotsAndBraid = union2(work, [guides, ...(recess ? [recess] : [])]);
+  if (work.own(driveOpenings.intersect(slotsAndBraid)).area() > 1e-6)
+    throw Error(
+      'The slider or its motor would lie under a guide slot or its braid. Use a narrower motor, a shorter Usable stroke or a smaller Branch radius.',
+    );
+
+  // The road takes its other openings from the digital insert, whichever
+  // insert is fitted: the slot and the window the blade's crown rises through.
+  // That keeps the road identical.
+  const flipper = (host, linkage) =>
     buildPitTurnout(
-      work, flipperParams, fork, host, cover, guides, others, undefined,
-      turnoutFlipperOptions(linkage),
+      work, flipperParams, fork, host, cover, guides, [], undefined,
+      turnoutFlipperOptions(linkage, drive.crank),
     );
   const host = () => ({ section: insertPlan, additions: [], cuts: [], feedCuts: [] });
   const digital = host();
-  // LINKAGE: the crank and the wire-rod channel come from pit-turnout.js as
-  // they are for a pit lane. Replace this call, and `rodChannel`, to change it.
-  const rodChannel = { section: core.section, cuts: [] };
-  const digitalParts = flipper(digital, true, [rodChannel]);
+  const digitalParts = flipper(digital, true);
   const roofSlab = work.prism(pocket, roofBottom - 0.02, H + 1);
   const window = work.and(work.union(digital.cuts), roofSlab);
   const pilotTop = Math.min(H - p.braidDepth - 1, lugTop + fit + pilotDepth);
@@ -209,7 +288,7 @@ export function buildTurnout(work, p) {
   core.cuts.push(
     work.prism(pocket, -0.1, roofBottom),
     window,
-    ...rodChannel.cuts,
+    ...driveCuts,
     work.prism(lugPocket, -0.1, lugTop + fit),
     ...lugs.map(({ centre }) => work.own(pilot.translate([...centre, lugTop + fit - 0.01]))),
   );
@@ -223,11 +302,26 @@ export function buildTurnout(work, p) {
     detent = null;
   if (mode === 'digital') {
     ({ additions, cuts } = digital);
-    cuts = [...cuts, slots];
-    parts = digitalParts;
+    // The head of the slider works inside the insert, around the crank's pin.
+    cuts = [...cuts, slots, work.prism(channel, -0.1, drive.z.channelTop)];
+    const travelled = settings.turnoutPosition === 'pit' ? drive.stroke : 0;
+    const slider = printsTopDown({
+      id: 'turnout-slider',
+      name: 'Turnout slider',
+      role: 'turnoutSlider',
+      solid: work.own(sliderSolid(work, drive, sign).translate([travelled, 0, 0])),
+    });
+    const tray = inlineMotorTray(work, drive.motor);
+    const cradle = {
+      id: 'turnout-motor-cradle',
+      name: 'Turnout motor cradle',
+      role: 'motorMount',
+      solid: work.own(tray.solid.translate([drive.motorCentre, sign * drive.axis, 0])),
+    };
+    parts = [...digitalParts, slider, cradle];
   } else if (mode === 'manual') {
     const manual = host();
-    parts = flipper(manual, false, []);
+    parts = flipper(manual, false);
     additions = manual.additions;
     cuts = [...manual.cuts, slots];
     detent = bladeDetent(work, p, fork);
@@ -273,12 +367,16 @@ export function buildTurnout(work, p) {
     solid: detent ? work.union([body, detent]) : body,
     turnoutMode: mode,
     screws: lugs.map((lug) => lug.centre),
+    // For checks and guides: what the drive opens in the road, and what it
+    // has to keep clear of.
+    driveOpenings: driveOpenings.toPolygons(),
+    slotsAndBraid: slotsAndBraid.toPolygons(),
   };
 
   // Road joints on all three ends. Connector pockets keep clear of the insert.
   core.adjustedLaneSleeves = union2(work, [
     sleeves,
-    grow(work, union2(work, [pocket, lugPocket]), TURNOUT_INSERT.jointWeb),
+    grow(work, union2(work, [pocket, lugPocket, driveOpenings]), TURNOUT_INSERT.jointWeb),
   ]);
   const loose = [];
   const ends = { ...p, segments: 1 };

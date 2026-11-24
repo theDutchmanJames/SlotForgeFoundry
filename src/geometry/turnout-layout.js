@@ -9,6 +9,7 @@ import { measuredLane } from './import-track.js';
 import { connectorEnvelopes } from './connector-counts.js';
 import { activeJointMode } from './placements.js';
 import { pitActuatorSpec, pitTurnoutProfile, turnoutOutline } from './pit-turnout.js';
+import { TURNOUT_DRIVE, turnoutDriveLayout, validateTurnoutDrive } from './turnout-drive.js';
 import {
   PIT_CONTACT_DEFAULTS,
   makeRail,
@@ -25,7 +26,7 @@ export const TURNOUT_MODES = Object.freeze([
   ['closed', 'Closed'],
 ]);
 export const TURNOUT_MODE_HINTS = Object.freeze({
-  digital: 'A moving blade, worked by a pushrod from below. Use it with a lane-change motor or servo.',
+  digital: 'A moving blade, worked by a slider and a push-pull motor under the road between the two slots.',
   manual: 'The same moving blade, set by hand. It clicks into either position.',
   analog: 'No moving parts. Both slots stay open.',
   closed: 'The branch slot is filled in. Cars can only go straight on.',
@@ -47,6 +48,8 @@ export const TURNOUT_DEFAULTS = Object.freeze({
   turnoutAngle: 30,
   turnoutLead: 20,
   turnoutPosition: 'main',
+  motorStroke: TURNOUT_DRIVE.stroke,
+  turnoutPlay: TURNOUT_DRIVE.play,
   ...PIT_CONTACT_DEFAULTS,
 });
 
@@ -101,6 +104,7 @@ const TURNOUT_WORDS = Object.freeze({
   waist: 'Use a larger Branch radius to leave a printable turnout blade between its guide walls.',
   returnRoom: 'Increase Main road length to fit the return behind the turnout blade.',
   rise: 'Use a larger Branch radius or a shallower braid recess to leave a smooth rise to the road at the blade pivot.',
+  crankReach: 'The crank under the blade reaches a guide slot. Use a smaller Branch radius or a shorter Usable stroke, or leave more track under the guide.',
 });
 export const TURNOUT_PARTS = Object.freeze({
   idPrefix: 'turnout-',
@@ -109,8 +113,10 @@ export const TURNOUT_PARTS = Object.freeze({
   bearing: ' turnout pivot bearing',
   pin: ' turnout pivot pin',
 });
-export const turnoutFlipperOptions = (linkage) => ({
+// cam: the crank of the slider drive, from the layout's drive.
+export const turnoutFlipperOptions = (linkage, cam) => ({
   linkage,
+  cam,
   parts: TURNOUT_PARTS,
   words: TURNOUT_WORDS,
 });
@@ -189,17 +195,41 @@ export function turnoutDefaultLength(p, straightLength) {
   if (Number.isFinite(straightLength) && straightLength >= start && fits(straightLength))
     return straightLength;
   for (let length = start; length <= start + 400; length += 10) if (fits(length)) return length;
-  return start;
+  return null;
 }
 
-// Where the insert begins and ends along the main road.
-export function turnoutInsertSpan(fork) {
+// The length and the branch angle a new turnout starts with. The branch has
+// to run on past the motor and the two braid contacts behind it, so it
+// takes one more of the pack's curves where the first choice is too short.
+export function turnoutDefaultShape(p, straightLength, rules) {
+  const [, maxAngle] = TURNOUT_LIMITS.turnoutAngle;
+  const step = Number.isFinite(rules?.angle) && rules.angle >= 1 ? rules.angle : TURNOUT_DEFAULTS.turnoutAngle;
+  const first = turnoutSettings(p.special).turnoutAngle;
+  const angles = [first];
+  for (let angle = first + step; angle <= maxAngle; angle += step) angles.push(Number(angle.toFixed(3)));
+  // No whole number of pack curves fits: go up in steps of 5 degrees instead.
+  for (let angle = Math.ceil((first + 0.01) / 5) * 5; angle <= maxAngle; angle += 5) angles.push(angle);
+  for (const turnoutAngle of angles) {
+    const length = turnoutDefaultLength({ ...p, special: { ...p.special, turnoutAngle } }, straightLength);
+    if (length !== null) return { length, turnoutAngle };
+  }
+  const s = turnoutSettings(p.special);
+  return {
+    length: Math.ceil(turnoutMinLength(p.width, s.turnoutRadius, s.turnoutLead) / 10) * 10,
+    turnoutAngle: first,
+  };
+}
+
+// Where the insert begins and ends along the main road. It reaches past the
+// blade and its reliefs, and past the pin of the crank.
+export function turnoutInsertSpan(fork, drive) {
   const { front, margin } = TURNOUT_INSERT;
+  const clipEnd = Math.max(fork.guardEndX, drive?.pinReach ?? -Infinity);
   return {
     clipStart: fork.mainToe[0] - front,
-    clipEnd: fork.guardEndX,
+    clipEnd,
     start: fork.mainToe[0] - front - margin,
-    end: fork.guardEndX + margin,
+    end: clipEnd + margin,
   };
 }
 
@@ -260,7 +290,26 @@ export function turnoutLayout(p) {
     laneOffsets: () => [0],
     stations: thetas.map((theta) => theta / sweep),
   };
+  const cutLanes = [
+    [
+      [-L / 2 - 0.05, 0],
+      [L / 2 + 0.05, 0],
+    ],
+    [
+      [-L / 2 - 0.05, 0],
+      ...branch,
+      [branch.at(-1)[0] + 0.05 * exitTangent[0], branch.at(-1)[1] + 0.05 * exitTangent[1]],
+    ],
+  ];
+  const ends = {
+    entry: { point: [-L / 2, 0], tangent: [-1, 0] },
+    main: { point: [L / 2, 0], tangent: [1, 0] },
+    branch: { point: branch.at(-1), tangent: exitTangent },
+  };
+  // The slider and its motor are part of the road whichever insert is fitted.
+  const drive = turnoutDriveLayout(p, { sign, fork, cutLanes, ends });
   return {
+    drive,
     settings: s,
     sign,
     radius: R,
@@ -276,22 +325,8 @@ export function turnoutLayout(p) {
       [[-L / 2, 0], ...branch],
     ],
     // The same two lanes, run a hair past every end so cutters clear the faces.
-    cutLanes: [
-      [
-        [-L / 2 - 0.05, 0],
-        [L / 2 + 0.05, 0],
-      ],
-      [
-        [-L / 2 - 0.05, 0],
-        ...branch,
-        [branch.at(-1)[0] + 0.05 * exitTangent[0], branch.at(-1)[1] + 0.05 * exitTangent[1]],
-      ],
-    ],
-    ends: {
-      entry: { point: [-L / 2, 0], tangent: [-1, 0] },
-      main: { point: [L / 2, 0], tangent: [1, 0] },
-      branch: { point: branch.at(-1), tangent: exitTangent },
-    },
+    cutLanes,
+    ends,
     fork,
     mainPath,
     branchPath,
@@ -305,13 +340,15 @@ const TOO_SHORT =
 // run through unbroken. The two strips between the slots start where there is
 // room for them, behind the insert, and are fed from below: each one is
 // jumpered to the outside strip of the other slot, which has the same polarity.
-// Both run on to their own exit, so each has a single contact.
+// Both run on to their own exit, so each has a single contact. The strips run
+// beside the slider and the motor, never over them; their contacts and the
+// wires under the road sit behind the motor, clear of the slider's channel.
 export function turnoutBraidLayout(p, layout = turnoutLayout(p)) {
   const conductors = [],
     jumpers = [];
   const result = { conductors, jumpers };
   if (!p.braidWidth) return result;
-  const { sign, fork, cutLanes, ends } = layout;
+  const { sign, fork, cutLanes, ends, drive } = layout;
   const main = measuredLane(cutLanes[0]),
     branch = measuredLane(cutLanes[1]);
   const outer = p.slotWidth / 2 + p.braidGap + p.braidWidth,
@@ -338,20 +375,25 @@ export function turnoutBraidLayout(p, layout = turnoutLayout(p)) {
     if (gap >= 1) hi = x;
     else lo = x;
   }
-  const start = Math.max(
-    hi + p.braidWidth / 2 + 1,
-    turnoutInsertSpan(fork).end + p.wall + 1.5,
-  );
+  const room = Math.max(hi + p.braidWidth / 2 + 1, turnoutInsertSpan(fork, drive).end + 1);
   // Stagger the two contacts so their underside wires do not cross.
   const stagger = feedLength + wireWidth + 1;
-  for (const [line, polarity, route, opposite, x, lineEnd] of [
-    [main, sign, 'main island', branchOutside, start, p.length / 2],
-    [branch, -sign, 'branch island', mainOutside, start + stagger, ends.branch.point[0]],
+  const behindDrive = drive.end + wireWidth / 2 + 1;
+  // A folded braid tail is its strip's own end, so that strip starts behind
+  // the motor. A wire hole can sit anywhere along a strip that starts earlier.
+  const begin = (x) => (slotted ? Math.max(x, behindDrive) : x);
+  const mainStart = begin(Math.max(room, drive.mainStripStart)),
+    branchStart = begin(Math.max(room, drive.stripStart));
+  const mainContact = Math.max(mainStart, behindDrive),
+    branchContact = Math.max(branchStart, mainContact + stagger);
+  for (const [line, polarity, route, opposite, x, contactX, lineEnd] of [
+    [main, sign, 'main island', branchOutside, mainStart, mainContact, p.length / 2],
+    [branch, -sign, 'branch island', mainOutside, slotted ? branchContact : branchStart, branchContact, ends.branch.point[0]],
   ]) {
     const centreOffset = polarity * mid;
     const from = xStation(line, centreOffset, x);
     const half = feedLength / (2 * line.total);
-    if (x + 2 * feedLength + 4 > lineEnd || 1 - from <= 4 * half + 1 / line.total)
+    if (contactX + 2 * feedLength + 4 > lineEnd || 1 - from <= 4 * half + 1 / line.total)
       throw Error(TOO_SHORT);
     const island = makeRail(p, line, 1, polarity, route, from, 1);
     conductors.push(island);
@@ -362,7 +404,7 @@ export function turnoutBraidLayout(p, layout = turnoutLayout(p)) {
         tooShort: TOO_SHORT,
       });
     else {
-      const xy = line.atOffset(from + half, centreOffset);
+      const xy = line.atOffset(xStation(line, centreOffset, contactX) + half, centreOffset);
       contact = { xy, opening: wireOpening(xy, viaRadius) };
     }
     const padAt = xStation(opposite.line, opposite.mid, contact.xy[0]);
@@ -400,8 +442,7 @@ export function validateTurnout(p) {
     throw Error('Choose Digital, Hand-set point, Analog or Closed for the turnout insert.');
   if (p.braidFeedSide !== undefined && p.braidFeedSide !== 'none')
     throw Error('A turnout has no extra braid openings yet. Set Feed openings to None for this piece.');
-  if (raw.motorMount)
-    throw Error('A turnout has no motor mount yet. Switch the motor mount off.');
+  validateTurnoutDrive(raw);
   if (!['wire', 'braid'].includes(s.pitContactMode))
     throw Error('Choose round wire holes or braid pass-throughs for the turnout contacts.');
   if (s.pitContactMode === 'braid' && !inRange(s.pitContactLength, [0.3, 50]))
@@ -464,7 +505,7 @@ export function validateTurnout(p) {
         tidy(p.height + TURNOUT_INSERT.minPilot - pilot) + ' mm.',
     );
   const layout = turnoutLayout(p);
-  const span = turnoutInsertSpan(layout.fork);
+  const span = turnoutInsertSpan(layout.fork, layout.drive);
   const reach = entryConnectorReach(p);
   const clearStart = -p.length / 2 + Math.max(6, reach + TURNOUT_INSERT.jointWeb);
   if (span.start < clearStart - 1e-9)

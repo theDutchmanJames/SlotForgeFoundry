@@ -23,6 +23,7 @@ const PREFIXES = {
   turnoutArm: 'K',
   turnoutBearing: 'J',
   turnoutInsert: 'N',
+  turnoutSlider: 'L',
   motorMount: 'M',
   barrier: 'W',
   fence: 'F',
@@ -39,6 +40,7 @@ const COLORS = {
   turnoutArm: '#8b80bb',
   turnoutBearing: '#bf9653',
   turnoutInsert: '#c97a8e',
+  turnoutSlider: '#d9a441',
   motorMount: '#56a0a6',
   barrier: '#c9c4b8',
   fence: '#8d949c',
@@ -154,7 +156,7 @@ function assemblyMap(entries, groups, project) {
     '<text x="26" y="58" font-size="14">Assembly map · top view · print quantities below</text>',
   ];
   // Show the locations of underside hardware on top of the deck outlines.
-  const mapLayer = { support: 1, turnoutInsert: 0.5, turnout: 1, turnoutBearing: 1, motorMount: 1, turnoutArm: 2, clip: 2, retainer: 3 };
+  const mapLayer = { support: 1, turnoutInsert: 0.5, turnoutSlider: 2, turnout: 1, turnoutBearing: 1, motorMount: 1, turnoutArm: 2, clip: 2, retainer: 3 };
   const mapOrder = entries
     .slice()
     .sort((a, b) => (mapLayer[a.role] ?? 0) - (mapLayer[b.role] ?? 0));

@@ -24,6 +24,8 @@ import {
 } from '../src/geometry/turnout-layout.js';
 import { wiringDiagram } from '../src/special-print.js';
 import { buildCarRoutes } from '../src/car-placement.js';
+import { TURNOUT_DRIVE, turnoutCam } from '../src/geometry/turnout-drive.js';
+import { withPrintableSolid } from '../src/geometry/joints.js';
 
 const wasm = await Module();
 wasm.setup();
@@ -401,7 +403,10 @@ test('settings outside what the piece can be are refused in plain words', () => 
   refuse({ side: 'both' }, {}, /Choose Left or Right/);
   refuse({ turnoutMode: 'servo' }, {}, /Choose Digital, Hand-set point, Analog or Closed/);
   refuse({ turnoutPosition: 'up' }, {}, /Choose Straight on or Branch/);
-  refuse({ motorMount: true }, {}, /no motor mount yet/);
+  refuse({ motorStroke: 1.5 }, {}, /Usable stroke must be between 2 and 12 mm/);
+  refuse({ motorStroke: 13 }, {}, /Usable stroke must be between 2 and 12 mm/);
+  refuse({ turnoutPlay: 0.01 }, {}, /Pin play must be between 0.05 and 0.6 mm/);
+  refuse({ turnoutPlay: 0.7 }, {}, /Pin play must be between 0.05 and 0.6 mm/);
   refuse({ turnoutRadius: 20 }, {}, /Branch radius must be between 60 and 5000 mm/);
   refuse({ turnoutAngle: 85 }, {}, /Branch angle must be between 5 and 80°/);
   refuse({ turnoutLead: 5 }, {}, /Lead before the branch must be between 15 and 1000 mm/);
@@ -461,4 +466,240 @@ test('the parts list has a Turnout inserts family and the notes explain the inse
     assert.match(notes, /two M2 × 6 mm/i);
     for (const [, name] of TURNOUT_MODES) assert.ok(notes.includes(name), mode + ' mentions ' + name);
   }
+});
+
+// --- The cam slider drive of the Digital insert ---------------------------
+
+// The user's pack: a 10 mm track with an 8 mm slot, 100 mm wide, one lane.
+const lowTrack = { height: 10, slotDepth: 8 };
+const section = (loops) => new wasm.CrossSection(loops, 'EvenOdd');
+const circle = ([x, y], r) =>
+  section([Array.from({ length: 48 }, (_, i) => [
+    x + r * Math.cos((Math.PI * i) / 24),
+    y + r * Math.sin((Math.PI * i) / 24),
+  ])]);
+function freed(make, use) {
+  const made = make();
+  try {
+    return use(made);
+  } finally {
+    made.delete();
+  }
+}
+const overlapArea = (a, b) => freed(() => a.intersect(b), (both) => both.area());
+const drivePart = (parts, role) => byRole(parts, role)[0];
+
+test('the cam fits the stroke: a short flat at each end, and a slant that stops growing at about 6 mm', () => {
+  for (const stroke of [2, 3, 4, 5, 6, 9, 12]) {
+    const cam = turnoutCam(stroke, 1.6);
+    near(cam.flat * 2 + cam.slant, stroke, 1e-9);
+    assert.ok(cam.flat >= TURNOUT_DRIVE.minFlat - 1e-9, 'flat at ' + stroke);
+    assert.ok(cam.slant <= TURNOUT_DRIVE.maxSlant + 1e-9);
+  }
+  near(turnoutCam(6, 1.6).slant, turnoutCam(12, 1.6).slant, 1e-9);
+  assert.ok(turnoutCam(12, 1.6).flat > 3);
+  // Steep and not locking at 2 mm; shallow from 6 mm on.
+  assert.ok(turnoutCam(2, 1.6).angle > 40);
+  assert.ok(turnoutCam(6, 1.6).angle < 20);
+  // The piece itself: the same pin travel at 6 and at 9 mm of stroke.
+  const drive = (motorStroke) => turnoutLayout(turnout({ motorStroke }, lowTrack)).drive;
+  near(drive(6).travel, drive(9).travel, 1e-6);
+  assert.ok(drive(6).cam.angle < 20, 'slant at 6 mm: ' + drive(6).cam.angle);
+  assert.ok(drive(2).cam.angle > 40);
+});
+
+test('at each end of the stroke the crank pin sits in a flat of the cam slot and the blade is at its position', () => {
+  for (const motorStroke of [2, 4, 6, 9, 12])
+    for (const side of ['left', 'right']) {
+      const sign = side === 'left' ? 1 : -1;
+      const at = {};
+      for (const turnoutPosition of ['main', 'pit']) {
+        const p = turnout({ side, motorStroke, turnoutPosition }, lowTrack);
+        const { drive, fork } = turnoutLayout(p);
+        const label = [side, motorStroke, turnoutPosition].join(' ');
+        const [px, py] = drive.pinAt(turnoutPosition === 'pit' ? 1 : 0);
+        const pin = [px, sign * py];
+        assembly(p, (parts) => {
+          const slider = drivePart(parts, 'turnoutSlider').solid,
+            crank = drivePart(parts, 'turnoutArm').solid,
+            blade = drivePart(parts, 'turnout').solid;
+          const z = (drive.z.headBottom + drive.z.top) / 2;
+          const slot = slider.slice(z),
+            arm = crank.slice(z);
+          const inside = circle(pin, drive.crank.pinRadius - 0.02),
+            snug = circle(pin, drive.crank.pinRadius + drive.play / 2 + 0.06);
+          try {
+            // The crank's pin really is there, and it stands in the open slot.
+            near(overlapArea(inside, arm), inside.area(), 0.02);
+            near(overlapArea(inside, slot), 0, 1e-6);
+            // On a flat the slot is only the play wider than the pin.
+            assert.ok(overlapArea(snug, slot) > 0.01, label + ' is held by the flat');
+          } finally {
+            for (const s of [slot, arm, inside, snug]) s.delete();
+          }
+          // The blade is at the matching stop: its toe is under the ray.
+          const toe = turnoutPosition === 'pit' ? fork.pitToe : fork.mainToe;
+          assert.ok(top(blade, toe) > p.height - p.slotDepth, label + ' blade toe');
+          at[turnoutPosition] = slider.boundingBox().min[0];
+        });
+        assert.ok(drive.cam.flat >= 0.3 - 1e-9);
+      }
+      // The slider has moved by the whole stroke, along the main slot.
+      near(at.pit - at.main, motorStroke, 1e-6);
+    }
+});
+
+test('the drive is stout and stays in the island: nothing under a guide slot or a braid', () => {
+  for (const [name, changes] of [['10 mm track', lowTrack], ['12 mm track', {}]])
+    for (const side of ['left', 'right'])
+      for (const turnoutPosition of ['main', 'pit']) {
+        const p = turnout({ side, turnoutPosition }, { ...changes, braidGap: 1 });
+        const { drive } = turnoutLayout(p);
+        const label = [name, side, turnoutPosition].join(' ');
+        // About 4 mm wide and at least 3 mm of solid height, also in its head.
+        near(drive.bar.y1 - drive.bar.y0, 4, 1e-9);
+        assert.ok(drive.z.top - drive.z.headBottom >= 3, label + ' head ' + (drive.z.top - drive.z.headBottom));
+        assert.ok(drive.z.top - drive.z.bottom >= 3);
+        assembly(p, (parts) => {
+          const insert = byRole(parts, 'turnoutInsert')[0];
+          const openings = section(insert.driveOpenings),
+            keepOut = section(insert.slotsAndBraid);
+          try {
+            assert.ok(openings.area() > 300);
+            assert.ok(keepOut.area() > 1000);
+            near(overlapArea(openings, keepOut), 0, 1e-6);
+            for (const role of ['turnoutSlider', 'motorMount']) {
+              const shadow = drivePart(parts, role).solid.project();
+              try {
+                near(overlapArea(shadow, keepOut), 0, 1e-6);
+                // The part lies inside the channel or cavity cut for it.
+                freed(() => shadow.subtract(openings), (out) => near(out.area(), 0, 1e-3));
+              } finally {
+                shadow.delete();
+              }
+            }
+          } finally {
+            openings.delete();
+            keepOut.delete();
+          }
+        });
+      }
+});
+
+test('the drive openings are in the road for every insert, and the wire channel is gone', () => {
+  const p = turnout({}, { ...lowTrack, hollow: false });
+  const { drive, branch, sign } = turnoutLayout(p);
+  const from = (solid, [x, y]) => solid.rayCast([x, y, -5], [x, y, 40])[0]?.position[2];
+  for (const mode of MODES)
+    assembly(turnout({ turnoutMode: mode }, { ...lowTrack, hollow: false }), (parts) => {
+      const road = byRole(parts, 'road')[0].solid;
+      // From below: the slider channel and the motor cavity are open to their roofs.
+      const barX = (drive.bar.x0 + drive.bar.x1) / 2;
+      near(from(road, [barX, sign * drive.axis]), drive.z.channelTop, 1e-3);
+      near(from(road, [drive.motorCentre, sign * drive.axis]), drive.z.cavityTop, 1e-3);
+      // The two screws of the cradle have their pilots.
+      for (const [x, y] of drive.screws) assert.ok(from(road, [x, sign * y]) > drive.tray.trayTop + 2.5, mode);
+      // Beyond the branch slot, towards the branch-side edge, the underside is
+      // whole: no channel for a wire rod at any X the crank or slider reaches.
+      for (const [x, y] of branch.filter(([bx]) => bx > drive.start - 20 && bx < drive.end))
+        near(from(road, [x, y + sign * 14]), 0, 1e-6);
+      // And nothing passes under either guide slot: its floor is whole from below.
+      for (const [x, y] of branch.filter(([bx]) => bx > drive.end - 30 && bx < drive.end))
+        near(from(road, [x, y]), 0, 1e-6);
+      near(from(road, [drive.motorCentre, 0]), 0, 1e-6);
+      // Only the Digital insert has a slider and a motor cradle.
+      assert.equal(byRole(parts, 'turnoutSlider').length, mode === 'digital' ? 1 : 0);
+      assert.equal(byRole(parts, 'motorMount').length, mode === 'digital' ? 1 : 0);
+    });
+});
+
+test('left and right, hollow and solid, on a 10 mm and a 12 mm track: no two parts overlap at either end of the stroke', () => {
+  // Every fit is a clearance fit. The designed contacts are faces that touch:
+  // the pin on the wall of the slot and the blade on its stop.
+  for (const changes of [lowTrack, {}])
+    for (const side of ['left', 'right'])
+      for (const hollow of [true, false])
+        for (const turnoutPosition of ['main', 'pit'])
+          assembly(turnout({ side, turnoutPosition }, { ...changes, hollow }), (parts) => {
+            for (const part of parts) {
+              assert.equal(part.solid.status(), 'NoError', part.id);
+              assert.equal(part.solid.decompose().length, 1, part.id);
+            }
+            for (let i = 0; i < parts.length; i++)
+              for (let j = i + 1; j < parts.length; j++) {
+                const both = parts[i].solid.intersect(parts[j].solid);
+                try {
+                  assert.ok(
+                    both.volume() < 1e-3,
+                    [side, hollow, turnoutPosition, parts[i].id, parts[j].id, both.volume()].join(' '),
+                  );
+                } finally {
+                  both.delete();
+                }
+              }
+          });
+});
+
+test('the inside braids run beside the drive and their contacts sit behind the motor', () => {
+  for (const pitContactMode of ['wire', 'braid']) {
+    const p = turnout({ pitContactMode }, lowTrack);
+    const { drive } = turnoutLayout(p);
+    const plan = specialPreview(p);
+    for (const jumper of plan.jumpers) assert.ok(jumper.from[0] > drive.end, pitContactMode + ' contact');
+    assembly(p, (parts) => assert.equal(byRole(parts, 'road')[0].solid.status(), 'NoError'));
+  }
+});
+
+test('a motor that does not fit between the slots is refused with what to change', () => {
+  const refuse = (special, changes, message) =>
+    assert.throws(() => validateTrack(trackParameters({ ...turnout(special), ...changes })), message);
+  refuse({ motorWidth: 80 }, {}, /too narrow for the slider and its motor|too narrow for the motor between the two slots/);
+  refuse({ motorHeight: 9 }, lowTrack, /This track takes a motor up to [\d.]+ mm high/);
+  refuse({ motorLength: 140 }, {}, /Set Main road length to at least \d+ mm|Increase Branch angle/);
+  refuse({ plungerProjection: 0.5 }, {}, /Retracted plunger reach must be at least [\d.]+ mm/);
+  refuse({}, { height: 8, slotDepth: 5 }, /too low|Increase track height|Set Track height/);
+  // The motor that fits is placed between the slots, in line with the slider.
+  const { drive } = turnoutLayout(turnout({}, lowTrack));
+  near((drive.chamber[1] + drive.chamber[3]) / 2, drive.axis, 1e-9);
+  near((drive.bar.y0 + drive.bar.y1) / 2, drive.axis, 1e-9);
+  assert.ok(drive.motorFront > drive.bar.x1 + drive.stroke);
+});
+
+test('the slider, the crank and the motor cradle each print on a flat face', () => {
+  assembly(turnout({ turnoutPosition: 'pit' }, lowTrack), (parts) => {
+    for (const role of ['turnoutSlider', 'turnoutArm', 'motorMount']) {
+      const part = drivePart(parts, role);
+      withPrintableSolid(part, (solid) => {
+        const low = solid.boundingBox().min[2];
+        const bed = solid.slice(low + 0.02),
+          shadow = solid.project();
+        try {
+          // What lies on the bed is most of the part's outline, in one piece.
+          assert.ok(bed.area() > 0.55 * shadow.area(), role + ' ' + bed.area() + ' of ' + shadow.area());
+          assert.equal(bed.decompose().length, 1, role);
+        } finally {
+          bed.delete();
+          shadow.delete();
+        }
+      }, { sideDown: true });
+    }
+    // The slider goes on the bed upside down: its relieved face is on top.
+    const slider = drivePart(parts, 'turnoutSlider');
+    withPrintableSolid(slider, (solid) => {
+      const { min, max } = solid.boundingBox();
+      const bed = solid.slice(min[2] + 0.02),
+        relieved = solid.slice(max[2] - 0.02);
+      try {
+        assert.ok(relieved.area() < 0.6 * bed.area());
+      } finally {
+        bed.delete();
+        relieved.delete();
+      }
+    });
+    const groups = groupTrackParts(parts);
+    assert.equal(groups.find((group) => group.role === 'turnoutSlider').label, 'Turnout sliders');
+  });
+  const notes = specialAssemblyNotes(turnout()).join('\n');
+  assert.match(notes, /slider/);
+  assert.match(notes, /after the insert/);
 });

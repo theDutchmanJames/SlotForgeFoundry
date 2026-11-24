@@ -116,6 +116,22 @@ export function pitMotorXBounds(p, fork) {
   };
 }
 
+// A cam drive replaces the eye for a wire by an upright pin on a longer arm.
+// cam: { radius, phase, pinRadius, pinTop }. phase is the direction of the arm
+// halfway through its throw, measured from +X towards the branch.
+function withCam(spec, fork, cam) {
+  if (!cam) return spec;
+  const direction = fork.sign * cam.phase;
+  const radial = [fork.heel[0] + cam.radius * Math.cos(direction),
+    fork.heel[1] + cam.radius * Math.sin(direction)];
+  const mainEye = rotate(radial, fork.heel, -fork.swing / 2);
+  return { ...spec, cam, crankRadius: cam.radius,
+    stroke: 2 * cam.radius * Math.sin(Math.abs(fork.swing) / 2),
+    mainEye, midEye: radial, pitEye: rotate(mainEye, fork.heel, fork.swing),
+    eyeOuterRadius: cam.pinRadius + 0.8,
+    headPocketRadius: cam.pinRadius + 0.35, headPocketTop: cam.pinTop + 0.3 };
+}
+
 function rotate(point, pivot, radians) {
   const x = point[0] - pivot[0], y = point[1] - pivot[1];
   const c = Math.cos(radians), s = Math.sin(radians);
@@ -331,13 +347,15 @@ function driveGeometry(work, fork, heights, spec, pinOnly = false) {
   const shaft = disc(work, fork.heel, shaftRadius);
   const key = work.own(shaft.intersect(rectangle(work, x - 3, y - 3, x + 1.30, y + 3)));
   const root = work.own(work.wasm.Manifold.cylinder(0.45, shaftRadius + 0.5, shaftRadius, 48));
+  const cam = pinOnly ? null : spec.cam;
   const crank = work.union([work.prism(arm, armBottom, armTop), work.own(root.translate([x, y, armTop])),
-    work.prism(shaft, armTop, heights.seat), work.prism(key, heights.seat, heights.keyTop)]);
+    work.prism(shaft, armTop, heights.seat), work.prism(key, heights.seat, heights.keyTop),
+    ...(cam ? [work.prism(disc(work, eye, cam.pinRadius), armTop - 0.01, cam.pinTop)] : [])]);
   const sink = work.own(work.wasm.Manifold.cylinder(M2.headDepth, M2.headRadius, M2.clearanceRadius, 48));
   const solid = work.cut(crank, [
     work.own(sink.translate([x, y, armBottom])),
     work.prism(disc(work, fork.heel, M2.clearanceRadius), armBottom - 0.1, heights.keyTop + 0.1),
-    ...(pinOnly ? [] : [work.prism(disc(work, eye, spec.eyeDiameter / 2), armBottom - 0.1, armTop + 0.1)]),
+    ...(pinOnly || cam ? [] : [work.prism(disc(work, eye, spec.eyeDiameter / 2), armBottom - 0.1, armTop + 0.1)]),
   ]);
   // Hull sampled eye positions and the concentric hub. The convex envelope
   // contains the rigid arm throughout its throw, with room to insert it below.
@@ -444,8 +462,8 @@ function lastCoveredX(work, fork, pocket, roof, guides) {
 // Everything the flipper needs in plan: the pocket the blade sweeps, the
 // handoff reliefs, the bearing socket with its boss and the room of the crank.
 // A piece that carries the flipper in a removable insert outlines it with this.
-export function pitTurnoutFootprint(work, p, fork) {
-  const spec = pitActuatorSpec(p, fork);
+export function pitTurnoutFootprint(work, p, fork, options = {}) {
+  const spec = withCam(pitActuatorSpec(p, fork), fork, options.cam);
   const drive = driveGeometry(work, fork, actuatorHeights(p, spec.rodDiameter), spec);
   return work.own(work.wasm.CrossSection.union([
     sweptSocket(work, fork),
@@ -462,6 +480,8 @@ export function pitTurnoutFootprint(work, p, fork) {
 //                   returns a plain keyed pivot pin in place of the crank.
 //   parts           the id prefix and the names of the returned parts.
 //   words           the wording of the refusals, as for pitTurnoutProfile.
+//   cam             drive the crank by an upright pin in a cam slot instead of
+//                   a wire: see withCam. There is then no pushrod channel.
 export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders = [], rodEndY, options = {}) {
   const linkage = options.linkage !== false;
   const names = { ...PIT_PARTS, ...options.parts };
@@ -470,7 +490,7 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
   const pocketTop = p.height - p.braidDepth - 0.80;
   const lowTop = pocketTop - 0.20, bottom = floor + 0.22;
   const highTop = p.height;
-  const spec = pitActuatorSpec(p, fork);
+  const spec = withCam(pitActuatorSpec(p, fork), fork, options.cam);
   const heights = actuatorHeights(p, spec.rodDiameter);
   const drive = driveGeometry(work, fork, heights, spec);
   // The deep guide can run alongside the bay. A wider hole or longer throw
@@ -481,11 +501,11 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
     ]));
     if (!work.own(drive.headPocket.intersect(walls)).isEmpty()) {
       const minFloor = Number((spec.headPocketTop + guideFloorStock).toFixed(2));
-      throw Error(`The crank sweep reaches the guide slot at the pushrod fastener. Reduce crank hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
+      throw Error(options.words?.crankReach ?? `The crank sweep reaches the guide slot at the pushrod fastener. Reduce crank hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
     }
     if (heights.bayTop + guideFloorStock > floor + 1e-8 && !work.own(drive.bay.intersect(walls)).isEmpty()) {
       const minFloor = Number((heights.bayTop + guideFloorStock).toFixed(2));
-      throw Error(`The crank sweep reaches the guide slot. Reduce the hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
+      throw Error(options.words?.crankReach ?? `The crank sweep reaches the guide slot. Reduce the hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
     }
   }
   const pocket = sweptSocket(work, fork);
@@ -530,7 +550,7 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
   const xs = [spec.mainEye[0], spec.midEye[0], spec.pitEye[0]];
   const rodMargin = spec.rodDiameter / 2 + 0.5;
   const x0 = Math.min(...xs) - rodMargin, x1 = Math.max(...xs) + rodMargin;
-  for (const part of linkage ? [road, ...borders] : []) {
+  for (const part of linkage && !spec.cam ? [road, ...borders] : []) {
     const span = part.section.bounds();
     const outside = rodEndY ?? (fork.sign > 0 ? span.max[1] + 1 : span.min[1] - 1);
     if (fork.sign * (outside - drive.eye[1]) <= 0 ||
@@ -566,7 +586,7 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
   if (linkage) {
     crank = part(names.idPrefix + 'crank-', names.crank, 'turnoutArm', drive.solid, shop =>
       driveGeometry(shop, fork, heights, spec).solid);
-    crank.crankGuide = { side: fork.side, eye: angle ? spec.pitEye : spec.mainEye,
+    if (!spec.cam) crank.crankGuide = { side: fork.side, eye: angle ? spec.pitEye : spec.mainEye,
       armTop: heights.armTop, headPocketTop: spec.headPocketTop, headDiameter: spec.headDiameter,
       headProjection: spec.headProjection, pinClearance: spec.pinClearance, pocketOutline: drive.headPocket.toPolygons()[0] };
   } else {

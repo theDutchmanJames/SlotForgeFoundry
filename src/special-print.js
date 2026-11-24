@@ -335,8 +335,13 @@ export function assemblyNotes(p) {
     );
   }
   if (p.special.type === 'turnout' && turnoutSettings(p.special).turnoutMode === 'digital') {
-    const spec = pitActuatorSpec(p, turnoutLayout(p).fork);
-    notes.push(`The crank has a ${spec.eyeDiameter} mm eye for a bent pushrod up to ${spec.rodDiameter} mm in diameter. Its two end positions are ${spec.stroke.toFixed(2)} mm apart in a straight line. Use this to match the linkage to your actuator.`);
+    const { drive } = turnoutLayout(p);
+    const pinLength = Math.floor((drive.tongue.z0 + drive.pinHole.depth - drive.z.shaftZ + drive.pinHole.radius + 1) * 2) / 2;
+    notes.push(
+      `The slider moves ${drive.stroke} mm. Its slot has a ${drive.cam.slant.toFixed(1)} mm slant at ${Math.round(drive.cam.angle)}° to the slide, between flats of ${drive.cam.flat.toFixed(1)} mm, and moves the crank pin ${drive.travel.toFixed(2)} mm sideways. The crank is ${drive.crank.radius.toFixed(1)} mm long.` +
+        (drive.cam.angle > 30 ? ' A slant this steep needs a firm push, and a knock on the blade can push the slider back. A motor with 5 mm of stroke or more gives a shallow slant.' : ''),
+      `The pin for the plunger is ${drive.motor.eyeDiameter} mm in diameter and about ${pinLength} mm long. The motor body is ${drive.motor.motorLength} × ${drive.motor.motorWidth} × ${drive.motor.motorHeight} mm (length along the plunger × width × height), with its eye ${drive.motor.plungerProjection} mm in front of the end face when retracted.`,
+    );
   }
   return notes.join('\n\n') + '\n';
 }

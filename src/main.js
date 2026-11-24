@@ -1269,7 +1269,7 @@ function choosePart(id, { keepSurface = false } = {}) {
     if (role === 'border' && !['markings', 'print'].includes(trackTab)) trackTab = 'borders';
     if (role === 'clip' || role === 'retainer') trackTab = 'joints';
     if (role === 'barrier' || role === 'fence') trackTab = 'trackside';
-    if (['support', 'turnout', 'turnoutArm', 'turnoutBearing', 'turnoutInsert', 'motorMount'].includes(role)) trackTab = 'geometry';
+    if (['support', 'turnout', 'turnoutArm', 'turnoutBearing', 'turnoutInsert', 'turnoutSlider', 'motorMount'].includes(role)) trackTab = 'geometry';
     if (role === 'road' && !keep) trackTab = 'geometry';
     focusedField = '';
   }

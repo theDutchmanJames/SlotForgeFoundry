@@ -376,13 +376,17 @@ export async function checkSpecialTrackPieces({
     ['Digital', 'Hand-set point', 'Analog', 'Closed'],
   );
   const modeHint = page.locator('#settings-form [data-turnout-mode-hint]');
-  assert.match(await modeHint.innerText(), /pushrod/);
+  assert.match(await modeHint.innerText(), /slider/);
+  await page.getByRole('button', { name: 'Turnout sliders, 1 part' }).waitFor();
+  assert.equal(Number(await input('spMotorStroke').inputValue()), 6);
+  assert.equal(Number(await input('spTurnoutPlay').inputValue()), 0.2);
   await page.getByRole('button', { name: 'Turnout inserts, 1 part' }).waitFor();
   await page.getByRole('button', { name: 'Pit actuator cranks, 1 part' }).waitFor();
   assert.ok(await input('spTurnoutPosition').isVisible());
   await insertMode.selectOption('closed');
   assert.match(await modeHint.innerText(), /only go straight on/);
   assert.ok(!(await input('spTurnoutPosition').isVisible()));
+  assert.ok(!(await input('spMotorStroke').isVisible()));
   await live();
   await page.locator('#parts [data-part="turnout-insert"]').waitFor({ state: 'attached' });
   assert.equal(await page.getByRole('button', { name: /^Pit actuator cranks/ }).count(), 0);

@@ -12,7 +12,7 @@ import { pitGridLayout } from './geometry/starting-grid.js';
 import { hasSlotPosition } from './slot-position.js';
 import {
   TURNOUT_INSERT,
-  turnoutDefaultLength,
+  turnoutDefaultShape,
   turnoutDefaults,
   turnoutHasBlade,
   turnoutModeName,
@@ -120,7 +120,9 @@ export function specialTrackParams(type, base, rules) {
       braidFeedSide: 'none',
     });
     delete p.borderEnds;
-    p.length = turnoutDefaultLength(p, base.kind === 'straight' && !base.special ? base.length : undefined);
+    const shape = turnoutDefaultShape(p, base.kind === 'straight' && !base.special ? base.length : undefined, rules);
+    p.length = shape.length;
+    p.special = { ...p.special, turnoutAngle: shape.turnoutAngle };
   } else p.length = Math.max(200, p.width);
   return p;
 }
@@ -211,7 +213,7 @@ export function specialAssemblyNotes(p) {
       const { turnoutMode: mode, pitContactMode } = turnoutSettings(p.special);
       const { screwMin, screwMax } = pitActuatorSpec(p);
       const kinds = {
-        digital: 'Digital: a moving blade, worked from below by a pushrod on its crank.',
+        digital: 'Digital: a moving blade, worked by a slider and a push-pull motor under the road between the two slots.',
         manual: 'Hand-set point: the same moving blade, set by hand. It clicks into either position.',
         analog: 'Analog: no moving parts. Both slots stay open, with a fixed nose between them.',
         closed: 'Closed: the branch slot is filled in, level with the road. Cars can only go straight on.',
@@ -225,11 +227,19 @@ export function specialAssemblyNotes(p) {
         ...(turnoutHasBlade(mode) ? [
           'Print the pivot bearing with its broad flat face on the bed and the oblong peg pointing up. Dry-fit the peg in its socket in the insert. The shoulder must sit flat. Put a little adhesive on the peg only, seat it and let it cure with the bore clear.',
           'Tap the blind pilot under the blade for an M2 × 0.4 screw. Fit the blade before the insert goes into the road: lower it into its seat halfway between its two positions.',
+          ...(mode === 'digital' ? [
+            'Print the slider upside down, with its flat face on the bed. Print the crank with its arm on the bed and its two pins pointing up. Print the motor cradle flat. None of them needs support.',
+            'Screw the insert into the road first. Then lay the slider in its channel between the two slots, flat face towards the road. It goes in after the insert and comes out again without removing it.',
+          ] : []),
           mode === 'digital'
-            ? `From below, slide the crank’s pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the crank. Fit a bent pushrod into the crank eye and run it through the channel under the road to the branch-side edge.`
+            ? `From below, slide the crank’s pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Its other pin goes up into the slot of the slider, and its arm then holds the slider in. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the crank.`
             : `From below, slide the pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the pin.`,
+          ...(mode === 'digital' ? [
+            'Push a straight pin that fits the eye of the plunger into the hole under the end of the slider, with a drop of glue. No wire has to be bent. Tap the two pilot holes behind the motor cavity for M2 × 0.4 screws.',
+            'Seat the motor in its cradle with the plunger towards the slider and hook the eye of the plunger over the pin. Fit the cradle with two M2 × 4 mm 90° countersunk screws through its slots. Move the slider by hand: on the flat at each end of its slot the blade must rest against its stop. Slide the cradle until the motor reaches both ends, then tighten the screws. The leads drop through the notch behind the motor; drill a hole in the baseboard for them.',
+          ] : []),
           mode === 'digital'
-            ? 'With the insert screwed in, move the blade between Straight on and Branch. It must reach both stops freely and its crown must sit level with the road.'
+            ? 'With the piece on the table, move the slider between Straight on and Branch. The blade must reach both stops freely and its crown must sit level with the road.'
             : 'With the insert screwed in, push the blade across by its crown. It rides over a low ridge in the slot floor and stays on either side. Its crown must sit level with the road.',
         ] : []),
         ...(p.braidWidth > 0 ? [
