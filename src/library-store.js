@@ -27,6 +27,7 @@ import {
   saveRecipe,
   setCollectionProfile,
   setCollectionRules,
+  resetCollectionSegments,
 } from './library-database.js';
 
 const key = 'track-library';
@@ -186,6 +187,8 @@ export async function openTrackLibrary() {
       write((db) => setCollectionProfile(db, id, profile, options)),
     setRules: (id, rules, options) =>
       write((db) => setCollectionRules(db, id, rules, options)),
+    resetSegments: (id, options) =>
+      write((db) => resetCollectionSegments(db, id, options)),
     applyToCollection: (id, change, options) =>
       write((db) => applyToCollection(db, id, change, options)),
     renamePack: (id, name) => write((db) => renameCollection(db, id, name)),

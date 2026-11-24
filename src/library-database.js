@@ -281,6 +281,32 @@ function updateRevision(db, id, profile, previous) {
     id,
   ]);
 }
+/**
+ * Every piece of a pack back to one road segment and one border segment.
+ * Returns how many pieces were cut before, and the pack's revision after.
+ */
+export function resetCollectionSegments(db, id, { expectedRevision } = {}) {
+  const row = collectionRow(db, id, expectedRevision);
+  const profile = validateLibraryProfile(JSON.parse(row.profile));
+  const members = rows(
+    db,
+    'SELECT id, name, track FROM pieces WHERE collection_id=?',
+    [id],
+  );
+  let changed = 0;
+  for (const r of members) {
+    const track = JSON.parse(r.track),
+      p = track.params;
+    if ((p.segments ?? 1) === 1 && (p.borderSegments ?? 1) === 1) continue;
+    p.segments = 1;
+    p.borderSegments = 1;
+    validateRecipe({ name: r.name, track }, profile);
+    db.run('UPDATE pieces SET track=? WHERE id=?', [savedTrack(track), r.id]);
+    changed++;
+  }
+  if (changed) updateRevision(db, id, profile, row.revision);
+  return { changed, revision: row.revision + (changed ? 1 : 0) };
+}
 export function setCollectionProfile(
   db,
   id,

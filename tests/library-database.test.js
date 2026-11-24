@@ -725,3 +725,38 @@ test('a restored pack gets a revision no window can still hold, even after it wa
     /changed/,
   );
 });
+
+test('resetting a pack makes every cut piece whole again, in one revision', async (t) => {
+  const { resetCollectionSegments } = await import('../src/library-database.js');
+  const db = dbFor(t);
+  const pack = starterPack();
+  // A pack as made before every piece started whole: its corners pre-cut.
+  const cuts = [1, 1, 1, 1, 2, 4, 5, 6, 7, 9];
+  const pieces = pack.pieces.map((piece, i) => {
+    const copy = structuredClone(piece);
+    copy.track.params.segments = cuts[i];
+    if (i === 9) copy.track.params.borderSegments = 3;
+    return copy;
+  });
+  const id = addCollection(db, 'Old Basic', pack.profile, pieces, pack.rules);
+  const before = readCollections(db).find((c) => c.id === id);
+  assert.deepEqual(before.pieces.map((p) => p.track.params.segments), cuts);
+  const result = resetCollectionSegments(db, id, { expectedRevision: before.revision });
+  assert.deepEqual(result, { changed: 6, revision: before.revision + 1 });
+  const after = readCollections(db).find((c) => c.id === id);
+  assert.equal(after.revision, before.revision + 1);
+  for (const piece of after.pieces) {
+    assert.equal(piece.track.params.segments, 1, piece.name);
+    assert.equal(piece.track.params.borderSegments, 1, piece.name);
+  }
+  // Nothing else of a piece changes.
+  assert.deepEqual(
+    after.pieces.map((p) => ({ ...p.track.params, segments: 0, borderSegments: 0 })),
+    before.pieces.map((p) => ({ ...p.track.params, segments: 0, borderSegments: 0 })),
+  );
+  // A pack that is already whole stays at its revision.
+  assert.deepEqual(resetCollectionSegments(db, id), { changed: 0, revision: after.revision });
+  assert.equal(readCollections(db).find((c) => c.id === id).revision, after.revision);
+  // A window that still holds the older revision is refused.
+  assert.throws(() => resetCollectionSegments(db, id, { expectedRevision: before.revision }));
+});

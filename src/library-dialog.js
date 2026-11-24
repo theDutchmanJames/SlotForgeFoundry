@@ -49,6 +49,11 @@ function ruleInputs(rules) {
 }
 
 const count = (n) => n + (n === 1 ? ' piece' : ' pieces');
+// The pieces of a pack that are cut into more than one road or border segment.
+const cutPieces = (c) =>
+  c.pieces.filter(
+    ({ track }) => (track.params.segments ?? 1) > 1 || (track.params.borderSegments ?? 1) > 1,
+  ).length;
 const btn = (id, label, cls = 'outline', glyph = '') =>
   '<button type="button" data-lib="' +
   id +
@@ -325,7 +330,12 @@ export async function showTrackLibrary({
       title = c.name + ' · Pack rules';
       body = '<form data-lib-form>'+ruleInputs(c.rules)+
         '<p class="hint">These dimensions apply when adding a piece. Existing pieces keep their designed dimensions.</p>'+
-        '<div class="lib-footer">'+back()+btn('commit-rules','Save pack rules','primary','save')+'</div></form>';
+        '<div class="lib-footer">'+back()+btn('commit-rules','Save pack rules','primary','save')+'</div></form>'+
+        '<h3>Print segments</h3>'+
+        '<p class="hint">'+(cutPieces(c)
+          ? count(cutPieces(c))+' of this pack '+(cutPieces(c) === 1 ? 'is' : 'are')+' cut into more than one segment. Resetting makes every piece whole again, with one road segment and one border segment. Segment for printing in the Track Planner then cuts them to fit your print bed.'
+          : 'Every piece of this pack is whole: one road segment and one border segment.')+'</p>'+
+        (cutPieces(c) ? btn('reset-segments','Reset every piece to one segment','outline','reset') : '');
     } else if (screen === 'new') {
       title = 'New track pack';
       body =
@@ -573,6 +583,27 @@ export async function showTrackLibrary({
     }
     if (id === 'close') {
       dialog.close();
+      return;
+    }
+    if (id === 'reset-segments') {
+      void perform(async () => {
+        const work = current();
+        const open = work.link?.collectionId === c.id;
+        // Save the piece that is open before its pack changes under it.
+        if (open) await prepare();
+        const fresh = open ? (await reload(), active()) : c;
+        const { changed } = await store.resetSegments(fresh.id, {
+          expectedRevision: fresh.revision,
+        });
+        await reload();
+        // The open piece is one of them: open it again as the pack has it now.
+        const again = open && active().pieces.find((p) => p.id === work.link.pieceId);
+        if (again) await openPiece(active(), again);
+        message = changed
+          ? count(changed) + (changed === 1 ? ' is' : ' are') + ' whole again: one segment each.'
+          : 'Every piece was already whole.';
+        render();
+      });
       return;
     }
     if (id === 'create-piece') {
