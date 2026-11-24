@@ -207,15 +207,14 @@ export function starterPack(lanes = 2) {
   ];
   // Both families start on the same inner edge and use the same angular
   // tessellation. Two nested single-lane roads span one two-lane road.
-  const printSegments = singleLane ? [1, 1, 2, 2, 2, 3] : [2, 4, 5, 6, 7, 9];
-  for (const [i, segments] of printSegments.entries()) {
+  // Every piece starts whole, in one road segment: cutting a piece to fit a
+  // print plate is a choice made in Track Set or with Segment for printing.
+  for (let i = 0; i < 6; i++) {
     pieces.push(
       piece('R' + (i + 1) + ' corner', {
         kind: 'curve',
         radius: rules.r1InnerRadius + (i + 0.5) * common.width,
         angle: 30,
-        segments,
-        ...(singleLane ? { borderSegments: segments } : {}),
         curveGridRadius: 1400,
       }),
     );

@@ -20,6 +20,9 @@ test('the R4 assembly counts generated hardware after a live clip change', async
   project.track = starterPack().pieces.find(
     (piece) => piece.name === 'R4 corner',
   ).track;
+  // The recipe starts whole; cut it in six as for a 200 mm plate.
+  assert.equal(project.track.params.segments, 1);
+  project.track.params.segments = 6;
   const countGroups = (parts) =>
     groupTrackParts(parts).map((g) => [g.label, g.parts.length]);
   assert.deepEqual(countGroups(engine.build(project)), [

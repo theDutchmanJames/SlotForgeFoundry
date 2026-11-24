@@ -58,8 +58,11 @@ test('all ten Basic recipes produce closed prints on a 200 mm square plate and t
   const builds = [];
   let previous;
   try {
-    for (const { track, name } of pieces) {
-      const p = trackWithProfile(track, profile).params;
+    // Every recipe starts whole. These are the cuts that fit a 200 mm plate.
+    const cuts = [1, 1, 1, 1, 2, 4, 5, 6, 7, 9];
+    for (const [i, { track, name }] of pieces.entries()) {
+      assert.equal(track.params.segments, 1, name + ' starts in one road segment');
+      const p = { ...trackWithProfile(track, profile).params, segments: cuts[i] };
       assert.deepEqual(profileFromTrack(track), profile);
       assert.equal(p.width, 200);
       assert.equal(p.laneSpacing, 100);
@@ -150,8 +153,13 @@ test('the ten single-lane presets have centred slots, reversible joints and prin
   assert.deepEqual(pack.profile, double.profile);
   const bends = pack.pieces.filter(piece => piece.track.params.kind === 'curve');
   const doubleBends = double.pieces.filter(piece => piece.track.params.kind === 'curve');
-  for (const piece of pack.pieces) {
+  // Every preset starts whole. These are the cuts that fit a 200 mm plate.
+  const cuts = [1, 1, 1, 1, 1, 1, 2, 2, 2, 3];
+  for (const [i, piece] of pack.pieces.entries()) {
+    assert.equal(piece.track.params.segments, 1, piece.name + ' starts in one road segment');
+    assert.equal(piece.track.params.borderSegments, 1);
     const p = trackWithProfile(piece.track, pack.profile).params;
+    p.segments = p.borderSegments = cuts[i];
     assert.equal(p.width, 100);
     assert.equal(p.lanes, 1);
     Object.assign(p, {

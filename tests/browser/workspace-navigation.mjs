@@ -63,6 +63,15 @@ export async function checkWorkspaceNavigation({
   await waitText('#model-title', 'R4 corner');
   assert.equal(await action('mode-track').getAttribute('aria-pressed'), 'true');
 
+  // The recipe opens whole. Cut it in six, as for a 200 mm plate, so the
+  // assembly has groups of several parts.
+  await tab('print').click();
+  assert.equal(await input('segments').inputValue(), '1');
+  await input('segments').fill('6');
+  await live();
+  await action('apply').click();
+  await live('idle');
+
   // The clip type is a pack rule: the commit bar offers Apply to collection,
   // which rebuilds every piece of the pack. The pack is set back at the end.
   await tab('joints').click();

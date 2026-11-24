@@ -44,14 +44,22 @@ export async function checkPlanner({ page, action, download, snap }) {
     db.close();
     return count >= 2;
   });
+  // Pieces go in whole: two sections until the layout is segmented for the bed.
+  assert.equal((await state()).nodes.length, 2);
+  await cmd('segment').click();
+  await page.locator('dialog.pl-segment').waitFor();
+  await cmd('segment-confirm').click();
+  await idle();
+  assert.match(await panel.locator('.pl-message').textContent(), /1 piece was cut to fit a 200 × 200 mm plate/);
   const initial = await state();
   assert.equal(initial.nodes.length, 7);
   await cmd('remove').click();
   await idle();
   await cmd('left').click();
   await add(/^R2 corner/);
+  // The new corner is whole as well: one more section.
   const next = await state();
-  assert.equal(next.nodes.length, 10);
+  assert.equal(next.nodes.length, 7);
   assert.ok(next.nodes.at(-1).pose.flip);
   await cmd('reverse').click();
   await idle();
@@ -109,9 +117,9 @@ export async function checkPlanner({ page, action, download, snap }) {
       buffer: Buffer.from(old),
     });
   await page.waitForFunction(() =>
-    document.querySelector('.pl-stats').textContent.startsWith('10 sections'),
+    document.querySelector('.pl-stats').textContent.startsWith('7 sections'),
   );
-  assert.equal((await state()).nodes.length, 10);
+  assert.equal((await state()).nodes.length, 7);
   await field('end').selectOption({ index: 0 });
   await action('mode-track').click();
   console.log(
