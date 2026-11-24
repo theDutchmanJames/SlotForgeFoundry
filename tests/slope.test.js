@@ -307,3 +307,34 @@ test('the hint follows the fields while they are edited', () => {
   assert.equal(fields.hidden, true);
   assert.equal(hint.textContent, '');
 });
+
+test('with clips, a sloped piece joins a level piece at both ends in a layout, in either form', () => {
+  const plate = { width: 450, depth: 450, margin: 0 };
+  const source = (name, changes) => ({
+    name,
+    ...engine.plannerSource({ track: { params: piece({ joint: 'clips', ...changes }), plan: null }, plate, autoFit: false }),
+  });
+  const level = source('Straight', {});
+  const clipsAt = (def) => def.sections[0].ports.map((port) => port.hardware.length);
+  assert.ok(clipsAt(level)[1] >= 1, 'this piece joins with clips');
+  for (const slopeForm of ['up', 'down']) {
+    const slope = source('Slope', { slopeForm });
+    // The Planner finds the clips of both ends where the bent road carries them.
+    assert.deepEqual(clipsAt(slope), clipsAt(level), slopeForm);
+    assert.deepEqual(
+      [...new Set(Object.values(slope.sections[0].hardwareEnds))],
+      [...new Set(Object.values(level.sections[0].hardwareEnds))],
+      slopeForm + ': its loose clips belong to the same end as on a level piece',
+    );
+    const defs = new Map([['s1', level], ['s2', slope]]),
+      layout = newLayout();
+    for (const [id, def] of defs) layout.sources[id] = { name: def.name, track: def.track };
+    let active = placeSource(layout, defs, 's1');
+    active = placeSource(layout, defs, 's2', active.end);
+    active = placeSource(layout, defs, 's1', active.end);
+    const net = endsOf(layout, defs);
+    assert.equal(net.joints.size, 4, slopeForm + ': both ends of the sloped piece are joined');
+    assert.equal(net.open.length, 2);
+    near(layout.nodes[2].h[0], slopeProfile(sloped({ slopeForm })).rise, 1e-6);
+  }
+});

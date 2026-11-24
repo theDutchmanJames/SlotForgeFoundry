@@ -1019,6 +1019,23 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
         strip.ports[1].baseZ = profile.rise;
         if (road.plannerStrip?.ports.length === 1) strip.ports.length = 1;
         road.plannerStrip = strip;
+        // Its connectors too: where the bent road carries them, seen from above.
+        const onPlan = (x) => {
+          const along = Math.max(0, Math.min(p.length, x + p.length / 2));
+          return -p.length / 2 + profile.at(along)[0] + (x + p.length / 2 - along);
+        };
+        for (const result of results) {
+          if (result.jointGuides)
+            result.jointGuides = result.jointGuides.map((guide) => ({
+              ...guide,
+              point: [onPlan(guide.point[0]), ...guide.point.slice(1)],
+            }));
+          if (result.plannerJoint)
+            result.plannerJoint = {
+              ...result.plannerJoint,
+              xy: [onPlan(result.plannerJoint.xy[0]), result.plannerJoint.xy[1]],
+            };
+        }
         for (const result of results) {
           if (!result.outline) continue;
           const shadow = work.own(result.solid.project());
