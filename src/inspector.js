@@ -25,6 +25,7 @@ import { slotPositionControls, slotSpacingHint } from './slot-position-controls.
 import { startingGridControls } from './starting-grid-controls.js';
 import { END_STOP_GAP, TRACK_PROFILE_LIMITS } from './track.js';
 import { tracksideControls } from './trackside-controls.js';
+import { textureFolder } from './texture-controls.js';
 import { specialControls, specialName } from './special-piece-controls.js';
 import { specialAssemblyNotes } from './special-pieces.js';
 import {
@@ -190,6 +191,7 @@ const SECTION_OF_FIELD = [
   [/^(segments|borderSegments)$/, 'print'],
   [/^trackside/, 'trackside'],
   [/^slot(Edge|Start|End|Lanes|Lane[1-8](Start|End))$/, 'geometry'],
+  [/^(roadTexture|texture[A-Z])/, 'markings'],
 ];
 export function sectionForField(field, fallback) {
   return SECTION_OF_FIELD.find(([re]) => re.test(field ?? ''))?.[1] ?? fallback;
@@ -377,7 +379,9 @@ export function trackInspector(project, tab, draft = {}) {
       roadLineFolder(p) +
       (p.borderSide !== 'none' ? borderLineFolder(p, false) : '') +
       kerbFolder(p, draft.kerbEdge) +
-      lineSizeFolder(p);
+      lineSizeFolder(p) +
+      // A texture is for plain straights and corners.
+      (!p.special && p.kind !== 'import' ? textureFolder(p) : '');
   } else if (tab === 'profile') {
     const raised = (draft.braidStyle ?? p.braidStyle) === 'raised';
     html += profileDiagram(p);

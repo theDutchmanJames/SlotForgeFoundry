@@ -1,4 +1,5 @@
 import { plannerStrip } from './planner-strip.js';
+import { hasRoadTexture, roadStones, validateRoadTexture } from './geometry/road-texture.js';
 import {
   SolidWorkshop,
   addSlot,
@@ -281,6 +282,7 @@ export function validateTrack(p) {
     );
   range('length', 1, 20000);
   validateEndStop(p);
+  validateRoadTexture(p);
   // The turnout blade, island contacts, dead strips and optical windows are
   // all set out from a braid that lies in a recess.
   if (braidRaised(p) && p.special?.type === 'turnout')
@@ -712,7 +714,7 @@ function nativePieces(
     const keepout = [];
     const makeSlot = (guide, sleeve, braidShelf, envelope) => {
       addSlot(work, road, p, guide, sleeve, splitTimingShelf(work,p,braidShelf));
-      if (p.whiteLineRoad !== 'none' || p.roadKerbSide !== 'none' || p.roadCentreLine !== 'none')
+      if (p.whiteLineRoad !== 'none' || p.roadKerbSide !== 'none' || p.roadCentreLine !== 'none' || hasRoadTexture(p))
         keepout.push(envelope ?? braidShelf ?? guide);
     };
     for (const args of importedLanes ?? []) makeSlot(...args);
@@ -752,6 +754,13 @@ function nativePieces(
       road.laneKeepout = work.own(work.wasm.CrossSection.union(keepout));
     roads.push(road);
     pieces.push(road);
+  }
+  // A road surface texture: the same stones for every road segment, so the
+  // pattern runs on across the print seams of the piece.
+  if (hasRoadTexture(p)) {
+    const length = p.kind === 'straight' ? p.length : (p.radius * p.angle * Math.PI) / 180;
+    const stones = roadStones(work, p, path, length, p.width);
+    for (const road of roads) road.textureStones = stones;
   }
   if (p.braidFeedSide !== 'none') {
     const measuredLanes =
@@ -1053,6 +1062,8 @@ export function buildTestJoint(wasm, params, which = 'auto') {
     ...p,
     roadCentreLine: 'none',
     roadKerbSide: 'none',
+    // A sample is a short cut of the piece: it is made without the road texture.
+    roadTexture: 'none',
     reinforcement: false,
     special: undefined,
     startingGrid: undefined,

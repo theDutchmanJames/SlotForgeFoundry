@@ -1,3 +1,4 @@
+import { cutRoadTexture } from './road-texture.js';
 import {
   WHITE_LINE_COLOR,
   finishKerbstones,
@@ -274,6 +275,7 @@ export function finishMarkings(work, part, result, p) {
       result.solid = work.cut(result.solid, [groove]);
     }
   }
+  cutRoadTexture(work, part, result, p);
   const kerbs = finishKerbstones(
     work.wasm,
     result.solid,
