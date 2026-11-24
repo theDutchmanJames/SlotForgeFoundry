@@ -2,6 +2,7 @@ import { plannerStrip } from '../planner-strip.js';
 import { addSlot, braidRecess, braidSections, left, makePart, move, shell, unit } from './solids.js';
 import { laneTools, measuredLane } from './import-track.js';
 import { buildPitTurnout } from './pit-turnout.js';
+import { buildTurnout } from './turnout-piece.js';
 import { addPitMotorMount, pitMotorMountLayout } from './pit-motor-mount.js';
 import { checkPitBorderHardware } from './pit-border-linkage.js';
 import { pitWhiteLines } from './pit-white-line.js';
@@ -526,6 +527,7 @@ function buildDiamond(work, p, generate) {
 
 export function buildSpecialJunction(work, p, generate) {
   validateSpecialJunction(p);
+  if (p.special.type === 'turnout') return buildTurnout(work, p);
   return p.special.type === 'pit'
     ? buildPit(work, p, generate)
     : buildDiamond(work, p, generate);

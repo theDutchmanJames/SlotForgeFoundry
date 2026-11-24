@@ -282,6 +282,13 @@ export function validateTrack(p) {
   range('length', 1, 20000);
   // The turnout blade, island contacts, dead strips and optical windows are
   // all set out from a braid that lies in a recess.
+  if (braidRaised(p) && p.special?.type === 'turnout')
+    throw connectorWarning(
+      'Braid recess',
+      'A turnout cannot have raised lands for copper tape. Its insert, blade and contacts are made for braid in a recess.',
+      'Choose Cross-section → Braid recess → Recessed for this piece.',
+      { tab: 'profile', field: 'braidStyle', label: 'Edit braid recess' },
+    );
   if (braidRaised(p) && ['pit', 'timing'].includes(p.special?.type))
     throw connectorWarning(
       'Braid recess',
@@ -293,7 +300,7 @@ export function validateTrack(p) {
       { tab: 'profile', field: 'braidStyle', label: 'Edit braid recess' },
     );
   if (p.special?.type === 'timing') validateTiming(p);
-  if (['diamond','pit'].includes(p.special?.type)) validateSpecialJunction(p);
+  if (['diamond','pit','turnout'].includes(p.special?.type)) validateSpecialJunction(p);
   if (isRacingPiece(p)) validateRacingPiece(p);
   const clipRange =
     p.jointFitVersion === 1 ? [0.03, 0.8] : JOINT_FIT_LIMITS.clip;
@@ -422,6 +429,13 @@ function validateScrewClipUse(p) {
   }
   const scopes = ['start', 'finish', ...(p.segments > 1 ? ['seam'] : [])];
   if (!scopes.some((scope) => usesClips(activeJointMode(p, scope)))) return;
+  if (p.special?.type === 'turnout')
+    throw connectorWarning(
+      'Road connections',
+      'Kevan Sideclips are made for straights and corners, not for turnouts.',
+      'Choose another clip type under Connections → Project clip type, or tabs for this piece.',
+      { tab: 'joints', field: 'clipType', label: 'Edit clip type' },
+    );
   if (p.kind === 'import' || ['diamond', 'pit'].includes(p.special?.type))
     throw connectorWarning(
       'Road connections',
@@ -840,7 +854,7 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
   work.mirrorPockets = mirrorPockets;
   try {
     let assembly;
-    if (['diamond','pit'].includes(p.special?.type))
+    if (['diamond','pit','turnout'].includes(p.special?.type))
       assembly = buildSpecialJunction(work,p,nativePieces,borderWidth);
     else if (p.kind === 'import') assembly = buildImported(work,p,plan,nativePieces,borderWidth);
     else assembly = nativePieces(work,p,samplePath ?? nativePath(p,couponStation));

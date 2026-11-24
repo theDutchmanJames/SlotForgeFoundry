@@ -14,7 +14,7 @@ import { startingGridLayout } from './geometry/starting-grid.js';
 import { designGuides } from './design-guides.js';
 import { laneOffsetAt } from './lane-adjustment.js';
 import { hasSlotPosition, slotEdgeName, slotEndLists, slotEnds, slotForm, slotVaries } from './slot-position.js';
-import { SPECIAL_PIECES, specialPreview } from './special-pieces.js';
+import { specialPieceName, specialPreview } from './special-pieces.js';
 import { featureGuides } from './create-feature-controls.js';
 import {
   edgeSelectionLabel,
@@ -698,7 +698,7 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
   if (!track?.params) return [];
   let p = track.params;
   if (p.special && (tab === 'geometry' || tab === 'profile' ||
-      ['diamond','pit'].includes(p.special.type))) {
+      ['diamond','pit','turnout'].includes(p.special.type))) {
     if (tab === 'joints') {
       const selected = part?.jointGuides?.length ? [part] : parts;
       return sample(selected.flatMap(item=>item.jointGuides ?? []),24)
@@ -765,8 +765,10 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
             { dots: [base, top] });
         });
       }
-      const routeName = p.special.turnoutPosition === 'pit'
-        ? 'Pit open · enter pit' : 'Pit closed · main lane';
+      const open = p.special.turnoutPosition === 'pit';
+      const routeName = p.special.type === 'turnout'
+        ? (open ? 'Blade set · branch' : 'Blade set · straight on')
+        : open ? 'Pit open · enter pit' : 'Pit closed · main lane';
       // A centreline through the blocked entrance would cross the solid flipper.
       const guides = plan.turnouts.map(({ side, guide }) => {
         const route = zpath(guide);
@@ -790,8 +792,8 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
     const guides=[{id:'special-routes',tone:'reference',paths:lines,dashed:true}];
     const detail=(plan.details ?? []).map(zpath);
     if(detail.length) guides.push(label('special-details','accent',detail[0][0],
-      ({diamond:'Isolated braid ends',hairpin:'Isolated braid ends',timing:p.special.detector==='strip'?'Sensing strip':'Optical gate'})[p.special.type],detail));
-    else guides.push(label('special-shape','reference',a,SPECIAL_PIECES.find(([id])=>id===p.special.type)[1]));
+      ({diamond:'Isolated braid ends',hairpin:'Isolated braid ends',turnout:'Braid strips',timing:p.special.detector==='strip'?'Sensing strip':'Optical gate'})[p.special.type],detail));
+    else guides.push(label('special-shape','reference',a,specialPieceName(p.special.type)));
     return guides;
   }
   const crossing = p.kind === 'import' ? track.plan?.flatCrossing : undefined;

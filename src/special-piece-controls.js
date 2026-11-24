@@ -1,13 +1,19 @@
 import { check, choice, esc, field, fmt } from './ui.js';
-import { specialAssemblyNotes, SPECIAL_PIECES } from './special-pieces.js';
+import { specialAssemblyNotes, specialPieceName } from './special-pieces.js';
+import {
+  TURNOUT_LIMITS,
+  TURNOUT_MODE_HINTS,
+  TURNOUT_MODES,
+  turnoutHasBlade,
+  turnoutSettings,
+} from './geometry/turnout-layout.js';
 import { PIT_MOTOR_LIMITS, pitMotorSettings } from './geometry/pit-motor-settings.js';
 import { maxPitMotorHeight, motorMountFit } from './geometry/pit-motor-mount.js';
 import { pitEyeHardware } from './geometry/pit-turnout.js';
 import { pitDividerControl } from './paint-controls.js';
 import { pitGridControls, readPitGridFields, syncPitGridControls } from './starting-grid-controls.js';
 
-export const specialName = (type) =>
-  SPECIAL_PIECES.find(([id]) => id === type)?.[1] ?? '';
+export const specialName = (type) => specialPieceName(type);
 
 export const specialBorderChoices = [
   ['none', 'None'],
@@ -27,6 +33,8 @@ const descriptions = {
   pit: 'Each pit uses its own lane’s controller. Choose Bottom in Track Set to see the pushrod crank move with the flipper.',
   timing:
     'Choose the detector you plan to fit. Optical gates keep the running braids continuous. Dead strips isolate a short sensing section in each lane.',
+  turnout:
+    'One lane splits in two. The area around the split is a separate insert. It goes in from below with two screws, so you can swap it without lifting the braid.',
 };
 
 const motorBodyFields = ['motorLength', 'motorWidth', 'motorHeight', 'plungerProjection', 'motorStroke'];
@@ -127,10 +135,30 @@ export function specialControls(p, { creating = false } = {}) {
         )
       : mm(
           'spLength',
-          s.type === 'diamond' ? 'End-to-end span' : 'Overall length',
+          s.type === 'diamond' ? 'End-to-end span' : s.type === 'turnout' ? 'Main road length' : 'Overall length',
           p.length,
           1,
         );
+  if (s.type === 'turnout') {
+    const t = turnoutSettings(s);
+    const limit = (key) => ({ min: TURNOUT_LIMITS[key][0], max: TURNOUT_LIMITS[key][1] });
+    const blade = turnoutHasBlade(t.turnoutMode);
+    body +=
+      choice('spSide', 'Branch side', t.side, [
+        ['left', 'Left'],
+        ['right', 'Right'],
+      ]) +
+      choice('spTurnoutMode', 'Insert', t.turnoutMode, TURNOUT_MODES) +
+      '<p class="hint" data-turnout-mode-hint>' + esc(TURNOUT_MODE_HINTS[t.turnoutMode] ?? '') + '</p>' +
+      field('spTurnoutRadius', 'Branch radius', t.turnoutRadius, 'mm', limit('turnoutRadius')) +
+      field('spTurnoutAngle', 'Branch angle', t.turnoutAngle, '°', limit('turnoutAngle')) +
+      field('spTurnoutLead', 'Lead before the branch', t.turnoutLead, 'mm', limit('turnoutLead')) +
+      '<div data-turnout-blade' + (blade ? '' : ' hidden') + '>' +
+      choice('spTurnoutPosition', 'Blade position', t.turnoutPosition, [
+        ['main', 'Straight on'],
+        ['pit', 'Branch'],
+      ]) + '</div>';
+  }
   if (s.type === 'chicane') {
     body +=
       choice('spHand', 'First turn', s.hand, [
@@ -207,6 +235,14 @@ export function syncSpecialControls(form) {
     form.elements.spPitContactLength.disabled = !braidSlot;
   }
   syncPitLinkage(form);
+  const modeHint = form.querySelector('[data-turnout-mode-hint]');
+  if (modeHint) {
+    const mode = form.querySelector('[name="spTurnoutMode"]').value;
+    modeHint.textContent = TURNOUT_MODE_HINTS[mode] ?? '';
+    const blade = form.querySelector('[data-turnout-blade]');
+    blade.hidden = !turnoutHasBlade(mode);
+    blade.querySelector('select').disabled = blade.hidden;
+  }
   const row = form.querySelector('[data-strip-size]');
   if (!row) return;
   const strip = form.querySelector('[name="spDetector"]').value === 'strip';
@@ -244,6 +280,10 @@ export function readSpecialFields(fields, p) {
     'hand',
     'side',
     'turnoutPosition',
+    'turnoutMode',
+    'turnoutRadius',
+    'turnoutAngle',
+    'turnoutLead',
     'motorMount',
     'rodDiameter',
     'eyeDiameter',

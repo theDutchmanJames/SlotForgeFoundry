@@ -5,6 +5,7 @@ import { newProject } from '../../src/project.js';
 import { defaultTrack } from '../../src/track.js';
 import { specialTrackParams } from '../../src/special-pieces.js';
 import { openPackCreator } from './track-pack-creator.mjs';
+import { selectTrackPart } from './part-outline.mjs';
 
 export async function checkSpecialTrackPieces({
   wasm,
@@ -361,4 +362,38 @@ export async function checkSpecialTrackPieces({
     } finally { section.delete(); road.delete(); }
   }
   console.log('✓ The pit junction setting changes all four braid ends in the saved project and road STL independently of manual feeds');
+
+  // A single-lane turnout: its controls, its four inserts and its parts list.
+  const turnout = newProject();
+  turnout.track.params = specialTrackParams('turnout', {
+    ...defaultTrack(), kind: 'straight', lanes: 1, width: 100, length: 300,
+  });
+  await openProject(Buffer.from(JSON.stringify(turnout)), 'turnout-check.slotfab');
+  await tab('geometry').click();
+  const insertMode = input('spTurnoutMode');
+  assert.deepEqual(
+    await insertMode.locator('option').allInnerTexts(),
+    ['Digital', 'Hand-set point', 'Analog', 'Closed'],
+  );
+  const modeHint = page.locator('#settings-form [data-turnout-mode-hint]');
+  assert.match(await modeHint.innerText(), /pushrod/);
+  await page.getByRole('button', { name: 'Turnout inserts, 1 part' }).waitFor();
+  await page.getByRole('button', { name: 'Pit actuator cranks, 1 part' }).waitFor();
+  assert.ok(await input('spTurnoutPosition').isVisible());
+  await insertMode.selectOption('closed');
+  assert.match(await modeHint.innerText(), /only go straight on/);
+  assert.ok(!(await input('spTurnoutPosition').isVisible()));
+  await live();
+  await page.locator('#parts [data-part="turnout-insert"]').waitFor({ state: 'attached' });
+  assert.equal(await page.getByRole('button', { name: /^Pit actuator cranks/ }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: /^Pit turnout blades/ }).count(), 0);
+  // Selecting the insert opens the Shape section, like the other turnout parts.
+  await tab('profile').click();
+  await selectTrackPart(page.locator('#parts [data-part="turnout-insert"]'));
+  assert.equal(await tab('geometry').getAttribute('aria-pressed'), 'true');
+  assert.equal(await input('spTurnoutMode').inputValue(), 'closed');
+  const savedTurnout = JSON.parse((await download(action('save'))).bytes).track.params;
+  assert.equal(savedTurnout.special.turnoutMode, 'closed');
+  assert.equal(savedTurnout.special.turnoutPosition, 'main');
+  console.log('✓ A turnout offers its four inserts, lists the insert as its own part and opens Shape when the insert is selected');
 }

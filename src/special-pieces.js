@@ -10,7 +10,16 @@ import { pitActuatorSpec } from './geometry/pit-turnout.js';
 import { PIT_CONTACT_DEFAULTS } from './geometry/pit-braids.js';
 import { pitGridLayout } from './geometry/starting-grid.js';
 import { hasSlotPosition } from './slot-position.js';
+import {
+  TURNOUT_INSERT,
+  turnoutDefaultLength,
+  turnoutDefaults,
+  turnoutHasBlade,
+  turnoutModeName,
+  turnoutSettings,
+} from './geometry/turnout-layout.js';
 
+// The specials every pack can make, whatever its lane count allows.
 export const SPECIAL_PIECES = Object.freeze([
   ['hairpin', 'Double-crossover hairpin'],
   ['pit', 'Single-lane pit'],
@@ -19,12 +28,24 @@ export const SPECIAL_PIECES = Object.freeze([
   ['chicane', 'Bus-stop chicane'],
   ['timing', 'Timing straight'],
 ]);
+// Specials for a road with one lane only. They are kept apart from the list
+// above because they cannot be made from a multi-lane pack.
+export const SINGLE_LANE_SPECIALS = Object.freeze([['turnout', 'Turnout']]);
+export const ALL_SPECIAL_PIECES = Object.freeze([
+  ...SPECIAL_PIECES,
+  ...SINGLE_LANE_SPECIALS,
+]);
+export const specialPieceName = (type) =>
+  ALL_SPECIAL_PIECES.find(([id]) => id === type)?.[1] ?? '';
 
 export const specialKind = (type) =>
   type === 'hairpin' || type === 'duel' ? 'curve' : 'straight';
 
-export function specialDefaults(type, p) {
+// rules: the pack's design rules, when the piece is made from a pack.
+export function specialDefaults(type, p, rules) {
   switch (type) {
+    case 'turnout':
+      return turnoutDefaults(p, rules);
     case 'hairpin':
       return { type, crossingAt: 0.25, isolation: 2 };
     case 'pit':
@@ -57,11 +78,11 @@ export function specialDefaults(type, p) {
   }
 }
 
-export function specialTrackParams(type, base) {
+export function specialTrackParams(type, base, rules) {
   const p = {
     ...base,
     kind: specialKind(type),
-    special: specialDefaults(type, base),
+    special: specialDefaults(type, base, rules),
     segments: 1,
     borderSegments: 1,
   };
@@ -85,19 +106,37 @@ export function specialTrackParams(type, base) {
   } else if (type === 'chicane') p.length = Math.max(1200, 5 * p.width);
   else if (type === 'pit') p.length = Math.max(600, 3 * p.width);
   else if (type === 'diamond') p.length = Math.max(440, 2.2 * p.width);
-  else p.length = Math.max(200, p.width);
+  else if (type === 'turnout') {
+    // A turnout is a bare road for now: no borders, barriers or road markings,
+    // and no extra braid openings of its own.
+    Object.assign(p, {
+      borderSide: 'none',
+      tracksideSide: 'none',
+      whiteLineRoad: 'none',
+      whiteLineBorder: 'none',
+      roadCentreLine: 'none',
+      roadKerbSide: 'none',
+      kerbEdge: 'none',
+      braidFeedSide: 'none',
+    });
+    delete p.borderEnds;
+    p.length = turnoutDefaultLength(p, base.kind === 'straight' && !base.special ? base.length : undefined);
+  } else p.length = Math.max(200, p.width);
   return p;
 }
 
 export function validateSpecialType(p) {
   if (p.special === undefined) return;
-  if (!p.special || !SPECIAL_PIECES.some(([id]) => id === p.special.type))
+  if (!p.special || !ALL_SPECIAL_PIECES.some(([id]) => id === p.special.type))
     throw Error('This track contains an unknown special piece.');
   if (p.kind !== specialKind(p.special.type))
     throw Error('The stored road geometry does not match this special piece.');
   if (p.special.type === 'pit' && p.special.turnoutPosition !== undefined &&
       !['main', 'pit'].includes(p.special.turnoutPosition))
     throw Error('Choose Main lane or Pit lane for the flipper position.');
+  if (p.special.type === 'turnout' && p.special.turnoutPosition !== undefined &&
+      !['main', 'pit'].includes(p.special.turnoutPosition))
+    throw Error('Choose Straight on or Branch for the blade position.');
   if (p.laneAdjustment)
     throw Error(
       'Special pieces define their own lanes. Use the template controls to change their layout.',
@@ -165,6 +204,41 @@ export function specialAssemblyNotes(p) {
             : 'Lay the two outer braids continuously around the fork and merge. Trim each island-facing braid to its shelf. At each ring on the conductor map, solder a wire to the underside of the braid and feed the wire through the hole.',
           'Seat each connection in its underside recess, clear of the table. Connect L to L and R to R for the same driver. Each mirrored pit uses its own driver’s feed.',
           'Keep braid clear of the blade throughout its travel. With the controllers disconnected, check continuity on both routes and isolation between opposite conductors.',
+        ] : []),
+      ];
+    }
+    case 'turnout': {
+      const { turnoutMode: mode, pitContactMode } = turnoutSettings(p.special);
+      const { screwMin, screwMax } = pitActuatorSpec(p);
+      const kinds = {
+        digital: 'Digital: a moving blade, worked from below by a pushrod on its crank.',
+        manual: 'Hand-set point: the same moving blade, set by hand. It clicks into either position.',
+        analog: 'Analog: no moving parts. Both slots stay open, with a fixed nose between them.',
+        closed: 'Closed: the branch slot is filled in, level with the road. Cars can only go straight on.',
+      };
+      const others = Object.entries(kinds).filter(([id]) => id !== mode).map(([, text]) => text);
+      return [
+        `The area around the split is a separate insert. This one is ${turnoutModeName(mode)}. The road is the same for every insert, so you can print another insert later and swap it.`,
+        kinds[mode] + ' The other inserts: ' + others.join(' '),
+        'Print the insert with its flat underside on the bed. Tap the two pilot holes under the road for M2 × 0.4 screws.',
+        `Turn the road over. Lower the insert into its pocket from below until it sits against the roof of the pocket and its two lugs are in their recesses. Fit two M2 × ${TURNOUT_INSERT.screwLength} mm 90° countersunk screws through the lugs, with their heads flush. To change the insert, take out the two screws. The braid stays where it is.`,
+        ...(turnoutHasBlade(mode) ? [
+          'Print the pivot bearing with its broad flat face on the bed and the oblong peg pointing up. Dry-fit the peg in its socket in the insert. The shoulder must sit flat. Put a little adhesive on the peg only, seat it and let it cure with the bore clear.',
+          'Tap the blind pilot under the blade for an M2 × 0.4 screw. Fit the blade before the insert goes into the road: lower it into its seat halfway between its two positions.',
+          mode === 'digital'
+            ? `From below, slide the crank’s pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the crank. Fit a bent pushrod into the crank eye and run it through the channel under the road to the branch-side edge.`
+            : `From below, slide the pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the pin.`,
+          mode === 'digital'
+            ? 'With the insert screwed in, move the blade between Straight on and Branch. It must reach both stops freely and its crown must sit level with the road.'
+            : 'With the insert screwed in, push the blade across by its crown. It rides over a low ridge in the slot floor and stays on either side. Its crown must sit level with the road.',
+        ] : []),
+        ...(p.braidWidth > 0 ? [
+          'Lay the two outside braids in one piece past the split. The two braids between the slots start behind the insert. ' +
+            (pitContactMode === 'braid'
+              ? 'Leave a tail on each of them, fold it down through its slot and back under the road.'
+              : 'Trim each of them to its shelf.') +
+            ' At each ring on the conductor map, solder a wire under the braid and pass it through the hole. Follow the dashed line to join each inside braid to the outside braid of the other slot: left to left and right to right.',
+          'Seat the wires in their recesses under the road, clear of the table. With the controller disconnected, check continuity along both routes and isolation between the left and right braids.',
         ] : []),
       ];
     }

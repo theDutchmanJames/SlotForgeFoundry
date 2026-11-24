@@ -1,6 +1,7 @@
 import { nativePath, trackParameters } from './track.js';
 import { laneOffsetAt } from './lane-adjustment.js';
 import { diamondLayout, pitLayout } from './geometry/special-junction-paths.js';
+import { turnoutLayout } from './geometry/turnout-layout.js';
 import { independentSpans, sectionStations } from './geometry/bridge-sections.js';
 import { interpolateStation } from './geometry/braid-feeds.js';
 
@@ -61,6 +62,7 @@ export function buildCarRoutes(track, parts = []) {
   if (p.kind === 'import') lanes = track.plan?.lanes ?? [];
   else if (p.special?.type === 'pit') lanes = pitLayout(p).lanePaths;
   else if (p.special?.type === 'diamond') lanes = diamondLayout(p).lanePaths;
+  else if (p.special?.type === 'turnout') lanes = turnoutLayout(p).lanePaths;
   else {
     const path = nativePath(p);
     lanes = path.laneCurves ?? Array.from({ length: p.lanes }, (_, i) =>
@@ -72,6 +74,8 @@ export function buildCarRoutes(track, parts = []) {
       const left = p.special.side === 'left' || (p.special.side === 'both' && i === p.lanes);
       return measuredRoute(left ? 'pit-left' : 'pit-right', left ? 'Left pit' : 'Right pit', line, p.height);
     }
+    if (p.special?.type === 'turnout')
+      return measuredRoute(i ? 'branch' : 'lane-1', i ? 'Branch' : 'Straight on', line, p.height);
     const label = p.special?.type === 'diamond'
       ? `Road ${Math.floor(i / p.lanes) + 1} · Lane ${i % p.lanes + 1}` : `Lane ${number}`;
     return measuredRoute('lane-' + number, label, line, p.height);

@@ -1,7 +1,7 @@
 // The special pieces a track pack can offer, built from its rules. Track Set's
 // specials shelf and the Planner's Specials tab both read them from here.
 import { defaultTrack } from './track.js';
-import { SPECIAL_PIECES, specialTrackParams } from './special-pieces.js';
+import { SINGLE_LANE_SPECIALS, SPECIAL_PIECES, specialTrackParams } from './special-pieces.js';
 
 // Short names for tiles; the piece itself keeps the full name.
 export const SPECIAL_SHORT_NAMES = Object.freeze({
@@ -11,6 +11,7 @@ export const SPECIAL_SHORT_NAMES = Object.freeze({
   duel: 'Duel',
   chicane: 'Chicane',
   timing: 'Timing',
+  turnout: 'Turnout',
 });
 
 // The hairpin and the duel cross or race two lanes, so they need two.
@@ -19,6 +20,15 @@ const TWO_LANE_ONLY = new Set(['hairpin', 'duel']);
 export function specialsFor(lanes) {
   return SPECIAL_PIECES.filter(([type]) => !TWO_LANE_ONLY.has(type) || lanes === 2);
 }
+
+// Track Set's shelf also offers the pieces made for a single-lane road. The
+// Planner does not list them yet: a turnout has three ends, and the Planner
+// joins pieces that have their ends in pairs.
+export function shelfSpecialsFor(lanes) {
+  return [...specialsFor(lanes), ...(lanes === 1 ? SINGLE_LANE_SPECIALS : [])];
+}
+export const plannerCanPlace = (track) =>
+  !SINGLE_LANE_SPECIALS.some(([type]) => type === track?.params?.special?.type);
 
 // A special piece on the pack's rules, taken from its first plain straight.
 export function packSpecialTrack(collection, type) {
@@ -38,7 +48,7 @@ export function packSpecialTrack(collection, type) {
       width: collection.rules.width,
       lanes: collection.rules.lanes,
       laneSpacing: collection.rules.laneSpacing,
-    }),
+    }, collection.rules),
     plan: null,
   };
 }

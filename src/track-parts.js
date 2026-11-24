@@ -11,6 +11,7 @@ const families = {
   turnout: 'Pit turnout blades',
   turnoutArm: 'Pit actuator cranks',
   turnoutBearing: 'Pit pivot bearings',
+  turnoutInsert: 'Turnout inserts',
   motorMount: 'Motor mounts',
   other: 'Other parts',
 };

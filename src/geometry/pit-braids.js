@@ -18,7 +18,7 @@ export function validatePitContacts(s) {
     throw Error('Set the pit braid opening length between 0.3 and 50 mm.');
 }
 
-function wireOpening(xy, radius) {
+export function wireOpening(xy, radius) {
   return { kind: 'hole', outline: Array.from({length: 32}, (_, i) => [
     xy[0] + radius * Math.cos(2 * Math.PI * i / 32),
     xy[1] + radius * Math.sin(2 * Math.PI * i / 32),
@@ -29,7 +29,7 @@ function wireOpening(xy, radius) {
 // outside conductors bound a fork. Its inside island needs separate L and R
 // pickup surfaces fed from below, as four continuous paired strips on top
 // would cross one another and run over the open branch slot.
-function xStation(line, offset, x) {
+export function xStation(line, offset, x) {
   let lo = 0,
     hi = 1;
   for (let n = 0; n < 35; n++) {
@@ -39,7 +39,7 @@ function xStation(line, offset, x) {
   }
   return (lo + hi) / 2;
 }
-function makeRail(p, line, driver, sign, route, from = 0, to = 1) {
+export function makeRail(p, line, driver, sign, route, from = 0, to = 1) {
   const near = p.slotWidth / 2 + p.braidGap,
     far = near + p.braidWidth;
   const mid = (sign * (near + far)) / 2;
@@ -64,7 +64,9 @@ function makeRail(p, line, driver, sign, route, from = 0, to = 1) {
 
 // At each end the braid folds through its own recess and back under the
 // same island. Measure the slit length on the braid, including at a bend.
-function slottedIsland(p, rail, sign, slitLength, shift) {
+// A pit island is cut at both ends. A turnout's island strip starts at the
+// split and runs on to the end of the piece: startOnly folds its first end only.
+export function slottedIsland(p, rail, sign, slitLength, shift, { startOnly = false, tooShort } = {}) {
   const { line, from, to, mid } = rail;
   const knots = [from, ...line.ts.filter(t => t > from && t < to), to];
   const endLine = measuredLane(knots.map(t => line.atOffset(t, mid + sign * shift)));
@@ -72,22 +74,23 @@ function slottedIsland(p, rail, sign, slitLength, shift) {
   const tail = Math.max(4, p.braidWidth + 1);
   const landing = slitLength + tail;
   const lead = shift > 0 ? Math.max(5, shift * 8) : 0;
-  if (length < 2 * (landing + lead) + 1)
-    throw Error('The pit island is too short for its braid pass-throughs and folded tails. Shorten the pit opening length or lengthen the pit.');
+  if (length < (startOnly ? 1 : 2) * (landing + lead) + 1)
+    throw Error(tooShort ?? 'The pit island is too short for its braid pass-throughs and folded tails. Shorten the pit opening length or lengthen the pit.');
   // Move away from the slot only where a full-width aperture would break
   // its vertical wall. Blend back to the original rail with level tangents.
   const stations = new Set(endLine.ts.map(t => t * length));
   for (const d of [slitLength, landing]) {
     stations.add(d);
-    stations.add(length - d);
+    if (!startOnly) stations.add(length - d);
   }
   if (lead) for (let i = 1; i <= 6; i++) {
     stations.add(landing + lead * i / 6);
-    stations.add(length - landing - lead * i / 6);
+    if (!startOnly) stations.add(length - landing - lead * i / 6);
   }
   const ordered = [...stations].sort((a, b) => a - b);
   function point(d, side, guide = false) {
-    const u = lead ? Math.max(0, Math.min(1, (Math.min(d, length - d) - landing) / lead)) : 1;
+    const fromEnd = startOnly ? d : Math.min(d, length - d);
+    const u = lead ? Math.max(0, Math.min(1, (fromEnd - landing) / lead)) : 1;
     const offset = guide ? 0 : mid + sign * (shift * (1 - u * u * (3 - 2 * u)) + side);
     return interpolateStation(endLine.ts, d / length, i => line.atOffset(knots[i], offset));
   }
@@ -96,7 +99,8 @@ function slottedIsland(p, rail, sign, slitLength, shift) {
     const ds = [a, ...ordered.filter(d => d > a && d < b), b];
     return [...ds.map(d => point(d, -halfWidth)), ...ds.reverse().map(d => point(d, halfWidth))];
   }
-  const ends = [[0, slitLength, landing], [length, length - slitLength, length - landing]];
+  const ends = [[0, slitLength, landing], [length, length - slitLength, length - landing]]
+    .slice(0, startOnly ? 1 : 2);
   rail.points = ordered.map(d => point(d, 0));
   rail.polygon = band(0, length, half);
   rail.turnoutCover = [...ordered.map(d => point(d, 0, true)), ...ordered.map(d => point(d, half)).reverse()];

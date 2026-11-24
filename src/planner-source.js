@@ -125,6 +125,8 @@ export function plannerSource(
   });
   const p = project.track.params,
     plan = project.track.plan;
+  if (p.special?.type === 'turnout')
+    throw Error('A turnout has three ends. The Track Planner cannot place it yet. Build and print it from Track Set.');
   let parts = [],
     warning = '';
   const free = () => {

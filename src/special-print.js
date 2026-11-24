@@ -3,7 +3,7 @@ import { lineGrooves } from './geometry/paint-guides.js';
 import {
   specialAssemblyNotes,
   specialPreview,
-  SPECIAL_PIECES,
+  specialPieceName,
 } from './special-pieces.js';
 import { racingPath } from './special-racing.js';
 import {
@@ -13,6 +13,7 @@ import {
 } from './geometry/special-junction-layout.js';
 import { pitActuatorSpec } from './geometry/pit-turnout.js';
 import { pitMotorSettings } from './geometry/pit-motor-settings.js';
+import { turnoutLayout, turnoutSettings } from './geometry/turnout-layout.js';
 import { buildTrack } from './track.js';
 
 // A test coupon uses the crossing from the actual generated mesh, including its guide,
@@ -94,8 +95,10 @@ export function crossingCoupon(wasm, params) {
 }
 
 export function wiringDiagram(p) {
-  const { outlines, lanes, details, conductors, jumpers, pitWhiteLines, pitGrid } = specialPreview(p);
-  const name = SPECIAL_PIECES.find(([id]) => id === p.special.type)[1];
+  const { outlines, lanes, details, conductors, jumpers, pitWhiteLines, pitGrid, turnouts } = specialPreview(p);
+  const name = specialPieceName(p.special.type);
+  // A turnout cuts and feeds its inside braids the way a pit lane does.
+  const forked = ['pit', 'turnout'].includes(p.special.type);
   const maxLanes = p.lanes,
     type = p.special.type;
   const note =
@@ -103,7 +106,9 @@ export function wiringDiagram(p) {
       ? 'P and Q are independent through-roads. Trace each lane to its opposite port.'
       : type === 'pit'
         ? 'Each pit branches from and returns to its own controller lane.'
-        : 'Trace each printed slot from its marked start to the far end.';
+        : type === 'turnout'
+          ? 'Both routes belong to the same controller lane. The braids between the slots are fed from below.'
+          : 'Trace each printed slot from its marked start to the far end.';
   const coordinates = outlines.flat(),
     columns = coordinates.map((q) => q[0]),
     rows = coordinates.map((q) => -q[1]);
@@ -135,6 +140,7 @@ export function wiringDiagram(p) {
         (p.special.side === 'both' && i === maxLanes);
       return (left ? maxLanes : 1) + ' pit';
     }
+    if (type === 'turnout') return i ? 'Branch' : '1';
     return String(i + 1);
   };
   const header = [
@@ -217,7 +223,7 @@ export function wiringDiagram(p) {
       }
     }
   }
-  if (type === 'pit') {
+  if (forked) {
     for (const rail of conductors)
       header.push(
         '<polygon fill="' +
@@ -282,20 +288,22 @@ export function wiringDiagram(p) {
       ? []
       : type === 'pit'
         ? details.slice(0, p.special.side === 'both' ? 2 : 1)
-        : details;
+        : type === 'turnout'
+          ? details.slice(0, turnouts?.length ?? 0)
+          : details;
   for (const path of guideDetails)
     header.push(
       '<polyline fill="none" stroke="#47575e" stroke-width="1" points="' +
         points(path) +
         '"/>',
     );
-  const pitLegend = type === 'pit'
+  const pitLegend = forked
     ? '<text x="20" y="514" font-size="13">Rings · solder access' +
-      (p.special.pitContactMode === 'braid' ? '   |   Outlined slots · fold the island braid through here' : '') + '</text>'
+      (p.special.pitContactMode === 'braid' ? '   |   Outlined slots · fold the ' + (type === 'pit' ? 'island' : 'inside') + ' braid through here' : '') + '</text>'
     : '';
   header.push(
     '<text x="20" y="474" font-size="14">' + note + '</text>',
-    ['pit', 'hairpin', 'diamond'].includes(type) && p.braidWidth > 0
+    ['pit', 'hairpin', 'diamond', 'turnout'].includes(type) && p.braidWidth > 0
       ? '<text x="20" y="496" font-size="13"><tspan fill="#076474">Teal · left braid</tspan>   |   <tspan fill="#ad511d">Copper · right braid</tspan>   |   Dashed · underside wiring</text>' + pitLegend + '</svg>'
       : '<text x="20" y="497" font-size="13">Keep the left and right conductors of each route distinct. See Assembly notes.txt.</text></svg>',
   );
@@ -325,6 +333,10 @@ export function assemblyNotes(p) {
     notes.push(
       `At the pushrod eye, allow at most ${Number(spec.headDiameter.toFixed(2))} mm outside diameter and ${spec.headProjection} mm above the tab for the pin head or retainer. This leaves ${spec.headTopClearance} mm to the pocket ceiling throughout the throw. Seat the pushrod below the tab in its channel.`,
     );
+  }
+  if (p.special.type === 'turnout' && turnoutSettings(p.special).turnoutMode === 'digital') {
+    const spec = pitActuatorSpec(p, turnoutLayout(p).fork);
+    notes.push(`The crank has a ${spec.eyeDiameter} mm eye for a bent pushrod up to ${spec.rodDiameter} mm in diameter. Its two end positions are ${spec.stroke.toFixed(2)} mm apart in a straight line. Use this to match the linkage to your actuator.`);
   }
   return notes.join('\n\n') + '\n';
 }

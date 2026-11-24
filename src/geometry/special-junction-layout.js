@@ -6,6 +6,7 @@ import { pitActuatorSpec, turnoutOutline } from './pit-turnout.js';
 import { validatePitMotorSettings } from './pit-motor-settings.js';
 import { pitMotorMountLayout } from './pit-motor-mount.js';
 import { pitWhiteLines } from './pit-white-line.js';
+import { turnoutPlan, validateTurnout } from './turnout-layout.js';
 import {
   diamondLayout,
   pitLayout,
@@ -124,6 +125,7 @@ export function validateSpecialJunction(p) {
       forks.forEach((fork, i) => pitMotorMountLayout(p, fork, lanePaths[p.lanes + i]));
     return;
   }
+  if (s.type === 'turnout') return validateTurnout(p);
   if (s.type !== 'diamond')
     throw Error('Choose an available special junction.');
   if (
@@ -186,6 +188,7 @@ export function validateSpecialJunction(p) {
 
 export function specialJunctionPlan(p) {
   validateSpecialJunction(p);
+  if (p.special.type === 'turnout') return turnoutPlan(p);
   if (p.special.type === 'pit') {
     const raw = pitLayout(p),
       { lanePaths, forks } = raw;

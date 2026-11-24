@@ -2,7 +2,7 @@ import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
-import { packSpecialTrack, specialsFor } from './pack-specials.js';
+import { packSpecialTrack, plannerCanPlace, specialsFor } from './pack-specials.js';
 import { openStore, cleanName } from './project.js';
 import { esc, icon } from './ui.js';
 import { createPlanView } from './planner-view.js';
@@ -671,7 +671,9 @@ export function createPlanner({ host, call, download, current, promote }) {
     const collection = packs.find((p) => p.id === pack);
     if (!collection) return [];
     if (group === 'standard')
-      return collection.pieces.map((p, i) => ({ ...p, index: i, collection }));
+      return collection.pieces
+        .map((p, i) => ({ ...p, index: i, collection }))
+        .filter((card) => plannerCanPlace(card.track));
     return specialsFor(collection.rules.lanes).map(([type, name]) => ({
       name,
       collection,

@@ -316,20 +316,24 @@ export function braidFeedControls(p) {
     .map((t) => Number((t * 100).toFixed(4)))
     .join(', ');
   const pit = p.special?.type === 'pit';
+  // A turnout cuts its two inside braids at the split, as a pit lane does.
+  const turnout = p.special?.type === 'turnout';
   let contacts = '';
-  if (pit) {
+  if (pit || turnout) {
     const mode = p.special.pitContactMode ?? PIT_CONTACT_DEFAULTS.pitContactMode;
     const length = p.special.pitContactLength ?? PIT_CONTACT_DEFAULTS.pitContactLength;
-    contacts = choice('spPitContactMode', 'Pit junction openings', mode, [
+    contacts = choice('spPitContactMode', pit ? 'Pit junction openings' : 'Openings at the split', mode, [
       ['wire', 'Round wire holes'],
       ['braid', 'Braid pass-throughs'],
     ]) +
       '<p class="hint" data-pit-braid-width' + (p.braidWidth > 0 ? ' hidden' : '') +
       '>Set Width per strip above 0 mm in Braid recess to create junction openings.</p>' +
       '<div data-pit-contact-slot' + (mode === 'braid' ? '' : ' hidden') + '>' +
-      field('spPitContactLength', 'Pit slot length', length, 'mm', { min: 0.3, max: 50 }) +
+      field('spPitContactLength', pit ? 'Pit slot length' : 'Slot length', length, 'mm', { min: 0.3, max: 50 }) +
       '<p class="hint">Slot length runs along the braid. Each slot is one braid strip wide and goes straight through the road.</p></div>' +
-      '<p class="hint">This sets the openings at the cut braid ends at pit entry and exit. Continuous braids keep their round wire holes.</p>';
+      (pit
+        ? '<p class="hint">This sets the openings at the cut braid ends at pit entry and exit. Continuous braids keep their round wire holes.</p>'
+        : '<p class="hint">This sets the openings where the two braids between the slots start. The two outside braids keep their round wire holes.</p>');
   }
   return details(
     'Braid pass-throughs',
@@ -350,7 +354,7 @@ export function braidFeedControls(p) {
       esc(locations) +
       '" maxlength="100" autocomplete="off"><small>%</small></span></label>' +
       '<p class="hint">Enter positions from the start of the lane. Each slit runs straight down from the ' + (braidRaised(p) ? 'raised land' : 'braid recess') + '. Opening length is measured along the lane.</p>',
-    pit && p.braidWidth > 0, 'feed',
+    (pit || turnout) && p.braidWidth > 0, 'feed',
   );
 }
 

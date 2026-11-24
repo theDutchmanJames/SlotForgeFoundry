@@ -22,6 +22,7 @@ const PREFIXES = {
   turnout: 'V',
   turnoutArm: 'K',
   turnoutBearing: 'J',
+  turnoutInsert: 'N',
   motorMount: 'M',
   barrier: 'W',
   fence: 'F',
@@ -37,6 +38,7 @@ const COLORS = {
   turnout: '#db917b',
   turnoutArm: '#8b80bb',
   turnoutBearing: '#bf9653',
+  turnoutInsert: '#c97a8e',
   motorMount: '#56a0a6',
   barrier: '#c9c4b8',
   fence: '#8d949c',
@@ -152,7 +154,7 @@ function assemblyMap(entries, groups, project) {
     '<text x="26" y="58" font-size="14">Assembly map · top view · print quantities below</text>',
   ];
   // Show the locations of underside hardware on top of the deck outlines.
-  const mapLayer = { support: 1, turnout: 1, turnoutBearing: 1, motorMount: 1, turnoutArm: 2, clip: 2, retainer: 3 };
+  const mapLayer = { support: 1, turnoutInsert: 0.5, turnout: 1, turnoutBearing: 1, motorMount: 1, turnoutArm: 2, clip: 2, retainer: 3 };
   const mapOrder = entries
     .slice()
     .sort((a, b) => (mapLayer[a.role] ?? 0) - (mapLayer[b.role] ?? 0));
@@ -217,7 +219,8 @@ export function printableSTL(
   const roadFaceDown = (part.role === 'road' || part.role === 'border') &&
     !printsFaceUp(project) &&
     (printRoadFaceDown || isFlatCrossingProject(project) || (project?.mode === 'track' && project.track.params.special));
-  const faceDown = part.role === 'turnoutBearing' || roadFaceDown;
+  // A pivot pin is listed with the bearings but prints flange down, as drawn.
+  const faceDown = (part.role === 'turnoutBearing' && !part.printsUpright) || roadFaceDown;
   return withPrintableSolid(
     part,
     (solid) =>

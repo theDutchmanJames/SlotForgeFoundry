@@ -75,7 +75,7 @@ import {
   saveTheme,
   STORAGE_KEY as THEME_STORAGE_KEY,
 } from './app-theme.js';
-import { packSpecialTrack, SPECIAL_SHORT_NAMES, specialsFor } from './pack-specials.js';
+import { packSpecialTrack, SPECIAL_SHORT_NAMES, shelfSpecialsFor } from './pack-specials.js';
 import { specialName } from './special-piece-controls.js';
 import { borderRunLength, readTrackShapeFields, suggestedSpacing, syncTrackShapeControls } from './track-shape-controls.js';
 import {
@@ -1269,7 +1269,7 @@ function choosePart(id, { keepSurface = false } = {}) {
     if (role === 'border' && !['markings', 'print'].includes(trackTab)) trackTab = 'borders';
     if (role === 'clip' || role === 'retainer') trackTab = 'joints';
     if (role === 'barrier' || role === 'fence') trackTab = 'trackside';
-    if (['support', 'turnout', 'turnoutArm', 'turnoutBearing', 'motorMount'].includes(role)) trackTab = 'geometry';
+    if (['support', 'turnout', 'turnoutArm', 'turnoutBearing', 'turnoutInsert', 'motorMount'].includes(role)) trackTab = 'geometry';
     if (role === 'road' && !keep) trackTab = 'geometry';
     focusedField = '';
   }
@@ -3750,7 +3750,7 @@ function renderPackRail(track) {
 // The special pieces this pack can have: the ones it has open as pieces,
 // the others are added from its rules with one click.
 function specialShelf(pack, link) {
-  const tiles = specialsFor(pack.rules?.lanes ?? 2)
+  const tiles = shelfSpecialsFor(pack.rules?.lanes ?? 2)
     .map(([type, name]) => {
       const owned = pack.pieces.find((p) => p.track.params.special?.type === type);
       // Some rules cannot make every special (a narrow road for the chicane,

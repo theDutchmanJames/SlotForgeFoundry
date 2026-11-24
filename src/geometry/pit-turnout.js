@@ -11,6 +11,7 @@ const shoulderReturn = 15;
 const shoulderSetback = 0.50;
 const externalCrankRadius = 12;
 const shaftRadius = 2;
+const hubRadius = 2.65;
 const journalGap = 0.18;
 const insertFit = 0.16;
 const keyDepth = 1.25;
@@ -18,6 +19,33 @@ const armTopClearance = 0.60;
 const armSideClearance = 0.60;
 const guideFloorStock = 0.60;
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+
+// M2 hardware as it is printed: a tapped pilot, a clearance bore and the seat
+// of a 90-degree countersunk head.
+export const M2 = Object.freeze({
+  pilotRadius: 0.80,
+  clearanceRadius: 1.08,
+  headRadius: 2.02,
+  headDepth: 0.94,
+});
+
+// The wording for a pit lane. Another piece that uses the same flipper (the
+// turnout) passes its own words for the same refusals.
+const PIT_WORDS = Object.freeze({
+  pivotRoom: 'Increase the pit offset to fit the turnout pivot between the two guide slots.',
+  tailRoom: 'Lengthen the pit to leave room behind the pivot for its guide wall and return.',
+  tongueRoom: 'Lengthen the pit approach to give the turnout tongue room to steer the guide.',
+  waist: 'Lengthen the pit approach to leave a printable turnout tongue between its guide walls.',
+  returnRoom: 'Lengthen the pit approach to fit the turnout return.',
+  rise: 'Lengthen the pit approach or reduce braid depth to leave a smooth rise to the road at the pivot.',
+});
+const PIT_PARTS = Object.freeze({
+  idPrefix: 'pit-',
+  blade: ' pit turnout blade',
+  crank: ' pit actuator crank',
+  bearing: ' pit pivot bearing',
+  pin: ' pit pivot pin',
+});
 
 export function pitEyeHardware(rodDiameter, eyeDiameter) {
   return { headDiameter: Math.max(rodDiameter + 2, eyeDiameter + 1), headProjection: 1,
@@ -97,22 +125,27 @@ function rotate(point, pivot, radians) {
 // Both faces belong to ONE rigid tongue. Specify the straight face in the
 // main pose, then rotate the actual mitered pit slot wall back into that pose.
 // Position the pivot between the straight and curved slot with equal room for its bearing.
-export function pitTurnoutProfile(p, branch, base, sign) {
+// frame places the fork on another piece: startX is where the main slot
+// enters, endX is the X the fork must stay in front of, and words replaces the
+// pit-lane wording of the refusals. A pit lane passes no frame.
+export function pitTurnoutProfile(p, branch, base, sign, frame = {}) {
+  const startX = frame.startX ?? -p.length / 2 - 0.05, endX = frame.endX ?? 0;
+  const words = { ...PIT_WORDS, ...frame.words };
   const h = p.slotWidth / 2 + faceRelief;
   // A deep guide runs beside the drive instead of above it. Move its pivot
   // farther into the island so the eye and tab clear both guide walls.
   const shallowFloor = p.height - p.slotDepth < pitActuatorSpec(p).headPocketTop + guideFloorStock;
   const heelRadius = shallowFloor ? 3.85 : 3.2;
   const toeX = branch[0][0] - noseLead;
-  const entry = [[-p.length / 2 - 0.05, 0],
-    ...branch.filter(([x]) => x < 0).map(([x, y]) => [x, sign * (y - base)])];
+  const entry = [[startX, 0],
+    ...branch.filter(([x]) => x < endX).map(([x, y]) => [x, sign * (y - base)])];
   const normals = vertexNormals(entry);
   const offset = (d) => entry.map((q, i) => move(q, normals[i], -d));
   const centers = offset(h + heelRadius);
   const heelY = h + heelRadius;
   const end = centers.findIndex((q) => q[1] >= heelY);
   if (end < 1)
-    throw Error('Increase the pit offset to fit the turnout pivot between the two guide slots.');
+    throw Error(words.pivotRoom);
   const t = (heelY - centers[end - 1][1]) / (centers[end][1] - centers[end - 1][1]);
   const heel = mix(centers[end - 1], centers[end], t);
   const pitWall = offset(h);
@@ -120,8 +153,8 @@ export function pitTurnoutProfile(p, branch, base, sign) {
   // broadside circular rim would leave an upstream-facing ledge at its exit.
   const pastTail = pitWall.findIndex(([x, y]) =>
     x > heel[0] && Math.hypot(x - heel[0], y - heelY) > tailRadius);
-  if (pastTail < 1 || heel[0] + tailRadius + shoulderReturn > -1)
-    throw Error('Lengthen the pit to leave room behind the pivot for its guide wall and return.');
+  if (pastTail < 1 || heel[0] + tailRadius + shoulderReturn > endX - 1)
+    throw Error(words.tailRoom);
   const a = pitWall[pastTail - 1], b = pitWall[pastTail];
   let from = 0, to = 1;
   for (let i = 0; i < 30; i++) {
@@ -135,7 +168,7 @@ export function pitTurnoutProfile(p, branch, base, sign) {
   const mainTip = [toeX, h + noseSetback];
   const length = heel[0] - toeX;
   if (length < 9)
-    throw Error('Lengthen the pit approach to give the turnout tongue room to steer the guide.');
+    throw Error(words.tongueRoom);
   function pitFace(angle) {
     const c = Math.cos(angle), s = Math.sin(angle);
     const tipY = heelY + (-h - noseSetback - heelY - s * (toeX - heel[0])) / c;
@@ -162,7 +195,7 @@ export function pitTurnoutProfile(p, branch, base, sign) {
   const angle = high;
   const pitFaceClosed = pitFace(angle);
   if (Math.min(...pitFaceClosed.map(faceWidth)) < 0.79)
-    throw Error('Lengthen the pit approach to leave a printable turnout tongue between its guide walls.');
+    throw Error(words.waist);
   const endOfArc = pitFaceClosed.at(-1);
   const endAngle = Math.atan2(endOfArc[1] - heelY, endOfArc[0] - heel[0]);
   const startAngle = -Math.asin(heelRadius / tailRadius);
@@ -197,7 +230,7 @@ export function pitTurnoutProfile(p, branch, base, sign) {
   // the extra width with zero endpoint slope along the actual faceted road.
   const byX = (x) => {
     const i = entry.findIndex(([px]) => px >= x);
-    if (i < 1) throw Error('Lengthen the pit approach to fit the turnout return.');
+    if (i < 1) throw Error(words.returnRoom);
     const u = (x - entry[i - 1][0]) / (entry[i][0] - entry[i - 1][0]);
     return [mix(entry[i - 1], entry[i], u), mix(normals[i - 1], normals[i], u)];
   };
@@ -257,13 +290,13 @@ function rectangle(work, x0, y0, x1, y1) {
   return work.section([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]);
 }
 
-function bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights) {
+function bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights, riseWords = PIT_WORDS.rise) {
   const face = work.section([fork.outline]);
   const { min, max } = face.bounds();
   const height = highTop - lowTop;
   const run = Math.min(Math.max(5, 4 * height), fork.heel[0] - riseAt);
   if (run < 2 * height)
-    throw Error('Lengthen the pit approach or reduce braid depth to leave a smooth rise to the road at the pivot.');
+    throw Error(riseWords);
   // A sampled quintic has zero slope and curvature at both ends. Build the
   // profile in X/Z and sweep it sideways through the unchanged guiding faces.
   const ramp = Array.from({ length: 33 }, (_, i) => {
@@ -284,25 +317,27 @@ function bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights)
     work.prism(drive.bay, 0, heights.bayTop),
     work.prism(drive.headPocket, 0, drive.headPocketTop),
     work.prism(keySocket, 0, heights.socketTop),
-    work.prism(disc(work, fork.heel, 0.80), 0, heights.pilotTop),
+    work.prism(disc(work, fork.heel, M2.pilotRadius), 0, heights.pilotTop),
   ]);
 }
 
-function driveGeometry(work, fork, heights, spec) {
+// pinOnly leaves the arm and its eye off: the keyed pivot pin of a blade that
+// is set by hand. The clearances returned are always those of the full crank.
+function driveGeometry(work, fork, heights, spec, pinOnly = false) {
   const [x, y] = fork.heel, eye = spec.mainEye;
   const { armBottom, armTop } = heights;
-  const hub = disc(work, fork.heel, 2.65), end = disc(work, eye, spec.eyeOuterRadius);
-  const arm = work.own(work.wasm.CrossSection.hull([hub, end]));
+  const hub = disc(work, fork.heel, hubRadius), end = disc(work, eye, spec.eyeOuterRadius);
+  const arm = pinOnly ? hub : work.own(work.wasm.CrossSection.hull([hub, end]));
   const shaft = disc(work, fork.heel, shaftRadius);
   const key = work.own(shaft.intersect(rectangle(work, x - 3, y - 3, x + 1.30, y + 3)));
   const root = work.own(work.wasm.Manifold.cylinder(0.45, shaftRadius + 0.5, shaftRadius, 48));
   const crank = work.union([work.prism(arm, armBottom, armTop), work.own(root.translate([x, y, armTop])),
     work.prism(shaft, armTop, heights.seat), work.prism(key, heights.seat, heights.keyTop)]);
-  const sink = work.own(work.wasm.Manifold.cylinder(0.94, 2.02, 1.08, 48));
+  const sink = work.own(work.wasm.Manifold.cylinder(M2.headDepth, M2.headRadius, M2.clearanceRadius, 48));
   const solid = work.cut(crank, [
     work.own(sink.translate([x, y, armBottom])),
-    work.prism(disc(work, fork.heel, 1.08), armBottom - 0.1, heights.keyTop + 0.1),
-    work.prism(disc(work, eye, spec.eyeDiameter / 2), armBottom - 0.1, armTop + 0.1),
+    work.prism(disc(work, fork.heel, M2.clearanceRadius), armBottom - 0.1, heights.keyTop + 0.1),
+    ...(pinOnly ? [] : [work.prism(disc(work, eye, spec.eyeDiameter / 2), armBottom - 0.1, armTop + 0.1)]),
   ]);
   // Hull sampled eye positions and the concentric hub. The convex envelope
   // contains the rigid arm throughout its throw, with room to insert it below.
@@ -406,7 +441,31 @@ function lastCoveredX(work, fork, pocket, roof, guides) {
   return last + 0.25;
 }
 
-export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders = [], rodEndY) {
+// Everything the flipper needs in plan: the pocket the blade sweeps, the
+// handoff reliefs, the bearing socket with its boss and the room of the crank.
+// A piece that carries the flipper in a removable insert outlines it with this.
+export function pitTurnoutFootprint(work, p, fork) {
+  const spec = pitActuatorSpec(p, fork);
+  const drive = driveGeometry(work, fork, actuatorHeights(p, spec.rodDiameter), spec);
+  return work.own(work.wasm.CrossSection.union([
+    sweptSocket(work, fork),
+    ...fork.reliefs.map(wall => work.section([wall])),
+    work.own(drive.shoulder.offset(0.65, 'Round', 2, 48)),
+    work.own(drive.support.offset(insertFit, 'Round', 2, 48)),
+    drive.bay,
+    drive.headPocket,
+  ]));
+}
+
+// options (all optional; a pit lane passes none):
+//   linkage: false  leaves out the crank, its bay and the pushrod channel, and
+//                   returns a plain keyed pivot pin in place of the crank.
+//   parts           the id prefix and the names of the returned parts.
+//   words           the wording of the refusals, as for pitTurnoutProfile.
+export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders = [], rodEndY, options = {}) {
+  const linkage = options.linkage !== false;
+  const names = { ...PIT_PARTS, ...options.parts };
+  const riseWords = options.words?.rise ?? PIT_WORDS.rise;
   const floor = p.height - p.slotDepth;
   const pocketTop = p.height - p.braidDepth - 0.80;
   const lowTop = pocketTop - 0.20, bottom = floor + 0.22;
@@ -460,15 +519,18 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
     }
     road.cuts.push(work.prism(relief, floor, p.height + 1));
   }
-  road.cuts.push(work.prism(drive.bay, -0.1, heights.bayTop),
-    work.prism(drive.headPocket, -0.1, spec.headPocketTop));
+  if (linkage)
+    road.cuts.push(work.prism(drive.bay, -0.1, heights.bayTop),
+      work.prism(drive.headPocket, -0.1, spec.headPocketTop));
+  // Without a crank only the flange of the pivot pin turns below the bearing.
+  else road.cuts.push(work.prism(disc(work, fork.heel, hubRadius + armSideClearance), -0.1, heights.bayTop));
   // The rod lies below the flag, with its bent end pointing up into the eye.
   // Open a shallow channel out through the pit shoulder and any attached
   // border, including hollow ribs. A solid underbody also gets an exit.
   const xs = [spec.mainEye[0], spec.midEye[0], spec.pitEye[0]];
   const rodMargin = spec.rodDiameter / 2 + 0.5;
   const x0 = Math.min(...xs) - rodMargin, x1 = Math.max(...xs) + rodMargin;
-  for (const part of [road, ...borders]) {
+  for (const part of linkage ? [road, ...borders] : []) {
     const span = part.section.bounds();
     const outside = rodEndY ?? (fork.sign > 0 ? span.max[1] + 1 : span.min[1] - 1);
     if (fork.sign * (outside - drive.eye[1]) <= 0 ||
@@ -478,7 +540,7 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
     part.cuts.push(work.prism(channel, -0.1, heights.rodChannelHeight));
   }
   const riseAt = lastCoveredX(work, fork, pocket, roof, guides);
-  const blade = bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights);
+  const blade = bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights, riseWords);
   const angle = p.special.turnoutPosition === 'pit' ? fork.swing * 180 / Math.PI : 0;
   function pose(shop, solid, degrees) {
     if (!degrees) return solid;
@@ -500,12 +562,21 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
         } finally { printing.close(); }
       } };
   }
-  const crank = part('pit-crank-', ' pit actuator crank', 'turnoutArm', drive.solid, shop =>
-    driveGeometry(shop, fork, heights, spec).solid);
-  crank.crankGuide = { side: fork.side, eye: angle ? spec.pitEye : spec.mainEye,
-    armTop: heights.armTop, headPocketTop: spec.headPocketTop, headDiameter: spec.headDiameter,
-    headProjection: spec.headProjection, pinClearance: spec.pinClearance, pocketOutline: drive.headPocket.toPolygons()[0] };
-  return [part('pit-blade-', ' pit turnout blade', 'turnout', blade, shop =>
-    bladeSolid(shop, fork, bottom, lowTop, highTop, riseAt, driveGeometry(shop, fork, heights, spec), heights)), crank,
-    { id: 'pit-bearing-' + fork.side, name: hand + ' pit pivot bearing', role: 'turnoutBearing', solid: bearing }];
+  let crank;
+  if (linkage) {
+    crank = part(names.idPrefix + 'crank-', names.crank, 'turnoutArm', drive.solid, shop =>
+      driveGeometry(shop, fork, heights, spec).solid);
+    crank.crankGuide = { side: fork.side, eye: angle ? spec.pitEye : spec.mainEye,
+      armTop: heights.armTop, headPocketTop: spec.headPocketTop, headDiameter: spec.headDiameter,
+      headProjection: spec.headProjection, pinClearance: spec.pinClearance, pocketOutline: drive.headPocket.toPolygons()[0] };
+  } else {
+    // The pin is the crank without its arm. It prints flange down, as drawn.
+    crank = part(names.idPrefix + 'pin-', names.pin, 'turnoutBearing',
+      driveGeometry(work, fork, heights, spec, true).solid,
+      shop => driveGeometry(shop, fork, heights, spec, true).solid);
+    crank.printsUpright = true;
+  }
+  return [part(names.idPrefix + 'blade-', names.blade, 'turnout', blade, shop =>
+    bladeSolid(shop, fork, bottom, lowTop, highTop, riseAt, driveGeometry(shop, fork, heights, spec), heights, riseWords)), crank,
+    { id: names.idPrefix + 'bearing-' + fork.side, name: hand + names.bearing, role: 'turnoutBearing', solid: bearing }];
 }
