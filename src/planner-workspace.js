@@ -1,3 +1,4 @@
+import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
@@ -25,6 +26,7 @@ import {
   BARRIER_END_SHAPES,
   BARRIER_TYPES,
   applyBarriers,
+  layoutOwned,
   barrierOf,
   plainBarrier,
   pegSizeOf,
@@ -383,7 +385,19 @@ export function createPlanner({ host, call, download, current, promote }) {
       fenceHeight: field(side + 'FenceHeight').valueAsNumber,
       startPost: field(side + 'StartPost').value === 'on',
     });
-  async function setBarriers(wanted) {
+  const setBarriers = (wanted) =>
+    changeSections(
+      (params) => applyBarriers(params, wanted),
+      (entry) => JSON.stringify(barrierOf(entry)) === JSON.stringify(wanted),
+    );
+  // White lines and kerbstones for the selected sections.
+  const setMarkings = (wanted) =>
+    changeSections(
+      (params) => Object.assign(params, wanted),
+      (entry) => Object.entries(wanted).every(([key, value]) => markingsOf(entry.track.params)[key] === value),
+    );
+  // Give the selected sections a copy of their recipe with a change in it.
+  async function changeSections(change, unchanged) {
     const ids = chosenIds();
     const models = new Map(defs),
       additions = {},
@@ -391,14 +405,13 @@ export function createPlanner({ host, call, download, current, promote }) {
     for (const key of new Set(
       layout.nodes.filter((n) => ids.has(n.id)).map((n) => n.source),
     )) {
-      const entry = layout.sources[key],
-        now = barrierOf(entry);
-      if (JSON.stringify(now) === JSON.stringify(wanted)) continue;
+      const entry = layout.sources[key];
+      if (unchanged(entry)) continue;
       const track = structuredClone(entry.track);
-      applyBarriers(track.params, wanted);
+      change(track.params);
       const def = await build(track, false);
       if (def.sections.length !== defs.get(key).sections.length)
-        throw Error('The barriers change how this piece is divided. Set them in Track Set instead.');
+        throw Error('This change alters how the piece is divided. Set it in Track Set instead.');
       const same = Object.entries({ ...layout.sources, ...additions }).find(
         ([, s]) =>
           s.name === entry.name &&
@@ -870,6 +883,18 @@ export function createPlanner({ host, call, download, current, promote }) {
           : 'Only this section gets the barriers. ') +
         'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. A guard rail comes from the post of the section before it: give the first section of a row a start post.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
+        '</div></details>' +
+        '<details class="pl-bridge pl-markings"><summary>White lines &amp; kerbs</summary><div>' +
+        '<label>White lines on the road<select data-pl-field="lineRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineRoad) + '</select></label>' +
+        '<label>White lines on the borders<select data-pl-field="lineBorder">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineBorder) + '</select></label>' +
+        '<label>Kerbs on the road<select data-pl-field="kerbRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).roadKerbSide) + '</select></label>' +
+        '<label>Kerbs on the borders<select data-pl-field="kerbBorder">' + barrierOptions(KERB_EDGES, markingsOf(def.track.params).kerbEdge) + '</select></label>' +
+        '<small>' +
+        (chosenIds().size > 1
+          ? chosenIds().size + ' sections are selected. '
+          : 'Only this section gets these markings. ') +
+        'Ctrl-click or Shift-click sections in the plan to select more than one. Line and kerb sizes come from the piece: set them in Track Set or in the Pack rules. Border markings show on sections that have borders.</small>' +
+        btn('markings', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply markings', 'check') +
         '</div></details>'
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
     const from = net.open.find((e) => e.key === choice.end),
@@ -1034,9 +1059,9 @@ export function createPlanner({ host, call, download, current, promote }) {
           };
         track.params.segments = source.track.params.segments;
         track.params.borderSegments = source.track.params.borderSegments;
-        // Barriers set in the layout stay with the layout.
+        // Barriers and markings set in the layout stay with the layout.
         for (const key of Object.keys(source.track.params))
-          if (key.startsWith('trackside')) track.params[key] = source.track.params[key];
+          if (layoutOwned(key)) track.params[key] = source.track.params[key];
         const def = await build(track, false);
         source.track = def.track;
         delete source.bed;
@@ -1354,6 +1379,18 @@ export function createPlanner({ host, call, download, current, promote }) {
       render();
       persist();
       return segmentLayout();
+    }
+    if (key === 'markings') {
+      message('Painting the markings…');
+      await setMarkings({
+        whiteLineRoad: field('lineRoad').value,
+        whiteLineBorder: field('lineBorder').value,
+        roadKerbSide: field('kerbRoad').value,
+        kerbEdge: field('kerbBorder').value,
+      });
+      message('');
+      $('.pl-markings').open = true;
+      return;
     }
     if (key === 'barriers') {
       message('Fitting the barriers…');

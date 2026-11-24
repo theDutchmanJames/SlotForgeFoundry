@@ -2272,8 +2272,9 @@ async function drawTrack(editingPath, collection, saveToCollection) {
           ...defaultTrack(),
           ...profileFromTrack(source),
           ...collection?.profile,
-          // The trackside accessories of the pack, for every new piece.
+          // The trackside accessories and the markings of the pack, for every new piece.
           ...collection?.rules.trackside,
+          ...collection?.rules.markings,
           ...(collection?.rules.lanes === 1 && seamClips != null && {
             connectorCounts: { seamClips },
           }),
@@ -3810,9 +3811,16 @@ function usedInNote(pieceId) {
   return n ? '<small class="used-in">Used in ' + n + (n === 1 ? ' layout' : ' layouts') + '</small>' : '';
 }
 async function openPackPieceById(pieceId) {
-  const pack = currentPack;
+  const id = currentPack?.id;
+  if (!id || pieceId === project.libraryPiece?.pieceId) return;
+  // Save the piece that is open, then read the pack as it is stored now: the
+  // copy kept for the rail dates from when the pack was opened, and would
+  // bring back every piece as it was before its edits.
+  await applyForOutput();
+  const store = await openTrackLibrary();
+  const pack = (await store.list()).find((c) => c.id === id);
   const piece = pack?.pieces.find((p) => p.id === pieceId);
-  if (!piece || pieceId === project.libraryPiece?.pieceId) return;
+  if (!piece) return;
   await openPackPiece(pack, piece);
 }
 actions['pack-rules'] = () =>
@@ -3947,6 +3955,17 @@ async function savePieceToPack() {
   );
   savedPackRevisions.set(link.collectionId, expected + 1);
   project = { ...project, libraryPiece: { ...link, revision: expected + 1 } };
+  // The copy of the pack kept for the rail follows the saved piece.
+  if (currentPack?.id === link.collectionId)
+    currentPack = {
+      ...currentPack,
+      revision: expected + 1,
+      pieces: currentPack.pieces.map((piece) =>
+        piece.id === link.pieceId
+          ? { ...piece, name: project.name, track: structuredClone(project.track) }
+          : piece,
+      ),
+    };
   persist();
   savedState = 'Saved in the pack';
 }

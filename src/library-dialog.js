@@ -15,6 +15,7 @@ import { defaultPackRules, validatePackRules } from './track-pack-rules.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { readTracksideFields, syncTracksideControls, tracksideControls } from './trackside-controls.js';
 import { syncPropertyReadouts } from './property-panel.js';
+import { markingControls, markingsOf, readMarkingFields } from './markings-controls.js';
 import { centreLineStyles } from './paint-controls.js';
 import { braidStyleChoices } from './connection-controls.js';
 
@@ -335,6 +336,10 @@ export async function showTrackLibrary({
       body = '<form data-lib-form>'+ruleInputs(c.rules)+
         '<p class="hint">These dimensions apply when adding a piece. Existing pieces keep their designed dimensions.</p>'+
         '<div class="lib-footer">'+back()+btn('commit-rules','Save pack rules','primary','save')+'</div></form>'+
+        '<h3>White lines and kerbstones</h3>'+
+        '<p class="hint">Markings for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. Border markings show on the pieces that have borders. You can still change a single piece afterwards under Track Set → Markings, or a section of a layout in the Track Planner.</p>'+
+        '<form data-lib-markings class="lib-trackside">'+markingControls(c.rules.markings ?? markingsOf(c.pieces[0]?.track.params))+
+        '<div class="lib-footer">'+btn('commit-markings','Apply to all '+count(c.pieces.length),'primary','check')+'</div></form>'+
         '<h3>Trackside accessories</h3>'+
         '<p class="hint">Barriers, advertising boards with fences and guard rails for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. You can still change a single piece afterwards under Track Set → Trackside, or a section of a layout in the Track Planner.</p>'+
         '<form data-lib-trackside class="lib-trackside">'+tracksideControls({ ...TRACKSIDE_DEFAULTS, ...c.rules.trackside })+
@@ -600,6 +605,29 @@ export async function showTrackLibrary({
     }
     if (id === 'close') {
       dialog.close();
+      return;
+    }
+    if (id === 'commit-markings') {
+      const form = $('[data-lib-markings]');
+      if (!form.reportValidity()) return;
+      void perform(async () => {
+        const work = current();
+        const open = work.link?.collectionId === c.id;
+        // Save the piece that is open before its pack changes under it.
+        if (open) await prepare();
+        const fresh = open ? (await reload(), active()) : c;
+        const { changed } = await store.setMarkings(
+          fresh.id,
+          readMarkingFields(form, fresh.rules.markings),
+          { expectedRevision: fresh.revision },
+        );
+        await reload();
+        // The open piece is one of them: open it again as the pack has it now.
+        const again = open && active().pieces.find((p) => p.id === work.link.pieceId);
+        if (again) await openPiece(active(), again);
+        message = 'White lines and kerbstones set for ' + count(changed) + '. New pieces start with them too.';
+        render();
+      });
       return;
     }
     if (id === 'commit-trackside') {

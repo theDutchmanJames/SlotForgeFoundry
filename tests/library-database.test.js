@@ -819,3 +819,54 @@ test('a pack keeps trackside accessories in its rules and gives them to every pi
   const restored = inspectLibraryBytes(SQL, db.export()).find((c) => c.id === id);
   assert.deepEqual(restored.rules.trackside, later.rules.trackside);
 });
+
+test('a pack keeps white lines and kerbstones in its rules and gives them to every piece', async (t) => {
+  const { setCollectionMarkings, setCollectionTrackside } = await import('../src/library-database.js');
+  const { MARKING_DEFAULTS, markingsOf } = await import('../src/markings-controls.js');
+  const { layoutOwned } = await import('../src/planner-model.js');
+  const db = dbFor(t);
+  const pack = starterPack();
+  const id = addCollection(db, 'Painted', pack.profile, pack.pieces, pack.rules);
+  const before = readCollections(db).find((c) => c.id === id);
+  assert.equal(before.rules.markings, undefined, 'a pack starts without marking rules');
+  const wanted = {
+    whiteLineRoad: 'both',
+    roadKerbSide: 'outer',
+    kerbWidth: 6,
+    kerbLength: 15,
+    whiteLineWidth: 2.5,
+    roadLineGroove: true,
+  };
+  const result = setCollectionMarkings(db, id, wanted, { expectedRevision: before.revision });
+  assert.deepEqual(result, { changed: 10, revision: before.revision + 1 });
+  const after = readCollections(db).find((c) => c.id === id);
+  assert.deepEqual(after.rules.markings, { ...MARKING_DEFAULTS, ...wanted });
+  for (const [i, piece] of after.pieces.entries()) {
+    assert.deepEqual(markingsOf(piece.track.params), { ...MARKING_DEFAULTS, ...wanted }, piece.name);
+    // Nothing but the markings changed.
+    const strip = (params) =>
+      Object.fromEntries(Object.entries(params).filter(([key]) => !Object.hasOwn(MARKING_DEFAULTS, key)));
+    assert.deepEqual(strip(piece.track.params), strip(before.pieces[i].track.params), piece.name);
+  }
+  // The trackside rules live beside them: setting one keeps the other.
+  setCollectionTrackside(db, id, { tracksideSide: 'outer' }, { expectedRevision: after.revision });
+  const both = readCollections(db).find((c) => c.id === id);
+  assert.deepEqual(both.rules.markings, after.rules.markings);
+  assert.equal(both.rules.trackside.tracksideSide, 'outer');
+  assert.equal(both.pieces[3].track.params.whiteLineRoad, 'both');
+  // Faulty markings are refused and leave the pack as it is.
+  assert.throws(() => setCollectionMarkings(db, id, { whiteLineRoad: 'left' }), /inside, outside, both or off/);
+  assert.throws(() => setCollectionMarkings(db, id, { kerbWidth: 0 }), /Kerbstone stripe width must be between/);
+  assert.throws(() => setCollectionMarkings(db, id, { stripes: true }), /unknown marking settings/);
+  assert.equal(readCollections(db).find((c) => c.id === id).revision, both.revision);
+  // A backup keeps both.
+  const restored = inspectLibraryBytes(SQL, db.export()).find((c) => c.id === id);
+  assert.deepEqual(restored.rules, both.rules);
+  // A layout keeps the barriers and the markings of its sections when the pack changes.
+  for (const key of ['tracksideSide', 'tracksideRiseInner', 'whiteLineRoad', 'kerbEdge', 'grooveDepth'])
+    assert.equal(layoutOwned(key), true, key);
+  for (const key of ['width', 'segments', 'roadCentreLine', 'height']) assert.equal(layoutOwned(key), false, key);
+  // A piece from before the two groove switches reads its single switch.
+  assert.equal(markingsOf({ whiteLineGroove: true }).roadLineGroove, true);
+  assert.equal(markingsOf({ whiteLineGroove: true, borderLineGroove: false }).borderLineGroove, false);
+});

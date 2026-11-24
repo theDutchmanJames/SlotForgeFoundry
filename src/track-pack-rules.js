@@ -1,7 +1,33 @@
 import { defaultTrack } from './track.js';
 import { braidSpan } from './geometry/solids.js';
 import { TRACKSIDE_DEFAULTS, validateTrackside } from './geometry/trackside.js';
+import { validatePaint } from './geometry/paint-guides.js';
+import { MARKING_DEFAULTS } from './markings-controls.js';
 
+// The white lines and kerbstones every piece of a pack starts with. Optional,
+// like its trackside accessories.
+export function validatePackMarkings(markings) {
+  if (
+    !markings ||
+    typeof markings !== 'object' ||
+    Array.isArray(markings) ||
+    Object.keys(markings).some((key) => !Object.hasOwn(MARKING_DEFAULTS, key))
+  )
+    throw Error('The track pack contains unknown marking settings.');
+  const all = { ...MARKING_DEFAULTS, ...markings };
+  validatePaint({ ...defaultTrack(), ...all });
+  if (!['none', 'road', 'free', 'both'].includes(all.kerbEdge))
+    throw Error('Choose a border edge for the kerbstones.');
+  if (!['inner', 'outer', 'both'].includes(all.kerbSide))
+    throw Error('Choose which borders carry kerbstones.');
+  for (const [key, name, max] of [
+    ['kerbWidth', 'Kerbstone stripe width', 2000],
+    ['kerbLength', 'Kerbstone block length', 20000],
+  ])
+    if (!Number.isFinite(all[key]) || all[key] < 0.1 || all[key] > max)
+      throw Error(name + ' must be between 0.1 and ' + max + ' mm.');
+  return all;
+}
 // The trackside accessories every piece of a pack starts with. Optional: a
 // pack without them leaves each piece as it is.
 export function validatePackTrackside(trackside) {
@@ -33,7 +59,7 @@ export function validatePackRules(rules, profile) {
     !rules ||
     typeof rules !== 'object' ||
     Array.isArray(rules) ||
-    Object.keys(rules).some((key) => key !== 'trackside' && !Object.hasOwn(defaults, key))
+    Object.keys(rules).some((key) => !['trackside', 'markings'].includes(key) && !Object.hasOwn(defaults, key))
   )
     throw Error('The track pack contains unknown design rules.');
   for (const [key, name, min, max] of [
@@ -61,9 +87,11 @@ export function validatePackRules(rules, profile) {
     throw Error(
       'The pack lanes and braid recesses need more room. Increase the road width or change the slot spacing.',
     );
-  if (rules.trackside !== undefined)
-    return { ...rules, trackside: validatePackTrackside(rules.trackside) };
-  return { ...rules };
+  return {
+    ...rules,
+    ...(rules.trackside !== undefined && { trackside: validatePackTrackside(rules.trackside) }),
+    ...(rules.markings !== undefined && { markings: validatePackMarkings(rules.markings) }),
+  };
 }
 
 // Old libraries store physical recipes but lack design rules. Interpret names

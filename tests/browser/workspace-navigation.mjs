@@ -72,6 +72,35 @@ export async function checkWorkspaceNavigation({
   await action('apply').click();
   await live('idle');
 
+  // An applied edit stays with its piece: open another piece of the pack and
+  // come back, and the piece is as it was saved, not as the pack first had it.
+  await tab('markings').click();
+  await page.locator('#settings-form details').evaluateAll((all) => all.forEach((d) => (d.open = true)));
+  await input('whiteLineRoad').selectOption('both');
+  await input('roadKerbSide').selectOption('outer');
+  await live();
+  await action('apply').click();
+  await live('idle');
+  const rail = page.locator('#pack-rail');
+  await rail.locator('[data-pack-piece]').filter({ hasText: /^R2 corner/ }).first().click();
+  await waitText('#model-title', 'R2 corner');
+  await rail.locator('[data-pack-piece]').filter({ hasText: /^R4 corner/ }).first().click();
+  await waitText('#model-title', 'R4 corner');
+  await tab('markings').click();
+  await page.locator('#settings-form details').evaluateAll((all) => all.forEach((d) => (d.open = true)));
+  assert.equal(await input('whiteLineRoad').inputValue(), 'both');
+  assert.equal(await input('roadKerbSide').inputValue(), 'outer');
+  await tab('print').click();
+  assert.equal(await input('segments').inputValue(), '6');
+  // Back to plain markings for the checks that follow.
+  await tab('markings').click();
+  await page.locator('#settings-form details').evaluateAll((all) => all.forEach((d) => (d.open = true)));
+  await input('whiteLineRoad').selectOption('none');
+  await input('roadKerbSide').selectOption('none');
+  await live();
+  await action('apply').click();
+  await live('idle');
+
   // The clip type is a pack rule: the commit bar offers Apply to collection,
   // which rebuilds every piece of the pack. The pack is set back at the end.
   await tab('joints').click();

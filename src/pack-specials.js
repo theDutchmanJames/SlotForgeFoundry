@@ -34,6 +34,7 @@ export function packSpecialTrack(collection, type) {
     params: specialTrackParams(type, {
       ...base,
       ...collection.rules.trackside,
+      ...collection.rules.markings,
       width: collection.rules.width,
       lanes: collection.rules.lanes,
       laneSpacing: collection.rules.laneSpacing,

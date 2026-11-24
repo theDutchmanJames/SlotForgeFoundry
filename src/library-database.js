@@ -4,7 +4,12 @@ import {
   validateLibraryProfile,
 } from './library-profile.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
-import { rulesFromPieces, validatePackRules, validatePackTrackside } from './track-pack-rules.js';
+import {
+  rulesFromPieces,
+  validatePackMarkings,
+  validatePackRules,
+  validatePackTrackside,
+} from './track-pack-rules.js';
 import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { validateLayout } from './planner-model.js';
 import { checkProject } from './project.js';
@@ -285,11 +290,17 @@ function updateRevision(db, id, profile, previous) {
  * The trackside accessories of a pack: kept in its rules for new pieces, and
  * written into every piece it has. A piece can be changed afterwards.
  */
-export function setCollectionTrackside(db, id, trackside, { expectedRevision, piece } = {}) {
+export function setCollectionTrackside(db, id, trackside, options) {
+  return setCollectionDefaults(db, id, 'trackside', validatePackTrackside(trackside), options);
+}
+/** The white lines and kerbstones of a pack, kept and written the same way. */
+export function setCollectionMarkings(db, id, markings, options) {
+  return setCollectionDefaults(db, id, 'markings', validatePackMarkings(markings), options);
+}
+function setCollectionDefaults(db, id, kind, chosen, { expectedRevision, piece } = {}) {
   const row = collectionRow(db, id, expectedRevision);
   const profile = validateLibraryProfile(JSON.parse(row.profile));
-  const chosen = validatePackTrackside(trackside);
-  const rules = validatePackRules({ ...JSON.parse(row.rules), trackside: chosen }, profile);
+  const rules = validatePackRules({ ...JSON.parse(row.rules), [kind]: chosen }, profile);
   const members = rows(
     db,
     'SELECT id, name, track FROM pieces WHERE collection_id=?',

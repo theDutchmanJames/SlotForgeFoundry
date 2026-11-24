@@ -21,7 +21,7 @@ import { referenceCarMeshes } from './reference-car-mesh.js';
 // amber so they stand out against the red clip they hold in.
 const COLORS = {
   road: 0x3d424a,
-  border: 0x4e545d,
+  border: 0x4b6152,
   clip: 0xe5484d,
   retainer: 0xf2b33d,
   support: 0x727b86,
@@ -38,7 +38,7 @@ const COLORS = {
 // Keep each material recognizable when it is the active assembly part.
 const SELECTED_TRACK_COLORS = {
   road: 0x4a5a72,
-  border: 0x5a6a82,
+  border: 0x5c7d6c,
   clip: 0xf07478,
   retainer: 0xf7c766,
   support: 0x8496ad,

@@ -29,6 +29,7 @@ import {
   setCollectionRules,
   resetCollectionSegments,
   setCollectionTrackside,
+  setCollectionMarkings,
 } from './library-database.js';
 
 const key = 'track-library';
@@ -188,6 +189,8 @@ export async function openTrackLibrary() {
       write((db) => setCollectionProfile(db, id, profile, options)),
     setRules: (id, rules, options) =>
       write((db) => setCollectionRules(db, id, rules, options)),
+    setMarkings: (id, markings, options) =>
+      write((db) => setCollectionMarkings(db, id, markings, options)),
     setTrackside: (id, trackside, options) =>
       write((db) => setCollectionTrackside(db, id, trackside, options)),
     resetSegments: (id, options) =>
