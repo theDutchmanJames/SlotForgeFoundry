@@ -609,8 +609,16 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right', { m
   const flip = directional && (backward ? hand === 'right' : hand === 'left');
   const pose = align(incoming, target ?? { xy: [0, 0], angle: 0 }, flip);
   const h = target ? target.z - incoming.z : 0;
-  if (h < -0.01)
+  if (h < -0.01) {
+    // A descent comes down by its rise: the road it joins has to be that high.
+    const drop = incoming.baseZ ?? 0;
+    if (drop > 0)
+      throw Error(
+        'This piece comes down ' + mm(drop) + ' mm, and the road here is only ' + mm(Math.max(0, h + drop)) +
+          ' mm above the table. Lift the road to at least ' + mm(drop) + ' mm first, or use a smaller climb angle or a shorter piece.',
+      );
     throw Error('This road is thicker than the available height at the joint.');
+  }
   for (const node of nodes) {
     node.pose = { ...pose };
     node.h = [Math.max(0, h), Math.max(0, h)];

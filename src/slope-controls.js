@@ -3,6 +3,8 @@ import {
   SLOPE_FORMS,
   SLOPE_LIMITS,
   SLOPE_MIN_RADIUS,
+  slopeDescends,
+  slopeOnTable,
   slopeProfile,
   slopeSettings,
 } from './geometry/slope.js';
@@ -18,7 +20,8 @@ export function slopeHint(p) {
   const { rise, run, radius } = slopeProfile(p);
   if (![rise, run, radius].every(Number.isFinite)) return '';
   return (
-    'End B is ' + tidy(rise) + ' mm higher than end A, ' + tidy(run) + ' mm further on. The road bends on a radius of ' +
+    'End B is ' + tidy(rise) + ' mm ' + (slopeDescends(p) ? 'lower' : 'higher') + ' than end A, ' + tidy(run) +
+    ' mm further on. The road bends on a radius of ' +
     tidy(radius) + ' mm' +
     (radius < SLOPE_MIN_RADIUS ? ', which is too tight for a car: ' + SLOPE_MIN_RADIUS + ' mm at least.' : '.')
   );
@@ -39,12 +42,12 @@ export function slopeControls(p) {
         '<p class="hint" data-slope-hint>' + (on ? slopeHint({ ...p, ...s }) : '') + '</p>' +
         group(
           'data-slope-base',
-          s.slopeForm === 'up',
+          slopeOnTable(s),
           check('slopeFill', 'Solid base down to the table', s.slopeFill) +
             field('slopeOpen', 'Open under the high end', s.slopeOpen, 'mm', limits('slopeOpen')) +
             '<p class="hint">With a base the piece stands on the table as one solid block, without a hollow underside. The base stops short of the high end, so that connectors there can be fitted from below.</p>',
         ) +
-        '<p class="hint">Level into a climb is the foot of a hill and Climb back to level is its top; both rise from end A to end B. The level end joins a level piece and the sloped end a straight tilted to the climb angle. Slots, braid and connectors follow the curve. A sloped piece prints on its side, so the curve of the road comes out smooth.</p>',
+        '<p class="hint">A hill takes four pieces. Going up: Level into a climb at the foot and Climb back to level at the top, both rising from end A to end B. Going down again: Level into a descent at the top and Descent back to level at the foot, both dropping from end A to end B. The level end joins a level piece and the sloped end a straight tilted to the climb angle. Slots, braid and connectors follow the curve. A sloped piece prints on its side, so the curve of the road comes out smooth.</p>',
     )
   );
 }
@@ -57,7 +60,7 @@ export function syncSlopeControls(form) {
   const fields = form.querySelector('[data-slope-fields]'),
     base = form.querySelector('[data-slope-base]');
   fields.hidden = fields.disabled = !on;
-  base.hidden = base.disabled = kind !== 'up';
+  base.hidden = base.disabled = !slopeOnTable({ slopeForm: kind });
   const hint = form.querySelector('[data-slope-hint]');
   if (hint)
     hint.textContent = on

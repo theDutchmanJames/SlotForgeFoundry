@@ -1009,14 +1009,15 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
       const base = slopeFilled(p) && slopeBase(work, p, profile);
       if (base) road.solid = work.union([road.solid, base]);
       if (planning) {
-        // On the plan the piece is as long as its run, and its end B is higher by its rise.
+        // On the plan the piece is as long as its run, and one end is higher by its rise.
         const flat = {
           point: (t, d = 0) => [-p.length / 2 + profile.at(t * p.length)[0], d],
           tangent: () => [1, 0],
           stations: [0, 1],
         };
         const strip = plannerStrip(flat, p, 0, 1);
-        strip.ports[1].baseZ = profile.rise;
+        // The high end: end B of a climb, end A of a descent.
+        strip.ports[profile.drops ? 0 : 1].baseZ = profile.rise;
         if (road.plannerStrip?.ports.length === 1) strip.ports.length = 1;
         road.plannerStrip = strip;
         // Its connectors too: where the bent road carries them, seen from above.

@@ -8,16 +8,23 @@
 // faces stay square to the road: the level end meets a level piece, and the
 // sloped end meets a straight that is tilted to the climb angle.
 //
-//   up    level at end A, climbing at end B: the foot of a hill
-//   down  climbing at end A, level at end B: the top of a hill
+//   up    level at end A, climbing at end B: the foot of a climb
+//   down  climbing at end A, level at end B: the top of a climb
+//   over  level at end A, descending at end B: the top of a descent
+//   out   descending at end A, level at end B: the foot of a descent
 //
-// Both rise from A to B. A short stretch at each end stays straight, so the
-// connectors there are turned as a whole and never bent.
+// The first two rise from A to B and the last two drop. A descending form
+// is the shape of a climbing one turned round, built with its ends the
+// other way, so that its connectors match the pieces before and after it.
+// A short stretch at each end stays straight, so the connectors there are
+// turned as a whole and never bent.
 
 export const SLOPE_FORMS = Object.freeze([
   ['none', 'Level'],
   ['up', 'Level into a climb'],
   ['down', 'Climb back to level'],
+  ['over', 'Level into a descent'],
+  ['out', 'Descent back to level'],
 ]);
 export const SLOPE_DEFAULTS = Object.freeze({
   slopeForm: 'none',
@@ -41,8 +48,12 @@ export function slopeSettings(p) {
   return Object.fromEntries(SLOPE_KEYS.map((key) => [key, p[key] ?? SLOPE_DEFAULTS[key]]));
 }
 export const hasSlope = (p) => (p?.slopeForm ?? 'none') !== 'none';
-// A climb from the table stands on a solid base; it is then made without a hollow underside.
-export const slopeFilled = (p) => hasSlope(p) && slopeSettings(p).slopeForm === 'up' && slopeSettings(p).slopeFill === true;
+// The two forms that go down from end A to end B.
+export const slopeDescends = (p) => ['over', 'out'].includes(slopeSettings(p).slopeForm);
+// The foot of a climb or of a descent stands on the table.
+export const slopeOnTable = (p) => ['up', 'out'].includes(slopeSettings(p).slopeForm);
+// There it stands on a solid base; it is then made without a hollow underside.
+export const slopeFilled = (p) => hasSlope(p) && slopeOnTable(p) && slopeSettings(p).slopeFill === true;
 
 const fmt = (value) => String(Number(value.toFixed(1)));
 const radians = (degrees) => (degrees * Math.PI) / 180;
@@ -52,6 +63,27 @@ const radians = (degrees) => (degrees * Math.PI) / 180;
  * bends, how tightly, and how far it rises. Lengths are along the surface.
  */
 export function slopeProfile(p) {
+  if (!slopeDescends(p)) return climbProfile(p);
+  // A descent is a climb seen from its other end: the top of a descent is
+  // the top of a climb turned round, and the foot likewise. Heights are
+  // measured from the low end, which is end B here.
+  const form = slopeSettings(p).slopeForm;
+  const turned = climbProfile({ ...p, slopeForm: form === 'over' ? 'down' : 'up' });
+  const { length, run } = turned;
+  return {
+    ...turned,
+    form,
+    drops: true,
+    start: length - turned.end,
+    end: length - turned.start,
+    angleAt: (d) => -turned.angleAt(length - d) || 0,
+    at(d) {
+      const [x, z, angle] = turned.at(length - d);
+      return [run - x, z, -angle || 0];
+    },
+  };
+}
+function climbProfile(p) {
   const s = slopeSettings(p),
     length = p.length,
     climb = radians(s.slopeAngle);
@@ -84,7 +116,7 @@ export function slopeProfile(p) {
     return [x1 + (d - end) * Math.cos(last), z1 + (d - end) * Math.sin(last), last];
   }
   const [run, rise] = at(length);
-  return { form: s.slopeForm, length, climb, bend, start, end, radius, run, rise, at, angleAt };
+  return { form: s.slopeForm, drops: false, length, climb, bend, start, end, radius, run, rise, at, angleAt };
 }
 
 /**
@@ -95,14 +127,14 @@ export function slopeEndRates(p) {
   if (!hasSlope(p)) return [0, 0];
   const s = slopeSettings(p),
     rate = Math.tan(radians(s.slopeAngle));
-  return s.slopeForm === 'down' ? [rate, 0] : [0, rate];
+  return { up: [0, rate], down: [rate, 0], over: [0, -rate], out: [-rate, 0] }[s.slopeForm];
 }
 
 export function validateSlope(p) {
   const s = slopeSettings(p);
   if (s.slopeForm === 'none') return;
   if (!SLOPE_FORMS.some(([id]) => id === s.slopeForm))
-    throw Error('Choose Level, Level into a climb or Climb back to level for the slope.');
+    throw Error('Choose Level, a climb or a descent for the slope.');
   if (p.kind !== 'straight' || p.special)
     throw Error('Only a plain straight can be a sloped piece. Set Slope to Level for this piece.');
   for (const [key, name, unit] of [
@@ -172,8 +204,9 @@ export function bendToSlope(work, solid, p, profile = slopeProfile(p)) {
 export function slopeBase(work, p, profile = slopeProfile(p)) {
   const { length } = profile,
     { slopeOpen } = slopeSettings(p);
-  const from = profile.start,
-    to = length - slopeOpen;
+  // From where the underside leaves the table, to short of the high end.
+  const from = profile.drops ? slopeOpen : profile.start,
+    to = profile.drops ? profile.end : length - slopeOpen;
   if (to - from < 5) return null;
   // The underside of the road, taken a hair inside it so the two become one.
   const depth = p.height - 0.05;
@@ -183,7 +216,7 @@ export function slopeBase(work, p, profile = slopeProfile(p)) {
     const [x, z, angle] = profile.at(from + ((to - from) * i) / steps);
     under.push([-length / 2 + x + depth * Math.sin(angle), p.height + z - depth * Math.cos(angle)]);
   }
-  const loop = [[under[0][0], 0], [under.at(-1)[0], 0], ...under.reverse()];
+  const loop = [[under[0][0], 0], [under.at(-1)[0], 0], ...under.slice().reverse()];
   const side = work.own(new work.wasm.CrossSection([loop], 'Positive'));
   if (side.isEmpty()) return null;
   const width = p.width;

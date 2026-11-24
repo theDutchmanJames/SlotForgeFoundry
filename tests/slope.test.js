@@ -10,7 +10,9 @@ import {
   SLOPE_LEAD,
   hasSlope,
   slopeFilled,
+  slopeDescends,
   slopeEndRates,
+  slopeOnTable,
   slopeProfile,
   slopeSettings,
 } from '../src/geometry/slope.js';
@@ -203,7 +205,7 @@ test('a sloped piece prints on its side, and its fit sample is a flat cut of the
 
 test('a slope that cannot be made is refused with what to change', () => {
   const refuse = (changes, text) => assert.throws(() => validateTrack(sloped(changes)), text, JSON.stringify(changes));
-  refuse({ slopeForm: 'sideways' }, /Choose Level, Level into a climb or Climb back to level/);
+  refuse({ slopeForm: 'sideways' }, /Choose Level, a climb or a descent for the slope/);
   refuse({ slopeAngle: 0 }, /climb angle must be between 1 and 30°/);
   refuse({ slopeAngle: 45 }, /climb angle must be between 1 and 30°/);
   refuse({ slopeBend: 5 }, /curve must be between 10 and 100 %/);
@@ -260,7 +262,7 @@ test('Track Set offers the slope under Shape on a plain straight', () => {
   project.mode = 'track';
   project.track.params = sloped();
   const html = trackInspector(project, 'geometry');
-  for (const label of ['Level', 'Level into a climb', 'Climb back to level', 'Climb angle', 'Curve', 'Solid base down to the table', 'Open under the high end'])
+  for (const label of ['Level', 'Level into a climb', 'Climb back to level', 'Level into a descent', 'Descent back to level', 'Climb angle', 'Curve', 'Solid base down to the table', 'Open under the high end'])
     assert.ok(html.includes(label), label);
   assert.match(html, /name="slopeAngle"[^>]*value="8"/);
   assert.match(html, /name="slopeBend"[^>]*value="70"/);
@@ -438,4 +440,151 @@ test('changing the supports or the lifts of the ramp behind a sloped piece keeps
     () => setElevation(layout, defs, ramp.id, 5, lifted, 2, 'pegs', [10, 10]),
     /The adjoining road would be below table level/,
   );
+});
+
+// ---- Descents: the same two shapes turned round, with their ends the other way ----
+
+test('a descent drops from end A to end B by what the matching climb rises', () => {
+  const up = slopeProfile(sloped()),
+    over = slopeProfile(sloped({ slopeForm: 'over' })),
+    out = slopeProfile(sloped({ slopeForm: 'out' }));
+  for (const form of ['up', 'down']) assert.equal(slopeDescends(sloped({ slopeForm: form })), false);
+  for (const form of ['over', 'out']) assert.equal(slopeDescends(sloped({ slopeForm: form })), true);
+  assert.deepEqual(['up', 'down', 'over', 'out'].map((form) => slopeOnTable(sloped({ slopeForm: form }))), [true, false, false, true]);
+  // The top of a descent: level and high at end A, going down at the climb angle at end B.
+  assert.equal(over.at(0)[2], 0);
+  near(over.at(0)[1], up.rise, 1e-9);
+  near(degrees(over.at(200)[2]), -8, 1e-9);
+  near(over.at(200)[1], 0, 1e-9);
+  // The foot of a descent: coming down at end A, level on the table at end B.
+  near(degrees(out.at(0)[2]), -8, 1e-9);
+  near(out.at(0)[1], up.rise, 1e-9);
+  assert.equal(Math.abs(out.at(200)[2]), 0);
+  near(out.at(200)[1], 0, 1e-9);
+  near(out.at(200)[0], up.run, 1e-9);
+  // Same rise, run and bend as the climb.
+  for (const profile of [over, out]) {
+    near(profile.rise, up.rise, 1e-9);
+    near(profile.run, up.run, 1e-9);
+    near(profile.radius, up.radius, 1e-9);
+    assert.equal(profile.drops, true);
+  }
+  const rate = Math.tan((8 * Math.PI) / 180);
+  assert.deepEqual(slopeEndRates(sloped({ slopeForm: 'over' })), [0, -rate]);
+  assert.deepEqual(slopeEndRates(sloped({ slopeForm: 'out' })), [-rate, 0]);
+});
+
+test('the foot of a descent stands on the table at end B on its base; the top is the bent road alone', () => {
+  const p = sloped({ slopeForm: 'out', joint: 'clips' }),
+    profile = slopeProfile(p);
+  assert.equal(slopeFilled(p), true);
+  built(p, (parts) => {
+    const road = roadOf(parts).solid;
+    assert.equal(road.status(), 'NoError');
+    const pieces = road.decompose();
+    assert.equal(pieces.length, 1);
+    pieces.forEach((part) => part.delete());
+    near(road.boundingBox().min[2], 0, 1e-6);
+    near(road.boundingBox().max[2], p.height + profile.rise, 0.02);
+    // Level on the table at end B, and on the curve before it.
+    near(topAt(road, -100 + profile.run - 5, 20), p.height, 1e-6);
+    for (const d of [10, 60, 120]) {
+      const [x, z] = profile.at(d);
+      near(topAt(road, -100 + x, 20), p.height + z, 0.03);
+    }
+    // The slot keeps its depth, square to the road.
+    const [x, z, angle] = profile.at(60);
+    near(topAt(road, -100 + x + p.slotDepth * Math.sin(angle), 0), p.height + z - p.slotDepth * Math.cos(angle), 0.03);
+    // Solid under the descent, and open under the high end, which is end A here.
+    for (const d of [60, 120]) near(underAt(road, -100 + profile.at(d)[0], 20), 0, 1e-6);
+    assert.ok(underAt(road, -100 + profile.at(12)[0], 20) > 5, 'open under the high end');
+    // The clips of a piece are at its end B: here on the table, not up at the high end.
+    for (const clip of parts.filter((part) => part.role === 'clip'))
+      assert.ok(clip.solid.boundingBox().max[2] < p.height + 1, clip.id);
+  });
+  const over = sloped({ slopeForm: 'over' });
+  assert.equal(slopeFilled(over), false);
+  built(over, (parts) => {
+    const road = roadOf(parts).solid;
+    assert.equal(road.status(), 'NoError');
+    const top = slopeProfile(over);
+    // Level over the first stretch, at the full height; lower at end B.
+    for (const d of [2, 8, 14]) near(topAt(road, -100 + d, 20), over.height + top.rise, 0.01);
+    assert.ok(topAt(road, -100 + top.run - 6, 20) < over.height + 1.5);
+  });
+});
+
+test('a whole hill in a layout: up, along the top and down again to the table', () => {
+  const plate = { width: 450, depth: 450, margin: 0 };
+  const source = (name, changes) => ({
+    name,
+    ...engine.plannerSource({ track: { params: piece({ joint: 'clips', ...changes }), plan: null }, plate, autoFit: false }),
+  });
+  const forms = Object.fromEntries(['up', 'down', 'over', 'out'].map((form) => [form, source(form, { slopeForm: form })]));
+  const defs = new Map([['level', source('Straight', {})], ...Object.entries(forms)]),
+    layout = newLayout();
+  for (const [id, def] of defs) layout.sources[id] = { name: def.name, track: def.track };
+  const rise = slopeProfile(sloped()).rise,
+    rate = Math.tan((8 * Math.PI) / 180);
+  // The high end of a descent is its end A.
+  assert.deepEqual(forms.over.sections[0].ports.map((port) => port.baseZ ?? 0), [rise, 0]);
+  assert.deepEqual(forms.out.sections[0].ports.map((port) => port.baseZ ?? 0), [rise, 0]);
+  assert.deepEqual(forms.up.sections[0].ports.map((port) => port.baseZ ?? 0), [0, rise]);
+  let active = { end: undefined };
+  const place = (id) => {
+    active = placeSource(layout, defs, id, active.end);
+    return layout.nodes.at(-1);
+  };
+  place('level');
+  place('up');
+  const climbing = place('level');
+  const crest = place('down');
+  const along = place('level');
+  const brow = place('over');
+  const descending = place('level');
+  const foot = place('out');
+  const last = place('level');
+  const top = 2 * rise + rate * 200;
+  near(pitch(climbing, defs.get('level')).slope, rate, 1e-4);
+  near(along.h[0], top, 0.01);
+  near(along.h[1], along.h[0], 1e-9);
+  // The top of the descent hangs from the level road: its lift is that of its low end.
+  near(brow.h[0], top - rise, 0.01);
+  // The ramp down starts there and falls at the climb angle.
+  near(descending.h[0], top - rise, 0.01);
+  near(pitch(descending, defs.get('level')).slope, -rate, 1e-4);
+  near(descending.h[1], rise, 0.02);
+  assert.ok(descending.supports >= 1);
+  // The foot stands on the table, and so does the road behind it.
+  assert.ok(Math.abs(foot.h[0]) < 0.02, 'foot lift ' + foot.h);
+  assert.ok(Math.abs(last.h[0]) < 0.02 && Math.abs(last.h[1]) < 0.02, 'back on the table: ' + last.h);
+  const net = endsOf(layout, defs);
+  assert.equal(net.open.length, 2);
+  assert.equal(net.joints.size, 16);
+  assert.equal(crossings(surfaces(layout, defs)).length, 0);
+  assert.equal(crest.supports, climbing.supports);
+  // On the table there is nothing to come down from: it says how high the road has to be.
+  const flat = newLayout();
+  for (const [id, def] of defs) flat.sources[id] = { name: def.name, track: def.track };
+  const first = placeSource(flat, defs, 'level');
+  assert.throws(
+    () => placeSource(flat, defs, 'over', first.end),
+    /This piece comes down 17\.48 mm, and the road here is only 0 mm above the table\. Lift the road to at least 17\.48 mm first/,
+  );
+  assert.equal(flat.nodes.length, 1);
+});
+
+test('the controls name all four forms and say whether end B is higher or lower', () => {
+  const project = newProject();
+  project.mode = 'track';
+  project.track.params = sloped({ slopeForm: 'out' });
+  const html = trackInspector(project, 'geometry');
+  assert.match(html, /<option value="out" selected>Descent back to level/);
+  assert.match(html, /End B is 17\.5 mm lower than end A, 199 mm further on/);
+  assert.match(html, /data-slope-base>/, 'the foot of a descent can stand on a base');
+  project.track.params = sloped({ slopeForm: 'over' });
+  const over = trackInspector(project, 'geometry');
+  assert.match(over, /data-slope-base hidden disabled>/);
+  assert.match(over, /End B is 17\.5 mm lower/);
+  assert.match(over, /A hill takes four pieces/);
 });
