@@ -12,6 +12,9 @@ import {
 import { SCREW_CLIP_DEFAULTS } from './geometry/screw-clip.js';
 import './library.css';
 import { defaultPackRules, validatePackRules } from './track-pack-rules.js';
+import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
+import { readTracksideFields, syncTracksideControls, tracksideControls } from './trackside-controls.js';
+import { syncPropertyReadouts } from './property-panel.js';
 import { centreLineStyles } from './paint-controls.js';
 import { braidStyleChoices } from './connection-controls.js';
 
@@ -317,6 +320,7 @@ export async function showTrackLibrary({
     );
   }
   function render() {
+    queueMicrotask(syncTrackside);
     const c = active();
     let title = 'Track packs',
       body;
@@ -331,6 +335,10 @@ export async function showTrackLibrary({
       body = '<form data-lib-form>'+ruleInputs(c.rules)+
         '<p class="hint">These dimensions apply when adding a piece. Existing pieces keep their designed dimensions.</p>'+
         '<div class="lib-footer">'+back()+btn('commit-rules','Save pack rules','primary','save')+'</div></form>'+
+        '<h3>Trackside accessories</h3>'+
+        '<p class="hint">Barriers, advertising boards with fences and guard rails for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. You can still change a single piece afterwards under Track Set → Trackside, or a section of a layout in the Track Planner.</p>'+
+        '<form data-lib-trackside class="lib-trackside">'+tracksideControls({ ...TRACKSIDE_DEFAULTS, ...c.rules.trackside })+
+        '<div class="lib-footer">'+btn('commit-trackside','Apply to all '+count(c.pieces.length),'primary','check')+'</div></form>'+
         '<h3>Print segments</h3>'+
         '<p class="hint">'+(cutPieces(c)
           ? count(cutPieces(c))+' of this pack '+(cutPieces(c) === 1 ? 'is' : 'are')+' cut into more than one segment. Resetting makes every piece whole again, with one road segment and one border segment. Segment for printing in the Track Planner then cuts them to fit your print bed.'
@@ -522,6 +530,15 @@ export async function showTrackLibrary({
     if (locked) e.preventDefault();
   });
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  // The pack's trackside form shows the parts its choices use.
+  function syncTrackside() {
+    const form = $('[data-lib-trackside]');
+    if (!form) return;
+    syncTracksideControls(form);
+    syncPropertyReadouts(form);
+  }
+  dialog.addEventListener('input', syncTrackside);
+  dialog.addEventListener('change', syncTrackside);
   dialog.addEventListener('input', (e) => {
     if (e.target.name === 'packLanes') syncRuleSpacing();
   });
@@ -583,6 +600,31 @@ export async function showTrackLibrary({
     }
     if (id === 'close') {
       dialog.close();
+      return;
+    }
+    if (id === 'commit-trackside') {
+      const form = $('[data-lib-trackside]');
+      if (!form.reportValidity()) return;
+      void perform(async () => {
+        const work = current();
+        const open = work.link?.collectionId === c.id;
+        // Save the piece that is open before its pack changes under it.
+        if (open) await prepare();
+        const fresh = open ? (await reload(), active()) : c;
+        const trackside = readTracksideFields(form, fresh.rules.trackside);
+        const { changed } = await store.setTrackside(fresh.id, trackside, {
+          expectedRevision: fresh.revision,
+        });
+        await reload();
+        // The open piece is one of them: open it again as the pack has it now.
+        const again = open && active().pieces.find((p) => p.id === work.link.pieceId);
+        if (again) await openPiece(active(), again);
+        message =
+          trackside.tracksideSide === 'none'
+            ? 'Trackside accessories are off for ' + count(changed) + ' and for new pieces.'
+            : 'Trackside accessories set for ' + count(changed) + '. New pieces start with them too.';
+        render();
+      });
       return;
     }
     if (id === 'reset-segments') {

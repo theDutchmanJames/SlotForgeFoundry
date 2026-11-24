@@ -1,5 +1,21 @@
 import { defaultTrack } from './track.js';
 import { braidSpan } from './geometry/solids.js';
+import { TRACKSIDE_DEFAULTS, validateTrackside } from './geometry/trackside.js';
+
+// The trackside accessories every piece of a pack starts with. Optional: a
+// pack without them leaves each piece as it is.
+export function validatePackTrackside(trackside) {
+  if (
+    !trackside ||
+    typeof trackside !== 'object' ||
+    Array.isArray(trackside) ||
+    Object.keys(trackside).some((key) => !Object.hasOwn(TRACKSIDE_DEFAULTS, key))
+  )
+    throw Error('The track pack contains unknown trackside settings.');
+  const all = { ...TRACKSIDE_DEFAULTS, ...trackside };
+  validateTrackside(all);
+  return all;
+}
 
 export function defaultPackRules() {
   return {
@@ -17,7 +33,7 @@ export function validatePackRules(rules, profile) {
     !rules ||
     typeof rules !== 'object' ||
     Array.isArray(rules) ||
-    Object.keys(rules).some((key) => !Object.hasOwn(defaults, key))
+    Object.keys(rules).some((key) => key !== 'trackside' && !Object.hasOwn(defaults, key))
   )
     throw Error('The track pack contains unknown design rules.');
   for (const [key, name, min, max] of [
@@ -45,6 +61,8 @@ export function validatePackRules(rules, profile) {
     throw Error(
       'The pack lanes and braid recesses need more room. Increase the road width or change the slot spacing.',
     );
+  if (rules.trackside !== undefined)
+    return { ...rules, trackside: validatePackTrackside(rules.trackside) };
   return { ...rules };
 }
 

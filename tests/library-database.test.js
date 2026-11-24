@@ -760,3 +760,62 @@ test('resetting a pack makes every cut piece whole again, in one revision', asyn
   // A window that still holds the older revision is refused.
   assert.throws(() => resetCollectionSegments(db, id, { expectedRevision: before.revision }));
 });
+
+test('a pack keeps trackside accessories in its rules and gives them to every piece', async (t) => {
+  const { setCollectionTrackside } = await import('../src/library-database.js');
+  const { validatePackRules } = await import('../src/track-pack-rules.js');
+  const { TRACKSIDE_DEFAULTS } = await import('../src/geometry/trackside.js');
+  const db = dbFor(t);
+  const pack = starterPack();
+  const id = addCollection(db, 'Walled', pack.profile, pack.pieces, pack.rules);
+  const before = readCollections(db).find((c) => c.id === id);
+  assert.equal(before.rules.trackside, undefined, 'a pack starts without trackside rules');
+  // One piece was given its own barrier earlier.
+  const own = structuredClone(before.pieces[1]);
+  own.track.params.tracksideSide = 'inner';
+  own.track.params.tracksideRise = 35;
+  saveRecipe(db, id, own, { expectedRevision: before.revision });
+  const edited = readCollections(db).find((c) => c.id === id);
+  const wanted = {
+    tracksideSide: 'both',
+    tracksideInnerOwn: true,
+    tracksideShape: 'rail2',
+    tracksideRise: 24,
+    tracksideShapeInner: 'board',
+    tracksideFenceInner: true,
+  };
+  const result = setCollectionTrackside(db, id, wanted, { expectedRevision: edited.revision });
+  assert.deepEqual(result, { changed: 10, revision: edited.revision + 1 });
+  const after = readCollections(db).find((c) => c.id === id);
+  assert.equal(after.revision, edited.revision + 1);
+  // The rules hold the complete set, for new pieces.
+  assert.deepEqual(after.rules.trackside, { ...TRACKSIDE_DEFAULTS, ...wanted });
+  assert.deepEqual({ ...after.rules, trackside: undefined }, { ...before.rules, trackside: undefined });
+  // Every piece has them, the one with its own barrier included, and nothing else changed.
+  for (const [i, piece] of after.pieces.entries()) {
+    for (const [key, value] of Object.entries({ ...TRACKSIDE_DEFAULTS, ...wanted }))
+      assert.deepEqual(piece.track.params[key], value, piece.name + ' ' + key);
+    const strip = (params) =>
+      Object.fromEntries(Object.entries(params).filter(([key]) => !key.startsWith('trackside')));
+    assert.deepEqual(strip(piece.track.params), strip(before.pieces[i].track.params), piece.name);
+  }
+  // A piece changed afterwards keeps its own setting until the pack is applied again.
+  const single = structuredClone(after.pieces[0]);
+  single.track.params.tracksideSide = 'none';
+  saveRecipe(db, id, single, { expectedRevision: after.revision });
+  const later = readCollections(db).find((c) => c.id === id);
+  assert.equal(later.pieces[0].track.params.tracksideSide, 'none');
+  assert.equal(later.pieces[1].track.params.tracksideSide, 'both');
+  assert.equal(later.rules.trackside.tracksideSide, 'both');
+  // Faulty settings are refused and leave the pack as it is.
+  assert.throws(
+    () => setCollectionTrackside(db, id, { ...wanted, tracksideRise: 500 }),
+    /height above the road must be between 5 and 100 mm/,
+  );
+  assert.throws(() => setCollectionTrackside(db, id, { hedge: true }), /unknown trackside settings/);
+  assert.equal(readCollections(db).find((c) => c.id === id).revision, later.revision);
+  // The rules still take their other fields, and a backup keeps the trackside rules.
+  validatePackRules(later.rules, later.profile);
+  const restored = inspectLibraryBytes(SQL, db.export()).find((c) => c.id === id);
+  assert.deepEqual(restored.rules.trackside, later.rules.trackside);
+});

@@ -4,7 +4,7 @@ import {
   validateLibraryProfile,
 } from './library-profile.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
-import { rulesFromPieces, validatePackRules } from './track-pack-rules.js';
+import { rulesFromPieces, validatePackRules, validatePackTrackside } from './track-pack-rules.js';
 import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { validateLayout } from './planner-model.js';
 import { checkProject } from './project.js';
@@ -280,6 +280,35 @@ function updateRevision(db, id, profile, previous) {
     checkedRevision(previous + 1),
     id,
   ]);
+}
+/**
+ * The trackside accessories of a pack: kept in its rules for new pieces, and
+ * written into every piece it has. A piece can be changed afterwards.
+ */
+export function setCollectionTrackside(db, id, trackside, { expectedRevision, piece } = {}) {
+  const row = collectionRow(db, id, expectedRevision);
+  const profile = validateLibraryProfile(JSON.parse(row.profile));
+  const chosen = validatePackTrackside(trackside);
+  const rules = validatePackRules({ ...JSON.parse(row.rules), trackside: chosen }, profile);
+  const members = rows(
+    db,
+    'SELECT id, name, track FROM pieces WHERE collection_id=?',
+    [id],
+  );
+  for (const r of members) {
+    // The piece open in the editor arrives as edited, not as last saved.
+    const track = piece && r.id === piece.id ? structuredClone(piece.track) : JSON.parse(r.track);
+    Object.assign(track.params, chosen);
+    validateRecipe({ name: r.name, track }, profile);
+    db.run('UPDATE pieces SET track=? WHERE id=?', [savedTrack(track), r.id]);
+  }
+  const revision = checkedRevision(row.revision + 1);
+  db.run('UPDATE collections SET rules=?, revision=? WHERE id=?', [
+    JSON.stringify(rules),
+    revision,
+    id,
+  ]);
+  return { changed: members.length, revision };
 }
 /**
  * Every piece of a pack back to one road segment and one border segment.

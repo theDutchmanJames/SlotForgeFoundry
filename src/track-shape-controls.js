@@ -6,6 +6,7 @@ import { pitLayout } from './geometry/special-junction-layout.js';
 import { readStartingGridFields, syncStartingGridControls } from './starting-grid-controls.js';
 import { syncRoadMarkingFields } from './paint-controls.js';
 import { consumeSlotFields, syncSlotPositionControls } from './slot-position-controls.js';
+import { syncTracksideControls } from './trackside-controls.js';
 
 export function laneLayoutControls(p) {
   const a = p.laneAdjustment;
@@ -147,29 +148,7 @@ export function syncTrackShapeControls(form) {
     ribs.hidden = ribs.disabled = !e.hollow.checked;
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
-  if (e.tracksideSide) {
-    const group = form.querySelector('[data-trackside]');
-    group.hidden = group.disabled = e.tracksideSide.value === 'none';
-    const both = form.querySelector('[data-trackside-both]');
-    both.hidden = both.disabled = e.tracksideSide.value !== 'both';
-    const own = !both.disabled && e.tracksideInnerOwn.checked;
-    const inner = form.querySelector('[data-trackside-inner]');
-    inner.hidden = inner.disabled = !own;
-    // With two sets the first one is the outside.
-    const titles = form.querySelectorAll('[data-trackside-titles] > details > summary > span, [data-trackside-titles] > fieldset > details > summary > span');
-    const names = own ? ['Outside barrier', 'Outside catch fence'] : ['Barrier', 'Catch fence'];
-    titles.forEach((title, i) => {
-      if (names[i] && title.textContent !== names[i]) title.textContent = names[i];
-    });
-    for (const set of ['', 'Inner']) {
-      if (set && !own) continue;
-      const shape = e['tracksideShape' + set].value;
-      for (const part of form.querySelectorAll('[data-trackside-shape][data-trackside-set="' + set + '"]'))
-        part.hidden = part.disabled = !part.dataset.tracksideShape.split(' ').includes(shape);
-      const fence = form.querySelector('[data-trackside-fence="' + set + '"]');
-      fence.hidden = fence.disabled = shape !== 'board' || !e['tracksideFence' + set].checked;
-    }
-  }
+  syncTracksideControls(form);
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))
       group.hidden = group.disabled = group.dataset.braidStyle !== e.braidStyle.value;
