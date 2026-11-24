@@ -234,6 +234,36 @@ export async function checkPlanner({ page, action, download, snap }) {
   await idle();
   assert.equal((await state()).nodes.length, before);
 
+  // A road surface texture for selected sections: the straight takes it, the turnout does not.
+  await cmd('new').click();
+  await idle();
+  await cmd('split').click();
+  await cmd('standard').click();
+  await add(/^Full straight/);
+  await pick(/^1 · Full straight · A$/);
+  assert.equal(await panel.locator('.pl-texture').count(), 1);
+  await panel.locator('.pl-texture summary').click();
+  await field('texKind').selectOption('cobbles');
+  await field('texSize').selectOption('full');
+  await field('texFit').selectOption('piece');
+  await cmd('texture').click();
+  await idle();
+  plan = await state();
+  const textured = plan.sources[plan.nodes[0].source].track.params;
+  assert.equal(textured.roadTexture, 'cobbles');
+  assert.equal(textured.textureSize, 'full');
+  assert.equal(textured.textureFit, 'piece');
+  assert.equal(await panel.locator('.pl-message.error').count(), 0);
+  await cmd('special').click();
+  await pick(/^1 · Full straight · B$/);
+  await add(/^Turnout/);
+  assert.equal(await panel.locator('.pl-texture').count(), 0, 'a turnout has no texture panel');
+  await cmd('undo').click();
+  await idle();
+  await cmd('undo').click();
+  await idle();
+  assert.equal((await state()).sources[(await state()).nodes[0].source].track.params.roadTexture ?? 'none', 'none');
+
   // A pit ladder: three bays in one go, each closed by an end stop.
   await cmd('new').click();
   await idle();

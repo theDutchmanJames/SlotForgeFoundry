@@ -1,3 +1,4 @@
+import { TEXTURE_KEYS } from './geometry/road-texture.js';
 import { racingPlan, isRacingPiece } from './special-racing.js';
 import { hairpinWireProfile } from './geometry/special-racing-tools.js';
 import {
@@ -88,6 +89,9 @@ export function specialTrackParams(type, base, rules) {
     borderSegments: 1,
   };
   delete p.laneAdjustment;
+  // A road surface texture is for plain straights and corners: a special made
+  // from a textured straight starts with a plain road.
+  for (const key of TEXTURE_KEYS) delete p[key];
   // The pack's plain straight may carry its slot off-centre. A special lays
   // out its own lanes about the road centre, so road connectors placed by
   // hand beside that slot do not carry over: the special gets standard rows.

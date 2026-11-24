@@ -3,6 +3,7 @@ import { braidSpan } from './geometry/solids.js';
 import { TRACKSIDE_DEFAULTS, validateTrackside } from './geometry/trackside.js';
 import { validatePaint } from './geometry/paint-guides.js';
 import { MARKING_DEFAULTS } from './markings-controls.js';
+import { TEXTURE_DEFAULTS, validateRoadTexture } from './geometry/road-texture.js';
 
 // The white lines and kerbstones every piece of a pack starts with. Optional,
 // like its trackside accessories.
@@ -30,6 +31,21 @@ export function validatePackMarkings(markings) {
 }
 // The trackside accessories every piece of a pack starts with. Optional: a
 // pack without them leaves each piece as it is.
+// The road surface texture of a pack. Whether its joints are too deep for a
+// piece is checked on each piece, which has its own deck.
+export function validatePackTexture(texture) {
+  if (
+    !texture ||
+    typeof texture !== 'object' ||
+    Array.isArray(texture) ||
+    Object.keys(texture).some((key) => !Object.hasOwn(TEXTURE_DEFAULTS, key))
+  )
+    throw Error('The track pack contains unknown texture settings.');
+  const all = { ...TEXTURE_DEFAULTS, ...texture };
+  validateRoadTexture({ ...defaultTrack(), kind: 'straight', hollow: false, height: 100, ...all });
+  return all;
+}
+
 export function validatePackTrackside(trackside) {
   if (
     !trackside ||
@@ -59,7 +75,7 @@ export function validatePackRules(rules, profile) {
     !rules ||
     typeof rules !== 'object' ||
     Array.isArray(rules) ||
-    Object.keys(rules).some((key) => !['trackside', 'markings'].includes(key) && !Object.hasOwn(defaults, key))
+    Object.keys(rules).some((key) => !['trackside', 'markings', 'texture'].includes(key) && !Object.hasOwn(defaults, key))
   )
     throw Error('The track pack contains unknown design rules.');
   for (const [key, name, min, max] of [
@@ -91,6 +107,7 @@ export function validatePackRules(rules, profile) {
     ...rules,
     ...(rules.trackside !== undefined && { trackside: validatePackTrackside(rules.trackside) }),
     ...(rules.markings !== undefined && { markings: validatePackMarkings(rules.markings) }),
+    ...(rules.texture !== undefined && { texture: validatePackTexture(rules.texture) }),
   };
 }
 

@@ -2275,6 +2275,7 @@ async function drawTrack(editingPath, collection, saveToCollection) {
           // The trackside accessories and the markings of the pack, for every new piece.
           ...collection?.rules.trackside,
           ...collection?.rules.markings,
+          ...collection?.rules.texture,
           ...(collection?.rules.lanes === 1 && seamClips != null && {
             connectorCounts: { seamClips },
           }),

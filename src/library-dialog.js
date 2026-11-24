@@ -16,6 +16,8 @@ import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { readTracksideFields, syncTracksideControls, tracksideControls } from './trackside-controls.js';
 import { syncPropertyReadouts } from './property-panel.js';
 import { markingControls, markingsOf, readMarkingFields } from './markings-controls.js';
+import { readTextureFields, syncTextureControls, textureFields } from './texture-controls.js';
+import { takesRoadTexture } from './geometry/road-texture.js';
 import { centreLineStyles } from './paint-controls.js';
 import { braidStyleChoices } from './connection-controls.js';
 
@@ -340,6 +342,10 @@ export async function showTrackLibrary({
         '<p class="hint">Markings for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. Border markings show on the pieces that have borders. You can still change a single piece afterwards under Track Set → Markings, or a section of a layout in the Track Planner.</p>'+
         '<form data-lib-markings class="lib-trackside">'+markingControls(c.rules.markings ?? markingsOf(c.pieces[0]?.track.params))+
         '<div class="lib-footer">'+btn('commit-markings','Apply to all '+count(c.pieces.length),'primary','check')+'</div></form>'+
+        '<h3>Road surface texture</h3>'+
+        '<p class="hint">A pattern of stones for the plain straights and corners of this pack, with the joints cut into the road. Applying it sets '+count(c.pieces.filter((piece) => takesRoadTexture(piece.track.params)).length)+' the same way, and new pieces start with it. Special pieces keep a plain road. You can still change a single piece afterwards under Track Set → Markings, or a section of a layout in the Track Planner.</p>'+
+        '<form data-lib-texture class="lib-trackside">'+textureFields(c.rules.texture ?? {})+
+        '<div class="lib-footer">'+btn('commit-texture','Apply to all straights and corners','primary','check')+'</div></form>'+
         '<h3>Trackside accessories</h3>'+
         '<p class="hint">Barriers, advertising boards with fences and guard rails for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. You can still change a single piece afterwards under Track Set → Trackside, or a section of a layout in the Track Planner.</p>'+
         '<form data-lib-trackside class="lib-trackside">'+tracksideControls({ ...TRACKSIDE_DEFAULTS, ...c.rules.trackside })+
@@ -544,6 +550,13 @@ export async function showTrackLibrary({
   }
   dialog.addEventListener('input', syncTrackside);
   dialog.addEventListener('change', syncTrackside);
+  // So does the pack's texture form.
+  function syncTexture() {
+    const form = $('[data-lib-texture]');
+    if (form) syncTextureControls(form);
+  }
+  dialog.addEventListener('input', syncTexture);
+  dialog.addEventListener('change', syncTexture);
   dialog.addEventListener('input', (e) => {
     if (e.target.name === 'packLanes') syncRuleSpacing();
   });
@@ -605,6 +618,29 @@ export async function showTrackLibrary({
     }
     if (id === 'close') {
       dialog.close();
+      return;
+    }
+    if (id === 'commit-texture') {
+      const form = $('[data-lib-texture]');
+      if (!form.reportValidity()) return;
+      void perform(async () => {
+        const work = current();
+        const open = work.link?.collectionId === c.id;
+        // Save the piece that is open before its pack changes under it.
+        if (open) await prepare();
+        const fresh = open ? (await reload(), active()) : c;
+        const texture = readTextureFields(form);
+        const { changed } = await store.setTexture(fresh.id, texture, { expectedRevision: fresh.revision });
+        await reload();
+        // The open piece is one of them: open it again as the pack has it now.
+        const again = open && active().pieces.find((p) => p.id === work.link.pieceId);
+        if (again) await openPiece(active(), again);
+        message =
+          texture.roadTexture === 'none'
+            ? 'The road surface texture is off for ' + count(changed) + ' and for new pieces.'
+            : 'The road surface texture is set for ' + count(changed) + '. New straights and corners start with it too.';
+        render();
+      });
       return;
     }
     if (id === 'commit-markings') {

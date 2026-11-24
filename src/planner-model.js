@@ -3,10 +3,12 @@ import { sectionStations } from './geometry/bridge-sections.js';
 import { PEG_LIMITS, PEG_SIZE } from './geometry/bridge-supports.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { MARKING_KEYS } from './markings-controls.js';
+import { TEXTURE_KEYS } from './geometry/road-texture.js';
 
 // The settings a layout keeps for a section when its pack changes: its
 // barriers and its markings are set in the layout.
-export const layoutOwned = (key) => key.startsWith('trackside') || MARKING_KEYS.includes(key);
+export const layoutOwned = (key) =>
+  key.startsWith('trackside') || MARKING_KEYS.includes(key) || TEXTURE_KEYS.includes(key);
 import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
 import { screwFamilyDifference } from './geometry/screw-clip.js';
 

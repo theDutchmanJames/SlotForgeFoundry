@@ -1,4 +1,12 @@
 import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
+import {
+  TEXTURE_CHOICES,
+  TEXTURE_FITS,
+  TEXTURE_LIMITS,
+  TEXTURE_SIZES,
+  takesRoadTexture,
+  textureSettings,
+} from './geometry/road-texture.js';
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
@@ -442,6 +450,16 @@ export function createPlanner({ host, call, download, current, promote }) {
       (entry) => Object.entries(wanted).every(([key, value]) => markingsOf(entry.track.params)[key] === value),
       notTurnout,
     );
+  // The road surface texture of the selected sections: plain straights and
+  // corners take it, and special pieces in the selection keep a plain road.
+  const setTexture = (wanted) =>
+    changeSections(
+      (params) => Object.assign(params, wanted),
+      (entry) => Object.entries(wanted).every(([key, value]) => textureSettings(entry.track.params)[key] === value),
+      (entry) => takesRoadTexture(entry.track.params),
+    );
+  const chosenTextured = () =>
+    layout.nodes.filter((n) => chosenIds().has(n.id) && takesRoadTexture(layout.sources[n.source].track.params)).length;
   // Give the selected sections a copy of their recipe with a change in it.
   async function changeSections(change, unchanged, applies = () => true) {
     const ids = chosenIds();
@@ -1145,7 +1163,23 @@ export function createPlanner({ host, call, download, current, promote }) {
           : 'Only this section gets these markings. ') +
         'Ctrl-click or Shift-click sections in the plan to select more than one. Line and kerb sizes come from the piece: set them in Track Set or in the Pack rules. Border markings show on sections that have borders.</small>' +
         btn('markings', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply markings', 'check') +
-        '</div></details>'
+        '</div></details>' +
+        (takesRoadTexture(def.track.params)
+          ? '<details class="pl-bridge pl-texture"><summary>Road surface texture</summary><div>' +
+            '<label>Texture<select data-pl-field="texKind">' + barrierOptions(TEXTURE_CHOICES, textureSettings(def.track.params).roadTexture) + '</select></label>' +
+            '<label>Stone size<select data-pl-field="texSize">' + barrierOptions(TEXTURE_SIZES, textureSettings(def.track.params).textureSize) + '</select></label>' +
+            '<label>Custom size · %<input data-pl-field="texScale" type="number" min="' + TEXTURE_LIMITS.textureScale[0] + '" max="' + TEXTURE_LIMITS.textureScale[1] + '" step="any" value="' + textureSettings(def.track.params).textureScale + '"></label>' +
+            '<label>Joint width · mm<input data-pl-field="texJoint" type="number" min="' + TEXTURE_LIMITS.textureJoint[0] + '" max="' + TEXTURE_LIMITS.textureJoint[1] + '" step="any" value="' + textureSettings(def.track.params).textureJoint + '"></label>' +
+            '<label>Joint depth · mm<input data-pl-field="texDepth" type="number" min="' + TEXTURE_LIMITS.textureDepth[0] + '" max="' + TEXTURE_LIMITS.textureDepth[1] + '" step="any" value="' + textureSettings(def.track.params).textureDepth + '"></label>' +
+            '<label>Along the piece<select data-pl-field="texFit">' + barrierOptions(TEXTURE_FITS, textureSettings(def.track.params).textureFit) + '</select></label>' +
+            '<small>' +
+            (chosenIds().size > 1
+              ? chosenTextured() + ' of the ' + chosenIds().size + ' selected sections are straights or corners and take the texture. '
+              : 'Only this section gets the texture. ') +
+            'The joints between the stones are cut into the road. Custom size is used with the stone size Custom. Same size everywhere starts the pattern again at each track joint; Fit to each piece lines the joints up from piece to piece. Small stones take longer to build and make large files.</small>' +
+            btn('texture', chosenIds().size > 1 ? 'Apply to ' + chosenTextured() + ' sections' : 'Apply texture', 'check') +
+            '</div></details>'
+          : '')
       : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
     const from = net.open.find((e) => e.key === choice.end),
       members = from && connectedRun(net, from.id);
@@ -1686,6 +1720,20 @@ export function createPlanner({ host, call, download, current, promote }) {
       message('Changing the insert…');
       await setTurnoutMode(field('turnoutMode').value);
       message('');
+      return;
+    }
+    if (key === 'texture') {
+      message('Laying the stones…');
+      await setTexture({
+        roadTexture: field('texKind').value,
+        textureSize: field('texSize').value,
+        textureScale: field('texScale').valueAsNumber,
+        textureJoint: field('texJoint').valueAsNumber,
+        textureDepth: field('texDepth').valueAsNumber,
+        textureFit: field('texFit').value,
+      });
+      message('');
+      $('.pl-texture').open = true;
       return;
     }
     if (key === 'markings') {

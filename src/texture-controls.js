@@ -3,6 +3,7 @@ import {
   ROAD_TEXTURES,
   TEXTURE_CHOICES,
   TEXTURE_FITS,
+  TEXTURE_KEYS,
   TEXTURE_LIMITS,
   TEXTURE_SIZES,
   textureSettings,
@@ -15,10 +16,14 @@ const limits = (key) => ({ min: TEXTURE_LIMITS[key][0], max: TEXTURE_LIMITS[key]
 
 /** The road surface texture of a plain straight or corner, under Markings. */
 export function textureFolder(p) {
+  return details('Road surface texture', textureFields(p), textureSettings(p).roadTexture !== 'none');
+}
+
+/** The same fields on their own, for the Pack rules. */
+export function textureFields(p) {
   const s = textureSettings(p),
     on = s.roadTexture !== 'none';
-  return details(
-    'Road surface texture',
+  return (
     choice('roadTexture', 'Texture', s.roadTexture, TEXTURE_CHOICES) +
       group(
         'data-texture-fields',
@@ -35,8 +40,15 @@ export function textureFolder(p) {
           choice('textureFit', 'Along the piece', s.textureFit, TEXTURE_FITS) +
           '<p class="hint">The joints between the stones are cut into the road surface. They keep clear of the guide slots, the braid and painted lines, and the road stays plain over a connector pocket. The joint keeps the width set here whatever the stone size.</p>' +
           '<p class="hint">Same size everywhere lays the stones at exactly this size; the pattern starts again at each track joint. Fit to each piece stretches it a little so that a whole number of repeats fits the piece, and its joints line up with the next piece.</p>',
-      ),
-    on,
+      )
+  );
+}
+
+/** The texture settings as a form holds them. */
+export function readTextureFields(form) {
+  const e = form.elements;
+  return Object.fromEntries(
+    TEXTURE_KEYS.map((key) => [key, e[key].type === 'number' ? e[key].valueAsNumber : e[key].value]),
   );
 }
 

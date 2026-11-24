@@ -48,6 +48,8 @@ export function textureSettings(p) {
   return Object.fromEntries(TEXTURE_KEYS.map((key) => [key, p[key] ?? TEXTURE_DEFAULTS[key]]));
 }
 export const hasRoadTexture = (p) => (p.roadTexture ?? 'none') !== 'none';
+// The pieces a texture can be laid on: plain straights and corners.
+export const takesRoadTexture = (p) => !p.special && (p.kind === 'straight' || p.kind === 'curve');
 
 /** How large the stones are, as a factor of the drawn tile. */
 export function textureScale(p) {
@@ -82,7 +84,7 @@ export function validateRoadTexture(p) {
     if (!Number.isFinite(s[key]) || s[key] < low || s[key] > high)
       throw Error(name + ' must be between ' + low + ' and ' + high + unit + '.');
   }
-  if (p.special || p.kind === 'import')
+  if (!takesRoadTexture(p))
     throw Error('A road surface texture is for plain straights and corners. Set Road surface texture to None for this piece.');
   const stone = textureStoneSize(p);
   if (s.textureJoint > 0.45 * stone)

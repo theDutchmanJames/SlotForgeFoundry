@@ -910,3 +910,58 @@ test('pack-wide barriers and markings leave a turnout as it is, and say how many
   assert.equal(last.special.motorStroke, 8);
   assert.equal(last.tracksideSide, 'none');
 });
+
+test('a pack keeps its road surface texture in its rules and gives it to its straights and corners only', async (t) => {
+  const { setCollectionTexture } = await import('../src/library-database.js');
+  const { packSpecialTrack } = await import('../src/pack-specials.js');
+  const { TEXTURE_DEFAULTS, textureSettings } = await import('../src/geometry/road-texture.js');
+  const { layoutOwned } = await import('../src/planner-model.js');
+  const { validatePackRules } = await import('../src/track-pack-rules.js');
+  const db = dbFor(t);
+  const pack = starterPack(1);
+  const turnout = { name: 'Turnout', track: packSpecialTrack(pack, 'turnout') };
+  const id = addCollection(db, 'Cobbled', pack.profile, [...pack.pieces, turnout], pack.rules);
+  const before = readCollections(db).find((c) => c.id === id);
+  assert.equal(before.rules.texture, undefined, 'a pack starts without a texture');
+  const plain = before.pieces.filter((piece) => !piece.track.params.special).length;
+  const wanted = { roadTexture: 'cobbles', textureSize: '24', textureJoint: 0.5, textureDepth: 0.4, textureFit: 'piece' };
+  const result = setCollectionTexture(db, id, wanted, { expectedRevision: before.revision });
+  assert.deepEqual(result, { changed: plain, revision: before.revision + 1 });
+  const after = readCollections(db).find((c) => c.id === id);
+  assert.deepEqual(after.rules.texture, { ...TEXTURE_DEFAULTS, ...wanted });
+  for (const [i, piece] of after.pieces.entries()) {
+    if (piece.track.params.special) {
+      // A special piece keeps a plain road, and is not counted.
+      assert.deepEqual(piece.track.params, before.pieces[i].track.params, piece.name);
+      continue;
+    }
+    assert.deepEqual(textureSettings(piece.track.params), { ...TEXTURE_DEFAULTS, ...wanted }, piece.name);
+    const strip = (params) =>
+      Object.fromEntries(Object.entries(params).filter(([key]) => !Object.hasOwn(TEXTURE_DEFAULTS, key)));
+    assert.deepEqual(strip(piece.track.params), strip(before.pieces[i].track.params), piece.name);
+    // Every piece still opens and validates with its texture.
+    trackWithProfile(piece.track, after.profile);
+  }
+  // A special made from the pack afterwards has no texture either.
+  assert.equal(packSpecialTrack(after, 'turnout').params.roadTexture, undefined);
+  // Off again: for the same pieces.
+  const off = setCollectionTexture(db, id, { roadTexture: 'none' }, { expectedRevision: after.revision });
+  assert.equal(off.changed, plain);
+  const cleared = readCollections(db).find((c) => c.id === id);
+  assert.ok(cleared.pieces.every((piece) => (piece.track.params.roadTexture ?? 'none') === 'none'));
+  // Faulty settings are refused and leave the pack as it is.
+  assert.throws(() => setCollectionTexture(db, id, { roadTexture: 'gravel' }), /Choose a road surface texture from the list/);
+  assert.throws(() => setCollectionTexture(db, id, { roadTexture: 'cobbles', textureJoint: 9 }), /joint width must be between/);
+  assert.throws(() => setCollectionTexture(db, id, { moss: true }), /unknown texture settings/);
+  assert.equal(readCollections(db).find((c) => c.id === id).revision, cleared.revision);
+  // Joints too deep for the deck of the pack's pieces are refused with the piece named.
+  assert.throws(
+    () => setCollectionTexture(db, id, { roadTexture: 'cobbles', textureDepth: 2.9 }),
+    /: A joint 2\.9 mm deep leaves less than 0\.2 mm of road under it/,
+  );
+  // The rules validate with the texture, a backup keeps it, and a layout keeps the texture of its sections.
+  validatePackRules(cleared.rules, cleared.profile);
+  const restored = inspectLibraryBytes(SQL, db.export()).find((c) => c.id === id);
+  assert.deepEqual(restored.rules.texture, cleared.rules.texture);
+  for (const key of Object.keys(TEXTURE_DEFAULTS)) assert.equal(layoutOwned(key), true, key);
+});
