@@ -5,7 +5,7 @@
 // be lifted to change it. The road is the same for every kind of insert: the
 // same pocket, the same fixed roof with its braid shelf above the pocket and
 // the same two screw points. Only the insert differs.
-import { addSlot, makePart, shell } from './solids.js';
+import { SolidWorkshop, addSlot, makePart, shell } from './solids.js';
 import { plannerStrip } from '../planner-strip.js';
 import { laneTools } from './import-track.js';
 import { addRoadJoints } from './track-joints.js';
@@ -149,7 +149,7 @@ function bladeDetent(work, p, fork) {
 // bar and a tongue that reaches over the motor's plunger. The head and the
 // tongue are relieved from below; the top face is flat all over, so the
 // slider prints upside down on that face without support.
-function sliderSolid(work, drive, sign) {
+export function sliderSolid(work, drive, sign) {
   const box = ({ x0, x1, y0, y1 }) =>
     rectangle(work, x0, Math.min(sign * y0, sign * y1), x1, Math.max(sign * y0, sign * y1));
   const { head, neck, bar, tongue, pinHole, z } = drive;
@@ -183,17 +183,18 @@ function sliderSolid(work, drive, sign) {
 }
 
 // Upside down on the bed, resting on what is its top face in the road.
-function printsTopDown(part) {
+// rebuild makes the part afresh where it was drawn moved along for the
+// selected route, so the same part always gives the same STL.
+export function printsTopDown(part, wasm, rebuild) {
   part.printPose = function printPose(callback, sideDown) {
     // Only on the bed: anything else wants the part where it sits in the road.
     if (!sideDown) return callback(this.solid);
-    const turned = this.solid.rotate([180, 0, 0]);
-    const placed = turned.translate([0, 0, -turned.boundingBox().min[2]]);
+    const shop = new SolidWorkshop(wasm);
     try {
-      return callback(placed);
+      const turned = shop.own((rebuild ? rebuild(shop) : this.solid).rotate([180, 0, 0]));
+      return callback(shop.own(turned.translate([0, 0, -turned.boundingBox().min[2]])));
     } finally {
-      turned.delete();
-      placed.delete();
+      shop.close();
     }
   };
   return part;
@@ -330,7 +331,7 @@ export function buildTurnout(work, p) {
       name: 'Turnout slider',
       role: 'turnoutSlider',
       solid: work.own(sliderSolid(work, drive, sign).translate([travelled, 0, 0])),
-    });
+    }, work.wasm, (shop) => sliderSolid(shop, drive, sign));
     const tray = inlineMotorTray(work, drive.motor);
     const cradle = {
       id: 'turnout-motor-cradle',

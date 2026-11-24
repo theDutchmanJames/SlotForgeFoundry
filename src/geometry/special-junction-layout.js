@@ -4,7 +4,8 @@ import { braidSpan } from './solids.js';
 import { pitBraidLayout, validatePitContacts } from './pit-braids.js';
 import { pitActuatorSpec, turnoutOutline } from './pit-turnout.js';
 import { validatePitMotorSettings } from './pit-motor-settings.js';
-import { pitMotorMountLayout } from './pit-motor-mount.js';
+import { pitDriveLayout } from './pit-drive.js';
+import { validateTurnoutDrive } from './turnout-drive.js';
 import { pitWhiteLines } from './pit-white-line.js';
 import { turnoutPlan, validateTurnout } from './turnout-layout.js';
 import {
@@ -121,8 +122,9 @@ export function validateSpecialJunction(p) {
         'The pit approach bends too sharply. Lengthen the road or reduce pit offset.',
       );
     const { forks, lanePaths } = pitLayout(p);
+    if (s.motorMount) validateTurnoutDrive(s);
     if (s.motorMount)
-      forks.forEach((fork, i) => pitMotorMountLayout(p, fork, lanePaths[p.lanes + i]));
+      forks.forEach((fork, i) => pitDriveLayout(p, fork, lanePaths[p.lanes + i]));
     return;
   }
   if (s.type === 'turnout') return validateTurnout(p);

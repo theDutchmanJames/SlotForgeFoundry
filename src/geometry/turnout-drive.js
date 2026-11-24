@@ -77,7 +77,7 @@ export function validateTurnoutDrive(special) {
   if (!inRange(m.motorStroke, TURNOUT_DRIVE.strokeLimits))
     throw Error(
       'Usable stroke must be between ' + minStroke + ' and ' + maxStroke +
-        ' mm for the turnout slider. Set it to the travel of your motor.',
+        ' mm for the slider. Set it to the travel of your motor.',
     );
   if (!inRange(m.play, TURNOUT_DRIVE.playLimits))
     throw Error(
@@ -111,8 +111,13 @@ export function turnoutCam(stroke, travel) {
 const NARROW =
   'The island between the two slots is too narrow for the slider and its motor. Use a shorter Usable stroke, a narrower motor or a smaller Branch radius.';
 
-export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
+// frame.words replaces the refusals that name a turnout's own settings, and
+// frame.roadHalf is how far the road reaches from the main slot towards the
+// branch: a pit lane has its own of both.
+export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }, frame = {}) {
   const D = TURNOUT_DRIVE;
+  const words = { narrow: NARROW, ...frame.words },
+    roadHalf = frame.roadHalf ?? p.width / 2;
   const m = turnoutMotor(p.special),
     S = m.motorStroke;
   const tray = inlineMotorTrayPlan(m);
@@ -224,7 +229,7 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
     radius = (need - heel[0]) / Math.cos(phase) + 0.01;
     if (!(radius <= D.maxCrank)) break;
   }
-  if (!(radius <= D.maxCrank)) throw Error(NARROW);
+  if (!(radius <= D.maxCrank)) throw Error(words.narrow);
 
   const cam = turnoutCam(S, travel);
   // Behind the tail of the blade the island is at its narrowest for the arm.
@@ -243,8 +248,9 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
     const waistRadius = Math.max(D.waistRadius[0], Math.min(D.waistRadius[1], room - D.slotWall));
     if (room - waistRadius < D.minSlotWall - 1e-6)
       throw Error(
-        'The island between the two slots is too narrow behind the blade for the crank arm and a ' +
-          D.minSlotWall + ' mm wall beside each slot. Use a smaller Branch radius.',
+        words.waist ??
+          'The island between the two slots is too narrow behind the blade for the crank arm and a ' +
+            D.minSlotWall + ' mm wall beside each slot. Use a smaller Branch radius.',
       );
     waist = {
       point: [waistX, (half + 0.5 + waistTop) / 2 - 0.05],
@@ -277,17 +283,17 @@ export function turnoutDriveLayout(p, { sign, fork, cutLanes, ends }) {
     pinX + S + endReach + D.guide + Math.max(m.plungerProjection + eyeRadius + 1.5, tray.frontReach + 0.3),
     reachX(axis + halfMotor, edge) + tray.frontReach,
   );
-  if (!Number.isFinite(front)) throw Error(NARROW);
+  if (!Number.isFinite(front)) throw Error(words.narrow);
   const centre = front + m.motorLength / 2;
   const end = centre + tray.slide.x1 + tray.rim;
-  if (axis + halfMotor + tray.rim > p.width / 2)
+  if (axis + halfMotor + tray.rim > roadHalf)
     throw Error(
       'The road is too narrow for the motor between the two slots. Use a narrower motor or a road at least ' +
         Math.ceil(2 * (axis + halfMotor + tray.rim)) + ' mm wide.',
     );
   if (end > lastX - 4)
     throw Error(
-      'The branch ends before the motor does. Increase Branch angle, or use a shorter motor or stroke.',
+      words.branchEnds ?? 'The branch ends before the motor does. Increase Branch angle, or use a shorter motor or stroke.',
     );
   if (end > p.length / 2 - 6)
     throw Error(

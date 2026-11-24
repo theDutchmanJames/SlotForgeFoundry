@@ -69,6 +69,8 @@ function actuatorHeights(p, rodDiameter) {
 }
 
 export function pitActuatorSpec(p, fork) {
+  // The eye and the pushrod are those of a crank worked from outside the
+  // piece. A motor works a pin on the crank instead: see withCam.
   const { motorMount, motorStroke, eyeDiameter, rodDiameter } = pitMotorSettings(p.special);
   const { socketTop, pilotTop, armBottom, armTop, rodChannelHeight } = actuatorHeights(p, rodDiameter);
   const hardware = pitEyeHardware(rodDiameter, eyeDiameter);
@@ -78,42 +80,25 @@ export function pitActuatorSpec(p, fork) {
     armBottom, armTop, armTopClearance, armSideClearance, headPocketRadius,
     headPocketTop: armTop + hardware.headProjection + hardware.headTopClearance,
     rodCenterZ: rodChannelHeight / 2,
-    stroke: motorMount ? motorStroke - pinClearance : 0,
-    eyeOuterRadius: eyeDiameter / 2 + (motorMount ? 0.85 : 1.15),
+    stroke: 0,
+    eyeOuterRadius: eyeDiameter / 2 + 1.15,
     minGuideFloor: rodChannelHeight + guideFloorStock,
     screwMin: Math.ceil((socketTop + 1.5 - armBottom) * 10 - 1e-8) / 10,
     screwMax: Math.floor((pilotTop - 0.15 - armBottom) * 10 + 1e-8) / 10 };
   if (fork) {
     const halfAngle = fork.swing / 2;
     const chordPerRadius = 2 * Math.sin(Math.abs(halfAngle));
-    // Before reversing the crank, the pin crosses to the opposite edge of
-    // the hole. Both stops must be reached using the remaining motor travel.
-    spec.crankRadius = motorMount ? (motorStroke - pinClearance) / chordPerRadius : externalCrankRadius;
+    spec.crankRadius = externalCrankRadius;
     const minRadius = Math.max(2.65 + spec.eyeOuterRadius, fork.bearingRadius + headPocketRadius) + 0.5;
-    if (spec.crankRadius < minRadius) {
-      const minStroke = Math.ceil((minRadius * chordPerRadius + pinClearance) * 100) / 100;
-      throw Error(`The crank eye or pushrod fastener would overlap the pivot. Use at least ${minStroke} mm of motor stroke for this hole and pushrod, or reduce the hole diameter.`);
-    }
+    if (!motorMount && spec.crankRadius < minRadius)
+      throw Error('The crank eye or pushrod fastener would overlap the pivot. Reduce the crank hole diameter or the pushrod diameter.');
     spec.stroke = spec.crankRadius * chordPerRadius;
-    // On the mounted motor the two stops line up with its linear shaft. A
-    // bent wire accommodates the small lateral bow at mid-throw.
     const radial = [fork.heel[0] + spec.crankRadius, fork.heel[1]];
-    spec.mainEye = motorMount ? rotate(radial, fork.heel, -halfAngle) : radial;
-    spec.midEye = motorMount ? radial : rotate(radial, fork.heel, halfAngle);
+    spec.mainEye = radial;
+    spec.midEye = rotate(radial, fork.heel, halfAngle);
     spec.pitEye = rotate(spec.mainEye, fork.heel, fork.swing);
   }
   return spec;
-}
-
-// Allow for both slotted mounting ears, the pocket rim and the moving crank
-// when choosing print seams and underside jumper stations.
-export function pitMotorXBounds(p, fork) {
-  const drive = pitActuatorSpec(p, fork);
-  const mountHalfWidth = pitMotorSettings(p.special).motorWidth / 2 + 9;
-  return {
-    min: drive.mainEye[0] - mountHalfWidth,
-    max: drive.midEye[0] + Math.max(mountHalfWidth, drive.eyeOuterRadius + 1, drive.headPocketRadius + 0.1),
-  };
 }
 
 // A cam drive replaces the eye for a wire by an upright pin on a longer arm.
@@ -124,6 +109,7 @@ export function pitMotorXBounds(p, fork) {
 // ({ point, radius }, in the frame of phase) is where the arm passes between
 // the two slots behind the blade: it narrows to that radius there, and its
 // bay follows its real outline with sideClearance, to leave the slots a wall.
+// base is where the main slot lies across the road, where that is not 0.
 function withCam(spec, fork, cam) {
   if (!cam) return spec;
   const direction = fork.sign * cam.phase;
@@ -132,7 +118,7 @@ function withCam(spec, fork, cam) {
   const mainEye = rotate(radial, fork.heel, -fork.swing / 2);
   // The waist is given for the middle of the throw; the arm is drawn at its main end.
   const waist = cam.waist && { radius: cam.waist.radius,
-    point: rotate([cam.waist.point[0], fork.sign * cam.waist.point[1]], fork.heel, -fork.swing / 2) };
+    point: rotate([cam.waist.point[0], (cam.base ?? 0) + fork.sign * cam.waist.point[1]], fork.heel, -fork.swing / 2) };
   return { ...spec, cam: { ...cam, waist }, crankRadius: cam.radius,
     stroke: 2 * cam.radius * Math.sin(Math.abs(fork.swing) / 2),
     mainEye, midEye: radial, pitEye: rotate(mainEye, fork.heel, fork.swing),

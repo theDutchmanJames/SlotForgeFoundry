@@ -1,5 +1,6 @@
-// All dimensions are in millimetres. Old pit recipes use the original
-// external crank until a motor mount is explicitly enabled.
+// All dimensions are in millimetres. Without a motor the crank has an eye
+// for a pushrod worked from outside the piece. With a motor mount, a slider
+// between the main slot and the pit slot works the crank (turnout-drive.js).
 export const PIT_MOTOR_DEFAULTS = Object.freeze({
   motorMount: false,
   motorLength: 15,
@@ -41,9 +42,7 @@ export function validatePitMotorSettings(special) {
     if (!Number.isFinite(s[key]) || s[key] < min || s[key] > max)
       throw Error(`${labels[key]} must be between ${min} and ${max} mm.`);
   }
-  const slack = s.eyeDiameter - s.rodDiameter;
-  if (slack < 0.15 - 1e-9)
+  // The pushrod and its eye belong to the crank without a motor.
+  if (!s.motorMount && s.eyeDiameter - s.rodDiameter < 0.15 - 1e-9)
     throw Error('Set the crank hole diameter at least 0.15 mm larger than the pushrod diameter so the hooked pin can turn.');
-  if (s.motorMount && s.motorStroke <= slack)
-    throw Error('The motor stroke is taken up by clearance in the crank hole. Increase usable stroke, reduce the hole diameter or use a thicker pushrod.');
 }

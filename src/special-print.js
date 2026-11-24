@@ -14,6 +14,7 @@ import {
 import { pitActuatorSpec } from './geometry/pit-turnout.js';
 import { pitMotorSettings } from './geometry/pit-motor-settings.js';
 import { turnoutLayout, turnoutSettings } from './geometry/turnout-layout.js';
+import { pitDriveLayout } from './geometry/pit-drive.js';
 import { buildTrack } from './track.js';
 
 // A test coupon uses the crossing from the actual generated mesh, including its guide,
@@ -310,6 +311,16 @@ export function wiringDiagram(p) {
   return header.join('\n');
 }
 
+// The measurements of a slider drive, for a turnout or a pit lane.
+function sliderNotes(drive) {
+  const pinLength = Math.floor((drive.tongue.z0 + drive.pinHole.depth - drive.z.shaftZ + drive.pinHole.radius + 1) * 2) / 2;
+  return [
+    `The slider moves ${drive.stroke} mm. Its slot has a ${drive.cam.slant.toFixed(1)} mm slant at ${Math.round(drive.cam.angle)}° to the slide, between flats of ${drive.cam.flat.toFixed(1)} mm, and moves the crank pin ${drive.travel.toFixed(2)} mm sideways. The crank is ${drive.crank.radius.toFixed(1)} mm long.` +
+      (drive.cam.angle > 30 ? ' A slant this steep needs a firm push, and a knock on the blade can push the slider back. A motor with 5 mm of stroke or more gives a shallow slant.' : ''),
+    `The pin for the plunger is ${drive.motor.eyeDiameter} mm in diameter and about ${pinLength} mm long. The motor body is ${drive.motor.motorLength} × ${drive.motor.motorWidth} × ${drive.motor.motorHeight} mm (length along the plunger × width × height), with its eye ${drive.motor.plungerProjection} mm in front of the end face when retracted.`,
+  ];
+}
+
 export function assemblyNotes(p) {
   const notes = specialAssemblyNotes(p);
   if (p.special.type === 'pit') {
@@ -321,27 +332,16 @@ export function assemblyNotes(p) {
     const spec = pitActuatorSpec(p, pitLayout(p).forks[0]);
     const motor = pitMotorSettings(p.special);
     if (motor.motorMount) {
-      notes.push(
-        `The motor case measures ${motor.motorLength} × ${motor.motorWidth} × ${motor.motorHeight} mm (length along the shaft × width × height). The retracted linkage point is ${motor.plungerProjection} mm beyond the end face, centred on the case.`,
-        `Use a ${spec.rodDiameter} mm pushrod in the ${spec.eyeDiameter} mm crank hole. The ${motor.motorStroke} mm usable stroke includes ${spec.pinClearance.toFixed(2)} mm of free play and ${spec.stroke.toFixed(2)} mm of travel between blade stops. Changing the wire size changes this fit.`,
-        'Measure the finished crank hole and the usable plunger stroke under load. If the printed hole is undersize, ream it to the specified diameter before fitting the wire.',
-        'Centre the cradle in its slots. Set the motor and flipper halfway through their travel, then bend the wire to meet the linkage points. Slide the cradle to centre the throw and check both seats by hand. If total travel is short or the motor pushes against both stops, recheck the stroke and the measured hole and wire diameters.',
-      );
+      const layout = pitLayout(p);
+      notes.push(...sliderNotes(pitDriveLayout(p, layout.forks[0], layout.lanePaths[p.lanes])));
     } else {
-      notes.push(`Each crank has a ${spec.eyeDiameter} mm eye for a bent pushrod up to ${spec.rodDiameter} mm in diameter. The straight-line distance between the eye’s two seated positions is ${spec.stroke.toFixed(2)} mm. Use this to match the linkage to your actuator’s stroke.`);
+      notes.push(
+        `Each crank has a ${spec.eyeDiameter} mm eye for a bent pushrod up to ${spec.rodDiameter} mm in diameter. The straight-line distance between the eye’s two seated positions is ${spec.stroke.toFixed(2)} mm. Use this to match the linkage to your actuator’s stroke.`,
+        `At the pushrod eye, allow at most ${Number(spec.headDiameter.toFixed(2))} mm outside diameter and ${spec.headProjection} mm above the tab for the pin head or retainer. This leaves ${spec.headTopClearance} mm to the pocket ceiling throughout the throw. Seat the pushrod below the tab in its channel.`,
+      );
     }
-    notes.push(
-      `At the pushrod eye, allow at most ${Number(spec.headDiameter.toFixed(2))} mm outside diameter and ${spec.headProjection} mm above the tab for the pin head or retainer. This leaves ${spec.headTopClearance} mm to the pocket ceiling throughout the throw. Seat the pushrod below the tab in its channel.`,
-    );
   }
-  if (p.special.type === 'turnout' && turnoutSettings(p.special).turnoutMode === 'digital') {
-    const { drive } = turnoutLayout(p);
-    const pinLength = Math.floor((drive.tongue.z0 + drive.pinHole.depth - drive.z.shaftZ + drive.pinHole.radius + 1) * 2) / 2;
-    notes.push(
-      `The slider moves ${drive.stroke} mm. Its slot has a ${drive.cam.slant.toFixed(1)} mm slant at ${Math.round(drive.cam.angle)}° to the slide, between flats of ${drive.cam.flat.toFixed(1)} mm, and moves the crank pin ${drive.travel.toFixed(2)} mm sideways. The crank is ${drive.crank.radius.toFixed(1)} mm long.` +
-        (drive.cam.angle > 30 ? ' A slant this steep needs a firm push, and a knock on the blade can push the slider back. A motor with 5 mm of stroke or more gives a shallow slant.' : ''),
-      `The pin for the plunger is ${drive.motor.eyeDiameter} mm in diameter and about ${pinLength} mm long. The motor body is ${drive.motor.motorLength} × ${drive.motor.motorWidth} × ${drive.motor.motorHeight} mm (length along the plunger × width × height), with its eye ${drive.motor.plungerProjection} mm in front of the end face when retracted.`,
-    );
-  }
+  if (p.special.type === 'turnout' && turnoutSettings(p.special).turnoutMode === 'digital')
+    notes.push(...sliderNotes(turnoutLayout(p).drive));
   return notes.join('\n\n') + '\n';
 }

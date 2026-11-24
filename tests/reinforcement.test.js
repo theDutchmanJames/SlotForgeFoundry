@@ -200,7 +200,8 @@ test('the pit gains printable ribs between its three slots while its adjustable 
     near(surface(road, [centre, y]), 0, 'pit web spans all four cavities');
   const tray = parts.find(part => part.role === 'motorMount');
   for (const travel of [-1.5, 0, 1.5]) {
-    const adjusted = work.own(tray.solid.translate([0, travel, 0]));
+    // The cradle slides along the road, in line with the slider.
+    const adjusted = work.own(tray.solid.translate([travel, 0, 0]));
     near(work.and(road, adjusted).volume(), 0, 'full motor cradle adjustment');
   }
 });

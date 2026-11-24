@@ -1,9 +1,10 @@
 import { plannerStrip } from '../planner-strip.js';
 import { addSlot, braidRecess, braidSections, left, makePart, move, shell, unit } from './solids.js';
 import { laneTools, measuredLane } from './import-track.js';
-import { buildPitTurnout } from './pit-turnout.js';
-import { buildTurnout } from './turnout-piece.js';
-import { addPitMotorMount, pitMotorMountLayout } from './pit-motor-mount.js';
+import { M2, buildPitTurnout } from './pit-turnout.js';
+import { buildTurnout, printsTopDown, sliderSolid } from './turnout-piece.js';
+import { inlineMotorTray } from './pit-motor-mount.js';
+import { pitDriveLayout } from './pit-drive.js';
 import { checkPitBorderHardware } from './pit-border-linkage.js';
 import { pitWhiteLines } from './pit-white-line.js';
 import { grooveClearOfDovetails } from './paint-guides.js';
@@ -146,6 +147,79 @@ function splitPitRoads(work, p, path, pieces, loose) {
   return result;
 }
 
+// The slider and the motor of a driven flipper, in the island between the
+// main slot and the pit slot. The road gets their channel and cavity; the
+// slider and the motor cradle are loose parts.
+function addPitDrive(work, p, drive, fork, road, guides, recess) {
+  const { sign, base, tray } = drive;
+  const across = (v) => base + sign * v;
+  const box = ([x0, y0, x1, y1]) =>
+    work.section([[
+      [x0, Math.min(across(y0), across(y1))], [x1, Math.min(across(y0), across(y1))],
+      [x1, Math.max(across(y0), across(y1))], [x0, Math.max(across(y0), across(y1))],
+    ]]);
+  const channel = union2(work, drive.channels.map(box));
+  const chamber = box(drive.chamber),
+    slide = box(drive.slide);
+  const openings = union2(work, [channel, chamber, slide]);
+  const housing = work.own(openings.offset(Math.max(p.wall, tray.rim), 'Round', 2, 32));
+  if (work.own(housing.subtract(road.section)).area() > 1e-4)
+    throw Error(
+      'The slider and its motor cross the road edge or a print seam. Use fewer road segments, a larger Pit lane offset or a smaller motor.',
+    );
+  const slotsAndBraid = union2(work, [guides, ...(recess ? [recess] : [])]);
+  if (work.own(openings.intersect(slotsAndBraid)).area() > 1e-6)
+    throw Error(
+      'The slider or its motor would lie under a guide slot or its braid. Use a narrower motor, a shorter Usable stroke or a larger Pit lane offset.',
+    );
+  road.additions.push(work.prism(housing, 0, p.height));
+  if (p.hollow && p.reinforcement) (road.ribKeepouts ??= []).push(housing);
+  const pilot = work.own(
+    work.wasm.Manifold.cylinder(tray.pilotHeight, M2.pilotRadius, M2.pilotRadius, 40),
+  );
+  road.cuts.push(
+    work.prism(channel, -0.1, drive.z.channelTop),
+    work.prism(chamber, -0.1, drive.z.cavityTop),
+    work.prism(slide, -0.1, tray.trayTop + 0.15),
+    ...drive.screws.map(([x, y]) => work.own(pilot.translate([x, across(y), tray.trayTop - 0.01]))),
+  );
+  const hand = fork.side === 'left' ? 'Left' : 'Right';
+  const travelled = p.special.turnoutPosition === 'pit' ? drive.stroke : 0;
+  // For the preview: the measured motor body, and its plunger out to the pin
+  // under the slider, which moves with the selected route.
+  const m = drive.motor,
+    centre = [drive.motorCentre, across(drive.axis)];
+  const sides = [centre[1] - m.motorWidth / 2, centre[1] + m.motorWidth / 2];
+  const motorGuide = {
+    side: fork.side,
+    caseBounds: {
+      min: [centre[0] - m.motorLength / 2, sides[0], tray.trayTop],
+      max: [centre[0] + m.motorLength / 2, sides[1], tray.bodyTop],
+    },
+    rodPath: [
+      [drive.pinHole.x + travelled, centre[1], tray.shaftZ],
+      [drive.motorFront, centre[1], tray.shaftZ],
+    ],
+  };
+  return [
+    printsTopDown({
+      id: 'pit-slider-' + fork.side,
+      name: hand + ' pit slider',
+      role: 'turnoutSlider',
+      solid: work.own(sliderSolid(work, drive, sign).translate([travelled, base, 0])),
+    }, work.wasm, (shop) => sliderSolid(shop, drive, sign)),
+    {
+      id: 'pit-mount-' + fork.side,
+      name: hand + ' pit motor cradle',
+      role: 'motorMount',
+      motorGuide,
+      solid: work.own(
+        inlineMotorTray(work, drive.motor).solid.translate([drive.motorCentre, across(drive.axis), 0]),
+      ),
+    },
+  ];
+}
+
 function buildPit(work, p, generate) {
   const geometry = pitLayout(p);
   const { path: raw, lanePaths, forks } = geometry;
@@ -180,10 +254,16 @@ function buildPit(work, p, generate) {
     const station = 0.5 + fork.heel[0] / p.length;
     const index = path.cuts.slice(1).findIndex((t) => t >= station);
     const road = roads[index];
-    const mount = pitMotorMountLayout(p, fork, lanePaths[p.lanes + i]);
-    if (mount) loose.push(addPitMotorMount(work, p, mount, road, borders, loose));
+    // With a motor, a slider in the island works a pin on the crank. Without
+    // one, the crank has an eye for a pushrod that leaves at the pit side.
+    const drive = p.special.motorMount
+      ? pitDriveLayout(p, fork, lanePaths[p.lanes + i])
+      : null;
+    if (drive) loose.push(...addPitDrive(work, p, drive, fork, road, guides, recess));
     else checkPitBorderHardware(work, p, fork, loose);
-    loose.push(...buildPitTurnout(work, p, fork, road, cover, guides, borders, mount?.rodEndY));
+    loose.push(
+      ...buildPitTurnout(work, p, fork, road, cover, guides, borders, undefined, drive ? { cam: drive.crank } : {}),
+    );
   }
   const segmented = splitPitRoads(work, p, path, pieces, loose);
   const stripes = pitWhiteLines(p, geometry);

@@ -1,6 +1,6 @@
 import { pitLayout } from './special-junction-paths.js';
 import { measuredLane } from './import-track.js';
-import { pitMotorXBounds } from './pit-turnout.js';
+import { pitDriveLayout } from './pit-drive.js';
 import { interpolateStation } from './braid-feeds.js';
 
 export const PIT_CONTACT_DEFAULTS = Object.freeze({ pitContactMode: 'wire', pitContactLength: 1.2 });
@@ -114,8 +114,18 @@ export function slottedIsland(p, rail, sign, slitLength, shift, { startOnly = fa
 export function pitBraidLayout(p, geometry = pitLayout(p)) {
   const conductors = [], jumpers = [];
   const result = { conductors, jumpers, protectedEndX: -Infinity };
-  if (!p.braidWidth) return result;
   const { lanePaths, branches, forks } = geometry;
+  // A motor drives each flipper with a slider in its island. Print seams and
+  // the island braids keep clear of it, with or without braid.
+  const drives = p.special.motorMount
+    ? forks.map((fork, i) => pitDriveLayout(p, fork, lanePaths[p.lanes + i]))
+    : [];
+  if (drives.length)
+    result.driveSpan = {
+      min: Math.min(...drives.map((drive) => drive.start)),
+      max: Math.max(...drives.map((drive) => drive.end)),
+    };
+  if (!p.braidWidth) return result;
   const port = p.length / 2 + 0.05;
   const lines = lanePaths.slice(0, p.lanes).map((points) =>
     measuredLane([
@@ -170,16 +180,21 @@ export function pitBraidLayout(p, geometry = pitLayout(p)) {
     // Stagger the jumper pairs so wires running across the underside do not
     // cross, even when a single shallow channel is all the guide floor allows.
     const stagger = feedLength + wireWidth + 1;
-    // Move only the entry feed holes along their conductors. Extending a
-    // crank or its motor ears should not shorten either live braid shelf.
-    const feedShift = p.special.motorMount
-      ? Math.max(0, pitMotorXBounds(p, fork).max + wireWidth + 1 - minX) : 0;
-    for (const [line, polarity, route, opposite, x] of [
-      [main, sign, 'main island', pitOutside, minX],
-      [pit, -sign, 'pit island', mainOutside, minX + stagger],
+    // With a motor the two island strips start where the slider leaves
+    // them room, and their entry contacts lie behind the motor. A folded
+    // braid tail is its strip's own end, so that strip starts there too.
+    const drive = drives[forkIndex];
+    const behind = drive ? drive.end + wireWidth / 2 + 1 : -Infinity;
+    const mainStart = Math.max(minX, drive?.mainStripStart ?? -Infinity),
+      pitStart = Math.max(minX + stagger, drive?.stripStart ?? -Infinity);
+    const mainContact = Math.max(mainStart, behind),
+      pitContact = Math.max(pitStart, mainContact + (drive ? stagger : 0));
+    for (const [line, polarity, route, opposite, x, start, contactX] of [
+      [main, sign, 'main island', pitOutside, minX, mainStart, mainContact],
+      [pit, -sign, 'pit island', mainOutside, minX + stagger, pitStart, pitContact],
     ]) {
       const centreOffset = polarity * mid;
-      const from = xStation(line, centreOffset, x + (slotted ? feedShift : 0)),
+      const from = xStation(line, centreOffset, slotted ? contactX : start),
         to = xStation(line, centreOffset, -x);
       const half = feedLength / (2 * line.total);
       if (to - from <= 4 * half + 1 / line.total)
@@ -188,7 +203,7 @@ export function pitBraidLayout(p, geometry = pitLayout(p)) {
         );
       const island = makeRail(p, line, driver, polarity, route, from, to);
       conductors.push(island);
-      const first = !slotted && feedShift ? xStation(line, centreOffset, x + feedShift) + half : from + half;
+      const first = xStation(line, centreOffset, contactX) + half;
       if (first + 2 * half >= to - half)
         throw Error('The pit motor leaves too little room for both braid feeds. Lengthen the pit or reduce motor width or stroke.');
       const ends = slotted ? slottedIsland(p, island, polarity, feedLength, shift) :

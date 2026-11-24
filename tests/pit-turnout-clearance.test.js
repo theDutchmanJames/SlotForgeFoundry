@@ -187,7 +187,8 @@ function rotateAboutHeel(work, solid, fork, radians) {
 }
 
 for (const [description, mounted, custom] of [
-  ['external', false, false], ['motor-driven', true, false], ['custom motor-driven', true, true],
+  // A motor works a pin on the crank through a slider: see pit-drive.test.js.
+  ['external', false, false], ['custom external', false, true],
 ]) {
   test(`exported crank tab and pushrod head have running clearance throughout a mirrored ${description} pit`, () => {
     const p = specialTrackParams('pit', {

@@ -93,7 +93,7 @@ export async function checkSpecialTrackPieces({
       assert.equal(await apply.isDisabled(), true);
       await field('spMotorHeight').fill('5');
       assert.ok(await apply.isEnabled(), await creator.locator('[data-ct-status]').innerText());
-      assert.match(await creator.locator('[data-motor-diagram]').innerText(), /Crank travel 1\.4 mm/);
+      assert.match(await creator.locator('[data-motor-diagram]').innerText(), /Plunger travel 2 mm, taken by the slider/);
       await tile('timing').click();
       await tile('pit').click();
       assert.equal(await field('spMotorMount').isChecked(), true);
@@ -230,7 +230,7 @@ export async function checkSpecialTrackPieces({
   await input('spEyeDiameter').fill('1.5');
   await input('spPlungerProjection').fill('2.5');
   await live();
-  assert.match(await page.locator('[data-assembly-notes="pit"]').textContent(), /cradle bosses/);
+  assert.match(await page.locator('[data-assembly-notes="pit"]').textContent(), /Lay the slider in its channel between the main slot and the pit slot/);
   const motorPit = JSON.parse((await download(action('save'))).bytes);
   assert.equal(motorPit.track.params.special.motorMount, true);
   assert.equal(motorPit.track.params.special.motorLength, 16);
@@ -242,14 +242,18 @@ export async function checkSpecialTrackPieces({
   assert.equal(await input('spEyeDiameter').inputValue(), '1.5');
   await page.getByRole('button', { name: 'Motor mounts, 1 part' }).waitFor();
   await page.locator('[data-guide="pit-motor-left"]').getByText('Motor · 16 × 8 × 5 mm').waitFor();
-  await input('spEyeDiameter').focus();
-  await page.locator('[data-guide="pit-eye-clearance-left"]').waitFor();
-  assert.match(await page.locator('[data-pushrod-play]').innerText(), /Ø3 mm/);
+  // A slider works a pin on the crank: the eye is the plunger's, and no pushrod is asked for.
+  await page.getByRole('button', { name: 'Turnout sliders, 1 part' }).waitFor();
+  await page.locator('[data-guide="pit-plunger-left"]').waitFor();
+  assert.match(await page.locator('[data-pushrod-play]').innerText(), /straight pin of this diameter/);
+  assert.equal(await input('spRodDiameter').isVisible(), false);
+  assert.equal(await input('spTurnoutPlay').isVisible(), true);
   await action('export-menu').click();
   const motorKit = unzipSync((await download(action('export-kit'))).bytes);
   assert.ok(Object.keys(motorKit).some(name => /^parts\/M.*\.stl$/i.test(name)));
   const buildNotes = new TextDecoder().decode(motorKit['Assembly notes.txt']);
-  assert.match(buildNotes, /1 mm above the tab/);
+  assert.match(buildNotes, /The slider moves 2 mm/);
+  assert.doesNotMatch(buildNotes, /pushrod/i);
   assert.match(buildNotes, /keyed pivot.*M2/i);
   console.log('✓ A resized pit motor survives reopening, appears in the live assembly and exports a printable mount');
   const borderPit = newProject();

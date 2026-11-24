@@ -72,7 +72,8 @@ test('Road wiring instructions follow both the draft braid and motor choices', (
   Object.assign(pit.special, { pitContactMode: 'braid', motorMount: true });
   syncPitAssemblyNotes(form, pit);
   assert.match(notes.innerHTML, /Fold each tail down through its slot/);
-  assert.match(notes.innerHTML, /cradle bosses/);
+  assert.match(notes.innerHTML, /Lay the slider in its channel between the main slot and the pit slot/);
+  assert.doesNotMatch(notes.innerHTML, /pushrod/i);
   syncPitAssemblyNotes(form, { ...pit, braidWidth: 0 });
   assert.doesNotMatch(notes.innerHTML, /Fold each tail/);
 });

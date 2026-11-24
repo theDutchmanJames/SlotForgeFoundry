@@ -78,7 +78,8 @@ test('the pit kit prints the mount and shows the measured motor as a guide in bo
     assert.ok(mount?.motorGuide, 'the printable cradle supplies the preview dimensions');
     const { caseBounds, rodPath } = mount.motorGuide;
     const size = caseBounds.max.map((v, i) => v - caseBounds.min[i]);
-    assert.ok(size.every((v, i) => Math.abs(v - [8, 15, 5][i]) < 1e-6));
+    // The motor lies along the road, in line with its slider.
+    assert.ok(size.every((v, i) => Math.abs(v - [15, 8, 5][i]) < 1e-6));
     assert.ok(caseBounds.min[2] >= 0 && mount.solid.boundingBox().min[2] >= 0);
     const box = wasm.Manifold.cube(size);
     const caseGauge = box.translate(caseBounds.min);
@@ -93,13 +94,12 @@ test('the pit kit prints the mount and shows the measured motor as a guide in bo
 
     const guides = toolGuides({ mode: 'track', tab: 'geometry', track: project.track, parts });
     assert.match(guides.find(g => g.id === 'pit-motor-left').text, /15 × 8 × 5 mm/);
-    assert.deepEqual(guides.find(g => g.id === 'pit-pushrod-left').paths, [rodPath]);
-    const eye = toolGuides({ mode: 'track', tab: 'geometry', track: project.track, parts, field: 'spEyeDiameter' })
-      .find(g => g.id === 'pit-eye-clearance-left');
-    assert.match(eye.text, /Clearance above eye · 1.4 mm/);
+    assert.deepEqual(guides.find(g => g.id === 'pit-plunger-left').paths, [rodPath]);
+    // A pin on the crank takes the place of the eye for a pushrod.
+    assert.equal(parts.some(part => part.crankGuide), false);
     const files = unzipSync(packKit(wasm, parts, project, encodeSTL));
     const print = Object.keys(files).filter(name => name.endsWith('.stl')).sort();
-    assert.equal(print.length, 5, 'road, blade, bearing, crank and mount each print once');
+    assert.equal(print.length, 6, 'road, blade, bearing, crank, slider and mount each print once');
     const mountFile = print.find(name => name.startsWith('parts/M'));
     assert.ok(mountFile);
     const fromPlate = parseSTL(wasm, files[mountFile]);
@@ -112,7 +112,7 @@ test('the pit kit prints the mount and shows the measured motor as a guide in bo
       for (const [i, bytes] of meshBytes.entries()) {
         assert.ok(bytes.equals(previousPrint[i]), 'switching the route changed ' + print[i]);
       }
-      assert.notDeepEqual(rodPath, previousRod, 'the pushrod moves with the selected route');
+      assert.notDeepEqual(rodPath, previousRod, 'the plunger moves with the selected route');
     }
     previousPrint = meshBytes;
     previousRod = rodPath;

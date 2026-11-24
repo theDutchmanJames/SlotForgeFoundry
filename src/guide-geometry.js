@@ -753,7 +753,7 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
       if (markerGuides.length) return markerGuides;
     }
     if (plan.turnouts?.length) {
-      const linkageField = ['spEyeDiameter', 'spRodDiameter', 'spMotorStroke'].includes(field);
+      const linkageField = ['spEyeDiameter', 'spRodDiameter'].includes(field);
       if (linkageField || part?.role === 'turnoutArm') {
         const cranks = (linkageField ? parts : [part]).filter(item => item.crankGuide);
         if (cranks.length) return cranks.map(({ crankGuide: g }) => {
@@ -781,9 +781,9 @@ function trackGuides({ track, tab, field, part, parts = [] }) {
           const body = boxCorners(caseBounds);
           guides.push(
             label('pit-motor-' + side, 'reference', body[7],
-              'Motor · ' + [size[1], size[0], size[2]].map(fmt).join(' × ') + ' mm',
+              'Motor · ' + size.map(fmt).join(' × ') + ' mm',
               edges(body), { dashed: true }),
-            line('pit-pushrod-' + side, 'accent', rodPath, { strong: true }),
+            line('pit-plunger-' + side, 'accent', rodPath, { strong: true }),
           );
         }
       }

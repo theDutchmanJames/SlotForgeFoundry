@@ -31,7 +31,7 @@ const descriptions = {
     'The road steps sideways and returns to its starting line. Use a smaller radius for a sharper turn, or give the exit more room to flow.',
   diamond:
     'Two roads cross at surface level. Each slot continues to the opposite arm, with insulating gaps in the braid at each intersection.',
-  pit: 'Each pit uses its own lane’s controller. Choose Bottom in Track Set to see the pushrod crank move with the flipper.',
+  pit: 'Each pit uses its own lane’s controller. Choose Bottom in Track Set to see the crank move with the flipper.',
   timing:
     'Choose the detector you plan to fit. Optical gates keep the running braids continuous. Dead strips isolate a short sensing section in each lane.',
   turnout:
@@ -56,12 +56,23 @@ function pitLinkageControls(p) {
     const [min, max] = PIT_MOTOR_LIMITS[key];
     return field(specialFieldName(key), motorLabels[key], s[key], 'mm', { min, max });
   };
-  return measurement('rodDiameter') + measurement('eyeDiameter') +
+  const [minStroke, maxStroke] = TURNOUT_DRIVE.strokeLimits,
+    [minPlay, maxPlay] = TURNOUT_DRIVE.playLimits;
+  const stroke = field('spMotorStroke', motorLabels.motorStroke, s.motorStroke, 'mm', { min: minStroke, max: maxStroke });
+  return check('spMotorMount', 'Push-pull motor under the road', s.motorMount) +
+    '<div data-manual-fields' + (s.motorMount ? ' hidden' : '') + '>' +
+    '<p class="hint">Without a motor the crank has an eye for a bent pushrod, which leaves through a channel at the pit side for a lever or a motor of your own.</p>' +
+    measurement('rodDiameter') +
+    '</div>' +
+    field(specialFieldName('eyeDiameter'), s.motorMount ? 'Plunger eye diameter' : motorLabels.eyeDiameter, s.eyeDiameter, 'mm', {
+      min: PIT_MOTOR_LIMITS.eyeDiameter[0], max: PIT_MOTOR_LIMITS.eyeDiameter[1],
+    }) +
     '<p class="hint" data-pushrod-play></p>' +
-    check('spMotorMount', 'Adjustable motor mount', s.motorMount) +
     '<div data-motor-fields' + (s.motorMount ? '' : ' hidden') + '>' +
-    '<p class="hint">Measure the rectangular body along its centred plunger. Measure retracted reach from the end face to the pushrod attachment, then measure the travel between stops.</p>' +
-    motorBodyFields.map(measurement).join('') +
+    '<p class="hint">The motor lies under the road between the main slot and the pit slot, in line with a slider that works a pin on the crank. Nothing passes under a slot, and no wire has to be bent. Measure the body along its plunger, the retracted reach from the end face to the eye in the plunger, and the travel between stops.</p>' +
+    motorBodyFields.filter((key) => key !== 'motorStroke').map(measurement).join('') + stroke +
+    '<p class="hint">From about 5 mm of stroke the slant in the slider is shallow: the motor needs little force, and the flat ends of the slot hold the flipper in place. At 2 to 4 mm it is steep: it needs more push, and a knock on the flipper can push the slider back.</p>' +
+    field('spTurnoutPlay', 'Pin play', p.special.turnoutPlay ?? TURNOUT_DRIVE.play, 'mm', { min: minPlay, max: maxPlay, step: 0.05 }) +
     '<figure class="joint-fit-diagram" data-motor-diagram data-track-height="' + esc(p.height) +
     '" data-max-height="' + esc(maxPitMotorHeight(p)) + '"></figure></div>';
 }
@@ -75,8 +86,19 @@ function syncPitLinkage(form) {
   const hole = form.querySelector('[name="spEyeDiameter"]').valueAsNumber;
   const play = hole - rod;
   const hardware = pitEyeHardware(rod, hole);
-  form.querySelector('[data-pushrod-play]').textContent = Number.isFinite(play) && rod > 0 && play >= 0
-    ? `Pushrod play · ${fmt(play)} mm. A pin head or retainer up to Ø${fmt(hardware.headDiameter)} mm can extend ${fmt(hardware.headProjection)} mm above the tab, with ${fmt(hardware.headTopClearance)} mm to spare.` : '';
+  // With a motor the eye is the plunger's, for the pin under the slider.
+  // Without one it is the hole in the crank, for the pushrod.
+  form.querySelector('[data-pushrod-play]').textContent = enabled
+    ? 'A straight pin of this diameter goes into the hole under the end of the slider, and the eye of the plunger hooks over it.'
+    : Number.isFinite(play) && rod > 0 && play >= 0
+      ? `Pushrod play · ${fmt(play)} mm. A pin head or retainer up to Ø${fmt(hardware.headDiameter)} mm can extend ${fmt(hardware.headProjection)} mm above the tab, with ${fmt(hardware.headTopClearance)} mm to spare.` : '';
+  const eyeLabel = form.querySelector('[name="spEyeDiameter"]').labels?.[0]?.firstElementChild;
+  if (eyeLabel) eyeLabel.textContent = enabled ? 'Plunger eye diameter' : motorLabels.eyeDiameter;
+  const manual = form.querySelector('[data-manual-fields]');
+  if (manual) {
+    manual.hidden = enabled;
+    for (const input of manual.querySelectorAll('input')) input.disabled = enabled;
+  }
   group.hidden = !enabled;
   for (const input of group.querySelectorAll('input')) input.disabled = !enabled;
   if (!enabled) return;
@@ -102,9 +124,7 @@ function syncPitLinkage(form) {
   const status = height > limit
     ? 'Body is ' + fmt(height - limit) + ' mm too tall for this deck.'
     : 'Maximum body height here · ' + fmt(limit) + ' mm.';
-  const travel = Number.isFinite(play) && play >= 0 && stroke > play
-    ? `Plunger travel ${fmt(stroke)} mm · Crank travel ${fmt(stroke - play)} mm`
-    : `Plunger travel ${fmt(stroke)} mm`;
+  const travel = `Plunger travel ${fmt(stroke)} mm, taken by the slider`;
   diagram.innerHTML =
     `<svg viewBox="0 0 202 64" role="img" aria-label="Motor side view, ${fmt(length)} mm long, ${fmt(width)} mm wide and ${fmt(height)} mm high. Plunger travel ${fmt(stroke)} mm.">
       <rect x="12" y="${roadY}" width="162" height="${ceilingY - roadY}" fill="var(--d-track)"/>

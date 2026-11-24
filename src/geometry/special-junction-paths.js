@@ -1,5 +1,5 @@
 import { braidSpan, dot, left, move } from './solids.js';
-import { pitMotorXBounds, pitTurnoutProfile } from './pit-turnout.js';
+import { pitTurnoutProfile } from './pit-turnout.js';
 
 export const offsets = (p) =>
   Array.from(
@@ -110,10 +110,10 @@ export function pitPrintPath(path, forks, p, electrical) {
   const fork = forks[0];
   let protectedStart = fork.mainToe[0] - 5;
   let protectedEnd = Math.max(fork.guardEndX + 2, electrical?.protectedEndX ?? -Infinity);
-  if (p.special.motorMount) {
-    const motor = pitMotorXBounds(p, fork);
-    protectedStart = Math.min(protectedStart, motor.min);
-    protectedEnd = Math.max(protectedEnd, motor.max);
+  // The slider and the motor of a driven flipper lie in one road segment.
+  if (electrical?.driveSpan) {
+    protectedStart = Math.min(protectedStart, electrical.driveSpan.min - 1);
+    protectedEnd = Math.max(protectedEnd, electrical.driveSpan.max + 1);
   }
   const lo = Math.max(0, shift(protectedStart));
   const hi = Math.min(1, shift(protectedEnd));
