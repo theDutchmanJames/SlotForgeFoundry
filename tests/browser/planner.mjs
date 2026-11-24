@@ -66,6 +66,20 @@ export async function checkPlanner({ page, action, download, snap }) {
   await snap('track-planner-3d');
   await cmd('plan').click();
   await idle();
+  // Export waits for the print bed check: the first try opens the window
+  // instead of downloading, and confirming the bed makes the layout exportable.
+  await action('export-menu').click();
+  const bed = page.locator('dialog.pl-segment');
+  await bed.waitFor();
+  assert.match(
+    await bed.locator('.pl-segment-note').textContent(),
+    /Confirm your print bed before exporting/,
+  );
+  assert.equal(await field('bedWidth').inputValue(), '200');
+  await cmd('segment-confirm').click();
+  await idle();
+  assert.equal(await bed.count(), 0);
+  assert.match(await panel.locator('.pl-message').textContent(), /ready to export/);
   const kit = unzipSync((await download(action('export-menu'))).bytes);
   assert.equal(JSON.parse(strFromU8(kit['layout.slotplan'])).nodes.length, 10);
   // Every different part once, its count in the name, grouped by folder.

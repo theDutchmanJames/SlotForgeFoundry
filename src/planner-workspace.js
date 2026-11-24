@@ -240,6 +240,15 @@ export function createPlanner({ host, call, download, current, promote }) {
         (fitsCurrentPlate(sourcePartMap(defs.get(g.source)).get(g.id)) ? 0 : g.count),
       0,
     );
+  // A piece recipe remembers the print bed it was checked against. A recipe
+  // placed, changed or rebuilt since then, or another bed, needs the check again.
+  const bedKey = () => [plate.width, plate.depth, plate.margin].join(' x ');
+  const usedSources = (data = layout) => [...new Set(data.nodes.map((n) => n.source))];
+  const uncheckedSources = () =>
+    usedSources().filter((key) => layout.sources[key].bed !== bedKey());
+  const markChecked = (data) => {
+    for (const key of usedSources(data)) data.sources[key].bed = bedKey();
+  };
   // Cut every piece that does not fit the plate. Nothing is cut when a piece
   // is placed: this runs when the user asks for it and has checked the plate.
   async function segmentLayout() {
@@ -272,11 +281,13 @@ export function createPlanner({ host, call, download, current, promote }) {
     }
     const bed = plate.width + ' × ' + plate.depth + ' mm';
     if (!swaps.size) {
+      // Nothing to cut, but the bed is confirmed for these pieces.
+      if (uncheckedSources().length) await edit((next) => markChecked(next));
       const over = partsOverPlate();
       message(
         over
           ? [over + (over === 1 ? ' part does' : ' parts do') + ' not fit a ' + bed + ' plate and cannot be cut further.', ...warnings].join(' ')
-          : 'Every part already fits a ' + bed + ' plate. Nothing was cut.',
+          : 'Every part already fits a ' + bed + ' plate. Nothing was cut. The layout is ready to export.',
         Boolean(over),
       );
       return;
@@ -324,6 +335,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         cut++;
       }
       next.nodes = out;
+      markChecked(next);
       return { selected };
     }, models);
     const over = partsOverPlate();
@@ -331,7 +343,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       [
         cut + (cut === 1 ? ' piece was' : ' pieces were') + ' cut to fit a ' + bed + ' plate.',
         left ? left + (left === 1 ? ' piece on a ramp or with a section removed was' : ' pieces on a ramp or with a section removed were') + ' left as placed.' : '',
-        over ? over + (over === 1 ? ' part still does' : ' parts still do') + ' not fit.' : '',
+        over ? over + (over === 1 ? ' part still does' : ' parts still do') + ' not fit.' : 'The layout is ready to export.',
         ...warnings,
       ].filter(Boolean).join(' '),
       Boolean(over),
@@ -391,7 +403,8 @@ export function createPlanner({ host, call, download, current, promote }) {
       );
       const next = same?.[0] ?? 's' + ++serial;
       models.set(next, { ...def, name: entry.name });
-      additions[next] = { ...entry, track: def.track };
+      // Other parts than were checked against the print bed.
+      additions[next] = { ...entry, track: def.track, bed: undefined };
       swaps.set(key, next);
     }
     if (!swaps.size) return;
@@ -1023,6 +1036,7 @@ export function createPlanner({ host, call, download, current, promote }) {
           if (key.startsWith('trackside')) track.params[key] = source.track.params[key];
         const def = await build(track, false);
         source.track = def.track;
+        delete source.bed;
         source.name = piece.name;
         source.ref = { ...source.ref, revision: owner.revision };
         changed++;
@@ -1166,6 +1180,12 @@ export function createPlanner({ host, call, download, current, promote }) {
   async function exportKit() {
     if (!layout.nodes.length)
       throw Error('Place a track piece before exporting.');
+    // No print files until the print bed is confirmed for every piece.
+    if (uncheckedSources().length)
+      return perform(
+        'segment',
+        'Confirm your print bed before exporting. Nothing is exported until the layout has been segmented for it.',
+      );
     message('Preparing layout print kit…');
     const files = {},
       quantities = tally(layout, defs);
@@ -1273,7 +1293,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       host.removeAttribute('aria-busy');
     }
   }
-  async function perform(key) {
+  async function perform(key, reason = '') {
     if (key === 'undo' || key === 'redo')
       return travel(key === 'undo' ? undo : redo, key === 'undo' ? redo : undo);
     if (key === 'save') return save();
@@ -1307,9 +1327,11 @@ export function createPlanner({ host, call, download, current, promote }) {
       for (const [name, value] of [['bedWidth', plate.width], ['bedDepth', plate.depth], ['bedMargin', plate.margin]])
         field(name).value = value;
       const over = partsOverPlate();
-      $('.pl-segment-note').textContent = over
-        ? over + (over === 1 ? ' part does' : ' parts do') + ' not fit a ' + plate.width + ' × ' + plate.depth + ' mm plate now.'
-        : 'Every part fits a ' + plate.width + ' × ' + plate.depth + ' mm plate now.';
+      $('.pl-segment-note').textContent =
+        (reason ? reason + ' ' : '') +
+        (over
+          ? over + (over === 1 ? ' part does' : ' parts do') + ' not fit a ' + plate.width + ' × ' + plate.depth + ' mm plate now.'
+          : 'Every part fits a ' + plate.width + ' × ' + plate.depth + ' mm plate now.');
       $('.pl-segment').showModal();
       return;
     }
