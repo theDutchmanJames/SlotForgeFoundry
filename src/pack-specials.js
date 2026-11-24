@@ -21,14 +21,11 @@ export function specialsFor(lanes) {
   return SPECIAL_PIECES.filter(([type]) => !TWO_LANE_ONLY.has(type) || lanes === 2);
 }
 
-// Track Set's shelf also offers the pieces made for a single-lane road. The
-// Planner does not list them yet: a turnout has three ends, and the Planner
-// joins pieces that have their ends in pairs.
+// The shelf of a single-lane pack, in Track Set and in the Planner, also
+// offers the pieces made for one lane.
 export function shelfSpecialsFor(lanes) {
   return [...specialsFor(lanes), ...(lanes === 1 ? SINGLE_LANE_SPECIALS : [])];
 }
-export const plannerCanPlace = (track) =>
-  !SINGLE_LANE_SPECIALS.some(([type]) => type === track?.params?.special?.type);
 
 // A special piece on the pack's rules, taken from its first plain straight.
 export function packSpecialTrack(collection, type) {

@@ -35,6 +35,10 @@ export function frameFor(node, def) {
     id: node.id,
     i,
     key: endKey(node.id, i),
+    // Whether travel leaves the piece here. Ends come in pairs, in then
+    // out, unless the piece says otherwise: the branch of a turnout is a
+    // second way out.
+    out: p.out ?? i % 2 === 1,
     xy: xyOf(node.pose, p.xy),
     angle: dirOf(node.pose, p.angle),
     edges: p.edges.map((q) => xyOf(node.pose, q)),
@@ -44,7 +48,7 @@ export function frameFor(node, def) {
     params: def.track.params,
     hardware:
       p.hardware?.map((g) => ({ ...g, xy: xyOf(node.pose, g.xy) })) ?? [],
-    z: node.h[i % 2] + (p.baseZ ?? 0) + def.track.params.height,
+    z: node.h[(p.out ?? i % 2 === 1) ? 1 : 0] + (p.baseZ ?? 0) + def.track.params.height,
   }));
 }
 export function jointMap(ends) {
@@ -139,7 +143,7 @@ const slotWord = (p) => (p.lanes > 1 ? 'slots' : 'slot');
 // end B of the first piece. The edge is the one the off-centre slot was typed
 // from, so the numbers read like the ones entered in Track Set.
 function slotReading(target, incoming) {
-  const travel = target.angle + (target.i % 2 ? 0 : pi),
+  const travel = target.angle + (target.out ? 0 : pi),
     n = [-Math.sin(travel), Math.cos(travel)];
   const across = (q) =>
     (q[0] - target.xy[0]) * n[0] + (q[1] - target.xy[1]) * n[1];
@@ -356,7 +360,7 @@ export function blockedJoints({ open }) {
             Math.abs(turn(e.angle - f.angle - pi)) < 0.005,
         );
         if (!f) continue;
-        const [a, b] = f.i % 2 && !(e.i % 2) ? [f, e] : [e, f];
+        const [a, b] = f.out && !e.out ? [f, e] : [e, f];
         const fault = mismatch(a, b);
         if (!fault) continue;
         used.add(e.key).add(f.key);
@@ -488,6 +492,23 @@ export function applyBarriers(params, { outer, inner }) {
   else if (ins) write(inner, '');
   if (out && ins) write(inner, 'Inner');
 }
+// A turnout in a layout: which way it branches and which insert it has are
+// set per placed piece, and stay with the layout when its pack changes.
+export const isTurnout = (params) => params?.special?.type === 'turnout';
+export const TURNOUT_LAYOUT_KEYS = Object.freeze(['side', 'turnoutMode']);
+export function turnoutChoice(params) {
+  return {
+    side: params.special.side === 'right' ? 'right' : 'left',
+    turnoutMode: params.special.turnoutMode ?? 'digital',
+  };
+}
+export function applyTurnoutChoice(params, choice) {
+  const special = { ...params.special };
+  for (const key of TURNOUT_LAYOUT_KEYS)
+    if (choice[key] !== undefined) special[key] = choice[key];
+  params.special = special;
+  return params;
+}
 export const supportStyleOf = (n) =>
   n.supportStyle === 'pegs' ? 'pegs' : 'block';
 // A peg's size as [across the road, along the road].
@@ -560,9 +581,11 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right') {
     def.track.params.special?.type === 'diamond'
       ? local.open.filter((e) => Math.abs(Math.sin(e.angle)) < 0.0001)
       : local.open;
-  const start = main.find((e) => e.i % 2 === 0) ?? main[0],
-    finish = main.findLast((e) => e.i % 2 === 1) ?? main.at(-1);
-  const backward = target && target.i % 2 === 0;
+  // A piece carries on along its main road; the branch of a turnout stays
+  // open beside it.
+  const start = main.find((e) => !e.out) ?? main[0],
+    finish = main.findLast((e) => e.out && !e.branch) ?? main.at(-1);
+  const backward = target && !target.out;
   const [incoming, exit] = backward ? [finish, start] : [start, finish];
   const directional =
     def.track.params.kind === 'curve' ||

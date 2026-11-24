@@ -10,11 +10,9 @@ import {
 } from '../src/special-pieces.js';
 import {
   packSpecialTrack,
-  plannerCanPlace,
   shelfSpecialsFor,
   specialsFor,
 } from '../src/pack-specials.js';
-import { plannerSource } from '../src/planner-source.js';
 import { groupTrackParts } from '../src/track-parts.js';
 import {
   TURNOUT_INSERT,
@@ -445,17 +443,11 @@ test('a multi-lane pack is not offered the turnout and cannot make one', () => {
   assert.throws(() => buildTrack(wasm, packSpecialTrack(pack(2), 'turnout').params), /single-lane piece/);
 });
 
-test('the Track Planner does not offer the turnout and says why it cannot place one', () => {
+test('the turnout is a special of a single-lane pack only, in Track Set and in the Track Planner', () => {
+  // One shelf serves both: specialsFor is the part every pack has.
   for (const lanes of [1, 2, 4]) assert.ok(!specialsFor(lanes).some(([type]) => type === 'turnout'));
   assert.ok(!SPECIAL_PIECES.some(([type]) => type === 'turnout'));
-  const track = { params: turnout(), plan: null };
-  assert.equal(plannerCanPlace(track), false);
-  assert.equal(plannerCanPlace({ params: straight, plan: null }), true);
-  assert.equal(plannerCanPlace({ params: specialTrackParams('pit', { ...straight, width: 200 }) }), true);
-  assert.throws(
-    () => plannerSource(wasm, { track, plate: { width: 250, depth: 250, margin: 5 } }, () => []),
-    /A turnout has three ends\. The Track Planner cannot place it yet/,
-  );
+  assert.ok(shelfSpecialsFor(1).some(([type]) => type === 'turnout'));
 });
 
 test('the parts list has a Turnout inserts family and the notes explain the insert and its four kinds', () => {

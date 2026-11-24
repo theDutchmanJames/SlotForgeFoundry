@@ -89,12 +89,17 @@ const polylineLength = (line) =>
   line.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - line[i - 1][0], p[1] - line[i - 1][1]) : 0), 0);
 
 // Slot length per lane across the layout. A mirrored placement counts its
-// lanes from the other side, so lane 1 stays the same physical lane.
+// lanes from the other side, so lane 1 stays the same physical lane. A
+// section that says which lane each of its slots belongs to (laneOf: the
+// branch of a turnout is more of lane 1) is counted that way.
 export function laneLengths(sections) {
   const lanes = [];
-  for (const { lanes: lines = [], flip } of sections) {
-    const ordered = flip ? [...lines].reverse() : lines;
-    ordered.forEach((line, i) => (lanes[i] = (lanes[i] ?? 0) + polylineLength(line)));
+  for (const { lanes: lines = [], flip, laneOf } of sections) {
+    const ordered = flip && !laneOf ? [...lines].reverse() : lines;
+    ordered.forEach((line, i) => {
+      const lane = laneOf?.[i] ?? i;
+      lanes[lane] = (lanes[lane] ?? 0) + polylineLength(line);
+    });
   }
   return lanes;
 }

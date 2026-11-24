@@ -121,8 +121,77 @@ export async function checkPlanner({ page, action, download, snap }) {
   );
   assert.equal((await state()).nodes.length, 7);
   await field('end').selectOption({ index: 0 });
-  await action('mode-track').click();
   console.log(
     '✓ Track Planner snaps actual print sections, removes and reverses individual corners, opens specials, restores a layout, and exports the counted mirrored STL kit',
+  );
+
+  // A turnout in a single-lane layout: three ends, a side and an insert.
+  await cmd('new').click();
+  await idle();
+  await field('pack').selectOption({ label: 'SlotForge Basic Single Lane' });
+  await cmd('standard').click();
+  await add(/^Full straight/);
+  await cmd('special').click();
+  await cmd('left').click();
+  await add(/^Turnout/);
+  const ends = () => field('end').locator('option').allTextContents();
+  const chosenEnd = () => field('end').evaluate((s) => s.selectedOptions[0].textContent);
+  // Building carries on from the main exit; the branch is open as end C.
+  assert.match(await chosenEnd(), /2 · Turnout · B$/);
+  assert.ok((await ends()).some((text) => /2 · Turnout · C$/.test(text)), (await ends()).join(' | '));
+  let plan = await state();
+  const turnoutOf = (data) => data.sources[data.nodes[1].source].track.params.special;
+  assert.equal(turnoutOf(plan).side, 'left');
+  assert.equal(turnoutOf(plan).turnoutMode, 'digital');
+  assert.match(await panel.locator('.pl-selection p').first().textContent(), /Branch to the left · Digital/);
+  // The barrier and marking panels are not offered on a turnout; its insert is.
+  assert.equal(await panel.locator('.pl-barriers').isVisible(), false);
+  assert.equal(await panel.locator('.pl-markings').isVisible(), false);
+  await field('turnoutMode').selectOption('closed');
+  await cmd('turnout-mode').click();
+  await idle();
+  plan = await state();
+  assert.equal(turnoutOf(plan).turnoutMode, 'closed');
+  assert.equal(plan.nodes.length, 2);
+  assert.match(await panel.locator('.pl-selection p').first().textContent(), /Branch to the left · Closed/);
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Turnout insert · Closed/);
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Turnout · L/);
+  // A corner on the branch, then a straight on the main exit: both join.
+  await cmd('standard').click();
+  await field('end').selectOption({ label: (await ends()).find((text) => /Turnout · C$/.test(text)) });
+  await add(/^R1 corner/);
+  await field('end').selectOption({ label: (await ends()).find((text) => /Turnout · B$/.test(text)) });
+  await add(/^Full straight/);
+  plan = await state();
+  assert.equal(plan.nodes.length, 4);
+  assert.ok(!(await ends()).some((text) => /Turnout/.test(text)), 'all three ends of the turnout are joined or built on');
+  assert.match(await panel.locator('.pl-stats').textContent(), /3 open ends/);
+  assert.equal(await panel.locator('.pl-crossings button').count(), 0);
+  // A right-hand turnout is its own piece in the parts list.
+  await cmd('special').click();
+  await cmd('right').click();
+  await add(/^Turnout/);
+  plan = await state();
+  assert.equal(plan.sources[plan.nodes.at(-1).source].track.params.special.side, 'right');
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Turnout · R/);
+  await snap('track-planner-turnout');
+  // The kit holds the turnout's parts and its notes.
+  await action('export-menu').click();
+  await page.locator('dialog.pl-segment').waitFor();
+  await field('bedWidth').fill('320');
+  await field('bedDepth').fill('320');
+  await cmd('segment-confirm').click();
+  await idle();
+  const turnoutKit = unzipSync((await download(action('export-menu'))).bytes);
+  const names = Object.keys(turnoutKit);
+  assert.ok(names.some((k) => /turnout-insert/i.test(k)), names.join(' '));
+  assert.ok(names.some((k) => /^notes\/.*-assembly\.txt$/.test(k)));
+  const notes = names.filter((k) => /-assembly\.txt$/.test(k)).map((k) => strFromU8(turnoutKit[k])).join('\n');
+  assert.match(notes, /insert/i);
+  await cmd('left').click();
+  await cmd('standard').click();
+  await action('mode-track').click();
+  console.log(
+    '✓ Track Planner places a left and a right turnout with three ends, builds on the branch and the main exit, swaps the insert of a placed turnout, and exports its parts and notes',
   );
 }

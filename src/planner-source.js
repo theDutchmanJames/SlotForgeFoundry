@@ -125,8 +125,9 @@ export function plannerSource(
   });
   const p = project.track.params,
     plan = project.track.plan;
-  if (p.special?.type === 'turnout')
-    throw Error('A turnout has three ends. The Track Planner cannot place it yet. Build and print it from Track Set.');
+  // A turnout prints as one road piece: it is never cut to fit a plate.
+  const whole = p.special?.type === 'turnout';
+  if (whole) autoFit = false;
   let parts = [],
     warning = '';
   const free = () => {
@@ -190,6 +191,8 @@ export function plannerSource(
         build();
       } else warning = answer.reason;
     }
+    if (whole && parts.some((v) => v.role === 'road' && !fits(v)))
+      warning = 'A turnout prints as one road piece, and this one is larger than the print plate.';
     const sections = sectionsFor(parts, p);
     const meshes = describe(parts, project);
     meshes.forEach((m, i) => {

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import init from 'manifold-3d';
 import { createEngine } from '../src/engine.js';
-import { starterPack } from '../src/library-profile.js';
+import { starterPack, trackWithProfile } from '../src/library-profile.js';
+import { packSpecialTrack } from '../src/pack-specials.js';
 import { specialTrackParams } from '../src/special-pieces.js';
 import { parseSTL } from '../src/editor.js';
 import {
@@ -19,6 +20,9 @@ import {
   tally,
   validateLayout,
   blockedJoints,
+  isTurnout,
+  turnoutChoice,
+  applyTurnoutChoice,
 } from '../src/planner-model.js';
 import {
   printGroups,
@@ -1003,4 +1007,176 @@ test('a piece recipe with barriers gives its sections their own barrier parts', 
   assert.equal(print.status(), 'NoError');
   assert.ok(Math.abs(print.boundingBox().min[2]) < 0.001);
   print.delete();
+});
+
+// ---- The turnout in a layout: three ends ----
+const single = starterPack(1);
+const singlePiece = (kind) => {
+  const { name, track } = structuredClone(single.pieces.find((p) => p.track.params.kind === kind));
+  return { name, ...engine.plannerSource({ track: trackWithProfile(track, single.profile), plate }) };
+};
+function turnoutSource(choice = {}, bed = plate, autoFit = false) {
+  const track = trackWithProfile(packSpecialTrack(single, 'turnout'), single.profile);
+  applyTurnoutChoice(track.params, choice);
+  return { name: 'Turnout', ...engine.plannerSource({ track, plate: bed, autoFit }) };
+}
+
+test('a turnout has three ends: it carries on along the main road and leaves its branch open', () => {
+  const turnout = turnoutSource({ side: 'left' });
+  assert.equal(turnout.sections.length, 1);
+  const [entry, main, branch] = turnout.sections[0].ports;
+  assert.equal(turnout.sections[0].ports.length, 3);
+  assert.deepEqual([entry.out, main.out, branch.out], [undefined, undefined, true]);
+  assert.equal(branch.branch, true);
+  // The branch leaves to the left of travel, turned by the branch angle.
+  assert.ok(branch.xy[1] > 20, 'the branch ends beside the main road: ' + branch.xy);
+  const angle = (turnout.track.params.special.turnoutAngle * Math.PI) / 180;
+  assert.ok(Math.abs(branch.angle - angle) < 1e-9);
+  assert.equal(turnout.sections[0].lanes.length, 2, 'the main lane and the branch lane');
+  // Both are lane 1 of a single-lane layout: the braid list has one lane,
+  // as long as the main road and the branch together.
+  const p = turnout.track.params;
+  const braid = laneLengths([{ lanes: turnout.sections[0].lanes, laneOf: turnout.sections[0].laneOf }]);
+  assert.equal(braid.length, 1);
+  const arc = p.special.turnoutRadius * angle;
+  assert.ok(Math.abs(braid[0] - (p.length + arc)) < 0.5, braid[0] + ' against ' + (p.length + arc));
+  // Pieces that do not say so keep one lane per slot, as before.
+  assert.equal(laneLengths([{ lanes: turnout.sections[0].lanes }]).length, 2);
+  assert.ok(turnout.sections[0].ports.every((port) => port.slots.length === 1));
+
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', turnout], ['s3', singlePiece('curve')]]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end);
+  const node = layout.nodes[1];
+  // Building goes on from the main exit: end B.
+  assert.equal(active.end, node.id + ':1');
+  let net = endsOf(layout, defs);
+  assert.deepEqual(net.open.map((e) => e.key).sort(), [layout.nodes[0].id + ':0', node.id + ':1', node.id + ':2'].sort());
+  const ends = net.ends.filter((e) => e.id === node.id);
+  assert.deepEqual(ends.map((e) => e.out), [false, true, true]);
+  // A straight on the main exit, a corner on the branch: both join.
+  placeSource(layout, defs, 's1', node.id + ':1');
+  const onBranch = placeSource(layout, defs, 's3', node.id + ':2', 'left');
+  net = endsOf(layout, defs);
+  assert.ok(net.joints.has(node.id + ':1'));
+  assert.ok(net.joints.has(node.id + ':2'));
+  assert.equal(net.joints.get(node.id + ':2').i, 0, 'the corner starts at the branch');
+  assert.equal(blockedJoints(net).length, 0);
+  assert.equal(net.open.length, 3);
+  assert.ok(onBranch.end);
+  // The two roads behind the turnout do not run into each other.
+  assert.equal(crossings(surfaces(layout, defs)).length, 0);
+  // Every part of the turnout is in the kit once.
+  const totals = tally(layout, defs).filter((g) => g.source === 's2');
+  // (The clips of a joint are issued once, with one of its two pieces.)
+  const loose = (m) => m.role === 'clip' || m.role === 'retainer';
+  assert.deepEqual(
+    totals.filter((g) => !loose(g)).map((g) => g.id).sort(),
+    turnout.meshes.filter((m) => !loose(m)).map((m) => m.id).sort(),
+  );
+  assert.ok(totals.filter((g) => !loose(g)).every((g) => g.count === 1));
+  // The turnout brings the clips of its two exits, the branch included, and
+  // both are joined here, so both sets are in the kit.
+  const own = turnout.meshes.filter((m) => m.role === 'clip');
+  assert.deepEqual([...new Set(Object.values(turnout.sections[0].hardwareEnds))].sort(), [1, 2]);
+  assert.equal(
+    totals.filter((g) => g.role === 'clip').reduce((sum, g) => sum + g.count, 0),
+    own.length,
+  );
+  assert.ok(totals.some((g) => g.role === 'turnoutInsert'));
+  assert.deepEqual(validateLayout(JSON.parse(JSON.stringify(layout))), layout);
+});
+
+test('a right-hand turnout is the mirror of a left-hand one, and a piece built backwards joins its main exit', () => {
+  const left = turnoutSource({ side: 'left' }),
+    right = turnoutSource({ side: 'right' });
+  const [, , l] = left.sections[0].ports,
+    [, , r] = right.sections[0].ports;
+  assert.ok(Math.abs(l.xy[0] - r.xy[0]) < 1e-9 && Math.abs(l.xy[1] + r.xy[1]) < 1e-9);
+  assert.ok(Math.abs(l.angle + r.angle) < 1e-9);
+  assert.ok(right.meshes.some((m) => /^Right turnout/.test(m.name)));
+  // Built backwards from the start of a straight, the turnout goes in with its
+  // main exit on that start: its entry is the new build end, its branch open.
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', right]]);
+  placeSource(layout, defs, 's1');
+  const back = placeSource(layout, defs, 's2', layout.nodes[0].id + ':0');
+  const node = layout.nodes[1];
+  assert.equal(back.end, node.id + ':0');
+  const net = endsOf(layout, defs);
+  assert.equal(net.joints.get(layout.nodes[0].id + ':0').key, node.id + ':1');
+  assert.deepEqual(net.open.map((e) => e.key).sort(), [layout.nodes[0].id + ':1', node.id + ':0', node.id + ':2'].sort());
+});
+
+test('the four inserts share one road, so a turnout changes insert without moving anything in the layout', () => {
+  const modes = ['digital', 'manual', 'analog', 'closed'];
+  const built = modes.map((turnoutMode) => turnoutSource({ turnoutMode }));
+  const roadOf = (def) => def.meshes.find((m) => m.role === 'road');
+  for (const [i, def] of built.entries()) {
+    assert.equal(def.track.params.special.turnoutMode, modes[i]);
+    assert.deepEqual(def.sections[0].ports, built[0].sections[0].ports, modes[i]);
+    assert.deepEqual(roadOf(def).outline, roadOf(built[0]).outline, modes[i]);
+    assert.equal(def.meshes.filter((m) => m.role === 'turnoutInsert').length, 1);
+  }
+  const names = (def) => def.meshes.map((m) => m.name);
+  assert.ok(names(built[0]).includes('Turnout slider'));
+  assert.ok(!names(built[2]).includes('Turnout slider'));
+  assert.ok(names(built[3]).includes('Turnout insert · Closed'));
+  // A layout whose turnout moves to the other recipe keeps both joints.
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', built[0]], ['s3', built[3]]]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end);
+  const node = layout.nodes[1];
+  placeSource(layout, defs, 's1', node.id + ':1');
+  placeSource(layout, defs, 's1', node.id + ':2');
+  const before = endsOf(layout, defs);
+  node.source = 's3';
+  const after = endsOf(layout, defs);
+  assert.equal(after.joints.size, before.joints.size);
+  assert.deepEqual(after.open.map((e) => e.key), before.open.map((e) => e.key));
+  assert.ok(tally(layout, defs).some((g) => g.name === 'Turnout insert · Closed'));
+  // The choice is read from and written to the piece the same way everywhere.
+  const params = structuredClone(built[0].track.params);
+  assert.deepEqual(turnoutChoice(params), { side: 'left', turnoutMode: 'digital' });
+  applyTurnoutChoice(params, { turnoutMode: 'analog' });
+  assert.deepEqual(turnoutChoice(params), { side: 'left', turnoutMode: 'analog' });
+  assert.equal(params.special.turnoutRadius, built[0].track.params.special.turnoutRadius);
+  assert.equal(isTurnout(params), true);
+  assert.equal(isTurnout(singlePiece('straight').track.params), false);
+});
+
+test('a turnout is never cut for the plate, lifts as one piece and prints from a layout', () => {
+  // On a small plate it stays whole and says so.
+  const small = { width: 180, depth: 180, margin: 5 };
+  const tight = turnoutSource({}, small, true);
+  assert.equal(tight.track.params.segments, 1);
+  assert.equal(tight.sections.length, 1);
+  assert.match(tight.warning, /prints as one road piece, and this one is larger than the print plate/);
+  const roomy = turnoutSource({}, { width: 450, depth: 450, margin: 0 }, true);
+  assert.equal(roomy.warning, '');
+  // Lifted, all three ends rise together: a turnout is not a ramp.
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', roomy]]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end);
+  const node = layout.nodes[1];
+  const onBranch = placeSource(layout, defs, 's1', node.id + ':2');
+  setElevation(layout, defs, node.id, 30, 30, 2);
+  const lifted = endsOf(layout, defs);
+  const z = lifted.ends.filter((e) => e.id === node.id).map((e) => e.z);
+  assert.deepEqual(z, [z[0], z[0], z[0]]);
+  assert.ok(lifted.joints.has(node.id + ':2'), 'the piece on the branch came up with it');
+  assert.equal(layout.nodes.find((n) => n.id === onBranch.selected).h[0], 30);
+  assert.throws(() => setElevation(layout, defs, node.id, 30, 60, 2), /Use equal lifts across a corner or crossing/);
+  // Its parts print from the layout as they do from Track Set.
+  const jobs = tally(layout, defs).filter((g) => g.source === 's2' && ['road', 'turnoutInsert', 'turnoutSlider'].includes(g.role));
+  assert.equal(jobs.length, 3);
+  const bytes = engine.plannerPrint({
+    track: roomy.track,
+    items: jobs.map((g) => ({ id: g.id, mirror: g.mirror, pose: g.pose })),
+  });
+  for (const stl of bytes) {
+    const print = parseSTL(wasm, stl);
+    assert.equal(print.status(), 'NoError');
+    assert.ok(Math.abs(print.boundingBox().min[2]) < 0.001);
+    print.delete();
+  }
 });

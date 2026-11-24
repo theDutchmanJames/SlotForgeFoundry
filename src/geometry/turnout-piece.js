@@ -6,6 +6,7 @@
 // same pocket, the same fixed roof with its braid shelf above the pocket and
 // the same two screw points. Only the insert differs.
 import { addSlot, makePart, shell } from './solids.js';
+import { plannerStrip } from '../planner-strip.js';
 import { laneTools } from './import-track.js';
 import { addRoadJoints } from './track-joints.js';
 import { cutPitBraidFeeds, pitBraidSections } from './pit-braids.js';
@@ -198,6 +199,20 @@ function printsTopDown(part) {
   return part;
 }
 
+// The turnout for the Track Planner: the main road with its two ends, and
+// the end of the branch as a third. Both exits lead away from the entry.
+export function turnoutStrip(p, layout = turnoutLayout(p)) {
+  const main = plannerStrip(layout.mainPath, p, 0, 1),
+    branch = plannerStrip(layout.branchPath, p, 0, 1);
+  return {
+    ...main,
+    lanes: [...main.lanes, ...branch.lanes],
+    // The branch is the same lane carrying on, not a second lane of the pack.
+    laneOf: [0, 0],
+    ports: [...main.ports, { ...branch.ports[1], out: true, branch: true }],
+  };
+}
+
 export function buildTurnout(work, p) {
   const layout = turnoutLayout(p),
     { fork, sign, settings, drive } = layout;
@@ -211,6 +226,7 @@ export function buildTurnout(work, p) {
   // The road: the main straight and the branch as one printable body.
   const core = makePart('road-1', 'Turnout road', 'road', work.section([layout.outline]));
   shell(work, core, p);
+  if (work.planning) core.plannerStrip = turnoutStrip(p, layout);
   const tools = laneTools(work, p, { lanes: layout.cutLanes, outlines: [] });
   const { recess, cover } = pitBraidSections(work, p, electrical);
   for (const lane of tools) lane[2] = null;

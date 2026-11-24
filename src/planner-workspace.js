@@ -2,7 +2,8 @@ import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
-import { packSpecialTrack, plannerCanPlace, specialsFor } from './pack-specials.js';
+import { packSpecialTrack, shelfSpecialsFor } from './pack-specials.js';
+import { TURNOUT_MODES, turnoutModeName } from './geometry/turnout-layout.js';
 import { openStore, cleanName } from './project.js';
 import { esc, icon } from './ui.js';
 import { createPlanView } from './planner-view.js';
@@ -29,6 +30,9 @@ import {
   layoutOwned,
   barrierOf,
   plainBarrier,
+  isTurnout,
+  turnoutChoice,
+  applyTurnoutChoice,
   pegSizeOf,
   totalLength,
   tally,
@@ -125,7 +129,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     btn('standard', 'Track pieces') +
     btn('special', 'Specials') +
     '</div>' +
-    '<div class="pl-hand"><span>Corner direction</span><div>' +
+    '<div class="pl-hand"><span>Corner and branch direction</span><div>' +
     btn('left', 'Left') +
     btn('right', 'Right') +
     '</div></div>' +
@@ -385,19 +389,34 @@ export function createPlanner({ host, call, download, current, promote }) {
       fenceHeight: field(side + 'FenceHeight').valueAsNumber,
       startPost: field(side + 'StartPost').value === 'on',
     });
+  // A turnout takes no barriers, lines or kerbs: a selection that includes
+  // one changes the other sections and leaves it as it is.
+  const notTurnout = (entry) => !isTurnout(entry.track.params);
+  const chosenTurnouts = () =>
+    layout.nodes.filter((n) => chosenIds().has(n.id) && isTurnout(layout.sources[n.source].track.params)).length;
   const setBarriers = (wanted) =>
     changeSections(
       (params) => applyBarriers(params, wanted),
       (entry) => JSON.stringify(barrierOf(entry)) === JSON.stringify(wanted),
+      notTurnout,
+    );
+  // The insert of the selected turnouts. The road is the same for every
+  // insert, so nothing moves in the layout.
+  const setTurnoutMode = (turnoutMode) =>
+    changeSections(
+      (params) => applyTurnoutChoice(params, { turnoutMode }),
+      (entry) => turnoutChoice(entry.track.params).turnoutMode === turnoutMode,
+      (entry) => isTurnout(entry.track.params),
     );
   // White lines and kerbstones for the selected sections.
   const setMarkings = (wanted) =>
     changeSections(
       (params) => Object.assign(params, wanted),
       (entry) => Object.entries(wanted).every(([key, value]) => markingsOf(entry.track.params)[key] === value),
+      notTurnout,
     );
   // Give the selected sections a copy of their recipe with a change in it.
-  async function changeSections(change, unchanged) {
+  async function changeSections(change, unchanged, applies = () => true) {
     const ids = chosenIds();
     const models = new Map(defs),
       additions = {},
@@ -406,7 +425,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       layout.nodes.filter((n) => ids.has(n.id)).map((n) => n.source),
     )) {
       const entry = layout.sources[key];
-      if (unchanged(entry)) continue;
+      if (!applies(entry) || unchanged(entry)) continue;
       const track = structuredClone(entry.track);
       change(track.params);
       const def = await build(track, false);
@@ -671,10 +690,8 @@ export function createPlanner({ host, call, download, current, promote }) {
     const collection = packs.find((p) => p.id === pack);
     if (!collection) return [];
     if (group === 'standard')
-      return collection.pieces
-        .map((p, i) => ({ ...p, index: i, collection }))
-        .filter((card) => plannerCanPlace(card.track));
-    return specialsFor(collection.rules.lanes).map(([type, name]) => ({
+      return collection.pieces.map((p, i) => ({ ...p, index: i, collection }));
+    return shelfSpecialsFor(collection.rules.lanes).map(([type, name]) => ({
       name,
       collection,
       special: type,
@@ -748,9 +765,14 @@ export function createPlanner({ host, call, download, current, promote }) {
   async function place(card) {
     if (!card) return;
     message('Placing ' + card.name + '…');
-    const track = card.collection
+    let track = card.collection
       ? trackWithProfile(card.track, card.collection.profile)
       : card.track;
+    // A turnout branches to the side chosen under Corner direction.
+    if (isTurnout(track.params)) {
+      track = structuredClone(track);
+      applyTurnoutChoice(track.params, { side: hand });
+    }
     // Placed whole, with its preset cuts: Segment for printing fits it to the plate.
     const def = await build(track, false),
       same = Object.entries(layout.sources).find(
@@ -837,6 +859,10 @@ export function createPlanner({ host, call, download, current, promote }) {
         (def.track.params.kind === 'curve'
           ? ' · ' + (n.pose.flip ? 'Left' : 'Right')
           : '') +
+        (isTurnout(def.track.params)
+          ? ' · Branch to the ' + turnoutChoice(def.track.params).side +
+            ' · ' + esc(turnoutModeName(turnoutChoice(def.track.params).turnoutMode))
+          : '') +
         esc(slotNote(def.track.params, def.name)) +
         '</p><div class="pl-selection-actions">' +
         (def.track.params.kind === 'curve' ||
@@ -876,7 +902,18 @@ export function createPlanner({ host, call, download, current, promote }) {
         '<small>Pegs stand in pairs, one under each road edge, so a count of 2 gives four pegs. Width is across the road and length is along it. Their tops follow the slope of the road. New pieces carry on the climb and the supports of the piece they join.</small><small>Lift is measured under the road. Connected ends follow the lift. Use a straight for a ramp.</small>' +
         btn('elevate', 'Apply heights', 'check') +
         '</div></details>' +
-        '<details class="pl-bridge pl-barriers"><summary>Barriers</summary><div>' +
+        (isTurnout(def.track.params)
+          ? '<details class="pl-bridge pl-turnout" open><summary>Turnout insert</summary><div>' +
+            '<label>Insert<select data-pl-field="turnoutMode">' +
+            barrierOptions(TURNOUT_MODES, turnoutChoice(def.track.params).turnoutMode) +
+            '</select></label>' +
+            '<small>' +
+            (chosenTurnouts() > 1 ? chosenTurnouts() + ' turnouts are selected. ' : 'Only this turnout gets the insert. ') +
+            'Digital has a blade worked by a motor, Hand-set point a blade set by hand, Analog an open split and Closed a road straight on. The road is the same for all four, so the insert can be swapped later. End C is the branch. A turnout takes no barriers, lines or kerbs yet.</small>' +
+            btn('turnout-mode', chosenTurnouts() > 1 ? 'Apply to ' + chosenTurnouts() + ' turnouts' : 'Apply insert', 'check') +
+            '</div></details>'
+          : '') +
+        '<details class="pl-bridge pl-barriers"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary>Barriers</summary><div>' +
         barrierFields('outer', 'Outside / left', barrierOf(def).outer) +
         barrierFields('inner', 'Inside / right', barrierOf(def).inner) +
         '<small>' +
@@ -886,7 +923,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. A guard rail comes from the post of the section before it: give the first section of a row a start post.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>' +
-        '<details class="pl-bridge pl-markings"><summary>White lines &amp; kerbs</summary><div>' +
+        '<details class="pl-bridge pl-markings"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary>White lines &amp; kerbs</summary><div>' +
         '<label>White lines on the road<select data-pl-field="lineRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineRoad) + '</select></label>' +
         '<label>White lines on the borders<select data-pl-field="lineBorder">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineBorder) + '</select></label>' +
         '<label>Kerbs on the road<select data-pl-field="kerbRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).roadKerbSide) + '</select></label>' +
@@ -932,7 +969,9 @@ export function createPlanner({ host, call, download, current, promote }) {
             slotNote(layout.sources[g.source].track.params, layout.sources[g.source].name) +
             (layout.sources[g.source].track.params.kind === 'curve'
               ? ' · ' + (g.mirror ? 'L' : 'R')
-              : '')
+              : isTurnout(layout.sources[g.source].track.params)
+                ? ' · ' + (turnoutChoice(layout.sources[g.source].track.params).side === 'left' ? 'L' : 'R')
+                : '')
           : g.name.replace(/\s+\d+$/, '');
       grouped.set(label, (grouped.get(label) ?? 0) + g.count);
     }
@@ -1059,6 +1098,10 @@ export function createPlanner({ host, call, download, current, promote }) {
             ...track.params.special,
             ...source.track.params.special,
           };
+        // A saved turnout follows its pack, but keeps the side and the
+        // insert it was given in this layout.
+        else if (isTurnout(track.params) && isTurnout(source.track.params))
+          applyTurnoutChoice(track.params, turnoutChoice(source.track.params));
         track.params.segments = source.track.params.segments;
         track.params.borderSegments = source.track.params.borderSegments;
         // Barriers and markings set in the layout stay with the layout.
@@ -1279,6 +1322,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         lanes: laneLengths(
           layout.nodes.map((n) => ({
             lanes: defs.get(n.source).sections[n.index].lanes,
+            laneOf: defs.get(n.source).sections[n.index].laneOf,
             flip: n.pose.flip,
           })),
         ),
@@ -1381,6 +1425,12 @@ export function createPlanner({ host, call, download, current, promote }) {
       render();
       persist();
       return segmentLayout();
+    }
+    if (key === 'turnout-mode') {
+      message('Changing the insert…');
+      await setTurnoutMode(field('turnoutMode').value);
+      message('');
+      return;
     }
     if (key === 'markings') {
       message('Painting the markings…');
