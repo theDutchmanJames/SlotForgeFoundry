@@ -16,7 +16,7 @@ import {
 } from '../src/geometry/slope.js';
 import { trackInspector } from '../src/inspector.js';
 import { syncSlopeControls } from '../src/slope-controls.js';
-import { canRamp, crossings, endsOf, newLayout, pitch, placeSource, surfaces } from '../src/planner-model.js';
+import { canRamp, crossings, endsOf, newLayout, pitch, placeSource, setElevation, surfaces } from '../src/planner-model.js';
 import { newProject } from '../src/project.js';
 import { buildTestJoint, buildTrack, defaultTrack, trackParameters, validateTrack } from '../src/track.js';
 
@@ -389,4 +389,53 @@ test('the straight behind a sloped end carries on at the climb angle, and no cro
   placeSource(back, defs, 'up');
   placeSource(back, defs, 'level', back.nodes[0].id + ':0');
   assert.deepEqual(back.nodes[1].h, [0, 0]);
+});
+
+test('changing the supports or the lifts of the ramp behind a sloped piece keeps both joined', () => {
+  const plate = { width: 450, depth: 450, margin: 0 };
+  const source = (name, changes) => ({
+    name,
+    ...engine.plannerSource({ track: { params: piece({ joint: 'clips', ...changes }), plan: null }, plate, autoFit: false }),
+  });
+  const level = source('Straight', {}),
+    up = source('Climb', { slopeForm: 'up' }),
+    top = source('Top', { slopeForm: 'down' });
+  const defs = new Map([['level', level], ['up', up], ['top', top]]),
+    layout = newLayout();
+  for (const [id, def] of defs) layout.sources[id] = { name: def.name, track: def.track };
+  let active = placeSource(layout, defs, 'level');
+  active = placeSource(layout, defs, 'up', active.end);
+  active = placeSource(layout, defs, 'level', active.end);
+  active = placeSource(layout, defs, 'top', active.end);
+  active = placeSource(layout, defs, 'level', active.end);
+  const [first, climb, ramp, crest, last] = layout.nodes;
+  const before = structuredClone(layout.nodes.map((n) => n.h));
+  const joints = () => endsOf(layout, defs).joints.size;
+  assert.equal(joints(), 8);
+  // Apply heights on the ramp as it stands, with pegs: nothing moves and nothing comes apart.
+  setElevation(layout, defs, ramp.id, ramp.h[0], ramp.h[1], 2, 'pegs', [10, 10]);
+  assert.equal(joints(), 8);
+  layout.nodes.forEach((n, i) => n.h.forEach((h, k) => near(h, before[i][k], 1e-6)));
+  assert.deepEqual(climb.h, [0, 0], 'the climb stays on the table');
+  assert.equal(climb.supports, 0);
+  assert.equal(ramp.supports, 2);
+  assert.equal(ramp.supportStyle, 'pegs');
+  // The same from the field values, which are rounded to what the panel shows.
+  const shown = (value) => Number(value.toFixed(2));
+  setElevation(layout, defs, ramp.id, shown(ramp.h[0]), shown(ramp.h[1]), 2, 'pegs', [10, 10]);
+  assert.equal(joints(), 8);
+  assert.ok(Math.abs(climb.h[0]) < 0.01 && climb.h[0] >= 0, 'the climb is not lifted off the table: ' + climb.h);
+  // Raising the far end of the ramp lifts the top of the hill and the level road behind it by as much.
+  const lifted = ramp.h[1] + 10;
+  setElevation(layout, defs, ramp.id, ramp.h[0], lifted, 2, 'pegs', [10, 10]);
+  assert.equal(joints(), 8);
+  near(crest.h[0], lifted, 1e-6);
+  near(last.h[0], lifted + slopeProfile(sloped()).rise, 1e-6);
+  assert.ok(Math.abs(climb.h[0]) < 0.01);
+  assert.deepEqual(first.h, [0, 0]);
+  // Lowering the start of the ramp below what the climb reaches would push the climb under the table.
+  assert.throws(
+    () => setElevation(layout, defs, ramp.id, 5, lifted, 2, 'pegs', [10, 10]),
+    /The adjoining road would be below table level/,
+  );
 });

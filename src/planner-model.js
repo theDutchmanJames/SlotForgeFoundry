@@ -913,7 +913,8 @@ export function setElevation(
       key = endKey(n.id, i),
       def = defs.get(n.source);
     if (pending.has(key)) {
-      if (pending.get(key) !== h)
+      // The same end reached twice, within what two decimals can say.
+      if (Math.abs(pending.get(key) - h) > 0.011)
         throw Error(
           'Use equal lifts across a corner or crossing. Use a straight for the approach.',
         );
@@ -926,10 +927,18 @@ export function setElevation(
     const mate = joints.get(key);
     if (mate) {
       const other = nodeById.get(mate.id),
-        level =
-          h +
-          def.track.params.height -
-          defs.get(other.source).track.params.height;
+        there = defs.get(other.source);
+      // The two road surfaces meet. An end may lie higher than its piece's
+      // lift by a rise of its own: end B of a sloped piece does.
+      const riseOf = (d, node, end) => d.sections[node.index].ports[end]?.baseZ ?? 0;
+      let level =
+        h +
+        riseOf(def, n, i) +
+        def.track.params.height -
+        there.track.params.height -
+        riseOf(there, other, mate.i);
+      // A lift typed to two decimals may miss the table by a hair.
+      if (Math.abs(level) < 0.01) level = 0;
       if (level < 0)
         throw Error('The adjoining road would be below table level.');
       queue.push([other, mate.i, level]);
