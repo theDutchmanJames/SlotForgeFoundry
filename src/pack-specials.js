@@ -27,8 +27,32 @@ export function shelfSpecialsFor(lanes) {
   return [...specialsFor(lanes), ...(lanes === 1 ? SINGLE_LANE_SPECIALS : [])];
 }
 
+// The Planner also offers an end stop with the specials: the pack's
+// shortest plain straight with its slots stopped short of end B.
+export const END_STOP = 'endstop';
+export function packEndStopTrack(collection) {
+  const straights = collection.pieces
+    .map((p) => p.track)
+    .filter((track) => track.params.kind === 'straight' && !track.params.special && !track.params.endStop);
+  const base = straights.sort((a, b) => a.params.length - b.params.length)[0] ?? {
+    params: {
+      ...defaultTrack(),
+      kind: 'straight',
+      width: collection.rules.width,
+      lanes: collection.rules.lanes,
+      laneSpacing: collection.rules.laneSpacing,
+    },
+    plan: null,
+  };
+  const track = structuredClone(base);
+  Object.assign(track.params, { endStop: true, segments: 1, borderSegments: 1 });
+  delete track.params.startingGrid;
+  return track;
+}
+
 // A special piece on the pack's rules, taken from its first plain straight.
 export function packSpecialTrack(collection, type) {
+  if (type === END_STOP) return packEndStopTrack(collection);
   const base =
     collection.pieces.find(
       (p) => p.track.params.kind === 'straight' && !p.track.params.special,
@@ -36,7 +60,7 @@ export function packSpecialTrack(collection, type) {
     collection.pieces[0]?.track.params ??
     // An empty pack: its rules on the default piece, never the piece that
     // happens to be open in Track Set.
-    defaultTrack().params;
+    defaultTrack();
   return {
     params: specialTrackParams(type, {
       ...base,

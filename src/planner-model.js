@@ -550,7 +550,7 @@ function continueClimb(layout, defs, target, nodes, def, incoming, exit) {
       if (previous.peg) n.peg = [...previous.peg];
     }
 }
-export function placeSource(layout, defs, source, targetKey, hand = 'right') {
+export function placeSource(layout, defs, source, targetKey, hand = 'right', { merge = false } = {}) {
   const def = defs.get(source);
   const world = endsOf(layout, defs);
   const target =
@@ -583,8 +583,11 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right') {
       : local.open;
   // A piece carries on along its main road; the branch of a turnout stays
   // open beside it.
-  const start = main.find((e) => !e.out) ?? main[0],
+  let start = main.find((e) => !e.out) ?? main[0],
     finish = main.findLast((e) => e.out && !e.branch) ?? main.at(-1);
+  // A turnout that joins two lanes goes in the other way round: travel
+  // comes in at its main exit and at its branch, and leaves at its entry.
+  if (merge && isTurnout(def.track.params)) [start, finish] = [finish, start];
   const backward = target && !target.out;
   const [incoming, exit] = backward ? [finish, start] : [start, finish];
   const directional =
@@ -608,6 +611,112 @@ export function placeSource(layout, defs, source, targetKey, hand = 'right') {
   }
   layout.nodes.push(...nodes);
   return { selected: exit.id, end: exit.key };
+}
+// ---- Helpers for a pit lane built from turnouts ----
+const otherHand = (side) => (side === 'left' ? 'right' : 'left');
+// A turnout that joins two lanes lies the other way round, so the turnout
+// that has its branch on the left of travel is the right-hand piece.
+export const turnoutSideFor = (hand, merge) => (merge ? otherHand(hand) : hand);
+// How many of this corner bring the branch of this turnout back parallel to
+// its main road, or 0 when its angle does not divide the branch angle.
+export function returnCurveCount(turnout, corner) {
+  if (corner.kind !== 'curve' || corner.special || !(corner.angle > 0)) return 0;
+  const count = turnout.special.turnoutAngle / corner.angle,
+    whole = Math.round(count);
+  return whole >= 1 && whole <= 12 && Math.abs(count - whole) < 1e-6 ? whole : 0;
+}
+// The corner of a pack for that: one whose angle divides the branch angle,
+// on the branch radius where the pack has one, else the tightest.
+export function returnCurveFor(pieces, turnout) {
+  const fits = pieces
+    .map((piece) => ({ piece, count: returnCurveCount(turnout, piece.track.params) }))
+    .filter(({ piece, count }) => count && piece.track.params.lanes === turnout.lanes && piece.track.params.width === turnout.width);
+  const off = ({ piece }) => Math.abs(piece.track.params.radius - turnout.special.turnoutRadius);
+  return fits.sort((a, b) => off(a) - off(b) || a.count - b.count)[0] ?? null;
+}
+/**
+ * The least spacing, turnout to turnout, that keeps the bays of a pit ladder
+ * apart. Parallel bays lie in one line beside the main road, so a bay and its
+ * end stop have to end before the outside edge of the next return curve
+ * rises into that line. Angled bays only have to clear each other.
+ */
+export function ladderSpacing(turnout, { bayLength, stopLength, cornerRadius }) {
+  const sweep = (turnout.special.turnoutAngle * pi) / 180,
+    half = turnout.width / 2;
+  if (!cornerRadius)
+    return Math.ceil(Math.max(turnout.length, (turnout.width + 2) / Math.max(Math.sin(sweep), 0.05)));
+  const outside = cornerRadius + half;
+  // Where that edge, a circle about the centre of the corner, reaches the near edge of the bays.
+  const reach = Math.min(sweep, Math.acos(Math.max(-1, (cornerRadius - half) / outside)));
+  return Math.ceil(Math.max(turnout.length, bayLength + stopLength + outside * Math.sin(reach) + 1));
+}
+// Place the corners that turn the open branch of a turnout back parallel.
+export function addReturnCurve(layout, defs, id, source, count) {
+  const node = layout.nodes.find((n) => n.id === id),
+    def = node && defs.get(node.source);
+  if (!def || !isTurnout(def.track.params)) throw Error('Select a turnout first.');
+  const branch = frameFor(node, def).find((e) => e.branch);
+  if (!endsOf(layout, defs).open.some((e) => e.key === branch.key))
+    throw Error('The branch of this turnout already has a piece on it.');
+  // The branch turned one way; the return turns the other.
+  const hand = otherHand(turnoutChoice(def.track.params).side);
+  let at = { end: branch.key };
+  for (let i = 0; i < count; i++) at = placeSource(layout, defs, source, at.end, hand);
+  return at;
+}
+// The open end that faces this one squarely, straight ahead of it, and how
+// far away it is: the gap a straight of that length closes.
+export function gapAhead(network, key) {
+  const from = network.open.find((e) => e.key === key);
+  if (!from) return null;
+  const dir = [Math.cos(from.angle), Math.sin(from.angle)];
+  let best = null;
+  for (const to of network.open) {
+    if (to.id === from.id) continue;
+    const dx = to.xy[0] - from.xy[0],
+      dy = to.xy[1] - from.xy[1];
+    const along = dx * dir[0] + dy * dir[1],
+      across = dy * dir[0] - dx * dir[1];
+    if (
+      along > 1 &&
+      Math.abs(across) < 0.05 &&
+      Math.abs(turn(from.angle - to.angle - pi)) < 0.005 &&
+      Math.abs(from.z - to.z) < 0.05 &&
+      (!best || along < best.length)
+    )
+      best = { from, to, length: Math.round(along * 1000) / 1000 };
+  }
+  return best;
+}
+/**
+ * A row of pit bays. From the chosen end: a turnout, its bay on the branch
+ * (the return corners if the bays run parallel, a straight, an end stop), a
+ * spacer on the main exit, and so on. keys names the piece recipes to use;
+ * curve, bay and spacer may be absent. Building carries on from the last
+ * main exit.
+ */
+export function pitLadder(layout, defs, keys, { bays, end, curves = 0 }) {
+  if (!Number.isInteger(bays) || bays < 1 || bays > 12)
+    throw Error('Enter 1 to 12 pit bays.');
+  const before = new Set(layout.nodes.map((n) => n.id));
+  let at = { end };
+  for (let i = 0; i < bays; i++) {
+    at = placeSource(layout, defs, keys.turnout, at.end);
+    const turnout = layout.nodes.at(-1);
+    let bay = { end: turnout.id + ':2' };
+    if (keys.curve && curves) bay = addReturnCurve(layout, defs, turnout.id, keys.curve, curves);
+    if (keys.bay) bay = placeSource(layout, defs, keys.bay, bay.end);
+    placeSource(layout, defs, keys.stop, bay.end);
+    at = { end: turnout.id + ':1', selected: turnout.id };
+    if (keys.spacer && i < bays - 1) at = placeSource(layout, defs, keys.spacer, at.end);
+  }
+  // Bays that run into each other, or into the rest of the layout.
+  const fresh = (id) => !before.has(id);
+  const clash = crossings(surfaces(layout, defs)).find(
+    (hit) => hit.clearance <= 0 && (fresh(hit.a) || fresh(hit.b)),
+  );
+  if (clash) throw Error('ladder-overlap');
+  return at;
 }
 export function removeSection(layout, defs, id) {
   const n = layout.nodes.find((n) => n.id === id);
@@ -711,7 +820,8 @@ export function reverseSection(layout, defs, id) {
 }
 export function pitch(node, def) {
   const s = def.sections[node.index],
-    [a, b] = s.ports,
+    // The closed end of an end stop is no end: such a piece lies level.
+    [a, b = a] = s.ports,
     length = distance(a.xy, b.xy);
   const slope = (node.h[1] - node.h[0]) / (length || 1);
   return {
@@ -811,8 +921,10 @@ export function setElevation(
     }
   }
   for (const n of layout.nodes) {
-    const h = n.h.map((v, i) => pending.get(endKey(n.id, i)) ?? v);
     const def = defs.get(n.source),
+      // A piece with one end, an end stop, lies level at the height of that end.
+      single = def.sections[n.index].ports.length === 1,
+      h = n.h.map((v, i) => pending.get(endKey(n.id, single ? 0 : i)) ?? v),
       p = def.track.params;
     if (p.slotDepth * Math.hypot(1, pitch({ ...n, h }, def).slope) >= p.height)
       throw Error(
@@ -973,6 +1085,10 @@ export function supportRequests(rows) {
       };
     });
 }
+function issuesHardwareAt(layout, defs, end) {
+  const node = layout.nodes.find((n) => n.id === end.id);
+  return Object.values(defs.get(node.source).sections[node.index].hardwareEnds).includes(end.i);
+}
 export function tally(layout, defs) {
   const groups = new Map(),
     { joints } = endsOf(layout, defs);
@@ -981,7 +1097,15 @@ export function tally(layout, defs) {
       pose = pitch(n, def);
     for (const id of def.sections[n.index].parts) {
       const end = def.sections[n.index].hardwareEnds[id];
-      if (end !== undefined && !joints.has(endKey(n.id, end))) continue;
+      if (end !== undefined) {
+        const mate = joints.get(endKey(n.id, end));
+        if (!mate) continue;
+        // A joint takes one set of clips. A piece that brings clips for
+        // the end travel enters it by (an end stop does: it has no other
+        // joint) leaves them out where the piece before it brings its own.
+        const leaves = def.sections[n.index].ports[end].out ?? end % 2 === 1;
+        if (!leaves && mate.out && issuesHardwareAt(layout, defs, mate)) continue;
+      }
       const part = sourcePartMap(def).get(id);
       const loose = ['clip', 'retainer'].includes(part.role);
       const mirror = !loose && n.pose.flip,

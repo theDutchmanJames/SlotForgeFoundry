@@ -2,7 +2,7 @@ import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
-import { packSpecialTrack, shelfSpecialsFor } from './pack-specials.js';
+import { END_STOP, packSpecialTrack, shelfSpecialsFor } from './pack-specials.js';
 import { TURNOUT_MODES, turnoutModeName } from './geometry/turnout-layout.js';
 import { openStore, cleanName } from './project.js';
 import { esc, icon } from './ui.js';
@@ -33,6 +33,12 @@ import {
   isTurnout,
   turnoutChoice,
   applyTurnoutChoice,
+  turnoutSideFor,
+  returnCurveFor,
+  addReturnCurve,
+  gapAhead,
+  pitLadder,
+  ladderSpacing,
   pegSizeOf,
   totalLength,
   tally,
@@ -79,6 +85,20 @@ const SEGMENT_DIALOG =
     '<div class="pl-segment-actions">' +
     btn('segment-cancel', 'Cancel', '', 'secondary') +
     btn('segment-confirm', 'Segment layout', 'split', 'primary') +
+    '</div></dialog>';
+
+// The window that asks how a row of pit bays is laid out.
+const LADDER_DIALOG =
+    '<dialog class="pl-segment pl-ladder" aria-labelledby="pl-ladder-title"><header><h2 id="pl-ladder-title">Pit ladder</h2></header>' +
+    '<p>A row of pit bays from the chosen build end: a turnout for each bay, its bay on the branch with an end stop, and building carries on along the main road.</p>' +
+    '<div class="pl-segment-fields"><label>Bays<input type="number" min="1" max="12" step="1" data-pl-field="ladderBays"></label>' +
+    '<label>Spacing · mm<input type="number" min="1" max="20000" step="any" data-pl-field="ladderSpacing"></label>' +
+    '<label>Bay length · mm<input type="number" min="0" max="20000" step="any" data-pl-field="ladderBay"></label></div>' +
+    '<label class="pl-ladder-parallel"><input type="checkbox" data-pl-field="ladderParallel"> Bring the bays back parallel to the main road</label>' +
+    '<p class="pl-segment-note" role="status"></p>' +
+    '<div class="pl-segment-actions">' +
+    btn('ladder-cancel', 'Cancel', '', 'secondary') +
+    btn('ladder-confirm', 'Build ladder', 'plus', 'primary') +
     '</div></dialog>';
 
 const checkedSelect = (val, current) => (val === current ? ' selected' : '');
@@ -133,6 +153,10 @@ export function createPlanner({ host, call, download, current, promote }) {
     btn('left', 'Left') +
     btn('right', 'Right') +
     '</div></div>' +
+    '<div class="pl-hand pl-turnout-as"><span>A turnout</span><div>' +
+    btn('split', 'Splits the lane') +
+    btn('merge', 'Joins two lanes') +
+    '</div></div>' +
     '<div class="pl-cards"></div>' +
     btn('current', 'Place current Track Set piece', 'plus', 'pl-current') +
     '</aside>' +
@@ -147,6 +171,8 @@ export function createPlanner({ host, call, download, current, promote }) {
     btn('solid', '3D', 'box') +
     '</div>' +
     '<label>Build from <select data-pl-field="end" aria-label="Build from open end"></select></label>' +
+    btn('fill-gap', 'Fit a straight', 'join') +
+    btn('ladder', 'Pit ladder', 'plus') +
     btn('fit', 'Fit', 'fit') +
     btn('segment', 'Segment for printing', 'split') +
     '</div>' +
@@ -167,6 +193,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     pack = '',
     group = 'standard',
     hand = 'right',
+    turnoutAs = 'split',
     viewMode = 'plan',
     choice = {},
     cards = [];
@@ -691,7 +718,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     if (!collection) return [];
     if (group === 'standard')
       return collection.pieces.map((p, i) => ({ ...p, index: i, collection }));
-    return shelfSpecialsFor(collection.rules.lanes).map(([type, name]) => ({
+    return [...shelfSpecialsFor(collection.rules.lanes), [END_STOP, 'End stop']].map(([type, name]) => ({
       name,
       collection,
       special: type,
@@ -715,6 +742,9 @@ export function createPlanner({ host, call, download, current, promote }) {
     activeBtn('special', group === 'special');
     activeBtn('left', hand === 'left');
     activeBtn('right', hand === 'right');
+    activeBtn('split', turnoutAs === 'split');
+    activeBtn('merge', turnoutAs === 'merge');
+    $('.pl-turnout-as').hidden = activePack()?.rules.lanes !== 1;
     cards = listCards();
     $('.pl-cards').innerHTML =
       cards
@@ -768,10 +798,13 @@ export function createPlanner({ host, call, download, current, promote }) {
     let track = card.collection
       ? trackWithProfile(card.track, card.collection.profile)
       : card.track;
-    // A turnout branches to the side chosen under Corner direction.
+    // A turnout has its branch on the side chosen under Corner and branch
+    // direction, as travel sees it; one that joins two lanes lies the other
+    // way round.
+    const merge = isTurnout(track.params) && turnoutAs === 'merge';
     if (isTurnout(track.params)) {
       track = structuredClone(track);
-      applyTurnoutChoice(track.params, { side: hand });
+      applyTurnoutChoice(track.params, { side: turnoutSideFor(hand, merge) });
     }
     // Placed whole, with its preset cuts: Segment for printing fits it to the plate.
     const def = await build(track, false),
@@ -808,11 +841,185 @@ export function createPlanner({ host, call, download, current, promote }) {
         track: def.track,
         ...(ref && { ref }),
       };
-      return placeSource(next, models, key, choice.end, hand);
+      return placeSource(next, models, key, choice.end, hand, { merge });
     }, models);
     message(
       [def.warning, fresh?.text].filter(Boolean).join(' '),
       Boolean(fresh),
+    );
+  }
+  // ---- Helpers for a pit lane built from turnouts ----
+  const activePack = () => packs.find((p) => p.id === pack);
+  const packRef = (collection, extra) => ({
+    collectionId: collection.id,
+    revision: collection.revision,
+    ...extra,
+  });
+  // The piece recipes of one edit: each is built, and shared with a recipe
+  // the layout already has.
+  function recipeBook() {
+    const models = new Map(defs),
+      additions = {};
+    async function add(name, track, ref) {
+      const def = await build(track, false);
+      const same = Object.entries({ ...layout.sources, ...additions }).find(
+        ([, s]) => s.name === name && JSON.stringify(s.track) === JSON.stringify(def.track),
+      );
+      const key = same?.[0] ?? 's' + ++serial;
+      if (!models.has(key)) models.set(key, { ...def, name });
+      if (!same) additions[key] = { name, track: def.track, ...(ref && { ref }) };
+      return key;
+    }
+    return { models, additions, add };
+  }
+  // The pack's plain straight, at a length of its own.
+  function packStraight(collection, length) {
+    const piece = collection?.pieces.find(
+      ({ track }) => track.params.kind === 'straight' && !track.params.special && !track.params.endStop,
+    );
+    if (!piece)
+      throw Error('The chosen pack has no plain straight to make to length. Add one in Track Set.');
+    const track = structuredClone(trackWithProfile(piece.track, collection.profile));
+    Object.assign(track.params, { length, segments: 1, borderSegments: 1 });
+    delete track.params.startingGrid;
+    return { name: 'Straight ' + fmt(length) + ' mm', track };
+  }
+  function packReturnCurve(collection, turnout) {
+    const found = collection && returnCurveFor(collection.pieces, turnout);
+    if (!found)
+      throw Error(
+        'The chosen pack has no corner whose angle divides the branch angle of ' +
+          fmt(turnout.special.turnoutAngle) +
+          '°. Add one in Track Set, or change the Branch angle of the turnout.',
+      );
+    return found;
+  }
+  // A straight made to the length of the gap between the build end and the
+  // open end that faces it.
+  async function fillGap() {
+    const gap = gapAhead(net, choice.end);
+    if (!gap)
+      throw Error(
+        'No open end faces the chosen build end in a straight line. Choose the end to build from under Build from; the two ends must be in line and at the same height.',
+      );
+    const { name, track } = packStraight(activePack(), gap.length);
+    const book = recipeBook();
+    const key = await book.add(name, track).catch((error) => {
+      throw Error(
+        'The gap is ' + fmt(gap.length) + ' mm, and a straight of that length cannot be made. ' + error.message,
+      );
+    });
+    const fresh = await edit((next) => {
+      Object.assign(next.sources, book.additions);
+      return placeSource(next, book.models, key, gap.from.key);
+    }, book.models);
+    const joined = !net.open.some((e) => e.key === gap.to.key);
+    message(
+      joined
+        ? 'A straight of ' + fmt(gap.length) + ' mm closes the gap.'
+        : 'A straight of ' + fmt(gap.length) + ' mm fills the gap, but its far end does not join. ' +
+          (fresh?.text ?? 'The connectors of the two ends do not mate: both are the same end of their pieces. Use clips at these joints, or turn one run around.'),
+      !joined,
+    );
+  }
+  // The corners that bring the branch of the selected turnout back parallel.
+  async function returnCurve() {
+    const n = selected(),
+      def = n && recipe(n);
+    if (!def || !isTurnout(def.track.params)) throw Error('Select a turnout first.');
+    const collection = activePack();
+    const found = packReturnCurve(collection, def.track.params);
+    const book = recipeBook();
+    const key = await book.add(
+      found.piece.name,
+      trackWithProfile(found.piece.track, collection.profile),
+      packRef(collection, { pieceId: found.piece.id }),
+    );
+    await edit((next) => {
+      Object.assign(next.sources, book.additions);
+      return addReturnCurve(next, book.models, n.id, key, found.count);
+    }, book.models);
+    message(
+      found.count + ' × ' + found.piece.name + ' ' + (found.count === 1 ? 'brings' : 'bring') +
+        ' the branch back parallel to the main road.',
+    );
+  }
+  // What a row of pit bays is made of in the chosen pack, before it is built.
+  function ladderParts() {
+    const collection = activePack();
+    if (!collection || collection.rules.lanes !== 1)
+      throw Error('A pit ladder is built from turnouts, which are single-lane pieces. Choose a single-lane pack.');
+    const turnout = structuredClone(
+      trackWithProfile(packSpecialTrack(collection, 'turnout'), collection.profile),
+    );
+    applyTurnoutChoice(turnout.params, { side: hand });
+    const stop = trackWithProfile(packSpecialTrack(collection, END_STOP), collection.profile);
+    return { collection, turnout, stop };
+  }
+  // The least spacing that keeps neighbouring bays apart.
+  function leastSpacing({ collection, turnout, stop }, bayLength, parallel) {
+    const corner = parallel && returnCurveFor(collection.pieces, turnout.params);
+    return ladderSpacing(turnout.params, {
+      bayLength,
+      stopLength: stop.params.length,
+      cornerRadius: corner ? corner.piece.track.params.radius : 0,
+    });
+  }
+  async function ladder({ bays, spacing, bayLength, parallel }) {
+    const parts = ladderParts(),
+      { collection, turnout, stop } = parts;
+    if (![bays, spacing, bayLength].every(Number.isFinite) || bayLength < 0)
+      throw Error('Enter the number of bays, their spacing and the bay length.');
+    const length = turnout.params.length;
+    if (spacing < length)
+      throw Error('The spacing is from one turnout to the next, so it must be at least the length of a turnout: ' + fmt(length) + ' mm.');
+    const found = parallel ? packReturnCurve(collection, turnout.params) : null;
+    const book = recipeBook();
+    const keys = {
+      turnout: await book.add('Turnout', turnout, packRef(collection, { special: 'turnout' })),
+      stop: await book.add('End stop', stop, packRef(collection, { special: END_STOP })),
+    };
+    if (found)
+      keys.curve = await book.add(
+        found.piece.name,
+        trackWithProfile(found.piece.track, collection.profile),
+        packRef(collection, { pieceId: found.piece.id }),
+      );
+    const made = async (millimetres, what, instead) => {
+      const { name, track } = packStraight(collection, millimetres);
+      return book.add(name, track).catch((error) => {
+        throw Error(
+          'The straight of ' + fmt(millimetres) + ' mm ' + what + ' cannot be made. ' + error.message + ' ' + instead,
+        );
+      });
+    };
+    if (bayLength > 0)
+      keys.bay = await made(bayLength, 'in each bay', 'Use a longer bay, or a bay length of 0 for an end stop straight after the turnout.');
+    if (spacing - length > 0.001)
+      keys.spacer = await made(
+        spacing - length,
+        'between two turnouts',
+        'Use a spacing of ' + fmt(length) + ' mm, with no straight between the turnouts, or a larger one.',
+      );
+    try {
+      await edit((next) => {
+        Object.assign(next.sources, book.additions);
+        return pitLadder(next, book.models, keys, {
+          bays,
+          end: choice.end,
+          curves: found?.count ?? 0,
+        });
+      }, book.models);
+    } catch (error) {
+      if (error.message !== 'ladder-overlap') throw error;
+      throw Error(
+        'The bays would run into each other or into the layout. Use a spacing of at least ' +
+          fmt(leastSpacing(parts, bayLength, parallel)) +
+          ' mm, shorter bays, or build from an end with more room beside it.',
+      );
+    }
+    message(
+      bays + (bays === 1 ? ' pit bay was' : ' pit bays were') + ' added. Every piece can still be changed or removed.',
     );
   }
   function render(fit = false) {
@@ -911,6 +1118,10 @@ export function createPlanner({ host, call, download, current, promote }) {
             (chosenTurnouts() > 1 ? chosenTurnouts() + ' turnouts are selected. ' : 'Only this turnout gets the insert. ') +
             'Digital has a blade worked by a motor, Hand-set point a blade set by hand, Analog an open split and Closed a road straight on. The road is the same for all four, so the insert can be swapped later. End C is the branch. A turnout takes no barriers, lines or kerbs yet.</small>' +
             btn('turnout-mode', chosenTurnouts() > 1 ? 'Apply to ' + chosenTurnouts() + ' turnouts' : 'Apply insert', 'check') +
+            (net.open.some((e) => e.key === n.id + ':2')
+              ? '<small>The branch is open. A return curve turns it back parallel to the main road, with corners of the chosen pack.</small>' +
+                btn('return-curve', 'Add return curve', 'reset')
+              : '') +
             '</div></details>'
           : '') +
         '<details class="pl-bridge pl-barriers"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary>Barriers</summary><div>' +
@@ -1093,7 +1304,7 @@ export function createPlanner({ host, call, download, current, promote }) {
           continue;
         }
         const track = trackWithProfile(piece.track, owner.profile);
-        if (source.ref.special)
+        if (source.ref.special && track.params.special)
           track.params.special = {
             ...track.params.special,
             ...source.track.params.special,
@@ -1425,6 +1636,51 @@ export function createPlanner({ host, call, download, current, promote }) {
       render();
       persist();
       return segmentLayout();
+    }
+    if (['split', 'merge'].includes(key)) {
+      turnoutAs = key;
+      catalog();
+      return;
+    }
+    if (key === 'fill-gap') {
+      message('Measuring the gap…');
+      return fillGap();
+    }
+    if (key === 'return-curve') {
+      message('Placing the return curve…');
+      return returnCurve();
+    }
+    if (key === 'ladder') {
+      const parts = ladderParts();
+      host.insertAdjacentHTML('beforeend', LADDER_DIALOG);
+      const dialog = $('.pl-ladder');
+      dialog.addEventListener('close', (e) => e.target.remove(), { once: true });
+      field('ladderBays').value = 3;
+      field('ladderBay').value = 200;
+      field('ladderParallel').checked = true;
+      const suggest = () => {
+        const least = leastSpacing(parts, field('ladderBay').valueAsNumber || 0, field('ladderParallel').checked);
+        field('ladderSpacing').value = least;
+        dialog.querySelector('.pl-segment-note').textContent =
+          'The spacing is from one turnout to the next. ' + fmt(least) + ' mm keeps these bays apart. The branches leave to the ' + hand + ', as chosen under Corner and branch direction.';
+      };
+      suggest();
+      field('ladderBay').addEventListener('change', suggest);
+      field('ladderParallel').addEventListener('change', suggest);
+      dialog.showModal();
+      return;
+    }
+    if (key === 'ladder-cancel') return $('.pl-ladder').close();
+    if (key === 'ladder-confirm') {
+      const wanted = {
+        bays: field('ladderBays').valueAsNumber,
+        spacing: field('ladderSpacing').valueAsNumber,
+        bayLength: field('ladderBay').valueAsNumber,
+        parallel: field('ladderParallel').checked,
+      };
+      $('.pl-ladder').close();
+      message('Building the pit ladder…');
+      return ladder(wanted);
     }
     if (key === 'turnout-mode') {
       message('Changing the insert…');

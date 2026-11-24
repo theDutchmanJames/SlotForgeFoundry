@@ -23,7 +23,7 @@ import {
 import { borderEndControls, laneLayoutControls } from './track-shape-controls.js';
 import { slotPositionControls, slotSpacingHint } from './slot-position-controls.js';
 import { startingGridControls } from './starting-grid-controls.js';
-import { TRACK_PROFILE_LIMITS } from './track.js';
+import { END_STOP_GAP, TRACK_PROFILE_LIMITS } from './track.js';
 import { tracksideControls } from './trackside-controls.js';
 import { specialControls, specialName } from './special-piece-controls.js';
 import { specialAssemblyNotes } from './special-pieces.js';
@@ -304,7 +304,15 @@ export function trackInspector(project, tab, draft = {}) {
     if (!p.special && p.kind === 'curve')
       html +=
         num(p, 'radius', 'Centre radius') + num(p, 'angle', 'Sweep angle', '°');
-    if (!p.special && p.kind === 'straight') html += num(p, 'length', 'Road length');
+    if (!p.special && p.kind === 'straight')
+      html +=
+        num(p, 'length', 'Road length') +
+        check('endStop', 'End stop: the slots end before end B', p.endStop === true) +
+        '<fieldset class="border-apex-fields" data-end-stop' + (p.endStop === true ? '>' : ' hidden disabled>') +
+        field('endStopGap', 'Road beyond the slot end', p.endStopGap ?? END_STOP_GAP.default, 'mm', {
+          min: END_STOP_GAP.limits[0], max: END_STOP_GAP.limits[1],
+        }) +
+        '<p class="hint">An end stop is the last piece of a dead-end lane, such as a pit bay. Its slots and braid stop short of end B, and that end is closed: it has no connectors and nothing joins it.</p></fieldset>';
     if (
       p.kind !== 'import' ||
       project.track.custom ||

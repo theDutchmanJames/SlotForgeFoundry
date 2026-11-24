@@ -148,6 +148,10 @@ export function syncTrackShapeControls(form) {
     ribs.hidden = ribs.disabled = !e.hollow.checked;
     spacing.hidden = spacing.disabled = !e.reinforcement.checked;
   }
+  if (e.endStop) {
+    const stop = form.querySelector('[data-end-stop]');
+    stop.hidden = stop.disabled = !e.endStop.checked;
+  }
   syncTracksideControls(form);
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))

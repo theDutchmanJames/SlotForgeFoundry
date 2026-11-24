@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import init from 'manifold-3d';
 import { createEngine } from '../src/engine.js';
 import { starterPack, trackWithProfile } from '../src/library-profile.js';
-import { packSpecialTrack } from '../src/pack-specials.js';
+import { END_STOP, packSpecialTrack } from '../src/pack-specials.js';
 import { specialTrackParams } from '../src/special-pieces.js';
 import { parseSTL } from '../src/editor.js';
 import {
@@ -23,6 +23,12 @@ import {
   isTurnout,
   turnoutChoice,
   applyTurnoutChoice,
+  ladderSpacing,
+  turnoutSideFor,
+  returnCurveFor,
+  addReturnCurve,
+  gapAhead,
+  pitLadder,
 } from '../src/planner-model.js';
 import {
   printGroups,
@@ -1179,4 +1185,193 @@ test('a turnout is never cut for the plate, lifts as one piece and prints from a
     assert.ok(Math.abs(print.boundingBox().min[2]) < 0.001);
     print.delete();
   }
+});
+
+// ---- Pit lane helpers: end stop, merge, return curve, fitted straight, ladder ----
+const straightOf = (length, changes = {}) => {
+  const { track } = structuredClone(single.pieces.find((p) => p.track.params.kind === 'straight'));
+  const made = trackWithProfile(track, single.profile);
+  Object.assign(made.params, { length, segments: 1, ...changes });
+  return { name: 'Straight ' + length, ...engine.plannerSource({ track: made, plate, autoFit: false }) };
+};
+const endStop = () => ({
+  name: 'End stop',
+  ...engine.plannerSource({ track: trackWithProfile(packSpecialTrack(single, END_STOP), single.profile), plate, autoFit: false }),
+});
+const returnCorner = (turnout) => {
+  const found = returnCurveFor(single.pieces, turnout.track.params);
+  return {
+    count: found.count,
+    def: { name: found.piece.name, ...engine.plannerSource({ track: trackWithProfile(found.piece.track, single.profile), plate, autoFit: false }) },
+  };
+};
+
+test('an end stop is the shortest straight of the pack with one end: nothing joins its closed end', () => {
+  const track = packSpecialTrack(single, END_STOP);
+  const lengths = single.pieces.filter((p) => p.track.params.kind === 'straight').map((p) => p.track.params.length);
+  assert.equal(track.params.length, Math.min(...lengths));
+  assert.equal(track.params.endStop, true);
+  const stop = endStop();
+  assert.equal(stop.sections.length, 1);
+  assert.equal(stop.sections[0].ports.length, 1);
+  // It carries the connectors of its open end only.
+  const plain = straightOf(track.params.length);
+  const clips = (def) => def.meshes.filter((m) => m.role === 'clip').length;
+  // Its clips are for its open end; a plain straight brings them for end B.
+  assert.ok(clips(plain) >= 1);
+  assert.equal(clips(stop), clips(plain));
+  assert.deepEqual([...new Set(Object.values(stop.sections[0].hardwareEnds))], [0]);
+  assert.deepEqual([...new Set(Object.values(plain.sections[0].hardwareEnds))], [1]);
+  // On a run it closes the open end; behind it nothing can be built.
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', stop]]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end);
+  const net = endsOf(layout, defs);
+  assert.deepEqual(net.open.map((e) => e.key), [layout.nodes[0].id + ':0']);
+  assert.equal(net.joints.size, 2);
+  assert.equal(tally(layout, defs).filter((g) => g.role === 'road').length, 2);
+  // The joint gets one set of clips, from the straight before the end stop.
+  const issued = tally(layout, defs).filter((g) => g.role === 'clip');
+  assert.equal(issued.reduce((sum, g) => sum + g.count, 0), clips(plain));
+  assert.ok(issued.every((g) => g.source === 's1'));
+  // Built backwards onto the start of a run, where no piece brings clips, the end stop brings its own.
+  const lone = setup([['s1', singlePiece('straight')], ['s2', stop]]);
+  placeSource(lone.layout, lone.defs, 's1');
+  placeSource(lone.layout, lone.defs, 's2', lone.layout.nodes[0].id + ':0');
+  assert.equal(endsOf(lone.layout, lone.defs).joints.size, 2);
+  const backward = tally(lone.layout, lone.defs).filter((g) => g.role === 'clip');
+  assert.equal(backward.reduce((sum, g) => sum + g.count, 0), clips(stop));
+  assert.ok(backward.every((g) => g.source === 's2'));
+  // It lies level and lifts with the piece it joins.
+  setElevation(layout, defs, layout.nodes[0].id, 20, 20, 1);
+  assert.deepEqual(layout.nodes[1].h, [20, 20]);
+  assert.equal(crossings(surfaces(layout, defs)).length, 0);
+  assert.deepEqual(validateLayout(JSON.parse(JSON.stringify(layout))), layout);
+});
+
+test('a turnout that joins two lanes goes in by its main exit, with its branch on the chosen side', () => {
+  assert.equal(turnoutSideFor('left', false), 'left');
+  assert.equal(turnoutSideFor('left', true), 'right');
+  assert.equal(turnoutSideFor('right', true), 'left');
+  // Travelling along +x, a join with its branch on the left is the right-hand piece.
+  const join = turnoutSource({ side: turnoutSideFor('left', true) });
+  const { layout, defs } = setup([['s1', singlePiece('straight')], ['s2', join]]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end, 'left', { merge: true });
+  const node = layout.nodes[1],
+    net = endsOf(layout, defs);
+  assert.equal(net.joints.get(layout.nodes[0].id + ':1').key, node.id + ':1', 'the main exit takes the joint');
+  assert.equal(active.end, node.id + ':0', 'building carries on from its entry');
+  const ends = net.ends.filter((e) => e.id === node.id);
+  // The entry lies further along, and the branch reaches back on the left.
+  assert.ok(ends[0].xy[0] > ends[1].xy[0] + 100);
+  assert.ok(ends[2].xy[1] > 20 && ends[2].xy[0] < ends[0].xy[0]);
+  // Placed the usual way the same piece would branch to the right.
+  const usual = setup([['s1', singlePiece('straight')], ['s2', join]]);
+  const first = placeSource(usual.layout, usual.defs, 's1');
+  placeSource(usual.layout, usual.defs, 's2', first.end, 'left');
+  const branch = endsOf(usual.layout, usual.defs).ends.find((e) => e.branch);
+  assert.ok(branch.xy[1] < -20);
+});
+
+test('return corners bring a branch back parallel, and a fitted straight closes a pit lane onto its join', () => {
+  const split = turnoutSource({ side: 'left' }),
+    join = turnoutSource({ side: turnoutSideFor('left', true) });
+  const corner = returnCorner(split);
+  const angle = split.track.params.special.turnoutAngle;
+  assert.equal(corner.count * corner.def.track.params.angle, angle);
+  assert.equal(returnCurveFor([], split.track.params), null);
+  const { layout, defs } = setup([
+    ['s1', singlePiece('straight')], ['split', split], ['join', join], ['corner', corner.def],
+    ['main', straightOf(1400)],
+  ]);
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 'split', active.end);
+  const a = layout.nodes.at(-1);
+  active = placeSource(layout, defs, 'main', a.id + ':1');
+  active = placeSource(layout, defs, 'join', active.end, 'left', { merge: true });
+  const b = layout.nodes.at(-1);
+  // Both branches turned back: two ends facing each other on one line.
+  const out = addReturnCurve(layout, defs, a.id, 'corner', corner.count);
+  const back = addReturnCurve(layout, defs, b.id, 'corner', corner.count);
+  assert.throws(() => addReturnCurve(layout, defs, a.id, 'corner', corner.count), /already has a piece on it/);
+  assert.throws(() => addReturnCurve(layout, defs, layout.nodes[0].id, 'corner', 1), /Select a turnout first/);
+  let net = endsOf(layout, defs);
+  const from = net.open.find((e) => e.key === out.end),
+    to = net.open.find((e) => e.key === back.end);
+  assert.ok(Math.abs(Math.sin(from.angle)) < 1e-9, 'parallel to the main road again');
+  assert.ok(Math.abs(from.xy[1] - to.xy[1]) < 1e-6 && from.xy[1] > 100);
+  const gap = gapAhead(net, out.end);
+  assert.equal(gap.to.key, back.end);
+  assert.ok(Math.abs(gap.length - (to.xy[0] - from.xy[0])) < 1e-3 && gap.length > 50);
+  assert.equal(gapAhead(net, layout.nodes[0].id + ':0'), null, 'nothing faces the start of the run');
+  // The straight of that length joins both ends: the pit lane is a closed loop beside the main road.
+  defs.set('fit', straightOf(gap.length));
+  layout.sources.fit = { name: 'fit', track: defs.get('fit').track };
+  placeSource(layout, defs, 'fit', out.end);
+  net = endsOf(layout, defs);
+  assert.deepEqual(net.open.map((e) => e.key).sort(), [layout.nodes[0].id + ':0', b.id + ':0'].sort());
+  assert.equal(blockedJoints(net).length, 0);
+  assert.equal(crossings(surfaces(layout, defs)).length, 0);
+});
+
+test('a pit ladder lays out its bays in one go, parallel or angled, and refuses bays that collide', () => {
+  const turnout = turnoutSource({ side: 'right' });
+  const corner = returnCorner(turnout);
+  const length = turnout.track.params.length,
+    stop = endStop(),
+    stopLength = stop.track.params.length;
+  const keys = { turnout: 'turnout', stop: 'stop', curve: 'corner', bay: 'bay', spacer: 'spacer' };
+  const fresh = (spacing, bay) => {
+    const made = setup([
+      ['s1', singlePiece('straight')], ['turnout', turnout], ['stop', stop], ['corner', corner.def],
+      ['bay', straightOf(bay)], ['spacer', straightOf(spacing - length)],
+    ]);
+    const first = placeSource(made.layout, made.defs, 's1');
+    return { ...made, end: first.end };
+  };
+  // Parallel bays lie in one line beside the main road, so each needs its own length of it.
+  // A bay also has to end before the return corners of the next one rise into its line.
+  const sizes = { bayLength: 150, stopLength, cornerRadius: corner.def.track.params.radius };
+  const spacing = ladderSpacing(turnout.track.params, sizes);
+  assert.ok(spacing > 150 + stopLength + 100 && spacing < 150 + stopLength + corner.def.track.params.radius);
+  // That is the least: 10 mm closer and the bays collide.
+  const close = fresh(spacing - 10, 150);
+  assert.throws(
+    () => pitLadder(close.layout, close.defs, keys, { bays: 2, end: close.end, curves: corner.count }),
+    /ladder-overlap/,
+  );
+  // Angled bays stand a turnout apart.
+  assert.equal(ladderSpacing(turnout.track.params, { bayLength: 150, stopLength, cornerRadius: 0 }), length);
+  const row = fresh(spacing, 150);
+  const done = pitLadder(row.layout, row.defs, keys, { bays: 3, end: row.end, curves: corner.count });
+  const count = (key) => row.layout.nodes.filter((n) => n.source === key).length;
+  assert.deepEqual(
+    [count('turnout'), count('stop'), count('bay'), count('corner'), count('spacer')],
+    [3, 3, 3, 3 * corner.count, 2],
+  );
+  let net = endsOf(row.layout, row.defs);
+  // Only the start of the run and the last main exit are open: every bay is closed.
+  assert.equal(net.open.length, 2);
+  assert.equal(done.end, row.layout.nodes.filter((n) => n.source === 'turnout').at(-1).id + ':1');
+  assert.ok(net.open.some((e) => e.key === done.end));
+  assert.equal(crossings(surfaces(row.layout, row.defs)).length, 0);
+  // Three turnouts, one spacing apart.
+  const xs = row.layout.nodes.filter((n) => n.source === 'turnout').map((n) => n.pose.x);
+  assert.ok(Math.abs(xs[1] - xs[0] - spacing) < 1e-6 && Math.abs(xs[2] - xs[1] - spacing) < 1e-6);
+  // Bays too close together are refused.
+  const tight = fresh(length + 40, 400);
+  assert.throws(
+    () => pitLadder(tight.layout, tight.defs, keys, { bays: 3, end: tight.end, curves: corner.count }),
+    /ladder-overlap/,
+  );
+  // Angled bays: no corners, and bays without a straight are a turnout and an end stop.
+  const angled = fresh(length + 40, 150);
+  pitLadder(angled.layout, angled.defs, { turnout: 'turnout', stop: 'stop', spacer: 'spacer' }, { bays: 2, end: angled.end });
+  net = endsOf(angled.layout, angled.defs);
+  assert.equal(net.open.length, 2);
+  assert.equal(angled.layout.nodes.filter((n) => n.source === 'stop').length, 2);
+  assert.equal(crossings(surfaces(angled.layout, angled.defs)).length, 0);
+  for (const bays of [0, 13, 2.5])
+    assert.throws(() => pitLadder(angled.layout, angled.defs, keys, { bays, end: undefined }), /Enter 1 to 12 pit bays/);
 });

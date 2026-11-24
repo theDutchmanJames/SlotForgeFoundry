@@ -280,6 +280,7 @@ export function validateTrack(p) {
       'A corner with end connectors can turn at most 355°: beyond that the finish connector runs into the start end. Reduce Sweep angle or remove the end connectors.',
     );
   range('length', 1, 20000);
+  validateEndStop(p);
   // The turnout blade, island contacts, dead strips and optical windows are
   // all set out from a braid that lies in a recess.
   if (braidRaised(p) && p.special?.type === 'turnout')
@@ -612,6 +613,31 @@ export function nativeBraidLane(p, path, offset, index) {
   };
 }
 
+// An end stop is a straight whose slots stop short of end B, which is a
+// plain closed end without connectors: the last piece of a dead-end lane.
+export const END_STOP_GAP = Object.freeze({ default: 20, limits: [5, 500] });
+export const hasEndStop = (p) => p?.endStop === true;
+export const endStopGap = (p) => p.endStopGap ?? END_STOP_GAP.default;
+function validateEndStop(p) {
+  if (p.endStop === undefined || p.endStop === false) return;
+  if (p.endStop !== true) throw new Error('Choose whether this straight is an end stop.');
+  if (p.kind !== 'straight' || p.special)
+    throw new Error('Only a plain straight can be an end stop. Switch End stop off for this piece.');
+  const [least, most] = END_STOP_GAP.limits,
+    gap = endStopGap(p);
+  if (!Number.isFinite(gap) || gap < least || gap > most)
+    throw new Error('The road beyond the slot end must be between ' + least + ' and ' + most + ' mm.');
+  // The slot has to end inside the last road segment, with some slot left in it.
+  const room = p.length / p.segments - 10;
+  if (gap > room)
+    throw new Error(
+      'The slot of this end stop would end before its last road segment starts. Set Road beyond the slot end to at most ' +
+        Math.max(0, Math.floor(room)) + ' mm, use fewer road segments or a longer road.',
+    );
+  if (p.startingGrid)
+    throw new Error('An end stop cannot carry a starting grid. Switch one of them off.');
+}
+
 function nativePieces(
   work,
   p,
@@ -655,6 +681,16 @@ function nativePieces(
     };
     return work.section([[...boundary(lo), ...boundary(hi).reverse()]]);
   }
+  // Where the slots of an end stop end, as a station of the path.
+  const stopAt = hasEndStop(p) ? 1 - endStopGap(p) / p.length : null;
+  if (stopAt !== null && importedLanes)
+    throw Error('An end stop needs a slot that runs straight. Use a centred slot or one distance from the edge for this piece.');
+  // A band of a straight from station `a` that stops square at station `to`.
+  function stoppedBand(a, to, lo, hi, overrun) {
+    // Offsets are measured as everywhere else on the road, by the path itself.
+    const back = (d) => move(path.point(a, d), path.tangent(a), -overrun);
+    return work.section([[back(lo), path.point(to, lo), path.point(to, hi), back(hi)]]);
+  }
   for (let i = 0; i < p.segments; ++i) {
     const a = i / p.segments,
       b = (i + 1) / p.segments;
@@ -665,7 +701,12 @@ function nativePieces(
       band(a, b, -p.width / 2, p.width / 2),
     );
     shell(work, road, p);
-    if (work.planning) road.plannerStrip = plannerStrip(path, p, a, b);
+    if (work.planning) {
+      road.plannerStrip = plannerStrip(path, p, a, b);
+      // The closed end of an end stop is not an end to build from.
+      if (hasEndStop(p) && i === p.segments - 1)
+        road.plannerStrip.ports = road.plannerStrip.ports.slice(0, 1);
+    }
     registerRibRun(p, road, path, a, b, () => [-p.width / 2, p.width / 2]);
     if (laneSleeves) road.adjustedLaneSleeves = laneSleeves;
     const keepout = [];
@@ -692,6 +733,15 @@ function nativePieces(
                 2,
             )
           : 0.05;
+      // The last road of an end stop: its slot and braid stop short of end B.
+      if (stopAt !== null && b > stopAt) {
+        makeSlot(
+          stoppedBand(a, stopAt, lane - half, lane + half, overrun),
+          stoppedBand(a, stopAt + p.wall / p.length, lane - half - p.wall, lane + half + p.wall, 0),
+          ...braidSections(work, p, (lo, hi) => stoppedBand(a, stopAt, lane + lo, lane + hi, overrun)),
+        );
+        continue;
+      }
       makeSlot(
         band(a, b, lane - half, lane + half, overrun),
         band(a, b, lane - half - p.wall, lane + half + p.wall),
@@ -720,7 +770,11 @@ function nativePieces(
     const paint = centreLinePaint(work, p, centre, path.centreLinePhase);
     for (const road of roads) road.centreLinePaint = paint;
   }
-  if (!deferRoadJoints) addRoadJoints(work, p, path, lanes, roads, loose);
+  if (!deferRoadJoints)
+    addRoadJoints(work, p, path, lanes, roads, loose, {
+      // The closed end of an end stop carries no connectors.
+      ...(stopAt !== null && { skipped: new Set([roads.length]) }),
+    });
   for (const [side, sign] of [
     ['outer', 1],
     ['inner', -1],
@@ -801,6 +855,7 @@ function nativePieces(
       );
     }
     const skipped = new Set(plainBorderEnds);
+    if (hasEndStop(p)) skipped.add(borders.length);
     if (sidePath.borderTipStart) skipped.add(0);
     if (sidePath.borderTipFinish) skipped.add(borders.length);
     addBorderEndJoints(

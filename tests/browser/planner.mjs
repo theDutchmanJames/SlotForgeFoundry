@@ -188,6 +188,103 @@ export async function checkPlanner({ page, action, download, snap }) {
   assert.ok(names.some((k) => /^notes\/.*-assembly\.txt$/.test(k)));
   const notes = names.filter((k) => /-assembly\.txt$/.test(k)).map((k) => strFromU8(turnoutKit[k])).join('\n');
   assert.match(notes, /insert/i);
+
+  // A pit lane beside the main road: split, four straights, join, both
+  // branches turned back, and a straight made to the length of the gap.
+  const note = () => panel.locator('.pl-message').textContent();
+  const pick = async (pattern) =>
+    field('end').selectOption({ label: (await ends()).find((text) => pattern.test(text)) });
+  await cmd('new').click();
+  await idle();
+  await cmd('left').click();
+  await cmd('standard').click();
+  await add(/^Full straight/);
+  await cmd('fill-gap').click();
+  await idle();
+  assert.match(await note(), /No open end faces the chosen build end in a straight line/);
+  await cmd('special').click();
+  assert.equal(await cmd('split').getAttribute('aria-pressed'), 'true');
+  await add(/^Turnout/);
+  await cmd('standard').click();
+  for (let i = 0; i < 4; i++) await add(/^Full straight/);
+  await cmd('special').click();
+  await cmd('merge').click();
+  await add(/^Turnout/);
+  plan = await state();
+  // The join lies the other way round: it is the right-hand piece, on its main exit.
+  assert.equal(plan.sources[plan.nodes.at(-1).source].track.params.special.side, 'right');
+  assert.match(await chosenEnd(), /7 · Turnout · A$/);
+  await cmd('return-curve').click();
+  await idle();
+  assert.match(await note(), /× R1 corner brings? the branch back parallel to the main road/);
+  await pick(/^2 · Turnout · C$/);
+  await cmd('return-curve').click();
+  await idle();
+  const before = (await state()).nodes.length;
+  await cmd('fill-gap').click();
+  await idle();
+  assert.match(await note(), /A straight of [\d.,]+ mm closes the gap\./);
+  plan = await state();
+  assert.equal(plan.nodes.length, before + 1);
+  assert.match(await panel.locator('.pl-stats').textContent(), /2 open ends/);
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Straight [\d.,]+ mm/);
+  assert.equal(await panel.locator('.pl-crossings button').count(), 0);
+  // One Undo takes the fitted straight away again.
+  await cmd('undo').click();
+  await idle();
+  assert.equal((await state()).nodes.length, before);
+
+  // A pit ladder: three bays in one go, each closed by an end stop.
+  await cmd('new').click();
+  await idle();
+  await cmd('split').click();
+  await cmd('standard').click();
+  await add(/^Full straight/);
+  await cmd('ladder').click();
+  const ladderBox = page.locator('dialog.pl-ladder');
+  await ladderBox.waitFor();
+  assert.equal(await field('ladderBays').inputValue(), '3');
+  assert.equal(await field('ladderParallel').isChecked(), true);
+  const least = Number(await field('ladderSpacing').inputValue());
+  assert.ok(least > 400, 'the suggested spacing keeps parallel bays apart: ' + least);
+  // Too close: refused with the spacing that works, and nothing is added.
+  // A straight too short to make between the turnouts says what to enter.
+  await field('ladderSpacing').fill('280');
+  await cmd('ladder-confirm').click();
+  await idle();
+  assert.match(await note(), /The straight of 20 mm between two turnouts cannot be made\..*Use a spacing of 260 mm, with no straight between the turnouts, or a larger one\./);
+  assert.equal((await state()).nodes.length, 1);
+  await cmd('ladder').click();
+  await ladderBox.waitFor();
+  await field('ladderSpacing').fill('260');
+  await cmd('ladder-confirm').click();
+  await idle();
+  assert.match(await note(), /The bays would run into each other or into the layout\. Use a spacing of at least [\d.,]+ mm/);
+  assert.equal((await state()).nodes.length, 1);
+  await cmd('ladder').click();
+  await ladderBox.waitFor();
+  await cmd('ladder-confirm').click();
+  await idle();
+  assert.match(await note(), /3 pit bays were added/);
+  plan = await state();
+  const named = (name) => plan.nodes.filter((n) => plan.sources[n.source].name === name).length;
+  assert.equal(named('Turnout'), 3);
+  assert.equal(named('End stop'), 3);
+  assert.match(await panel.locator('.pl-stats').textContent(), /2 open ends/);
+  assert.equal(await panel.locator('.pl-crossings button').count(), 0);
+  assert.match(await chosenEnd(), /Turnout · B$/);
+  await snap('track-planner-pit-ladder');
+  // The whole ladder is one step back.
+  await cmd('undo').click();
+  await idle();
+  assert.equal((await state()).nodes.length, 1);
+  // The end stop is a piece of its own under Specials, and closes the run.
+  await cmd('special').click();
+  await add(/^End stop/);
+  assert.match(await panel.locator('.pl-stats').textContent(), /1 open end/);
+  console.log(
+    '✓ Track Planner places a turnout that joins two lanes, turns both branches back with return curves, fits a straight to the gap, builds a pit ladder of three bays in one step and closes a run with an end stop',
+  );
   await cmd('left').click();
   await cmd('standard').click();
   await action('mode-track').click();
