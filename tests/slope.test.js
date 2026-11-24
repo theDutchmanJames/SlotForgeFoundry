@@ -1,0 +1,309 @@
+// Sloped straights: a road that bends in height, from level into a climb or
+// from a climb back to level.
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import Module from 'manifold-3d';
+import { createEngine } from '../src/engine.js';
+import { withPrintableSolid } from '../src/geometry/joints.js';
+import {
+  SLOPE_DEFAULTS,
+  SLOPE_LEAD,
+  hasSlope,
+  slopeFilled,
+  slopeProfile,
+  slopeSettings,
+} from '../src/geometry/slope.js';
+import { trackInspector } from '../src/inspector.js';
+import { syncSlopeControls } from '../src/slope-controls.js';
+import { canRamp, endsOf, newLayout, placeSource } from '../src/planner-model.js';
+import { newProject } from '../src/project.js';
+import { buildTestJoint, buildTrack, defaultTrack, trackParameters, validateTrack } from '../src/track.js';
+
+const wasm = await Module();
+wasm.setup();
+const engine = createEngine(wasm);
+
+const piece = (changes = {}) =>
+  trackParameters({ ...defaultTrack(), kind: 'straight', length: 200, lanes: 1, width: 100, ...changes });
+const sloped = (changes = {}) => piece({ slopeForm: 'up', ...changes });
+function built(p, inspect) {
+  const parts = buildTrack(wasm, p);
+  try {
+    return inspect(parts);
+  } finally {
+    parts.forEach((part) => part.solid.delete());
+  }
+}
+const roadOf = (parts) => parts.find((part) => part.role === 'road');
+const near = (actual, expected, tolerance) =>
+  assert.ok(Math.abs(actual - expected) <= tolerance, 'expected ' + expected + ' ± ' + tolerance + '; measured ' + actual);
+const degrees = (radians) => (radians * 180) / Math.PI;
+// The first surface met from above, and from below.
+const topAt = (solid, x, y) => solid.rayCast([x, y, 200], [x, y, -5])[0]?.position[2];
+const underAt = (solid, x, y) => solid.rayCast([x, y, -5], [x, y, 200])[0]?.position[2];
+
+test('the curve of the road: level into a climb, or a climb back to level, with the same rise', () => {
+  assert.equal(hasSlope(piece()), false);
+  assert.deepEqual(slopeSettings(sloped()), { ...SLOPE_DEFAULTS, slopeForm: 'up' });
+  const up = slopeProfile(sloped()),
+    down = slopeProfile(sloped({ slopeForm: 'down' }));
+  // Level at end A and at the climb angle at end B; the other way round at the top of a hill.
+  assert.equal(up.at(0)[2], 0);
+  near(degrees(up.at(200)[2]), 8, 1e-9);
+  near(degrees(down.at(0)[2]), 8, 1e-9);
+  assert.equal(down.at(200)[2], 0);
+  // The ends stay straight for the connectors, and the bend takes its share of the rest.
+  near(up.start, SLOPE_LEAD, 1e-9);
+  near(up.bend, 0.7 * (200 - 2 * SLOPE_LEAD), 1e-9);
+  near(down.end, 200 - SLOPE_LEAD, 1e-9);
+  near(up.radius, up.bend / up.climb, 1e-9);
+  assert.equal(up.at(SLOPE_LEAD)[1], 0, 'still on the table at the end of the level stretch');
+  // Both forms rise as much over the same run: one is the other turned round.
+  near(up.rise, down.rise, 1e-9);
+  near(up.run, down.run, 1e-9);
+  assert.ok(up.rise > 15 && up.rise < 20 && up.run < 200 && up.run > 198);
+  // The surface is as long as the piece: it is bent, not stretched.
+  let length = 0;
+  for (let d = 0; d < 200; d += 0.5) {
+    const a = up.at(d),
+      b = up.at(d + 0.5);
+    length += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  near(length, 200, 1e-3);
+  // A gentle curve takes the whole piece on a wide radius; an aggressive one bends tightly and climbs further.
+  const gentle = slopeProfile(sloped({ slopeBend: 100 })),
+    aggressive = slopeProfile(sloped({ slopeBend: 25 }));
+  assert.ok(gentle.radius > up.radius && up.radius > aggressive.radius);
+  assert.ok(gentle.rise < up.rise && up.rise < aggressive.rise);
+  // A steeper angle rises further.
+  assert.ok(slopeProfile(sloped({ slopeAngle: 12 })).rise > up.rise * 1.4);
+});
+
+test('a climb is one solid piece on the table, with its slot as deep as on a level road', () => {
+  const p = sloped();
+  const profile = slopeProfile(p);
+  built(p, (parts) => {
+    const road = roadOf(parts);
+    assert.equal(road.solid.status(), 'NoError');
+    const pieces = road.solid.decompose();
+    assert.equal(pieces.length, 1);
+    pieces.forEach((part) => part.delete());
+    const box = road.solid.boundingBox();
+    near(box.min[2], 0, 1e-6);
+    near(box.max[2], p.height + profile.rise, 0.01);
+    near(box.min[0], -100, 1e-6);
+    // End B is square to the road: its lower edge reaches further than its upper edge.
+    near(box.max[0], -100 + profile.run + p.height * Math.sin(profile.climb), 0.01);
+    // Level at end A, and on the curve everywhere else.
+    near(topAt(road.solid, -95, 20), p.height, 1e-6);
+    for (const d of [40, 90, 140, 190]) {
+      const [x, z] = profile.at(d);
+      near(topAt(road.solid, -100 + x, 20), p.height + z, 0.02);
+    }
+    // The slot floor lies its depth below the surface, measured square to the road.
+    for (const d of [60, 120, 180]) {
+      const [x, z, angle] = profile.at(d);
+      const floor = [-100 + x + p.slotDepth * Math.sin(angle), p.height + z - p.slotDepth * Math.cos(angle)];
+      near(topAt(road.solid, floor[0], 0), floor[1], 0.03);
+    }
+    // Solid down to the table under the climb, and open under the high end.
+    for (const d of [60, 120, 160]) near(underAt(road.solid, -100 + profile.at(d)[0], 20), 0, 1e-6);
+    assert.ok(underAt(road.solid, -100 + profile.at(190)[0], 20) > 5, 'the last stretch is open from below');
+    assert.equal(slopeFilled(p), true);
+  });
+  // Without the base it is the bent road alone, hollow as the pack makes its roads.
+  const bare = sloped({ slopeFill: false });
+  let filled, open;
+  built(p, (parts) => (filled = roadOf(parts).solid.volume()));
+  built(bare, (parts) => {
+    const road = roadOf(parts).solid;
+    open = road.volume();
+    assert.ok(underAt(road, -100 + profile.at(120)[0], 20) > 3);
+    near(road.boundingBox().max[2], p.height + profile.rise, 0.01);
+  });
+  assert.ok(filled > open * 1.5, filled + ' against ' + open);
+});
+
+test('the top of a hill bends the other way and ends level, as high as the climb reached', () => {
+  const p = sloped({ slopeForm: 'down' });
+  const profile = slopeProfile(p);
+  assert.equal(slopeFilled(p), false);
+  built(p, (parts) => {
+    const road = roadOf(parts).solid;
+    assert.equal(road.status(), 'NoError');
+    // Level over the last stretch, at the full rise.
+    for (const back of [2, 8, 14]) near(topAt(road, -100 + profile.run - back, 20), p.height + profile.rise, 0.01);
+    // Climbing at end A, at the climb angle.
+    const a = profile.at(5),
+      b = profile.at(12);
+    near(degrees(Math.atan2(topAt(road, -100 + b[0], 20) - topAt(road, -100 + a[0], 20), b[0] - a[0])), 8, 0.05);
+    // It is a road of even thickness: no base under it.
+    assert.ok(underAt(road, -100 + profile.at(150)[0], 20) > profile.rise - p.height);
+  });
+});
+
+test('connectors, borders and a texture follow the slope', () => {
+  // The clips of end B are lifted and turned with it.
+  const p = sloped({ joint: 'clips' }),
+    profile = slopeProfile(p);
+  let flatClips;
+  built(piece({ joint: 'clips' }), (parts) => {
+    flatClips = parts.filter((part) => part.role === 'clip').map((part) => part.solid.volume());
+  });
+  built(p, (parts) => {
+    const clips = parts.filter((part) => part.role === 'clip');
+    assert.equal(clips.length, flatClips.length);
+    clips.forEach((clip, i) => {
+      // Turned as a whole in the straight stretch at the end: not stretched or squeezed.
+      near(clip.solid.volume(), flatClips[i], flatClips[i] * 0.002);
+      assert.ok(clip.solid.boundingBox().min[2] > profile.rise - 3, clip.id + ' is up at end B');
+      const overlap = clip.solid.intersect(roadOf(parts).solid);
+      try {
+        assert.ok(overlap.volume() < 0.01 * flatClips[i], clip.id + ' sits in its pocket');
+      } finally {
+        overlap.delete();
+      }
+    });
+  });
+  built(sloped({ slopeForm: 'down', lanes: 2, width: 200, borderSide: 'both' }), (parts) => {
+    const borders = parts.filter((part) => part.role === 'border');
+    assert.equal(borders.length, 2);
+    for (const border of borders) {
+      assert.equal(border.solid.status(), 'NoError');
+      assert.ok(border.solid.boundingBox().max[2] > 25, 'the border rises with the road');
+    }
+  });
+  built(sloped({ roadTexture: 'cobbles', textureSize: 'full' }), (parts) => {
+    const road = roadOf(parts);
+    assert.equal(road.solid.status(), 'NoError');
+    assert.ok(road.textureJoints > 1000);
+  });
+});
+
+test('a sloped piece prints on its side, and its fit sample is a flat cut of the road', () => {
+  const p = sloped({ joint: 'clips' });
+  built(p, (parts) => {
+    const road = roadOf(parts);
+    withPrintableSolid(road, (solid) => {
+      const { min, max } = solid.boundingBox();
+      near(min[2], 0, 1e-9);
+      near(max[2] - min[2], p.width, 1e-6);
+    }, { sideDown: true });
+    // In place it is where it stands on the table.
+    withPrintableSolid(road, (solid) => near(solid.boundingBox().max[2], p.height + slopeProfile(p).rise, 0.01));
+  });
+  const flat = buildTestJoint(wasm, p, 'start');
+  try {
+    for (const part of flat) assert.ok(part.solid.boundingBox().max[2] <= p.height + 2, part.id);
+  } finally {
+    flat.forEach((part) => part.solid.delete());
+  }
+});
+
+test('a slope that cannot be made is refused with what to change', () => {
+  const refuse = (changes, text) => assert.throws(() => validateTrack(sloped(changes)), text, JSON.stringify(changes));
+  refuse({ slopeForm: 'sideways' }, /Choose Level, Level into a climb or Climb back to level/);
+  refuse({ slopeAngle: 0 }, /climb angle must be between 1 and 30°/);
+  refuse({ slopeAngle: 45 }, /climb angle must be between 1 and 30°/);
+  refuse({ slopeBend: 5 }, /curve must be between 10 and 100 %/);
+  refuse({ slopeOpen: 500 }, /open length under the high end must be between 0 and 200 mm/);
+  refuse({ segments: 2 }, /prints as one road piece\. Set the road Segments to 1/);
+  refuse({ length: 40 }, /needs a road at least 50 mm long/);
+  // Too tight a bend: with the setting that makes it gentle enough.
+  refuse({ slopeAngle: 20, slopeBend: 20 }, /bend on a radius of 97\.4 mm, too tight for a car to follow \(150 mm at least\)\. Set Curve to at least 31 %, or the climb angle to at most 12\.9°/);
+  refuse({ length: 80, slopeAngle: 30, slopeBend: 100 }, /Set the climb angle to at most 19°, or use a road at least 109 mm long/);
+  refuse({ tracksideSide: 'outer' }, /cannot have trackside accessories yet/);
+  refuse({ whiteLineRoad: 'both' }, /cannot have white lines or kerbstones yet/);
+  refuse({ roadCentreLine: 'solid' }, /cannot have white lines or kerbstones yet/);
+  assert.throws(
+    () => validateTrack(trackParameters({ ...defaultTrack(), kind: 'curve', slopeForm: 'up' })),
+    /Only a plain straight can be a sloped piece/,
+  );
+  // Level, none of its settings is looked at; and a piece from before slopes is unchanged.
+  assert.doesNotThrow(() => validateTrack(piece({ slopeAngle: 99, slopeBend: 0 })));
+  assert.equal(defaultTrack().slopeForm, undefined);
+});
+
+test('in a layout the piece is as long as its run, and the next piece joins at the height it reached', () => {
+  const plate = { width: 450, depth: 450, margin: 0 };
+  const source = (name, changes) => ({ name, ...engine.plannerSource({ track: { params: piece(changes), plan: null }, plate, autoFit: false }) });
+  const up = source('Climb', { slopeForm: 'up' }),
+    level = source('Straight', {});
+  const profile = slopeProfile(sloped());
+  const [a, b] = up.sections[0].ports;
+  near(b.xy[0] - a.xy[0], profile.run, 1e-6);
+  near(b.baseZ, profile.rise, 1e-9);
+  assert.equal(a.baseZ, undefined);
+  // Its outline on the plan is its shadow: no longer than its run and the tilt of its end face.
+  const xs = up.meshes.find((m) => m.role === 'road').outline.flat().map(([x]) => x);
+  assert.ok(Math.max(...xs) - Math.min(...xs) < 200.7 && Math.max(...xs) - Math.min(...xs) > 198);
+  const defs = new Map([['s1', level], ['s2', up]]),
+    layout = newLayout();
+  for (const [id, def] of defs) layout.sources[id] = { name: def.name, track: def.track };
+  let active = placeSource(layout, defs, 's1');
+  active = placeSource(layout, defs, 's2', active.end);
+  active = placeSource(layout, defs, 's1', active.end);
+  const net = endsOf(layout, defs);
+  assert.equal(net.open.length, 2);
+  assert.equal(net.joints.size, 4);
+  // The straight behind the climb is lifted by the rise.
+  near(layout.nodes[2].h[0], profile.rise, 1e-6);
+  assert.deepEqual(layout.nodes[1].h, [0, 0]);
+  // A sloped piece has its own curve in height: it is not tilted as a ramp as well.
+  assert.equal(canRamp(layout.nodes[1], up), false);
+  assert.equal(canRamp(layout.nodes[0], level), true);
+});
+
+test('Track Set offers the slope under Shape on a plain straight', () => {
+  const project = newProject();
+  project.mode = 'track';
+  project.track.params = sloped();
+  const html = trackInspector(project, 'geometry');
+  for (const label of ['Level', 'Level into a climb', 'Climb back to level', 'Climb angle', 'Curve', 'Solid base down to the table', 'Open under the high end'])
+    assert.ok(html.includes(label), label);
+  assert.match(html, /name="slopeAngle"[^>]*value="8"/);
+  assert.match(html, /name="slopeBend"[^>]*value="70"/);
+  assert.match(html, /data-slope-fields>/);
+  assert.match(html, /data-slope-base>/);
+  assert.match(html, /End B is 17\.5 mm higher than end A, 199 mm further on\. The road bends on a radius of 852\.3 mm\./);
+  project.track.params = sloped({ slopeForm: 'down' });
+  assert.match(trackInspector(project, 'geometry'), /data-slope-base hidden disabled>/);
+  project.track.params = piece();
+  assert.match(trackInspector(project, 'geometry'), /data-slope-fields hidden disabled>/);
+  project.track.params = trackParameters({ ...defaultTrack(), kind: 'curve' });
+  assert.doesNotMatch(trackInspector(project, 'geometry'), /slopeForm/);
+});
+
+test('the hint follows the fields while they are edited', () => {
+  const fields = { hidden: true, disabled: true },
+    base = { hidden: true, disabled: true },
+    hint = { textContent: '' };
+  // As a browser form has it: elements.length is the number of fields.
+  const elements = {
+    length: 5,
+    slopeForm: { value: 'up' },
+    slopeAngle: { valueAsNumber: 8 },
+    slopeBend: { valueAsNumber: 70 },
+  };
+  const nodes = {
+    '[data-slope-fields]': fields,
+    '[data-slope-base]': base,
+    '[data-slope-hint]': hint,
+    '[name="length"]': { valueAsNumber: 200 },
+  };
+  const form = { elements, querySelector: (key) => nodes[key] };
+  syncSlopeControls(form);
+  assert.equal(fields.hidden, false);
+  assert.equal(base.hidden, false);
+  assert.match(hint.textContent, /End B is 17\.5 mm higher than end A, 199 mm further on/);
+  elements.slopeAngle.valueAsNumber = 12;
+  syncSlopeControls(form);
+  assert.match(hint.textContent, /End B is 26\.\d mm higher/);
+  elements.slopeForm.value = 'down';
+  syncSlopeControls(form);
+  assert.equal(base.hidden, true);
+  elements.slopeForm.value = 'none';
+  syncSlopeControls(form);
+  assert.equal(fields.hidden, true);
+  assert.equal(hint.textContent, '');
+});

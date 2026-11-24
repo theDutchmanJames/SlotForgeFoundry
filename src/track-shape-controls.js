@@ -1,3 +1,4 @@
+import { syncSlopeControls } from './slope-controls.js';
 import { syncTextureControls } from './texture-controls.js';
 import { choice, details, field, fmt } from './ui.js';
 import { importedTrackPaths } from './geometry/import-track.js';
@@ -155,6 +156,7 @@ export function syncTrackShapeControls(form) {
   }
   syncTracksideControls(form);
   syncTextureControls(form);
+  syncSlopeControls(form);
   if (e.braidStyle)
     for (const group of form.querySelectorAll('[data-braid-style]'))
       group.hidden = group.disabled = group.dataset.braidStyle !== e.braidStyle.value;

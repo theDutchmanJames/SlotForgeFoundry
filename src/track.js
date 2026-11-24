@@ -1,5 +1,6 @@
 import { plannerStrip } from './planner-strip.js';
 import { hasRoadTexture, roadStones, validateRoadTexture } from './geometry/road-texture.js';
+import { bendToSlope, hasSlope, onItsSide, slopeBase, slopeFilled, slopeProfile, validateSlope } from './geometry/slope.js';
 import {
   SolidWorkshop,
   addSlot,
@@ -283,6 +284,7 @@ export function validateTrack(p) {
   range('length', 1, 20000);
   validateEndStop(p);
   validateRoadTexture(p);
+  validateSlope(p);
   // The turnout blade, island contacts, dead strips and optical windows are
   // all set out from a braid that lies in a recess.
   if (braidRaised(p) && p.special?.type === 'turnout')
@@ -911,7 +913,9 @@ function nativePieces(
 
 /** Caller owns each returned solid. All other WASM handles are released here. */
 export function buildTrack(wasm, params, plan, couponStation, samplePath, {planning = false, mirrorPockets = false} = {}) {
-  const p = trackParameters(params);
+  const given = trackParameters(params);
+  // A climb that stands on a solid base is one solid piece: no hollow underside.
+  const p = slopeFilled(given) && couponStation === undefined && !samplePath ? { ...given, hollow: false } : given;
   const grid = validateTrack(p);
   const work = new SolidWorkshop(wasm);
   work.planning = planning;
@@ -994,6 +998,34 @@ export function buildTrack(wasm, params, plan, couponStation, samplePath, {plann
       results[i].outline = part.section.toPolygons();
     });
     if (bridges) finishBridges(work, bridges, results, p);
+    // A sloped piece: every part, built flat, is bent along the curve of the road.
+    if (hasSlope(p) && couponStation === undefined && !samplePath) {
+      const profile = slopeProfile(p);
+      for (const result of results) {
+        result.solid = bendToSlope(work, result.solid, p, profile);
+        if (result.role === 'road' || result.role === 'border') onItsSide(result, wasm);
+      }
+      const road = results.find((result) => result.role === 'road');
+      const base = slopeFilled(p) && slopeBase(work, p, profile);
+      if (base) road.solid = work.union([road.solid, base]);
+      if (planning) {
+        // On the plan the piece is as long as its run, and its end B is higher by its rise.
+        const flat = {
+          point: (t, d = 0) => [-p.length / 2 + profile.at(t * p.length)[0], d],
+          tangent: () => [1, 0],
+          stations: [0, 1],
+        };
+        const strip = plannerStrip(flat, p, 0, 1);
+        strip.ports[1].baseZ = profile.rise;
+        if (road.plannerStrip?.ports.length === 1) strip.ports.length = 1;
+        road.plannerStrip = strip;
+        for (const result of results) {
+          if (!result.outline) continue;
+          const shadow = work.own(result.solid.project());
+          result.outline = shadow.toPolygons();
+        }
+      }
+    }
     for (const result of results) {
       if (
         result.solid.status() !== 'NoError' ||
@@ -1062,8 +1094,10 @@ export function buildTestJoint(wasm, params, which = 'auto') {
     ...p,
     roadCentreLine: 'none',
     roadKerbSide: 'none',
-    // A sample is a short cut of the piece: it is made without the road texture.
+    // A sample is a short, level cut of the piece: it is made without the
+    // road texture and without the slope.
     roadTexture: 'none',
+    slopeForm: 'none',
     reinforcement: false,
     special: undefined,
     startingGrid: undefined,

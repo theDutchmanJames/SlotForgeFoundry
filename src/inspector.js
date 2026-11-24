@@ -26,6 +26,7 @@ import { startingGridControls } from './starting-grid-controls.js';
 import { END_STOP_GAP, TRACK_PROFILE_LIMITS } from './track.js';
 import { tracksideControls } from './trackside-controls.js';
 import { textureFolder } from './texture-controls.js';
+import { slopeControls } from './slope-controls.js';
 import { specialControls, specialName } from './special-piece-controls.js';
 import { specialAssemblyNotes } from './special-pieces.js';
 import {
@@ -192,6 +193,7 @@ const SECTION_OF_FIELD = [
   [/^trackside/, 'trackside'],
   [/^slot(Edge|Start|End|Lanes|Lane[1-8](Start|End))$/, 'geometry'],
   [/^(roadTexture|texture[A-Z])/, 'markings'],
+  [/^slope[A-Z]/, 'geometry'],
 ];
 export function sectionForField(field, fallback) {
   return SECTION_OF_FIELD.find(([re]) => re.test(field ?? ''))?.[1] ?? fallback;
@@ -314,7 +316,8 @@ export function trackInspector(project, tab, draft = {}) {
         field('endStopGap', 'Road beyond the slot end', p.endStopGap ?? END_STOP_GAP.default, 'mm', {
           min: END_STOP_GAP.limits[0], max: END_STOP_GAP.limits[1],
         }) +
-        '<p class="hint">An end stop is the last piece of a dead-end lane, such as a pit bay. Its slots and braid stop short of end B, and that end is closed: it has no connectors and nothing joins it.</p></fieldset>';
+        '<p class="hint">An end stop is the last piece of a dead-end lane, such as a pit bay. Its slots and braid stop short of end B, and that end is closed: it has no connectors and nothing joins it.</p></fieldset>' +
+        slopeControls(p);
     if (
       p.kind !== 'import' ||
       project.track.custom ||

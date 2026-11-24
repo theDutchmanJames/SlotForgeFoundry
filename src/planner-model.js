@@ -4,6 +4,7 @@ import { PEG_LIMITS, PEG_SIZE } from './geometry/bridge-supports.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { MARKING_KEYS } from './markings-controls.js';
 import { TEXTURE_KEYS } from './geometry/road-texture.js';
+import { hasSlope } from './geometry/slope.js';
 
 // The settings a layout keeps for a section when its pack changes: its
 // barriers and its markings are set in the layout.
@@ -841,6 +842,8 @@ export function canRamp(node, def) {
   if (
     s.ports.length !== 2 ||
     def.track.params.special ||
+    // A sloped piece has its own curve in height: it is not tilted as well.
+    hasSlope(def.track.params) ||
     def.track.plan?.flatCrossing
   )
     return false;
