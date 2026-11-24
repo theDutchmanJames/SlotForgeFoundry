@@ -501,9 +501,11 @@ test('the cam fits the stroke: a short flat at each end, and a slant that stops 
   // Steep and not locking at 2 mm; shallow from 6 mm on.
   assert.ok(turnoutCam(2, 1.6).angle > 40);
   assert.ok(turnoutCam(6, 1.6).angle < 20);
-  // The piece itself: the same pin travel at 6 and at 9 mm of stroke.
+  // The piece itself: the same slant at 6 and at 9 mm of stroke. (The crank is
+  // a little longer for the longer head, so the pin travels a little further.)
   const drive = (motorStroke) => turnoutLayout(turnout({ motorStroke }, lowTrack)).drive;
-  near(drive(6).travel, drive(9).travel, 1e-6);
+  near(drive(6).cam.slant, drive(9).cam.slant, 1e-9);
+  assert.ok(drive(9).travel < 1.3 * drive(6).travel);
   assert.ok(drive(6).cam.angle < 20, 'slant at 6 mm: ' + drive(6).cam.angle);
   assert.ok(drive(2).cam.angle > 40);
 });
@@ -702,4 +704,110 @@ test('the slider, the crank and the motor cradle each print on a flat face', () 
   const notes = specialAssemblyNotes(turnout()).join('\n');
   assert.match(notes, /slider/);
   assert.match(notes, /after the insert/);
+});
+
+// --- Stout parts: thicknesses measured from the built solids ---------------
+
+// How much material a solid has along Y at this X and height, between two Y.
+function materialAlongY(solid, z, x, ya, yb) {
+  const slice = solid.slice(z);
+  const strip = section([[
+    [x - 0.05, Math.min(ya, yb)], [x + 0.05, Math.min(ya, yb)],
+    [x + 0.05, Math.max(ya, yb)], [x - 0.05, Math.max(ya, yb)],
+  ]]);
+  try {
+    return overlapArea(slice, strip) / 0.1;
+  } finally {
+    slice.delete();
+    strip.delete();
+  }
+}
+const thicknessAt = (solid, [x, y]) => {
+  const up = solid.rayCast([x, y, -5], [x, y, 40])[0],
+    down = solid.rayCast([x, y, 40], [x, y, -5])[0];
+  return up && down ? down.position[2] - up.position[2] : 0;
+};
+
+test('the crank arm, its pin and the slider above it are stout on a 10 mm and on a 12 mm track', () => {
+  for (const [name, changes, armAtLeast, widthAtLeast] of [['10 mm', lowTrack, 3.5, 3], ['12 mm', {}, 3.3, 4.5]])
+    for (const side of ['left', 'right']) {
+      const sign = side === 'left' ? 1 : -1;
+      const p = turnout({ side }, changes);
+      const { drive, fork } = turnoutLayout(p);
+      const pin = drive.pinAt(0).map((v, i) => (i ? sign * v : v));
+      const along = (t) => fork.heel.map((v, i) => v + t * (pin[i] - v));
+      const label = name + ' ' + side;
+      assembly(p, (parts) => {
+        const crank = drivePart(parts, 'turnoutArm').solid,
+          slider = drivePart(parts, 'turnoutSlider').solid;
+        // Beyond the pivot bearing the arm is at least 3 mm thick.
+        for (const t of [0.3, 0.5, 0.7, 0.85]) {
+          const thick = thicknessAt(crank, along(t));
+          assert.ok(thick >= armAtLeast - 0.01, label + ' arm at ' + t + ': ' + thick);
+        }
+        // Under the bearing it cannot rise, so it reaches down instead.
+        const neck = thicknessAt(crank, along(3.2 / drive.crank.radius));
+        assert.ok(neck >= 2.4 - 0.01, label + ' arm under the bearing: ' + neck);
+        // Beside an 8 mm slot the arm narrows to leave the slots their walls;
+        // under a shallower slot it keeps its full width.
+        const mid = along(0.5);
+        const width = materialAlongY(crank, drive.z.armBottom + 1, mid[0], mid[1] - 6, mid[1] + 6);
+        assert.ok(width >= widthAtLeast - 0.02, label + ' arm width ' + width);
+        // The pin is 3 mm thick and stands on a wider foot.
+        const pinArea = (z) => freed(() => crank.slice(z), (slice) =>
+          freed(() => circle(pin, 4), (near) => overlapArea(slice, near)));
+        const shaft = pinArea((drive.z.headBottom + drive.z.top) / 2);
+        assert.ok(2 * Math.sqrt(shaft / Math.PI) >= 3 - 0.02, label + ' pin diameter');
+        assert.ok(pinArea(drive.z.armTop + 0.1) > 1.4 * shaft, label + ' pin foot');
+        // The slider keeps at least 3 mm of solid height above the arm.
+        const beside = [pin[0] + 1, sign * (drive.head.y0 + 0.6)];
+        const head = thicknessAt(slider, beside);
+        assert.ok(head >= 3 - 0.01, label + ' slider above the arm: ' + head);
+        near(head, drive.z.top - drive.z.headBottom, 1e-3);
+      });
+    }
+});
+
+test('the insert keeps at least 2.5 mm of wall between each guide slot and the crank arm or the head of the slider', () => {
+  for (const [name, changes] of [['10 mm', lowTrack], ['12 mm', {}]])
+    for (const side of ['left', 'right']) {
+      const sign = side === 'left' ? 1 : -1;
+      const p = turnout({ side }, changes);
+      const { drive, branch, fork } = turnoutLayout(p);
+      const branchY = (x) => {
+        const i = branch.findIndex(([bx]) => bx >= x);
+        const [a, b] = [branch[i - 1], branch[i]];
+        return a[1] + ((b[1] - a[1]) * (x - a[0])) / (b[0] - a[0]);
+      };
+      assembly(p, (parts) => {
+        const insert = byRole(parts, 'turnoutInsert')[0].solid;
+        const end = insert.boundingBox().max[0] - 0.3;
+        const floor = p.height - p.slotDepth;
+        // Behind the tail of the blade: in front of it the blade itself is the wall.
+        const start = fork.guardEndX - 15 + 0.6;
+        for (const z of [floor + 0.3, floor + 1.2, drive.z.headBottom - 0.3, drive.z.headBottom + 1, drive.z.channelTop - 0.3]) {
+          const slice = insert.slice(z);
+          try {
+            for (let x = start; x < end; x += 1) {
+              // What stands between the two slot centres at this X: the first
+              // piece is the wall of the main slot, the last that of the branch slot.
+              const strip = section([[[x - 0.05, 0], [x + 0.05, 0], [x + 0.05, branchY(x)], [x - 0.05, branchY(x)]]]);
+              const runs = freed(() => slice.intersect(strip), (cut) => cut.decompose().map((piece) => {
+                const { min, max } = piece.bounds();
+                piece.delete();
+                return [Math.min(sign * min[1], sign * max[1]), Math.max(sign * min[1], sign * max[1])];
+              })).sort((a, b) => a[0] - b[0]);
+              strip.delete();
+              if (runs.length < 2) continue; // no opening between the slots here
+              const main = runs[0][1] - runs[0][0];
+              const across = (runs.at(-1)[1] - runs.at(-1)[0]) / Math.hypot(1, branchY(x + 0.5) - branchY(x - 0.5));
+              assert.ok(main >= 2.5 - 0.03, [name, side, 'main', x, z, main].join(' '));
+              assert.ok(across >= 2.5 - 0.03, [name, side, 'branch', x, z, across].join(' '));
+            }
+          } finally {
+            slice.delete();
+          }
+        }
+      });
+    }
 });

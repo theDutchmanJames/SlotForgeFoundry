@@ -75,7 +75,7 @@ export function pitActuatorSpec(p, fork) {
   const pinClearance = eyeDiameter - rodDiameter;
   const headPocketRadius = (hardware.headDiameter + pinClearance) / 2 + hardware.headSideClearance;
   const spec = { eyeDiameter, rodDiameter, pinClearance, motorStroke, ...hardware,
-    armTop, armTopClearance, armSideClearance, headPocketRadius,
+    armBottom, armTop, armTopClearance, armSideClearance, headPocketRadius,
     headPocketTop: armTop + hardware.headProjection + hardware.headTopClearance,
     rodCenterZ: rodChannelHeight / 2,
     stroke: motorMount ? motorStroke - pinClearance : 0,
@@ -117,15 +117,23 @@ export function pitMotorXBounds(p, fork) {
 }
 
 // A cam drive replaces the eye for a wire by an upright pin on a longer arm.
-// cam: { radius, phase, pinRadius, pinTop }. phase is the direction of the arm
-// halfway through its throw, measured from +X towards the branch.
+// cam: { radius, phase, pinRadius, pinTop, armBottom, armTop }. phase is the
+// direction of the arm halfway through its throw, measured from +X towards
+// the branch. armBottom and armTop make that arm stout: it starts lower, just
+// above the table, and beyond the pivot bearing it rises to armTop. waist
+// ({ point, radius }, in the frame of phase) is where the arm passes between
+// the two slots behind the blade: it narrows to that radius there, and its
+// bay follows its real outline with sideClearance, to leave the slots a wall.
 function withCam(spec, fork, cam) {
   if (!cam) return spec;
   const direction = fork.sign * cam.phase;
   const radial = [fork.heel[0] + cam.radius * Math.cos(direction),
     fork.heel[1] + cam.radius * Math.sin(direction)];
   const mainEye = rotate(radial, fork.heel, -fork.swing / 2);
-  return { ...spec, cam, crankRadius: cam.radius,
+  // The waist is given for the middle of the throw; the arm is drawn at its main end.
+  const waist = cam.waist && { radius: cam.waist.radius,
+    point: rotate([cam.waist.point[0], fork.sign * cam.waist.point[1]], fork.heel, -fork.swing / 2) };
+  return { ...spec, cam: { ...cam, waist }, crankRadius: cam.radius,
     stroke: 2 * cam.radius * Math.sin(Math.abs(fork.swing) / 2),
     mainEye, midEye: radial, pitEye: rotate(mainEye, fork.heel, fork.swing),
     eyeOuterRadius: cam.pinRadius + 0.8,
@@ -331,6 +339,7 @@ function bladeSolid(work, fork, bottom, lowTop, highTop, riseAt, drive, heights,
   return work.cut(rim, [
     work.prism(drive.webClearance, 0, heights.seat),
     work.prism(drive.bay, 0, heights.bayTop),
+    ...(drive.ribBay ? [work.prism(drive.ribBay, 0, drive.ribBayTop)] : []),
     work.prism(drive.headPocket, 0, drive.headPocketTop),
     work.prism(keySocket, 0, heights.socketTop),
     work.prism(disc(work, fork.heel, M2.pilotRadius), 0, heights.pilotTop),
@@ -343,18 +352,24 @@ function driveGeometry(work, fork, heights, spec, pinOnly = false) {
   const [x, y] = fork.heel, eye = spec.mainEye;
   const { armBottom, armTop } = heights;
   const hub = disc(work, fork.heel, hubRadius), end = disc(work, eye, spec.eyeOuterRadius);
-  const arm = pinOnly ? hub : work.own(work.wasm.CrossSection.hull([hub, end]));
+  const waist = pinOnly ? null : spec.cam?.waist;
+  const through = waist && disc(work, waist.point, waist.radius);
+  const arm = pinOnly ? hub : through
+    ? work.own(work.wasm.CrossSection.union([work.own(work.wasm.CrossSection.hull([hub, through])),
+      work.own(work.wasm.CrossSection.hull([through, end]))]))
+    : work.own(work.wasm.CrossSection.hull([hub, end]));
   const shaft = disc(work, fork.heel, shaftRadius);
   const key = work.own(shaft.intersect(rectangle(work, x - 3, y - 3, x + 1.30, y + 3)));
   const root = work.own(work.wasm.Manifold.cylinder(0.45, shaftRadius + 0.5, shaftRadius, 48));
   const cam = pinOnly ? null : spec.cam;
-  const crank = work.union([work.prism(arm, armBottom, armTop), work.own(root.translate([x, y, armTop])),
+  const low = cam?.armBottom ?? armBottom;
+  const crank = work.union([work.prism(arm, low, armTop), work.own(root.translate([x, y, armTop])),
     work.prism(shaft, armTop, heights.seat), work.prism(key, heights.seat, heights.keyTop),
     ...(cam ? [work.prism(disc(work, eye, cam.pinRadius), armTop - 0.01, cam.pinTop)] : [])]);
   const sink = work.own(work.wasm.Manifold.cylinder(M2.headDepth, M2.headRadius, M2.clearanceRadius, 48));
-  const solid = work.cut(crank, [
-    work.own(sink.translate([x, y, armBottom])),
-    work.prism(disc(work, fork.heel, M2.clearanceRadius), armBottom - 0.1, heights.keyTop + 0.1),
+  let solid = work.cut(crank, [
+    work.own(sink.translate([x, y, low])),
+    work.prism(disc(work, fork.heel, M2.clearanceRadius), low - 0.1, heights.keyTop + 0.1),
     ...(pinOnly || cam ? [] : [work.prism(disc(work, eye, spec.eyeDiameter / 2), armBottom - 0.1, armTop + 0.1)]),
   ]);
   // Hull sampled eye positions and the concentric hub. The convex envelope
@@ -371,7 +386,12 @@ function driveGeometry(work, fork, heights, spec, pinOnly = false) {
     eyeKeepouts.push(disc(work, position, cutterRadius));
   }
   const sweep = work.own(work.wasm.CrossSection.hull(swept));
-  const bay = work.own(sweep.offset(spec.armSideClearance + bow, 'Round', 2, 48));
+  const turn = (plan, i) => work.own(work.own(work.own(plan.translate([-x, -y]))
+    .rotate(fork.swing * i / steps * 180 / Math.PI)).translate([x, y]));
+  const sweptPlan = plan => work.own(work.wasm.CrossSection.union(
+    Array.from({ length: steps + 1 }, (_, i) => turn(plan, i))));
+  const sideClearance = (waist && spec.cam.sideClearance) || spec.armSideClearance;
+  const bay = work.own((waist ? sweptPlan(arm) : sweep).offset(sideClearance + bow, 'Round', 2, 48));
   const headPocket = work.own(work.wasm.CrossSection.hull(eyeKeepouts));
   // The oblong tenon indexes the fixed bearing upstream of the crank.
   // Its shoulder bears on the floor, even before the adhesive cures.
@@ -385,8 +405,25 @@ function driveGeometry(work, fork, heights, spec, pinOnly = false) {
     for (const { point, radius } of fork.bearingPads)
       webSweep.push(disc(work, rotate(point, fork.heel, -fork.swing * i / steps), radius));
   const webClearance = work.own(hull(webSweep).offset(0.18, 'Round', 2, 36));
+  let ribBay = null, ribBayTop = 0;
+  if (cam && cam.armTop > armTop + 0.05) {
+    // Beyond the bearing nothing lies above the arm, so it carries a rib up to
+    // cam.armTop there. The pin stands on the rib, on a foot that widens to it.
+    const keepOff = work.own(work.wasm.CrossSection.union([
+      work.own(support.offset(0.6, 'Round', 2, 36)), disc(work, fork.heel, fork.bearingRadius + 0.8)]));
+    // Near the pivot the rib is narrower than the arm, so that it stays clear
+    // of the slot walls on either side through the whole throw.
+    const slim = work.own(work.wasm.CrossSection.union([
+      work.own(arm.offset(-0.9, 'Round', 2, 36)), work.own(arm.subtract(disc(work, fork.heel, waist ? 8 : 12)))]));
+    const ribPlan = work.own(slim.subtract(keepOff));
+    const foot = work.own(work.wasm.Manifold.cylinder(0.5, cam.pinRadius + 0.6, cam.pinRadius, 48));
+    solid = work.union([solid, work.prism(ribPlan, armTop - 0.01, cam.armTop),
+      work.own(foot.translate([...eye, cam.armTop - 0.01]))]);
+    ribBay = work.own(sweptPlan(ribPlan).offset(sideClearance + bow, 'Round', 2, 48));
+    ribBayTop = cam.armTop + spec.armTopClearance;
+  }
   return { solid, key, sweep, bay, eye, headPocket, headPocketTop: spec.headPocketTop,
-    support, shoulder, tenon, webClearance };
+    support, shoulder, tenon, webClearance, ribBay, ribBayTop };
 }
 
 function bearingInsert(work, fork, drive, heights, floor, road) {
@@ -472,6 +509,7 @@ export function pitTurnoutFootprint(work, p, fork, options = {}) {
     work.own(drive.support.offset(insertFit, 'Round', 2, 48)),
     drive.bay,
     drive.headPocket,
+    ...(drive.ribBay ? [drive.ribBay] : []),
   ]));
 }
 
@@ -503,6 +541,8 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
       const minFloor = Number((spec.headPocketTop + guideFloorStock).toFixed(2));
       throw Error(options.words?.crankReach ?? `The crank sweep reaches the guide slot at the pushrod fastener. Reduce crank hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
     }
+    if (drive.ribBay && !work.own(drive.ribBay.intersect(walls)).isEmpty())
+      throw Error(options.words?.crankReach ?? 'The crank sweep reaches the guide slot.');
     if (heights.bayTop + guideFloorStock > floor + 1e-8 && !work.own(drive.bay.intersect(walls)).isEmpty()) {
       const minFloor = Number((heights.bayTop + guideFloorStock).toFixed(2));
       throw Error(options.words?.crankReach ?? `The crank sweep reaches the guide slot. Reduce the hole diameter or motor stroke, or leave at least ${minFloor} mm under the guide.`);
@@ -541,7 +581,8 @@ export function buildPitTurnout(work, p, fork, road, braidCover, guides, borders
   }
   if (linkage)
     road.cuts.push(work.prism(drive.bay, -0.1, heights.bayTop),
-      work.prism(drive.headPocket, -0.1, spec.headPocketTop));
+      work.prism(drive.headPocket, -0.1, spec.headPocketTop),
+      ...(drive.ribBay ? [work.prism(drive.ribBay, -0.1, drive.ribBayTop)] : []));
   // Without a crank only the flange of the pivot pin turns below the bearing.
   else road.cuts.push(work.prism(disc(work, fork.heel, hubRadius + armSideClearance), -0.1, heights.bayTop));
   // The rod lies below the flag, with its bent end pointing up into the eye.

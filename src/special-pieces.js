@@ -18,6 +18,7 @@ import {
   turnoutModeName,
   turnoutSettings,
 } from './geometry/turnout-layout.js';
+import { TURNOUT_DRIVE } from './geometry/turnout-drive.js';
 
 // The specials every pack can make, whatever its lane count allows.
 export const SPECIAL_PIECES = Object.freeze([
@@ -211,7 +212,10 @@ export function specialAssemblyNotes(p) {
     }
     case 'turnout': {
       const { turnoutMode: mode, pitContactMode } = turnoutSettings(p.special);
-      const { screwMin, screwMax } = pitActuatorSpec(p);
+      const { screwMin, screwMax, armBottom } = pitActuatorSpec(p);
+      // The stout crank of the slider drive starts lower, so its screw is longer.
+      const drop = Math.max(0, armBottom - TURNOUT_DRIVE.armBottom);
+      const crankScrew = Number((screwMin + drop).toFixed(1)) + '–' + Number((screwMax + drop).toFixed(1));
       const kinds = {
         digital: 'Digital: a moving blade, worked by a slider and a push-pull motor under the road between the two slots.',
         manual: 'Hand-set point: the same moving blade, set by hand. It clicks into either position.',
@@ -232,7 +236,7 @@ export function specialAssemblyNotes(p) {
             'Screw the insert into the road first. Then lay the slider in its channel between the two slots, flat face towards the road. It goes in after the insert and comes out again without removing it.',
           ] : []),
           mode === 'digital'
-            ? `From below, slide the crank’s pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Its other pin goes up into the slot of the slider, and its arm then holds the slider in. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the crank.`
+            ? `From below, slide the crank’s pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Its other pin goes up into the slot of the slider, and its arm then holds the slider in. Fit one M2 90° countersunk screw, ${crankScrew} mm long including the head, with its head flush with the crank.`
             : `From below, slide the pivot pin through the bearing and line up its D-shaped tip with the socket in the blade. Fit one M2 90° countersunk screw, ${screwMin}–${screwMax} mm long including the head, with its head flush with the pin.`,
           ...(mode === 'digital' ? [
             'Push a straight pin that fits the eye of the plunger into the hole under the end of the slider, with a drop of glue. No wire has to be bent. Tap the two pilot holes behind the motor cavity for M2 × 0.4 screws.',
