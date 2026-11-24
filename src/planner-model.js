@@ -424,11 +424,26 @@ export const BARRIER_ENDS = [
   ['finish', 'Sloped at end B'],
   ['both', 'Sloped at both ends'],
 ];
+export const BARRIER_END_SHAPES = [
+  ['ramp', 'Sloped'],
+  ['round', 'Sloped and rounded'],
+];
+// The barrier settings a layout can give a section, with their piece settings.
+export const BARRIER_KEYS = {
+  side: ['tracksideSide', 'none'],
+  ends: ['tracksideEnds', 'none'],
+  shape: ['tracksideEndShape', 'ramp'],
+  rise: ['tracksideRise', 20],
+  angle: ['tracksideFaceAngle', 17.1],
+};
 // The barriers a placed section carries come from its piece recipe.
-export const barrierOf = (def) => ({
-  side: def.track.params.tracksideSide ?? 'none',
-  ends: def.track.params.tracksideEnds ?? 'none',
-});
+export const barrierOf = (def) =>
+  Object.fromEntries(
+    Object.entries(BARRIER_KEYS).map(([name, [key, standard]]) => [
+      name,
+      def.track.params[key] ?? standard,
+    ]),
+  );
 export const supportStyleOf = (n) =>
   n.supportStyle === 'pegs' ? 'pegs' : 'block';
 // A peg's size as [across the road, along the road].

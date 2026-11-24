@@ -280,3 +280,63 @@ test('a sloped end runs the top down to the foot at the chosen end only', () => 
   });
   assert.throws(() => validateTrack(trackParameters(piece({ tracksideEnds: 'round' }))), /Unknown barrier end/);
 });
+
+test('the face angle leans the sloped face more or less, and keeps a flat top', () => {
+  // The measured barrier at its own angle.
+  const measured = barrierProfile(8.3, 20);
+  near(measured.find(([, z]) => Math.abs(z - (8.3 + 18.68)) < 1e-9)[0], 6.8, 0.01);
+  // Upright: the face stays above the step all the way up.
+  const upright = barrierProfile(8.3, 20, 0);
+  near(upright.find(([, z]) => Math.abs(z - (8.3 + 18.68)) < 1e-9)[0], 1.06);
+  // 30 degrees: tan(30) × 18.68 further in.
+  const leaning = barrierProfile(8.3, 20, 30);
+  near(leaning.find(([, z]) => Math.abs(z - (8.3 + 18.68)) < 1e-9)[0], 1.06 + Math.tan(Math.PI / 6) * 18.68);
+  const volume = (tracksideFaceAngle) =>
+    build(piece({ tracksideSide: 'outer', tracksideFaceAngle }), (parts) => {
+      assert.equal(barriers(parts)[0].solid.status(), 'NoError');
+      return barriers(parts)[0].solid.volume();
+    });
+  assert.ok(volume(0) > volume(17.1));
+  assert.ok(volume(17.1) > volume(28));
+  // A face that leans so far that the top gets thinner than 2 mm is refused, with the limit.
+  assert.throws(
+    () => validateTrack(trackParameters(piece({ tracksideFaceAngle: 40 }))),
+    /top would be thinner than 2 mm\. Use at most 28\.\d degrees/,
+  );
+  // A lower barrier can lean further.
+  validateTrack(trackParameters(piece({ tracksideFaceAngle: 40, tracksideRise: 10 })));
+  for (const tracksideFaceAngle of [-1, 46, NaN])
+    assert.throws(() => validateTrack(trackParameters(piece({ tracksideFaceAngle }))), /between 0 and 45 degrees/);
+});
+
+test('a rounded end also narrows to a tip at the track edge', () => {
+  const p = piece({ tracksideSide: 'outer', tracksideEnds: 'start', tracksideEndShape: 'round', tracksideTabs: '1' });
+  const depthAt = (solid, x) => {
+    // Just above the table: how far the foot reaches out from the road edge.
+    const cut = solid.slice(0.5);
+    try {
+      const ys = cut.toPolygons().flat().filter(([px]) => Math.abs(px - x) < 0.005).map(([, y]) => y);
+      return Math.max(...ys) - 50;
+    } finally {
+      cut.delete();
+    }
+  };
+  build(p, (parts) => {
+    const [barrier] = barriers(parts);
+    assert.equal(barrier.solid.status(), 'NoError');
+    near(size(barrier.solid)[0], 200);
+    // A 1 mm blunt tip at the end, the full 15 mm foot after the 25 mm slope,
+    // and a quarter-round outline between them.
+    near(depthAt(barrier.solid, -100), 1, 0.05);
+    near(depthAt(barrier.solid, -75), 15, 0.05);
+    const half = depthAt(barrier.solid, -100 + 25 * 0.48);
+    near(half, 1 + 14 * Math.sqrt(1 - 0.52 ** 2), 0.1);
+    near(depthAt(barrier.solid, 100), 15, 0.05);
+    for (const other of parts)
+      if (other !== barrier) near(overlap(barrier.solid, other.solid), 0, 0.01);
+  });
+  build({ ...defaultTrack(), angle: 45, tracksideSide: 'both', tracksideEnds: 'both', tracksideEndShape: 'round' }, (parts) => {
+    for (const part of barriers(parts)) assert.equal(part.solid.status(), 'NoError');
+  });
+  assert.throws(() => validateTrack(trackParameters(piece({ tracksideEndShape: 'point' }))), /Unknown barrier end shape/);
+});

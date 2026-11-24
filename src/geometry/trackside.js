@@ -19,10 +19,13 @@ export const TRACKSIDE_DEFAULTS = Object.freeze({
   tracksideTabs: 'auto',
   tracksideSegments: 1,
   tracksideEnds: 'none',
+  tracksideEndShape: 'ramp',
+  tracksideFaceAngle: 17.1,
 });
 export const TRACKSIDE_LIMITS = Object.freeze({
   tracksideRise: [5, 100],
   tracksideSegments: [1, 16],
+  tracksideFaceAngle: [0, 45],
 });
 // A barrier this long or longer takes two tabs when the count is automatic.
 export const TWO_TAB_LENGTH = 150;
@@ -33,13 +36,23 @@ export const TRACKSIDE_END_CHOICES = Object.freeze([
   ['finish', 'Sloped at the finish'],
   ['both', 'Sloped at both ends'],
 ]);
+export const TRACKSIDE_END_SHAPES = Object.freeze([
+  ['ramp', 'Sloped'],
+  ['round', 'Sloped and rounded'],
+]);
 // The top of a sloped end runs down over this length, to just above the foot.
 export const END_RAMP = 25;
 export const END_HEIGHT = 0.5;
+// A rounded end narrows towards the track edge to a blunt tip this wide.
+export const END_TIP = 1;
+// Flat top left behind the rounded corner, whatever the face angle.
+const TOP_FLAT = 2;
 
 // The face of the barrier above the road, measured on a barrier that stands
 // 20 mm above an 8.3 mm track: [distance from the track edge, height above
 // the road]. A small step, the sloped face, then the rounded top corner.
+// The face leans 17.1 degrees from upright on that barrier; another angle
+// moves the rounded corner in or out with the top of the face.
 const BARRIER_STEP = 1.06;
 const BARRIER_FACE = [
   [6.8, 18.68],
@@ -69,6 +82,22 @@ export function validateTrackside(p) {
     throw new Error(`The barrier height above the road must be between ${min} and ${max} mm.`);
   if (!TRACKSIDE_END_CHOICES.some(([id]) => id === p.tracksideEnds))
     throw new Error('Unknown barrier end.');
+  if (!TRACKSIDE_END_SHAPES.some(([id]) => id === p.tracksideEndShape))
+    throw new Error('Unknown barrier end shape.');
+  const [upright, flattest] = TRACKSIDE_LIMITS.tracksideFaceAngle;
+  if (
+    !Number.isFinite(p.tracksideFaceAngle) ||
+    p.tracksideFaceAngle < upright ||
+    p.tracksideFaceAngle > flattest
+  )
+    throw new Error(`The barrier face angle must be between ${upright} and ${flattest} degrees.`);
+  const widest = maxFaceAngle(p.tracksideRise);
+  if (p.tracksideFaceAngle > widest + 1e-9)
+    throw new Error(
+      'The barrier face leans too far for its height: the top would be thinner than ' +
+        TOP_FLAT + ' mm. Use at most ' + Math.floor(widest * 10) / 10 +
+        ' degrees at this height, or lower the barrier.',
+    );
   const [fewest, most] = TRACKSIDE_LIMITS.tracksideSegments;
   if (!Number.isInteger(p.tracksideSegments) || p.tracksideSegments < fewest || p.tracksideSegments > most)
     throw new Error(`Barrier segments must be a whole number between ${fewest} and ${most}.`);
@@ -76,9 +105,15 @@ export function validateTrackside(p) {
 
 /** The cross-section as one ring of [distance from the track edge, height].
  * The foot is as high as the track, so the sloped face starts at the road. */
-export function barrierProfile(height, rise) {
+export function barrierProfile(height, rise, angle = TRACKSIDE_DEFAULTS.tracksideFaceAngle) {
   const scale = rise / 20;
-  const face = BARRIER_FACE.map(([d, z]) => [d, height + z * scale]);
+  const [corner, straight] = BARRIER_FACE[0];
+  // How far the face leans in over its straight part.
+  const lean = Math.tan((angle * Math.PI) / 180) * straight * scale;
+  const face = BARRIER_FACE.map(([d, z]) => [
+    BARRIER_STEP + lean + d - corner,
+    height + z * scale,
+  ]);
   return [
     [0, 0],
     [BARRIER_FOOT, 0],
@@ -88,6 +123,13 @@ export function barrierProfile(height, rise) {
     [BARRIER_STEP, height],
     [0, height],
   ];
+}
+
+// The largest face angle that leaves the flat top its width at this height.
+export function maxFaceAngle(rise) {
+  const [corner, straight] = BARRIER_FACE[0];
+  const room = BARRIER_FOOT - TOP_FLAT - BARRIER_STEP - (BARRIER_FACE.at(-1)[0] - corner);
+  return (Math.atan(room / ((straight * rise) / 20)) * 180) / Math.PI;
 }
 
 // Ring indices of the end caps: the foot as a fan from its outer bottom
@@ -172,7 +214,8 @@ function backDownPose(outward) {
  */
 export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, widthAt, loose) {
   const fit = resolveJointFit(p);
-  const profile = barrierProfile(p.height, p.tracksideRise);
+  const profile = barrierProfile(p.height, p.tracksideRise, p.tracksideFaceAngle);
+  const round = p.tracksideEndShape === 'round';
   const label = side === 'outer' ? 'Outer' : 'Inner';
   const half = fit.tabSupportHalfWidth;
   const count = p.tracksideSegments;
@@ -210,13 +253,16 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
     };
     for (const [end, on] of sloped.entries()) {
       if (!on) continue;
-      // The slope starts at a station of its own.
-      const distances = along(),
-        target = end ? length - ramp : ramp;
-      const k = distances.findIndex((d) => d > target + 1e-6);
-      if (k > 0 && target - distances[k - 1] > 1e-6) {
-        const part = (target - distances[k - 1]) / (distances[k] - distances[k - 1]);
-        stations.splice(k, 0, stations[k - 1] + (stations[k] - stations[k - 1]) * part);
+      // The slope starts at a station of its own. A rounded end needs more
+      // of them, closest together at the tip where the outline turns most.
+      for (const u of round ? [0.02, 0.06, 0.12, 0.2, 0.32, 0.48, 0.66, 0.84, 1] : [1]) {
+        const distances = along(),
+          target = end ? length - ramp * u : ramp * u;
+        const k = distances.findIndex((d) => d > target + 1e-6);
+        if (k > 0 && target - distances[k - 1] > 1e-6) {
+          const part = (target - distances[k - 1]) / (distances[k] - distances[k - 1]);
+          stations.splice(k, 0, stations[k - 1] + (stations[k] - stations[k - 1]) * part);
+        }
       }
     }
     const distances = along();
@@ -227,8 +273,17 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
         sloped[0] ? lowest + ((1 - lowest) * distances[k]) / ramp : 1,
         sloped[1] ? lowest + ((1 - lowest) * (length - distances[k])) / ramp : 1,
       );
+      // From the end: 0 at the tip, 1 where the full barrier starts.
+      const u = Math.max(0, Math.min(
+        1,
+        sloped[0] ? distances[k] / ramp : 1,
+        sloped[1] ? (length - distances[k]) / ramp : 1,
+      ));
+      // A quarter-round outline in plan, narrowing towards the track edge.
+      const tip = END_TIP / BARRIER_FOOT;
+      const width = round ? tip + (1 - tip) * Math.sqrt(1 - (1 - u) ** 2) : 1;
       return profile.map(([d, z]) => [
-        ...at(t, d),
+        ...at(t, d * width),
         z > p.height ? p.height + (z - p.height) * scale : z,
       ]);
     });
@@ -252,7 +307,7 @@ export function addTrackside(work, p, path, side, sign, hosts, spans, edgeAt, wi
       );
     const part = {
       section: work.section([
-        [...edge, ...stations.map((t) => at(t, BARRIER_FOOT)).reverse()],
+        [...edge, ...rings.map((ring) => ring[1].slice(0, 2)).reverse()],
       ]),
       additions: [sweep(work, rings)],
       cuts: [],

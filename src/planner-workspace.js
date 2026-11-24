@@ -22,6 +22,8 @@ import {
   SUPPORT_STYLES,
   supportStyleOf,
   BARRIER_ENDS,
+  BARRIER_END_SHAPES,
+  BARRIER_KEYS,
   BARRIER_SIDES,
   barrierOf,
   pegSizeOf,
@@ -210,7 +212,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   // Barriers belong to a piece recipe. A section that gets its own barriers
   // moves to a copy of its recipe with that setting; unused copies are
   // dropped when the layout is saved.
-  async function setBarriers(side, ends) {
+  async function setBarriers(wanted) {
     const ids = chosenIds();
     const models = new Map(defs),
       additions = {},
@@ -220,10 +222,10 @@ export function createPlanner({ host, call, download, current, promote }) {
     )) {
       const entry = layout.sources[key],
         now = barrierOf(entry);
-      if (now.side === side && now.ends === ends) continue;
+      if (Object.keys(BARRIER_KEYS).every((name) => now[name] === wanted[name])) continue;
       const track = structuredClone(entry.track);
-      track.params.tracksideSide = side;
-      track.params.tracksideEnds = ends;
+      for (const [name, [key]] of Object.entries(BARRIER_KEYS))
+        track.params[key] = wanted[name];
       const def = await build(track, false);
       if (def.sections.length !== defs.get(key).sections.length)
         throw Error('The barriers change how this piece is divided. Set them in Track Set instead.');
@@ -700,6 +702,18 @@ export function createPlanner({ host, call, download, current, promote }) {
             '<option value="' + value + '"' + (barrierOf(def).ends === value ? ' selected' : '') + '>' + label + '</option>',
         ).join('') +
         '</select></label>' +
+        '<label>End shape<select data-pl-field="barrierShape">' +
+        BARRIER_END_SHAPES.map(
+          ([value, label]) =>
+            '<option value="' + value + '"' + (barrierOf(def).shape === value ? ' selected' : '') + '>' + label + '</option>',
+        ).join('') +
+        '</select></label>' +
+        '<label>Height above road · mm<input data-pl-field="barrierRise" type="number" min="5" max="100" step="any" value="' +
+        barrierOf(def).rise +
+        '"></label>' +
+        '<label>Face angle · °<input data-pl-field="barrierAngle" type="number" min="0" max="45" step="any" value="' +
+        barrierOf(def).angle +
+        '"></label>' +
         '<small>' +
         (chosenIds().size > 1
           ? chosenIds().size + ' sections are selected. '
@@ -876,7 +890,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         track.params.segments = source.track.params.segments;
         track.params.borderSegments = source.track.params.borderSegments;
         // Barriers set in the layout stay with the layout.
-        for (const key of ['tracksideSide', 'tracksideEnds'])
+        for (const [key] of Object.values(BARRIER_KEYS))
           if (source.track.params[key] !== undefined) track.params[key] = source.track.params[key];
         const def = await build(track, false);
         source.track = def.track;
@@ -1159,7 +1173,13 @@ export function createPlanner({ host, call, download, current, promote }) {
     }
     if (key === 'barriers') {
       message('Fitting the barriers…');
-      await setBarriers(field('barrierSide').value, field('barrierEnds').value);
+      await setBarriers({
+        side: field('barrierSide').value,
+        ends: field('barrierEnds').value,
+        shape: field('barrierShape').value,
+        rise: field('barrierRise').valueAsNumber,
+        angle: field('barrierAngle').valueAsNumber,
+      });
       message('');
       $('.pl-barriers').open = true;
       return;
