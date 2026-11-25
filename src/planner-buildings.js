@@ -1,0 +1,281 @@
+// Buildings in a layout: a building from the Library placed beside the track.
+// A layout keeps each one whole (its settings, name and place), so a layout
+// file is complete on its own. Its place is the middle of its base and the
+// way it faces: its front, with the garage door, looks along -y turned by a.
+// Dropped near the track it snaps with its front along the outside of the
+// border, so the doorstep meets the road.
+import polygonClipping from 'polygon-clipping';
+import { KIT, storeyStack, validateBuilding } from './geometry/building.js';
+
+export const MAX_BUILDINGS = 100;
+export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
+export const GAP = 1; // and stands this far from it
+const ENTRY_KEYS = ['id', 'name', 'libraryId', 'building', 'pose', 'bay'];
+
+/** The buildings of a layout as kept: each checked, or an error. */
+export function validateBuildings(list) {
+  if (list === undefined) return;
+  if (!Array.isArray(list) || list.length > MAX_BUILDINGS) throw Error('Invalid buildings in the layout file.');
+  const ids = new Set();
+  for (const e of list) {
+    if (
+      !e ||
+      typeof e !== 'object' ||
+      Object.keys(e).some((k) => !ENTRY_KEYS.includes(k)) ||
+      !/^b-[\w-]{1,100}$/.test(e.id) ||
+      ids.has(e.id) ||
+      typeof e.name !== 'string' ||
+      e.name.length > 120 ||
+      (e.libraryId !== undefined && (typeof e.libraryId !== 'string' || e.libraryId.length > 100)) ||
+      (e.bay !== undefined && !/^[\w-]{1,100}$/.test(e.bay)) ||
+      ![e.pose?.x, e.pose?.y, e.pose?.a].every((v) => Number.isFinite(v) && Math.abs(v) < 1e8)
+    )
+      throw Error('Invalid building in the layout file.');
+    try {
+      validateBuilding(e.building);
+    } catch (err) {
+      throw Error('The building ' + e.name + ' in the layout file cannot be used: ' + err.message);
+    }
+    ids.add(e.id);
+  }
+}
+
+/** A building ready to place, from one saved in the Library. */
+export function layoutBuilding(saved, pose, id) {
+  return { id, name: saved.name, ...(saved.id && { libraryId: saved.id }), building: validateBuilding(saved.building), pose };
+}
+
+/** A point of the building (x from its left wall, y from its front wall) on the plan. */
+export function toPlan({ building: b, pose }, [x, y]) {
+  const u = x - b.width / 2,
+    v = y - b.depth / 2,
+    c = Math.cos(pose.a),
+    s = Math.sin(pose.a);
+  return [pose.x + c * u - s * v, pose.y + s * u + c * v];
+}
+const rect = (x0, y0, x1, y1) => [
+  [x0, y0],
+  [x1, y0],
+  [x1, y1],
+  [x0, y1],
+];
+/** The base on the plan, the ledge around the walls included. */
+export function footprint(entry) {
+  const m = KIT.ledge,
+    b = entry.building;
+  return rect(-m, -m, b.width + m, b.depth + m).map((p) => toPlan(entry, p));
+}
+/** What the plan draws: the base, each storey, and the garage door in the front wall. */
+export function planShapes(entry) {
+  const b = validateBuilding(entry.building);
+  const door = (b.width - b.doorWidth) / 2;
+  return {
+    base: footprint(entry),
+    storeys: storeyStack(b).map((s) => rect(s.ox, s.oy, s.ox + s.width, s.oy + s.depth).map((p) => toPlan(entry, p))),
+    door: [toPlan(entry, [door, 0]), toPlan(entry, [door + b.doorWidth, 0])],
+  };
+}
+
+/** The parts of a building (as the Buildings page gets them) where it stands in the layout. */
+export function placeParts(parts, entry) {
+  return parts.map((p) => {
+    const positions = new Float32Array(p.positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+      const [x, y] = toPlan(entry, [p.positions[i], p.positions[i + 1]]);
+      positions[i] = x;
+      positions[i + 1] = y;
+      positions[i + 2] = p.positions[i + 2];
+    }
+    return { ...p, id: entry.id + '/' + p.id, positions, bounds: undefined };
+  });
+}
+
+const boxOf = (loop) =>
+  loop.reduce(([l, b, r, t], [x, y]) => [Math.min(l, x), Math.min(b, y), Math.max(r, x), Math.max(t, y)], [Infinity, Infinity, -Infinity, -Infinity]);
+const meets = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+const area = (multi) =>
+  multi.reduce(
+    (sum, poly) =>
+      sum +
+      poly.reduce((s, ring, k) => {
+        let twice = 0;
+        for (let i = 0; i < ring.length; i++) {
+          const [x0, y0] = ring[i],
+            [x1, y1] = ring[(i + 1) % ring.length];
+          twice += x0 * y1 - x1 * y0;
+        }
+        return s + (k ? -1 : 1) * Math.abs(twice / 2);
+      }, 0),
+    0,
+  );
+/**
+ * The base on the plan as it stands on the table: one plate, or over a pit
+ * bay the arms beside the track and the strip under the back wall.
+ */
+export function baseParts(entry) {
+  const b = entry.building,
+    m = KIT.ledge;
+  if (!b.lane) return [footprint(entry)];
+  const half = b.lane.width / 2 + KIT.lanePlay,
+    end = b.depth - KIT.wall - KIT.play;
+  return [rect(-m, -m, b.width / 2 - half, b.depth + m), rect(b.width / 2 + half, -m, b.width + m, b.depth + m), rect(b.width / 2 - half, end, b.width / 2 + half, b.depth + m)].map(
+    (loop) => loop.map((p) => toPlan(entry, p)),
+  );
+}
+/** How much of the track (its outlines) lies under the building's base, in mm². */
+export function overlap(entry, loops) {
+  let total = 0;
+  for (const piece of baseParts(entry)) {
+    const box = boxOf(piece);
+    for (const loop of loops) {
+      if (loop.length < 3 || !meets(box, boxOf(loop))) continue;
+      total += area(polygonClipping.intersection([piece], [loop]));
+    }
+  }
+  return total;
+}
+function inside([x, y], loop) {
+  let hit = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const [xi, yi] = loop[i],
+      [xj, yj] = loop[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/**
+ * Where a building snaps to the track: the edge of an outline nearest the
+ * middle of its front, within SNAP, that it can stand along without lying
+ * on the track; its front along that edge, GAP from it, facing the track.
+ * A building beside a corner moves out until it is clear. Null when there
+ * is no such edge.
+ */
+export function snapPose(entry, loops, radius = SNAP) {
+  const b = entry.building,
+    m = KIT.ledge;
+  const front = toPlan(entry, [b.width / 2, -m]);
+  const near = [];
+  for (const loop of loops)
+    for (let i = 0; i < loop.length; i++) {
+      const p = loop[i],
+        q = loop[(i + 1) % loop.length];
+      const dx = q[0] - p[0],
+        dy = q[1] - p[1],
+        len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      const t = Math.max(0, Math.min(1, ((front[0] - p[0]) * dx + (front[1] - p[1]) * dy) / (len * len)));
+      const at = [p[0] + t * dx, p[1] + t * dy];
+      const d = Math.hypot(front[0] - at[0], front[1] - at[1]);
+      if (d > radius) continue;
+      // The side of the edge away from the inside of its outline.
+      let n = [-dy / len, dx / len];
+      const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+      if (inside([mid[0] + n[0] * 0.05, mid[1] + n[1] * 0.05], loop)) n = [-n[0], -n[1]];
+      near.push({ d, at, n });
+    }
+  near.sort((a, c) => a.d - c.d);
+  for (const { at, n } of near) {
+    const a = Math.atan2(-n[0], n[1]);
+    for (let out = 0; out <= 30; out += 1) {
+      const reach = GAP + out + m + b.depth / 2;
+      const pose = { x: at[0] + n[0] * reach, y: at[1] + n[1] * reach, a };
+      if (overlap({ ...entry, pose }, loops) < 0.5) return pose;
+    }
+  }
+  return null;
+}
+
+/** The outline loops of the track nearest the building, and how far its front is from them. */
+export function nearestRow(entry, rows) {
+  const b = entry.building;
+  const front = toPlan(entry, [b.width / 2, -KIT.ledge]);
+  let best = null;
+  for (const row of rows)
+    for (const loop of row.polys)
+      for (let i = 0; i < loop.length; i++) {
+        const p = loop[i],
+          q = loop[(i + 1) % loop.length];
+        const dx = q[0] - p[0],
+          dy = q[1] - p[1],
+          len2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((front[0] - p[0]) * dx + (front[1] - p[1]) * dy) / len2));
+        const d = Math.hypot(front[0] - p[0] - t * dx, front[1] - p[1] - t * dy);
+        if (!best || d < best.d) best = { row, d };
+      }
+  return best;
+}
+
+/* ---------- Garages over the pit bays ---------- */
+
+/**
+ * The closed end of a pit bay, from the open end of its end stop (end A,
+ * the only end it joins by, as the plan has it, facing out of the piece):
+ * the far end of its outlines along the piece, the middle of the track
+ * across it there, which way the bay runs into it, and how wide the track
+ * is, borders included.
+ */
+export function bayEnd(end, polys) {
+  const d = [-Math.cos(end.angle), -Math.sin(end.angle)],
+    across = [-d[1], d[0]];
+  let lo = Infinity,
+    hi = -Infinity,
+    far = -Infinity;
+  for (const loop of polys)
+    for (const [x, y] of loop) {
+      const u = (x - end.xy[0]) * d[0] + (y - end.xy[1]) * d[1],
+        v = (x - end.xy[0]) * across[0] + (y - end.xy[1]) * across[1];
+      far = Math.max(far, u);
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+  const mid = (lo + hi) / 2;
+  return { at: [end.xy[0] + d[0] * far + across[0] * mid, end.xy[1] + d[1] * far + across[1] * mid], dir: d, width: hi - lo };
+}
+
+/**
+ * A garage for a pit bay, from a building: the track through it as wide as
+ * the bay, an open door wide enough, the building wider if it has to be, at
+ * most as wide as the room beside the next bay, and its base as high as the
+ * road. Its other settings stay as they were.
+ */
+export function pitGarage(building, width, roadHeight, most = Infinity) {
+  const b = validateBuilding(building);
+  const lane = { width: Math.round(width * 10) / 10 };
+  const doorWidth = Math.max(b.doorWidth, Math.ceil(lane.width + 2 * KIT.laneClear));
+  const least = doorWidth + 2 * (KIT.wall + KIT.frame);
+  if (least > most)
+    throw Error('The pit bays are too close together for a garage over each: a garage needs ' + Math.ceil(least) + ' mm and there is ' + Math.floor(most) + ' mm between two bays. Space the bays further apart.');
+  return validateBuilding({
+    ...b,
+    lane,
+    door: 'open',
+    doorWidth,
+    width: Math.min(Math.max(b.width, least), Math.floor(most)),
+    baseHeight: Math.round(roadHeight * 100) / 100,
+    cuts: {},
+  });
+}
+
+/** Where a garage stands over a bay: the track along its middle, its back wall just beyond the end stop. */
+export function bayPose(building, { at, dir }) {
+  const reach = building.depth / 2 - KIT.wall - GAP;
+  return { x: at[0] - dir[0] * reach, y: at[1] - dir[1] * reach, a: Math.atan2(-dir[0], dir[1]) };
+}
+
+/** How much room each bay has across for a garage: the distance to the nearest bay beside it, less GAP. */
+export function bayRoom(ends, depth) {
+  return ends.map((e, i) => {
+    let room = Infinity;
+    const across = [-e.dir[1], e.dir[0]];
+    ends.forEach((o, j) => {
+      if (i === j) return;
+      const dx = o.at[0] - e.at[0],
+        dy = o.at[1] - e.at[1];
+      // Beside it, not far ahead or behind.
+      if (Math.abs(dx * e.dir[0] + dy * e.dir[1]) > depth) return;
+      room = Math.min(room, Math.abs(dx * across[0] + dy * across[1]) - GAP);
+    });
+    return room;
+  });
+}

@@ -44,6 +44,7 @@ import { selectTrackPart } from './browser/part-outline.mjs';
 import { checkWorkspaceNavigation } from './browser/workspace-navigation.mjs';
 import { checkPlanner } from './browser/planner.mjs';
 import { checkBuildings } from './browser/buildings.mjs';
+import { checkPlannerBuildings } from './browser/planner-buildings.mjs';
 import { checkSlotPosition } from './browser/slot-position.mjs';
 
 const artifact = new URL('../dist/index.html', import.meta.url);
@@ -389,6 +390,7 @@ try {
       page, action, tab, input, live, openProject, waitText, snap,
     });
     await checkBuildings({ page, action, download, snap });
+    await checkPlannerBuildings({ page, action, download, snap });
     await action('mode-track').click();
     const projectParts = page.locator('#parts [data-part]');
     await selectTrackPart(projectParts.filter({ hasText: 'Outer border 1' }));

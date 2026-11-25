@@ -37,6 +37,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   openings: Object.freeze([]),
   ...TEXTURE_DEFAULTS,
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
+  lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
@@ -83,6 +84,8 @@ export const KIT = Object.freeze({
   trim: 3, // a window or door frame: its width around the opening
   trimDepth: 2, // how far a frame stands out from the wall
   bar: 2, // the cross in a window frame
+  laneClear: 2, // a garage door beyond the track through it, each side
+  lanePlay: 0.5, // the base beside the track through it, each side
 });
 // The exploded view: how far each part comes off, in mm, fully apart. A
 // wall moves out and up out of its groove, a floor lifts off the walls
@@ -188,6 +191,14 @@ export function validateBuilding(input) {
   const tall = b.height - KIT.frame;
   if (b.doorHeight > tall)
     throw Error('The door is too high for these walls: at most ' + tall + ' mm at ' + b.height + ' mm high.');
+  // A garage over a pit bay: the track runs in through an open door, as wide as the track and more.
+  if (b.lane !== null) {
+    if (!b.lane || typeof b.lane !== 'object' || Array.isArray(b.lane) || Object.keys(b.lane).some((k) => k !== 'width') || !Number.isFinite(b.lane.width) || b.lane.width < 20 || b.lane.width > 380)
+      throw Error('The track through the garage must be 20 to 380 mm wide.');
+    if (b.door !== 'open') throw Error('A garage over a track has an open door: a roller door would have no floor to stand on behind it.');
+    const least = b.lane.width + 2 * KIT.laneClear;
+    if (b.doorWidth < least - 1e-9) throw Error('The garage door is narrower than the track through it: make it at least ' + fmtMm(least) + ' mm wide.');
+  }
   if (!Array.isArray(b.upper) || b.upper.length > MAX_UPPER) throw Error('A building has at most ' + MAX_UPPER + ' storeys above the ground floor.');
   const several = b.upper.length > 0;
   const garage = { wall: 'front', at: b.width / 2, width: b.doorWidth, name: 'garage door' };
@@ -403,9 +414,18 @@ export function buildGarage(wasm, input, plate = null) {
         D = b.depth,
         top = b.baseHeight;
       const outer = box(-m, -m, 0, W + m, D + m, top);
-      const hollow = box(-m + shell, -m + shell, -1, W + m - shell, D + m - shell, top - deck);
+      let hollow = box(-m + shell, -m + shell, -1, W + m - shell, D + m - shell, top - deck);
       const groove = minus(box(-c, -c, top - g, W + c, D + c, top + 1), box(t + c, t + c, top - g - 1, W - t - c, D - t - c, top + 2));
-      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, hollow, groove), flip: true, apart: [0, 0, 0] };
+      // Over a pit bay the base is open from the front to the back wall for
+      // the track, and closed along the track by a shell of its own.
+      const cuts = [hollow, groove];
+      if (b.lane) {
+        const half = b.lane.width / 2 + KIT.lanePlay,
+          end = D - t - c;
+        cuts[0] = hollow = minus(hollow, box(W / 2 - half - shell, -m - 1, -2, W / 2 + half + shell, end + shell, top + 2));
+        cuts.push(box(W / 2 - half, -m - 1, -1, W / 2 + half, end, top + 1));
+      }
+      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, ...cuts), flip: true, apart: [0, 0, 0] };
       parts.push(...cutFlat(base, plan && [plan.baseX, plan.baseY], [-m, -m]));
     }
 
@@ -451,7 +471,8 @@ export function buildGarage(wasm, input, plate = null) {
       };
       for (const w of WALLS) walls[w] = underRoof(walls[w]);
       // The garage door on the ground floor: open from the top of the base, so the doorstep is level.
-      const holes = { front: s.garage ? [box(door.x, -1, top, door.x + door.width, t + 1, top + door.height)] : [], back: [], left: [], right: [] };
+      // Over a pit bay the door reaches down through the foot of the wall, so nothing crosses the track.
+      const holes = { front: s.garage ? [box(door.x, -1, b.lane ? z0 - 1 : top, door.x + door.width, t + 1, top + door.height)] : [], back: [], left: [], right: [] };
       for (const o of s.openings)
         holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
       for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
@@ -612,6 +633,13 @@ export function buildGarage(wasm, input, plate = null) {
   }
   // The pieces of a cut part, numbered. Exploded, they also part at their
   // seams: each moves away from the middle of the part, so the tabs show.
+  // A piece in one body or more: a base open for a pit bay, cut across its
+  // arms, falls apart into a piece for each arm.
+  function bodies(solid) {
+    if (solid.isEmpty()) return [];
+    const all = solid.decompose().map(own);
+    return all.filter((body) => body.volume() > 1);
+  }
   function named(part, pieces) {
     if (pieces.length < 2) return pieces.length ? [{ ...part, solid: pieces[0] }] : [part];
     const box = part.solid.boundingBox();
@@ -641,8 +669,7 @@ export function buildGarage(wasm, input, plate = null) {
         const cell = own(xr.intersect(yr));
         if (cell.isEmpty()) continue;
         const prism = own(own(cell.extrude(max[2] - min[2] + 4)).translate([0, 0, min[2] - 2]));
-        const solid = own(part.solid.intersect(prism));
-        if (!solid.isEmpty() && solid.volume() > 1) pieces.push(solid);
+        pieces.push(...bodies(own(part.solid.intersect(prism))));
       }
     return named(part, pieces);
   }
@@ -695,8 +722,7 @@ export function buildGarage(wasm, input, plate = null) {
         const cell = own(a.intersect(h));
         if (cell.isEmpty()) continue;
         const prism = own(own(cell.extrude(t + 4)).transform([...U, 0, 0, 0, 1, 0, ...N, 0, ...O, 1]));
-        const solid = own(part.solid.intersect(prism));
-        if (!solid.isEmpty() && solid.volume() > 1) pieces.push(solid);
+        pieces.push(...bodies(own(part.solid.intersect(prism))));
       }
     return named(part, pieces);
   }

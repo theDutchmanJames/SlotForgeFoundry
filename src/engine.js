@@ -883,8 +883,9 @@ export function createEngine(wasm) {
     plannerPrint: args => plannerPrint(wasm,args),
     // A building: its parts where they stand, for the 3D view, with their
     // print sizes and how much filament the kit takes.
-    buildingParts: ({ building, plate }) => {
-      const parts = buildGarage(wasm, building, plate);
+    // whole: as it stands, not cut to fit the plate (a building in a layout).
+    buildingParts: ({ building, plate, whole = false }) => {
+      const parts = buildGarage(wasm, building, whole ? null : plate);
       try {
         const shown = describeParts(parts, { plate });
         return shown.map((p, i) => ({ ...p, print: printSize(parts[i]), apart: parts[i].apart }));

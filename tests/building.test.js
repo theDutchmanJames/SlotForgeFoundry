@@ -562,3 +562,36 @@ test('exploded, every part comes off the way it goes on, and no two parts take t
     assert.equal(part('front-1').apart[1], -APART.out);
   }, SMALL);
 });
+
+/* ---------- A garage over a pit bay ---------- */
+
+test('a garage over a pit bay leaves the track a clear way in, from the front to the back wall', () => {
+  const over = { lane: { width: 80 }, door: 'open', doorWidth: 90 };
+  assert.throws(() => validateBuilding({ ...over, door: 'roller' }), /open door/);
+  assert.throws(() => validateBuilding({ ...over, doorWidth: 82 }), /door is narrower than the track through it: make it at least 84 mm/);
+  assert.throws(() => validateBuilding({ ...over, lane: { width: 5 } }), /20 to 380 mm wide/);
+  assert.throws(() => validateBuilding({ ...over, lane: { width: 80, side: 1 } }), /20 to 380 mm wide/);
+  withParts(over, (parts, part) => {
+    for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
+    // Nothing stands where the track runs: from the front edge to the inside of
+    // the back wall, as wide as the track, from the table up through the door.
+    const way = wasm.Manifold.cube([80, 180 - KIT.wall - 1 + 3, 10 + 55 - 0.5]).translate([20, -3, 0]);
+    for (const p of parts) {
+      const both = p.solid.intersect(way);
+      assert.ok(both.volume() < 0.01, p.name + ' stands in the way of the track: ' + both.volume());
+      both.delete();
+    }
+    way.delete();
+    // The base still carries every wall, and is closed along the track.
+    const base = part('base').solid.boundingBox();
+    assert.ok(near(base.min[0], -KIT.ledge) && near(base.max[1], 180 + KIT.ledge));
+    assert.ok(part('front').solid.boundingBox().min[2] < 10, 'the front wall still stands in its groove beside the door');
+  });
+  // Cut to fit a small plate, an arm of the base is a piece of its own.
+  withParts({ ...over, depth: 260 }, (parts) => {
+    for (const p of parts) {
+      assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
+      assert.ok(fitsPlate(printSize(p), SMALL), p.name + ' fits');
+    }
+  }, SMALL);
+});

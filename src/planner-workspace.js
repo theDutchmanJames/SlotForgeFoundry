@@ -54,6 +54,7 @@ import {
   sourcePartMap,
   validateLayout,
   blockedJoints,
+  frameFor,
 } from './planner-model.js';
 import { slotTitle } from './slot-position.js';
 import { zipSync, strToU8 } from 'fflate';
@@ -71,6 +72,9 @@ import {
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
+import { SNAP, bayEnd, bayPose, bayRoom, layoutBuilding, nearestRow, overlap, pitGarage, placeParts, snapPose } from './planner-buildings.js';
+import { buildingLayout, BUILDING_LIMITS, validateBuilding } from './geometry/building.js';
+import { kitNotes } from './building-kit.js';
 
 const fmt = (n) => Number(n.toFixed(1)).toLocaleString();
 const btn = (key, label, symbol = '', style = '') =>
@@ -186,6 +190,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     '<div class="pl-cards"></div>' +
     '<div class="pl-group">From Track Set</div>' +
     btn('current', 'Place the open piece', 'plus', 'pl-chip pl-current') +
+    '<div class="pl-group">Buildings</div><div class="pl-homes"></div>' +
     '</aside>' +
     '<section class="pl-centre"><header><div class="pl-title"><small class="sf-eyebrow">Track Planner</small>' +
     '<input data-pl-field="name" aria-label="Layout name" maxlength="200"></div>' +
@@ -228,7 +233,12 @@ export function createPlanner({ host, call, download, current, promote }) {
     turnoutAs = 'split',
     viewMode = 'plan',
     choice = {},
-    cards = [];
+    cards = [],
+    // Buildings saved in the Library, to place; and the parts of each building
+    // in the layout for the 3D view, by its settings, made once.
+    savedHomes = [],
+    homeParts = new Map(),
+    placedHomes = new Map();
   let rows = [],
     hits = [],
     net = { ends: [], open: [], joints: new Map() },
@@ -258,10 +268,18 @@ export function createPlanner({ host, call, download, current, promote }) {
   }
   const $ = (s) => host.querySelector(s),
     field = (k) => $('[data-pl-field="' + k + '"]');
-  const view = createPlanView($('.pl-stage'), (id, end, extend) => {
-    if (busy) return;
-    select(id, end, extend);
-  });
+  const view = createPlanView(
+    $('.pl-stage'),
+    (id, end, extend) => {
+      if (busy) return;
+      select(id, end, extend);
+    },
+    (id, delta) => {
+      if (busy) return render();
+      run(() => moveBuilding(id, delta));
+    },
+  );
+  const homeOf = (id) => (layout.buildings ?? []).find((b) => b.id === id);
   const recipe = (n) => defs.get(n.source);
   const selected = () => layout.nodes.find((n) => n.id === choice.selected);
   const message = (s, bad = false) => {
@@ -280,6 +298,13 @@ export function createPlanner({ host, call, download, current, promote }) {
     return new Set([choice.selected, ...marked].filter((id) => live.has(id)));
   };
   function select(id, end, extend = false) {
+    // A building is chosen on its own; the build end stays where it was.
+    if (homeOf(id)) {
+      marked = new Set();
+      choice = { ...choice, building: id };
+      render();
+      return;
+    }
     if (extend && choice.selected && id !== choice.selected) {
       if (marked.has(id)) marked.delete(id);
       else marked.add(id);
@@ -686,7 +711,10 @@ export function createPlanner({ host, call, download, current, promote }) {
     return rebuilt;
   }
   async function calculate(next, models) {
-    if (viewMode === 'solid') await mirrorMeshes(next, models);
+    if (viewMode === 'solid') {
+      await mirrorMeshes(next, models);
+      await loadHomes(next);
+    }
     const rows = surfaces(next, models),
       hits = crossings(rows, pairMemo),
       requests = supportRequests(rows);
@@ -699,6 +727,174 @@ export function createPlanner({ host, call, download, current, promote }) {
       j.reason.startsWith('slot'),
     );
     return { rows, hits, blocks, net, misfits };
+  }
+  // The parts of each building in a layout, whole, for the 3D view.
+  async function loadHomes(data) {
+    const wanted = new Set();
+    for (const entry of data.buildings ?? []) {
+      const key = JSON.stringify(entry.building);
+      wanted.add(key);
+      if (!homeParts.has(key)) homeParts.set(key, await call('buildingParts', { building: entry.building, plate, whole: true }));
+    }
+    for (const key of homeParts.keys()) if (!wanted.has(key)) homeParts.delete(key);
+  }
+  // Each building's parts where it stands; the same objects while it stays put.
+  function homes() {
+    const live = new Set();
+    const out = (layout.buildings ?? []).flatMap((entry) => {
+      const parts = homeParts.get(JSON.stringify(entry.building));
+      if (!parts) return [];
+      live.add(entry.id);
+      const key = JSON.stringify(entry);
+      const hit = placedHomes.get(entry.id);
+      if (hit?.key === key && hit.parts === parts) return hit.placed;
+      const placed = placeParts(parts, entry);
+      placedHomes.set(entry.id, { key, parts, placed });
+      return placed;
+    });
+    for (const id of placedHomes.keys()) if (!live.has(id)) placedHomes.delete(id);
+    return out;
+  }
+  const trackLoops = () => rows.flatMap((r) => r.polys);
+  // Puts a building from the Library in the middle of the plan in view, along
+  // the track if it is near enough.
+  async function addBuilding(saved) {
+    const [x, y] = view.centre();
+    const entry = layoutBuilding(saved, { x, y, a: 0 }, 'b-' + crypto.randomUUID());
+    const snapped = snapPose(entry, trackLoops());
+    if (snapped) entry.pose = snapped;
+    await edit((next) => {
+      (next.buildings ??= []).push(entry);
+      return { ...choice, building: entry.id };
+    });
+    message(entry.name + ' was placed' + (snapped ? ' along the track.' : '. Drag it next to the track: dropped near the border, it stands along it.'));
+  }
+  async function moveBuilding(id, [dx, dy]) {
+    if (homeOf(id)?.bay) {
+      render();
+      return message('This garage stands over a pit bay and moves with it. Delete it to place a building elsewhere.');
+    }
+    let snapped = null;
+    await edit((next) => {
+      const entry = next.buildings.find((b) => b.id === id);
+      entry.pose = { ...entry.pose, x: entry.pose.x + dx, y: entry.pose.y + dy };
+      snapped = snapPose(entry, trackLoops());
+      if (snapped) entry.pose = snapped;
+      return { ...choice, building: id };
+    });
+    message(snapped ? 'Standing along the track, its front 1 mm from the border.' : '');
+  }
+  // A pit bay: the closed end of its end stop, the track there, and the road's height.
+  function bayOf(data, models, id) {
+    const n = data.nodes.find((m) => m.id === id),
+      def = n && models.get(n.source);
+    if (!def?.track.params.endStop) return null;
+    const polys = surfaces({ nodes: [n] }, models)[0].polys;
+    return { n, ...bayEnd(frameFor(n, def)[0], polys), road: Math.max(...n.h) + def.track.params.height, lifted: Math.max(...n.h) > 0 };
+  }
+  // A garage over a bay stands where the bay ends, wherever the track goes;
+  // one whose bay was removed stays where it was.
+  function followBays(data, models) {
+    for (const entry of data.buildings ?? []) {
+      if (!entry.bay) continue;
+      const bay = bayOf(data, models, entry.bay);
+      if (bay) entry.pose = bayPose(entry.building, bay);
+      else delete entry.bay;
+    }
+  }
+  // Garages over the pit bays, from a building in the Library: over the
+  // chosen bay, or over every bay that has none yet.
+  async function addPitGarages(all) {
+    const saved = savedHomes.find((h) => h.id === field('pitHome')?.value);
+    if (!saved) throw Error('Choose a building for the pit garages.');
+    const stops = layout.nodes.filter((n) => recipe(n).track.params.endStop).map((n) => n.id);
+    const taken = new Set((layout.buildings ?? []).map((b) => b.bay).filter(Boolean));
+    const ids = (all ? stops : [choice.selected]).filter((id) => !taken.has(id));
+    if (!ids.length) throw Error(all ? 'Every pit bay has a garage already.' : 'This bay has a garage already.');
+    const bays = ids.map((id) => bayOf(layout, defs, id));
+    if (bays.some((bay) => bay.lifted))
+      throw Error('A pit bay on a bridge cannot have a garage: its base stands on the table. Bring the bay down to the table first.');
+    // The room across each bay, beside every other bay, with a garage or not.
+    const others = [...taken].map((id) => bayOf(layout, defs, id)).filter(Boolean);
+    const rooms = bayRoom([...bays, ...others], validateBuilding(saved.building).depth);
+    const loops = trackLoops(),
+      deep = validateBuilding(saved.building).depth;
+    let shallower = false;
+    const entries = bays.map((bay, i) => {
+      const number = stops.indexOf(ids[i]) + 1;
+      // Its base stands beside the track, so the garage reaches no further
+      // back than the bay runs straight: it is made less deep if need be.
+      let problem = null,
+        last = null;
+      for (let depth = deep; depth >= BUILDING_LIMITS.depth[0]; depth -= 5) {
+        let building;
+        try {
+          building = pitGarage({ ...saved.building, depth }, bay.width, bay.road, rooms[i]);
+        } catch (err) {
+          // Too close to the next bay is final; a storey or a window that no
+          // longer fits a shallower garage is not.
+          if (depth === deep && /too close together/.test(err.message)) throw err;
+          problem ??= err;
+          continue;
+        }
+        const entry = { ...layoutBuilding({ ...saved, name: saved.name + ' · bay ' + number, building }, bayPose(building, bay), 'b-' + crypto.randomUUID()), bay: ids[i] };
+        last = entry;
+        if (overlap(entry, loops) > 0.5) continue;
+        if (depth < deep) shallower = true;
+        return entry;
+      }
+      // Even the shallowest garage stands on the track: say on what.
+      const inWay = last ? [...new Set(rows.filter((r) => r.polys.some((loop) => overlap(last, [loop]) > 0.5)).map((r) => r.def.name))] : [];
+      throw Error(
+        'There is no room for a garage over bay ' + number +
+          (inWay.length
+            ? ': even ' + last.building.depth + ' mm deep its base would stand on the ' + inWay.join(' and the ') + ' beside it. Space the bays further apart, or make them longer: Spacing and Bay length in the Pit ladder window.'
+            : problem
+              ? ': ' + problem.message
+              : '.'),
+      );
+    });
+    await edit((next) => {
+      (next.buildings ??= []).push(...entries);
+      return { ...choice, building: entries.at(-1).id };
+    });
+    message(
+      (entries.length === 1
+        ? 'A garage stands over the bay: the track runs in through its open door to the end stop.'
+        : entries.length + ' garages stand over the pit bays: the track runs into each through its open door.') +
+        (shallower ? ' Made less deep than the building, to stand on the straight end of the bay.' : ''),
+    );
+  }
+  // For an end stop: a garage over its bay.
+  function pitPanel(n, def) {
+    if (!def.track.params.endStop) return '';
+    const over = (layout.buildings ?? []).find((b) => b.bay === n.id);
+    const free = layout.nodes.filter((m) => recipe(m).track.params.endStop && !(layout.buildings ?? []).some((b) => b.bay === m.id)).length;
+    return (
+      '<details class="pl-bridge pl-pit" open><summary><span>Pit garage</span><small>' + (over ? esc(over.name) : 'None') + '</small></summary><div>' +
+      (savedHomes.length
+        ? '<label>Building<select data-pl-field="pitHome">' + savedHomes.map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
+          (over ? '' : btn('pit-one', 'Garage over this bay', 'plus')) +
+          (free > (over ? 0 : 1) ? btn('pit-all', 'Garages over every bay', 'plus') : '')
+        : '<small>Save a building to the Library on the Buildings page first.</small>') +
+      '<small>A garage stands over the end of the bay: the track runs in through its open door to the end stop, and its base stands beside the track as high as the road. The door is made wide enough for the track, and the garage no wider than the room between two bays. It moves with the bay.</small>' +
+      '</div></details>'
+    );
+  }
+  // Changes the chosen building in the layout.
+  function editHome(change) {
+    const id = choice.building;
+    return edit((next) => {
+      const entry = next.buildings.find((b) => b.id === id);
+      change(entry);
+      return { ...choice, building: id };
+    });
+  }
+  // The road beside a building: how high it is, if a section is near its front.
+  function roadBeside(entry) {
+    const near = nearestRow(entry, rows);
+    if (!near || near.d > 60) return null;
+    return Math.max(...near.row.n.h) + near.row.def.track.params.height;
   }
   async function mirrorMeshes(next, models) {
     for (const key of new Set(
@@ -726,12 +922,14 @@ export function createPlanner({ host, call, download, current, promote }) {
     choice = {
       selected: selection.selected ?? end?.id ?? layout.nodes.at(-1)?.id,
       end: end?.key,
+      ...(homeOf(selection.building) && { building: selection.building }),
     };
     render(fit);
   }
   async function edit(mutator, models = defs) {
     const next = structuredClone(layout),
       selectedNext = mutator(next) ?? choice;
+    followBays(next, models);
     const computed = await calculate(next, models);
     undo.push({ data: layout, choice });
     if (undo.length > 60) undo.shift();
@@ -1079,7 +1277,8 @@ export function createPlanner({ host, call, download, current, promote }) {
     );
   }
   function render(fit = false) {
-    const n = selected(),
+    const home = homeOf(choice.building),
+      n = home ? null : selected(),
       def = n && recipe(n);
     if (document.activeElement !== field('name'))
       field('name').value = layout.name;
@@ -1107,7 +1306,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         '</option>';
     field('end').disabled = !net.open.length;
     $('[data-pl="current"]').disabled = current().mode !== 'track';
-    $('.pl-empty').hidden = !!layout.nodes.length;
+    $('.pl-empty').hidden = !!layout.nodes.length || !!layout.buildings?.length;
     activeBtn('plan', viewMode === 'plan');
     activeBtn('solid', viewMode === 'solid');
     $('[data-pl="undo"]').disabled = !undo.length;
@@ -1135,6 +1334,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         btn('remove', 'Delete', 'close') +
         '</div>' +
         '<div class="pl-group">This section</div>' +
+        pitPanel(n, def) +
         '<details class="pl-bridge"><summary><span>Bridge and approaches</span><small>' + esc(liftSummary(n)) + '</small></summary><div><label>Lift at A · mm<input data-pl-field="a" type="number" min="0" max="500" value="' +
         n.h[0] +
         '"></label>' +
@@ -1219,7 +1419,9 @@ export function createPlanner({ host, call, download, current, promote }) {
             btn('texture', chosenIds().size > 1 ? 'Apply to ' + chosenTextured() + ' sections' : 'Apply texture', 'check') +
             '</div></details>'
           : '')
-      : '<small class="sf-eyebrow">Selected section</small><h2>None</h2><p>Click a section in the plan to change its height, barriers, lines or road surface.</p>';
+      : home
+        ? homePanel(home)
+        : '<small class="sf-eyebrow">Selected section</small><h2>None</h2><p>Click a section in the plan to change its height, barriers, lines or road surface. Click a building to move or turn it.</p>';
     const from = net.open.find((e) => e.key === choice.end),
       members = from && connectedRun(net, from.id);
     const others = members ? net.open.filter((e) => !members.has(e.id)) : [];
@@ -1259,12 +1461,20 @@ export function createPlanner({ host, call, download, current, promote }) {
           : g.name.replace(/\s+\d+$/, '');
       grouped.set(label, (grouped.get(label) ?? 0) + g.count);
     }
+    // A building is counted as its parts, whole: export cuts them to fit the plate.
+    let homeCount = 0;
+    for (const entry of layout.buildings ?? []) {
+      const parts = buildingLayout(entry.building).parts.length;
+      homeCount += parts;
+      grouped.set(entry.name + ' · building', (grouped.get(entry.name + ' · building') ?? 0) + parts);
+    }
     if (blocks.length)
       grouped.set(
         'Bridge supports',
         (grouped.get('Bridge supports') || 0) + blocks.length,
       );
-    $('[data-pl-sum="tally"]').textContent = count ? count + (count === 1 ? ' part' : ' parts') : '';
+    const parts = count + homeCount;
+    $('[data-pl-sum="tally"]').textContent = parts ? parts + (parts === 1 ? ' part' : ' parts') : '';
     $('[data-pl-sum="plate"]').textContent = fmt(plate.width) + ' × ' + fmt(plate.depth) + ' mm';
     $('.pl-plate-art').innerHTML = plateDrawing(plate);
     $('.pl-inventory > div').innerHTML =
@@ -1324,7 +1534,8 @@ export function createPlanner({ host, call, download, current, promote }) {
         : '0 open ends';
     $('.pl-stats').innerHTML = [
       chip(layout.nodes.length + ' sections'),
-      chip(count + ' printable parts'),
+      chip(count + homeCount + ' printable parts'),
+      layout.buildings?.length ? chip(layout.buildings.length + (layout.buildings.length === 1 ? ' building' : ' buildings')) : '',
       chip(fmt(totalLength(layout, defs) / 1000) + ' m road'),
       chip(openText, net.open.length > 0),
       misfits.length
@@ -1355,9 +1566,69 @@ export function createPlanner({ host, call, download, current, promote }) {
         blocks,
         blocked: misfits,
         marked: new Set([...marked].filter((id) => id !== n?.id)),
+        buildings: layout.buildings ?? [],
+        building: home?.id ?? null,
+        homes: viewMode === 'solid' ? homes() : [],
       },
       fit,
     );
+  }
+  // The right panel for a building in the layout: where it stands, and its height.
+  function homePanel(entry) {
+    const b = entry.building,
+      storeys = b.upper.length + 1;
+    if (entry.bay)
+      return (
+        '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
+        fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · over a pit bay</p>' +
+        '<div class="pl-selection-actions">' + btn('remove', 'Delete', 'close') + '</div>' +
+        '<p class="pl-note">The track runs in through its open door, ' + fmt(b.doorWidth) + ' mm wide, to the end stop; its base stands beside the track, ' +
+        fmt(b.baseHeight) + ' mm high like the road. It moves with the bay. Delete it to free the bay.</p>' +
+        (overlap(entry, trackLoops()) > 0.5 ? '<p class="pl-note warn">Its base now stands on the track: the bay runs straight for less than the depth of the garage. Delete it, or make the bay longer.</p>' : '')
+      );
+    const onTrack = overlap(entry, trackLoops()) > 0.5;
+    const road = roadBeside(entry);
+    const level = road !== null && Math.abs(road - b.baseHeight) < 0.05;
+    const [lo, hi] = BUILDING_LIMITS.baseHeight;
+    const degrees = Math.round((((entry.pose.a * 180) / Math.PI) % 360 + 360) % 360 * 10) / 10;
+    return (
+      '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
+      fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys') + '</p>' +
+      '<div class="pl-selection-actions">' + btn('b-turn', 'Turn 90°', 'reset') + btn('b-snap', 'Stand along the track', 'join') + btn('remove', 'Delete', 'close') + '</div>' +
+      '<div class="pl-group">This building</div>' +
+      '<details class="pl-bridge pl-home-place" open><summary><span>Place</span><small' + (onTrack ? ' class="warn"' : '') + '>' + (onTrack ? 'On the track' : 'Clear of the track') + '</small></summary><div>' +
+      '<label>X · mm<input data-pl-field="homeX" type="number" step="any" value="' + Math.round(entry.pose.x * 10) / 10 + '"></label>' +
+      '<label>Y · mm<input data-pl-field="homeY" type="number" step="any" value="' + Math.round(entry.pose.y * 10) / 10 + '"></label>' +
+      '<label>Facing · °<input data-pl-field="homeA" type="number" step="any" value="' + degrees + '"></label>' +
+      '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front, the garage door, along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
+      btn('b-place', 'Apply place', 'check') +
+      '</div></details>' +
+      '<details class="pl-bridge pl-home-height"' + (level ? '' : ' open') + '><summary><span>Height</span><small' + (road === null || level ? '' : ' class="warn"') + '>Base ' + fmt(b.baseHeight) + ' mm</small></summary><div>' +
+      '<p class="pl-note">' +
+      (road === null
+        ? 'No track beside its front.'
+        : level
+          ? 'The doorstep is level with the road beside it, ' + fmt(road) + ' mm above the table.'
+          : 'The road beside it is ' + fmt(road) + ' mm above the table; the base is ' + fmt(b.baseHeight) + ' mm.') +
+      '</p>' +
+      (road !== null && !level && road >= lo && road <= hi ? btn('b-level', 'Match the road', 'check') : '') +
+      '<small>The base stands on the table: as high as the road beside it, the doorstep is level. This changes the building in this layout only, not the one in the Library.</small>' +
+      '</div></details>'
+    );
+  }
+  // The buildings saved in the Library, to place in the layout.
+  function homeList() {
+    $('.pl-homes').innerHTML = savedHomes.length
+      ? '<div class="pl-chips">' +
+        savedHomes
+          .map(
+            (h) =>
+              '<button type="button" class="pl-chip" data-home="' + esc(h.id) + '" title="Place ' + esc(h.name) + ' in the layout">' + icon('building') +
+              esc(h.name) + '<small>' + fmt(h.building.width) + ' × ' + fmt(h.building.depth) + '</small></button>',
+          )
+          .join('') +
+        '</div>'
+      : '<p class="pl-note">Make a building on the Buildings page and save it to the Library to place it beside the track.</p>';
   }
   // Rebuilds the linked pieces of a layout whose pack changed since they were
   // placed. Their print segments stay as placed, so every section keeps its
@@ -1480,8 +1751,15 @@ export function createPlanner({ host, call, download, current, promote }) {
       plate = { ...current().plate };
       plateSet = true;
     }
-    packs = await (await openTrackLibrary()).list();
+    const library = await openTrackLibrary();
+    packs = await library.list();
     if (!packs.some((p) => p.id === pack)) pack = packs[0]?.id;
+    try {
+      savedHomes = await library.buildings();
+    } catch {
+      savedHomes = [];
+    }
+    homeList();
     // Coming back after Apply to collection: follow the pack now.
     if (loaded && layout.nodes.length) {
       const followed = await followPacks(snapshot(layout));
@@ -1604,6 +1882,24 @@ export function createPlanner({ host, call, download, current, promote }) {
       files['tools/keeper-turning-tool.stl'] = tool;
       csv.push(['Keeper turning tool', 'tools/keeper-turning-tool.stl', 1, '']);
     }
+    // Each building in a folder of its own: its parts cut to fit the plate,
+    // and its notes on printing and putting it together.
+    const homeGroups = [],
+      folders = new Set();
+    for (const entry of layout.buildings ?? []) {
+      const base = cleanName(entry.name);
+      let folder = base;
+      for (let k = 2; folders.has(folder); k++) folder = base + '-' + k;
+      folders.add(folder);
+      const kit = await call('buildingKit', { building: entry.building, plate });
+      kit.forEach((f, i) => {
+        const file = 'buildings/' + folder + '/' + String(i + 1).padStart(2, '0') + ' ' + cleanName(f.name) + '.stl';
+        files[file] = f.bytes;
+        csv.push([f.name, file, 1, entry.name]);
+        homeGroups.push({ count: 1, volume: stlVolume(f.bytes) });
+      });
+      files['buildings/' + folder + '/README.txt'] = strToU8(kitNotes(entry.name, entry.building, kit, {}));
+    }
     const settings = loadSettings();
     files['shopping-list.txt'] = strToU8(
       shoppingList({
@@ -1615,6 +1911,7 @@ export function createPlanner({ host, call, download, current, promote }) {
           })),
           ...blocks.map((b) => ({ count: 1, volume: stlVolume(b.stl) })),
           ...(tool ? [{ count: 1, volume: stlVolume(tool) }] : []),
+          ...homeGroups,
         ],
         lanes: laneLengths(
           layout.nodes.map((n) => ({
@@ -1670,8 +1967,31 @@ export function createPlanner({ host, call, download, current, promote }) {
     if (key === 'save') return save();
     if (key === 'library-save') return saveToLibrary();
     if (key === 'export-menu') return exportKit();
+    if (key === 'remove' && homeOf(choice.building))
+      return edit((next) => {
+        next.buildings = next.buildings.filter((b) => b.id !== choice.building);
+        return { selected: choice.selected, end: choice.end };
+      });
     if (key === 'remove')
       return edit((n) => removeSection(n, defs, choice.selected));
+    if (key === 'pit-one' || key === 'pit-all') return addPitGarages(key === 'pit-all');
+    if (key === 'b-turn') return editHome((entry) => (entry.pose = { ...entry.pose, a: entry.pose.a + Math.PI / 2 }));
+    if (key === 'b-snap') {
+      // Further than a drop snaps: to the nearest track in front of it.
+      const snapped = snapPose(homeOf(choice.building), trackLoops(), SNAP * 8);
+      if (!snapped) throw Error('There is no track within ' + SNAP * 8 + ' mm of the front of this building, or no room beside it. Drag it nearer, or turn it to face the track.');
+      await editHome((entry) => (entry.pose = snapped));
+      return message('Standing along the track, its front 1 mm from the border.');
+    }
+    if (key === 'b-place') {
+      const pose = { x: field('homeX').valueAsNumber, y: field('homeY').valueAsNumber, a: (field('homeA').valueAsNumber * Math.PI) / 180 };
+      if (![pose.x, pose.y, pose.a].every((v) => Number.isFinite(v) && Math.abs(v) < 1e7)) throw Error('Enter a place and a direction for the building.');
+      return editHome((entry) => (entry.pose = pose));
+    }
+    if (key === 'b-level') {
+      const road = roadBeside(homeOf(choice.building));
+      return editHome((entry) => (entry.building = { ...entry.building, baseHeight: Math.round(road * 100) / 100 }));
+    }
     if (key === 'reverse')
       return edit((n) => {
         reverseSection(n, defs, choice.selected);
@@ -1827,9 +2147,13 @@ export function createPlanner({ host, call, download, current, promote }) {
       return;
     }
     if (['plan', 'solid'].includes(key)) {
-      if (key === 'solid') await mirrorMeshes(layout, defs);
+      if (key === 'solid') {
+        await mirrorMeshes(layout, defs);
+        await loadHomes(layout);
+      }
       viewMode = key;
       view.setMode(key);
+      render();
       warmUp();
       activeBtn('plan', key === 'plan');
       activeBtn('solid', key === 'solid');
@@ -1838,10 +2162,12 @@ export function createPlanner({ host, call, download, current, promote }) {
   }
   host.addEventListener('click', (e) => {
     const card = e.target.closest('[data-place]'),
+      saved = e.target.closest('[data-home]'),
       action = e.target.closest('[data-pl]'),
       cross = e.target.closest('[data-cross]'),
       misfit = e.target.closest('[data-misfit]');
     if (card) run(() => place(cards[Number(card.dataset.place)]));
+    if (saved) run(() => addBuilding(savedHomes.find((h) => h.id === saved.dataset.home)));
     if (action) run(() => perform(action.dataset.pl));
     if (cross && !busy) {
       const h = hits[Number(cross.dataset.cross)];

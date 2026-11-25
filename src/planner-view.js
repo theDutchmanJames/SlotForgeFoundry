@@ -3,6 +3,7 @@ import { pitch, sourcePartMap, xyOf } from './planner-model.js';
 import { esc } from './ui.js';
 import { creaseLineIndices, isTrackSurface } from './surface-features.js';
 import { slotTitle } from './slot-position.js';
+import { planShapes } from './planner-buildings.js';
 
 const digits = (n) => Number(n.toFixed(3));
 const points = (path) =>
@@ -63,7 +64,19 @@ function placedMesh(part, node, def) {
     })),
   };
 }
-export function createPlanView(host, onPick) {
+// A building on the plan: its base, the outline of each storey, and a bar
+// along the garage door so its front shows.
+function buildingMarkup(entry, chosen) {
+  const { base, storeys, door } = planShapes(entry);
+  return (
+    '<g data-building="' + entry.id + '" class="pm-building' + (entry.id === chosen ? ' selected' : '') + '"><title>' + esc(entry.name) +
+    ' · drag to move it; dropped near the track it stands along the border</title>' +
+    '<path class="pm-building-base" d="' + pathD([base]) + '"/>' +
+    storeys.map((loop) => '<path class="pm-building-storey" d="' + pathD([loop]) + '"/>').join('') +
+    '<polyline class="pm-building-door" points="' + points(door) + '"/></g>'
+  );
+}
+export function createPlanView(host, onPick, onMoveBuilding = () => {}) {
   const svg = host.querySelector('.planner-map'),
     solid = host.querySelector('.planner-solid');
   let viewport,
@@ -76,9 +89,18 @@ export function createPlanView(host, onPick) {
   const update = () => svg.setAttribute('viewBox', box.join(' '));
   function fit() {
     if (!current) return;
-    const { rows } = current,
-      w = svg.clientWidth || host.clientWidth,
+    const w = svg.clientWidth || host.clientWidth,
       h = svg.clientHeight || host.clientHeight;
+    // The track and the buildings beside it.
+    const rows = [
+      ...current.rows,
+      ...(current.buildings ?? []).map((entry) => {
+        const base = planShapes(entry).base;
+        const xs = base.map(([x]) => x),
+          ys = base.map(([, y]) => y);
+        return { bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
+      }),
+    ];
     const [l, b, r, t] = rows.reduce(
       ([l, b, r, t], { bounds: v }) => [
         Math.min(l, v[0]),
@@ -101,10 +123,10 @@ export function createPlanView(host, onPick) {
     if (mode === 'solid') viewport?.fit();
   }
   function draw(
-    { rows, ends, chosen, selected, defs, blocks, blocked = [], marked = new Set() },
+    { rows, ends, chosen, selected, defs, blocks, blocked = [], marked = new Set(), buildings = [], building = null, homes = [] },
     refit = false,
   ) {
-    current = { rows, ends, chosen, selected, defs, blocks, blocked, marked };
+    current = { rows, ends, chosen, selected, defs, blocks, blocked, marked, buildings, building, homes };
     if (mode === 'solid') {
       viewport ??= new Viewport(solid, (id) => onPick(id.split('/')[0]));
       const free = new Set(ends.map((e) => e.key));
@@ -124,13 +146,14 @@ export function createPlanView(host, onPick) {
             ),
           ),
       );
-      viewport.setParts([...parts, ...blocks], refit || !fitted);
+      viewport.setParts([...parts, ...blocks, ...homes], refit || !fitted);
       // Forget placements that left the layout.
       const live = new Set(parts.map((p) => p.id));
       for (const key of placedCache.keys()) if (!live.has(key)) placedCache.delete(key);
       viewport.select(
-        parts.find((p) => p.id.startsWith(selected + '/') && p.role === 'road')
-          ?.id,
+        building
+          ? homes.find((p) => p.id.startsWith(building + '/'))?.id
+          : parts.find((p) => p.id.startsWith(selected + '/') && p.role === 'road')?.id,
         new Set(),
       );
       fitted = true;
@@ -270,6 +293,7 @@ export function createPlanView(host, onPick) {
     svg.innerHTML =
       '<defs><pattern id="plan-grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M100 0H0V100" fill="none" stroke="var(--d-guide)" stroke-width="0.8" vector-effect="non-scaling-stroke"/></pattern></defs><rect x="-1000000" y="-1000000" width="2000000" height="2000000" fill="url(#plan-grid)"/>' +
       body +
+      buildings.map((entry) => buildingMarkup(entry, building)).join('') +
       marks +
       ports;
     if (refit || !fitted) fit();
@@ -297,7 +321,11 @@ export function createPlanView(host, onPick) {
     { passive: false },
   );
   svg.onpointerdown = (e) => {
+    const home = e.target.closest('[data-building]');
     drag = {
+      // Dragging a building moves it; dragging anything else pans.
+      building: home?.dataset.building,
+      from: home ? svgPoint(e) : null,
       x: e.clientX,
       y: e.clientY,
       target: e.target,
@@ -314,6 +342,11 @@ export function createPlanView(host, onPick) {
       dy = e.clientY - drag.y;
     if (Math.hypot(dx, dy) < 4 && !drag.moved) return;
     drag.moved = true;
+    if (drag.building) {
+      const p = svgPoint(e);
+      svg.querySelector('[data-building="' + drag.building + '"]')?.setAttribute('transform', 'translate(' + (p.x - drag.from.x) + ' ' + (p.y - drag.from.y) + ')');
+      return;
+    }
     const scale = 1 / svg.getScreenCTM().a;
     box = [
       drag.box[0] - dx * scale,
@@ -325,7 +358,15 @@ export function createPlanView(host, onPick) {
   svg.onpointercancel = () => {
     drag = null;
   };
-  svg.onpointerup = () => {
+  svg.onpointerup = (e) => {
+    if (drag?.building) {
+      const p = svgPoint(e);
+      // The plan draws y upwards.
+      if (drag.moved) onMoveBuilding(drag.building, [p.x - drag.from.x, -(p.y - drag.from.y)]);
+      else onPick(drag.building);
+      drag = null;
+      return;
+    }
     if (drag && !drag.moved) {
       const end = drag.target.closest('[data-end]')?.dataset.end;
       const id =
@@ -337,6 +378,8 @@ export function createPlanView(host, onPick) {
   return {
     draw,
     fit,
+    // The middle of the plan in view, where a new building is put.
+    centre: () => [box[0] + box[2] / 2, -(box[1] + box[3] / 2)],
     setMode(value) {
       mode = value;
       svg.hidden = value !== 'plan';

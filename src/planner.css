@@ -694,3 +694,46 @@ dialog.pl-segment p {
     padding-inline: 7px;
   }
 }
+/* A building beside the track: its base, its storeys, and a red bar along
+   the garage door so its front shows. Drag it to move it. */
+.pm-building {
+  cursor: move;
+}
+.pm-building path,
+.pm-building polyline {
+  vector-effect: non-scaling-stroke;
+}
+.pm-building-base {
+  fill: #6f7781;
+  stroke: var(--d-track-edge);
+  stroke-width: 1;
+}
+.pm-building-storey {
+  fill: color-mix(in srgb, #c8c1b0 55%, transparent);
+  stroke: #3a3f46;
+  stroke-width: 1;
+}
+.pm-building-door {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.pm-building.selected .pm-building-base {
+  stroke: var(--focus);
+  stroke-width: 2;
+}
+.pl-homes .pl-chip small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.pl-home-place small.warn,
+.pl-home-height small.warn {
+  color: var(--warn);
+}
+
+/* A warning in the right panel. */
+.pl-note.warn {
+  color: var(--warn);
+}

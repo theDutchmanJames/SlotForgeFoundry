@@ -82,6 +82,8 @@ export function createWorkerClient(
     'plannerSupports',
     'plannerPrint',
     'keeperToolSTL',
+    'buildingParts',
+    'buildingKit',
   ]);
   async function call(method, args, { background = false } = {}) {
     if (needsRestore && !stateless.has(method)) {

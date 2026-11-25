@@ -127,7 +127,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <div class="bd-group">Your buildings</div>
   <div class="bd-saved"></div>
   <div class="bd-group">Coming later</div>
-  <p class="bd-later">Clipping to the track.</p>
+  <p class="bd-later">Clipping to the track. Place a saved building beside the track, or a row of garages over the pit bays, in the Track Planner.</p>
 </aside>
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>

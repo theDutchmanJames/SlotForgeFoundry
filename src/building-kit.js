@@ -19,6 +19,9 @@ export function kitNotes(name, b, parts, sizes) {
     ...(cut
       ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
       : []),
+    ...(b.lane
+      ? ['Stand the base over the end of its pit bay: the track runs in through the open front, its end stop inside, with the base beside it as high as the road.']
+      : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base. The front wall has the garage door opening.',
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(b.door === 'roller' ? ['Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.'] : []),

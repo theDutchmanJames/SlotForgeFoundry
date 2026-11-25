@@ -12,6 +12,7 @@ export const layoutOwned = (key) =>
   key.startsWith('trackside') || MARKING_KEYS.includes(key) || TEXTURE_KEYS.includes(key);
 import { hasSlotPosition, slotDistances, slotVaries } from './slot-position.js';
 import { screwFamilyDifference } from './geometry/screw-clip.js';
+import { validateBuildings } from './planner-buildings.js';
 
 export const newLayout = () => ({
   format: 'slotforge-layout',
@@ -1212,5 +1213,6 @@ export function validateLayout(data) {
       throw Error('Invalid placed section in the layout file.');
     ids.add(n.id);
   }
+  validateBuildings(data.buildings);
   return data;
 }
