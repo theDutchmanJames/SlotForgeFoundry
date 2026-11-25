@@ -74,6 +74,7 @@ import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
 import { SNAP, bayEnd, bayPose, bayRoom, layoutBuilding, nearestRow, overlap, pitGarage, placeParts, snapPose } from './planner-buildings.js';
 import { buildingLayout, BUILDING_LIMITS, validateBuilding } from './geometry/building.js';
+import { sizeLine } from './geometry/grandstand.js';
 import { kitNotes } from './building-kit.js';
 
 const fmt = (n) => Number(n.toFixed(1)).toLocaleString();
@@ -884,7 +885,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     return (
       '<details class="pl-bridge pl-pit" open><summary><span>Pit garage</span><small>' + (over ? esc(over.name) : 'None') + '</small></summary><div>' +
       (savedHomes.length
-        ? '<label>Building<select data-pl-field="pitHome">' + savedHomes.map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
+        ? '<label>Building<select data-pl-field="pitHome">' + savedHomes.filter((h) => h.building.kind !== 'grandstand').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
           (over ? '' : btn('pit-one', 'Garage over this bay', 'plus')) +
           (free > (over ? 0 : 1) ? btn('pit-all', 'Garages over every bay', 'plus') : '')
         : '<small>Save a building to the Library on the Buildings page first.</small>') +
@@ -1624,7 +1625,8 @@ export function createPlanner({ host, call, download, current, promote }) {
   // The right panel for a building in the layout: where it stands, and its height.
   function homePanel(entry) {
     const b = entry.building,
-      storeys = b.upper.length + 1;
+      stand = b.kind === 'grandstand',
+      storeys = stand ? 0 : b.upper.length + 1;
     if (entry.bay)
       return (
         '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
@@ -1636,21 +1638,22 @@ export function createPlanner({ host, call, download, current, promote }) {
       );
     const onTrack = overlap(entry, trackLoops()) > 0.5;
     const road = roadBeside(entry);
-    const level = road !== null && Math.abs(road - b.baseHeight) < 0.05;
+    const level = stand || (road !== null && Math.abs(road - b.baseHeight) < 0.05);
     const [lo, hi] = BUILDING_LIMITS.baseHeight;
     const degrees = Math.round((((entry.pose.a * 180) / Math.PI) % 360 + 360) % 360 * 10) / 10;
     return (
       '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
-      fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys') + '</p>' +
+      (stand ? esc(sizeLine(b)) : fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys')) + '</p>' +
       '<div class="pl-selection-actions">' + btn('b-turn', 'Turn 90°', 'reset') + btn('b-snap', 'Stand along the track', 'join') + btn('remove', 'Delete', 'close') + '</div>' +
       '<div class="pl-group">This building</div>' +
       '<details class="pl-bridge pl-home-place" open><summary><span>Place</span><small' + (onTrack ? ' class="warn"' : '') + '>' + (onTrack ? 'On the track' : 'Clear of the track') + '</small></summary><div>' +
       '<label>X · mm<input data-pl-field="homeX" type="number" step="any" value="' + Math.round(entry.pose.x * 10) / 10 + '"></label>' +
       '<label>Y · mm<input data-pl-field="homeY" type="number" step="any" value="' + Math.round(entry.pose.y * 10) / 10 + '"></label>' +
       '<label>Facing · °<input data-pl-field="homeA" type="number" step="any" value="' + degrees + '"></label>' +
-      '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front, the garage door, along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
+      '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front' + (stand ? ', the parapet,' : ', the garage door,') + ' along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
       btn('b-place', 'Apply place', 'check') +
       '</div></details>' +
+      (stand ? '' :
       '<details class="pl-bridge pl-home-height"' + (level ? '' : ' open') + '><summary><span>Height</span><small' + (road === null || level ? '' : ' class="warn"') + '>Base ' + fmt(b.baseHeight) + ' mm</small></summary><div>' +
       '<p class="pl-note">' +
       (road === null
@@ -1661,7 +1664,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       '</p>' +
       (road !== null && !level && road >= lo && road <= hi ? btn('b-level', 'Match the road', 'check') : '') +
       '<small>The base stands on the table: as high as the road beside it, the doorstep is level. This changes the building in this layout only, not the one in the Library.</small>' +
-      '</div></details>'
+      '</div></details>')
     );
   }
   // The buildings saved in the Library, to place in the layout.
@@ -1672,7 +1675,7 @@ export function createPlanner({ host, call, download, current, promote }) {
           .map(
             (h) =>
               '<button type="button" class="pl-chip" data-home="' + esc(h.id) + '" title="Place ' + esc(h.name) + ' in the layout">' + icon('building') +
-              esc(h.name) + '<small>' + fmt(h.building.width) + ' × ' + fmt(h.building.depth) + '</small></button>',
+              esc(h.name) + '<small>' + esc(sizeLine(h.building)) + '</small></button>',
           )
           .join('') +
         '</div>'
@@ -2113,7 +2116,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       field('ladderBay').value = 200;
       field('ladderParallel').checked = true;
       field('ladderGarage').innerHTML =
-        '<option value="">None</option>' + savedHomes.map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('');
+        '<option value="">None</option>' + savedHomes.filter((h) => h.building.kind !== 'grandstand').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('');
       field('ladderGarage').disabled = !savedHomes.length;
       const suggest = () => {
         const least = leastSpacing(parts, field('ladderBay').valueAsNumber || 0, field('ladderParallel').checked);

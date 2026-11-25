@@ -211,8 +211,21 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-preset="pitrow"]').click();
   await host.locator('[data-bd-part="divide3"]').waitFor();
   assert.match(await host.locator('.bd-rooms .bd-hint').textContent(), /110 \+ 110 \+ 110 \+ 110 = 440 mm wide/);
+  // A grandstand has cards of its own: its rows, its shape, its roof and its sections.
+  await host.locator('[data-bd-preset="stand-curved"]').click();
+  await host.locator('[data-bd-part="end"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="stand"]').isVisible());
+  assert.ok(await host.locator('[data-bd-card="size"]').isHidden(), 'the garage cards are put away');
+  assert.equal(await host.locator('[data-bd-stand-shape="curved"]').getAttribute('aria-pressed'), 'true');
+  assert.ok(await setting('gLength').isDisabled(), 'a curve sets the length');
+  await setting('gRows').fill('3');
+  await setting('gRows').press('Tab');
+  await page.waitForFunction(() => /3 rows/.test(document.querySelector('[data-bd-stand-size]').textContent));
+  await host.locator('[data-bd-stand-shape="straight"]').click();
+  await page.waitForFunction(() => !document.querySelector('form.bd-form [name="gLength"]').disabled);
   await bd('new').click();
   await partCount(12);
+  assert.ok(await host.locator('[data-bd-card="size"]').isVisible());
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
   console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window, textures and a second storey change its parts; on a small plate the parts are cut into pieces that fit');

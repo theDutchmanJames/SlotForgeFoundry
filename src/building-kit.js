@@ -10,6 +10,7 @@ import { fmt } from './ui.js';
 const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1);
 
 export function kitNotes(name, b, parts, sizes) {
+  if (b.kind === 'grandstand') return standNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -76,5 +77,39 @@ export function kitNotes(name, b, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the parts before you glue them, or print them in different colours.',
+  ].join('\n');
+}
+
+// The notes of a grandstand: its sections stood on end, joined, and its canopy.
+function standNotes(name, g, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const sections = parts.filter((p) => /^stand/.test(p.id)).length;
+  const canopy = parts.some((p) => /^canopy/.test(p.id));
+  const steps = [
+    ...(sections > 1
+      ? ['Join the sections end to end in their order, 1 of ' + sections + ' first: push the two tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table.']
+      : []),
+    'Stand the grandstand on the table, its parapet towards the track.',
+    ...(canopy
+      ? ['Glue the canopy' + (parts.filter((p) => /^canopy/.test(p.id)).length > 1 ? ' pieces' : '') + ' on top of the back wall, reaching out over the rows, and glue the posts under its front edge, in front of the parapet.']
+      : []),
+  ];
+  return [
+    name + ' · SlotForge Foundry grandstand kit',
+    '',
+    g.rows + ' rows, ' + fmt(g.length) + ' mm long' + (g.curve ? ' along the front, curved on a radius of ' + fmt(g.curve.radius) + ' mm through ' + fmt(g.curve.angle) + '°' : '') + '; each row ' + fmt(g.rowDepth) + ' mm deep and ' + fmt(g.rowRise) + ' mm higher than the one before.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- Each section stands on its end: the stepped side lies on the plate and the rows rise straight up. It is a hollow shell, 3 mm thick.',
+    ...(canopy ? ['- The canopy lies flat; each post lies on its side.'] : []),
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the benches before you put the stand together, or print the sections in a colour of their own.',
   ].join('\n');
 }

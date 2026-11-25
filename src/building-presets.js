@@ -165,4 +165,22 @@ export const BUILDING_PRESETS = Object.freeze([
       openings: [door('front', 50), window('left', 60, 34, 24, 22)],
     },
   },
+  {
+    id: 'stand',
+    name: 'Grandstand',
+    note: 'Six rows of benches, an aisle, open to the sky',
+    building: { kind: 'grandstand', length: 240, rows: 6, aisles: 1 },
+  },
+  {
+    id: 'stand-covered',
+    name: 'Covered grandstand',
+    note: 'Eight rows under a canopy on posts',
+    building: { kind: 'grandstand', length: 320, rows: 8, aisles: 2, roof: 'canopy' },
+  },
+  {
+    id: 'stand-curved',
+    name: 'Curved grandstand',
+    note: 'Round the outside of a bend, facing into it',
+    building: { kind: 'grandstand', rows: 5, aisles: 2, curve: { radius: 450, angle: 45, facing: 'in' } },
+  },
 ]);

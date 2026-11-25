@@ -9,6 +9,7 @@ import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
 import { BUILDING_PRESETS } from './building-presets.js';
+import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -152,6 +153,31 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <form class="bd-form" autocomplete="off">
+    <section class="bd-box" data-bd-card="stand" data-bd-stand hidden><h3>Grandstand</h3>
+      ${field('gLength', 'Length', 240, GRANDSTAND_LIMITS.length)}
+      ${field('gRows', 'Rows', 6, GRANDSTAND_LIMITS.rows, '')}
+      ${field('gRowDepth', 'Row depth', 18, GRANDSTAND_LIMITS.rowDepth)}
+      ${field('gRowRise', 'Row rise', 9, GRANDSTAND_LIMITS.rowRise)}
+      ${field('gFront', 'Front row height', 12, GRANDSTAND_LIMITS.frontHeight)}
+      ${field('gBack', 'Back wall above the last row', 15, GRANDSTAND_LIMITS.backHeight)}
+      ${field('gAisles', 'Aisles', 1, GRANDSTAND_LIMITS.aisles, '')}
+      <label class="bd-check"><input type="checkbox" name="gSeats"><span>A bench on each row</span></label>
+      <p class="bd-hint" data-bd-stand-size></p></section>
+    <section class="bd-box" data-bd-card="standShape" data-bd-stand hidden><h3>Shape</h3>
+      <div class="bd-seg bd-wide" role="group" aria-label="Shape"><button type="button" data-bd-stand-shape="straight">Straight</button><button type="button" data-bd-stand-shape="curved">Curved</button></div>
+      <div data-bd-curve>
+      ${field('gRadius', 'Radius at the front', 450, [100, 3000])}
+      ${field('gAngle', 'Angle', 45, [10, 180], '°')}
+      <label class="bd-row"><span>Faces</span><select name="gFacing"><option value="in">Into the curve</option><option value="out">Out of the curve</option></select></label>
+      </div>
+      <p class="bd-hint">Curved, the rows follow an arc round a corner: facing into the curve for the outside of a bend, out of it for the inside. Its length is then along the front, from the radius and the angle.</p></section>
+    <section class="bd-box" data-bd-card="standRoof" data-bd-stand hidden><h3>Roof</h3>
+      <label class="bd-row"><span>Roof</span><select name="gRoof"><option value="none">None, open to the sky</option><option value="canopy">A canopy on posts</option></select></label>
+      ${field('gRoofHeight', 'Canopy above the last row', 50, GRANDSTAND_LIMITS.roofHeight, 'mm', ' data-bd-canopy')}
+      <p class="bd-hint">The canopy rests on the back wall and on posts in front of the parapet. It and its posts print flat.</p></section>
+    <section class="bd-box" data-bd-card="standPrint" data-bd-stand hidden><h3>Printing</h3>
+      ${field('gSection', 'Longest section', 120, GRANDSTAND_LIMITS.sectionLength)}
+      <p class="bd-hint">The grandstand is a hollow stepped shell, 3 mm thick, in sections that each print standing on their end: the stepped side lies on the plate and the rows rise straight up, so nothing overhangs. Set the longest section to what your printer can print in height. The sections join end to end with two small tabs, in the back wall and in the parapet; no cut runs through an aisle.</p></section>
     <section class="bd-box" data-bd-card="size"><h3>Size</h3>
       ${field('width', 'Width', building.width, BUILDING_LIMITS.width)}
       ${field('depth', 'Depth', building.depth, BUILDING_LIMITS.depth)}
@@ -210,6 +236,58 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 
   const form = $('.bd-form');
 
+  const isStand = () => building.kind === 'grandstand';
+  // A garage's cards, or a grandstand's.
+  function showKind() {
+    for (const box of form.querySelectorAll('section.bd-box')) {
+      const mine = box.hasAttribute('data-bd-stand');
+      if (box.hasAttribute('data-bd-fitting')) continue;
+      box.hidden = isStand() ? !mine : mine;
+    }
+    if (isStand()) $('[data-bd-fitting]').hidden = true;
+  }
+  function fillStand(g) {
+    const e = form.elements;
+    for (const [k, v] of [['gLength', g.length], ['gRows', g.rows], ['gRowDepth', g.rowDepth], ['gRowRise', g.rowRise], ['gFront', g.frontHeight], ['gBack', g.backHeight], ['gAisles', g.aisles], ['gRoofHeight', g.roofHeight], ['gSection', g.sectionLength]])
+      e[k].value = v;
+    e.gSeats.checked = g.seats;
+    e.gRoof.value = g.roof;
+    if (g.curve) {
+      e.gRadius.value = g.curve.radius;
+      e.gAngle.value = g.curve.angle;
+      e.gFacing.value = g.curve.facing;
+    }
+    drawStand();
+  }
+  function drawStand() {
+    const g = building;
+    for (const b of host.querySelectorAll('[data-bd-stand-shape]')) b.setAttribute('aria-pressed', String(b.dataset.bdStandShape === (g.curve ? 'curved' : 'straight')));
+    $('[data-bd-curve]').hidden = !g.curve;
+    form.elements.gLength.disabled = !!g.curve;
+    form.elements.gLength.value = g.length;
+    host.querySelector('[data-bd-canopy]').hidden = g.roof !== 'canopy';
+    $('[data-bd-stand-size]').textContent =
+      g.rows + ' rows, ' + fmt(g.length) + ' mm long and ' + fmt(standDepth(g)) + ' mm deep. The front row is ' + fmt(g.frontHeight) + ' mm up, behind a parapet; each row is ' + fmt(g.rowRise) + ' mm higher.';
+  }
+  function readStand() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return {
+      kind: 'grandstand',
+      length: num(e.gLength),
+      rows: num(e.gRows),
+      rowDepth: num(e.gRowDepth),
+      rowRise: num(e.gRowRise),
+      frontHeight: num(e.gFront),
+      backHeight: num(e.gBack),
+      aisles: num(e.gAisles),
+      seats: e.gSeats.checked,
+      roof: e.gRoof.value,
+      roofHeight: num(e.gRoofHeight),
+      sectionLength: num(e.gSection),
+      curve: building.curve ? { radius: num(e.gRadius), angle: num(e.gAngle), facing: e.gFacing.value } : null,
+    };
+  }
   // The rooms: their sizes, and the width or depth they make.
   function drawRooms() {
     const r = building.rooms;
@@ -285,6 +363,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const b of host.querySelectorAll('[data-bd-wall]')) b.setAttribute('aria-pressed', String(b.dataset.bdWall === wall));
   }
   function readForm() {
+    if (isStand()) return readStand();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -342,15 +421,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function sync() {
     $('[data-bd-name]').textContent = name || 'Building';
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
-    for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
-    for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
-    const walls = storeyOf(building, storey);
-    for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
-    $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
-    for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
-    $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
-    const textured = [building, ...building.upper].some((u) => u.wallTexture !== 'plain');
-    $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
+    if (isStand()) drawStand();
+    else {
+      for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
+      for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
+      const walls = storeyOf(building, storey);
+      for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
+      $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
+      for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
+      $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
+      const textured = [building, ...building.upper].some((u) => u.wallTexture !== 'plain');
+      $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
+    }
     $('.bd-model').hidden = view !== 'model';
     $('.bd-apart').hidden = view !== 'model';
     $('.bd-plates').hidden = view !== 'plate';
@@ -475,7 +557,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     showError('');
     // The width or depth the rooms make, without redrawing the room fields.
-    if (building.rooms) {
+    if (!isStand() && building.rooms) {
       const along = building.rooms.along;
       form.elements[along].value = building[along];
       const sum = $('.bd-rooms .bd-hint');
@@ -519,7 +601,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       k = storey,
       w = wall,
       opening = null;
-    if (wallOf) {
+    if (isStand()) card = /^canopy|^post/.test(id) ? 'standRoof' : 'stand';
+    else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
       w = wallOf[1];
       card = 'openings';
@@ -540,7 +623,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       card = 'walls';
     }
     if (!card) return;
-    if (k !== storey || w !== wall) {
+    if (!isStand() && (k !== storey || w !== wall)) {
       // Keep what is typed, as the storey and wall buttons do.
       try {
         building = validateBuilding(readForm());
@@ -566,7 +649,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         ? saved
             .map(
               (b) =>
-                `<button type="button" class="bd-part${b.id === savedId ? ' active' : ''}" data-bd-open="${esc(b.id)}">${icon('building')}<span><b>${esc(b.name)}</b><small>${fmt(b.building.width)} × ${fmt(b.building.depth)} mm</small></span></button>`,
+                `<button type="button" class="bd-part${b.id === savedId ? ' active' : ''}" data-bd-open="${esc(b.id)}">${icon('building')}<span><b>${esc(b.name)}</b><small>${esc(sizeLine(b.building))}</small></span></button>`,
             )
             .join('')
         : '<p class="bd-later">Buildings you save appear here and in the Library.</p>';
@@ -575,6 +658,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
   }
   function fill(b) {
+    showKind();
+    $('[name="buildingName"]').value = name;
+    if (b.kind === 'grandstand') return fillStand(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -667,6 +753,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdStandShape) {
+        const next = readStand();
+        next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;
+        fitted = false;
+        await rebuild(next);
+        drawStand();
       } else if (b.dataset.bdRooms !== undefined) {
         // One room, or two of half the width or depth each.
         const base = readForm();

@@ -9,6 +9,7 @@
 
 import { DRAWN, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, WALL_TEXTURES, roofJoints, wallJoints } from './building-texture.js';
 import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
+import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
@@ -206,6 +207,7 @@ function checkOpenings(list, dims, blocks, where) {
 
 /** The building as it is kept: known settings only, each checked. */
 export function validateBuilding(input) {
+  if (input?.kind === 'grandstand') return validateGrandstand(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -440,6 +442,7 @@ function ceilingAt(b, s, shape, x, y) {
 
 /** The parts of the kit, without geometry: their ids, names and roles. */
 export function buildingLayout(input) {
+  if (input?.kind === 'grandstand') return { ...grandstandLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
@@ -492,6 +495,8 @@ function wallOpenings(s, doors) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
+  // A grandstand comes in sections already, each no longer than set.
+  if (input?.kind === 'grandstand') return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -551,6 +556,7 @@ export function buildingCuts(input, plate) {
 }
 
 export function buildGarage(wasm, input, plate = null) {
+  if (input?.kind === 'grandstand') return buildGrandstand(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
@@ -1042,7 +1048,12 @@ export function buildGarage(wasm, input, plate = null) {
 export function printPose(part) {
   const s = part.solid;
   let turned;
-  if (part.lie) {
+  if (part.turn) {
+    // Round z first, then over on its side: a curved grandstand section stood on its end.
+    const round = s.rotate([0, 0, part.turn[0]]);
+    turned = round.rotate([part.turn[1], 0, 0]);
+    round.delete();
+  } else if (part.lie) {
     turned = s.rotate(part.lie);
     if (part.flip) {
       const over = turned.rotate([180, 0, 0]);

@@ -6,6 +6,7 @@
 // border, so the doorstep meets the road.
 import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
+import { STAND, standDepth } from './geometry/grandstand.js';
 
 export const MAX_BUILDINGS = 100;
 export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
@@ -45,29 +46,77 @@ export function layoutBuilding(saved, pose, id) {
   return { id, name: saved.name, ...(saved.id && { libraryId: saved.id }), building: validateBuilding(saved.building), pose };
 }
 
-/** A point of the building (x from its left wall, y from its front wall) on the plan. */
-export function toPlan({ building: b, pose }, [x, y]) {
-  const u = x - b.width / 2,
-    v = y - b.depth / 2,
-    c = Math.cos(pose.a),
-    s = Math.sin(pose.a);
-  return [pose.x + c * u - s * v, pose.y + s * u + c * v];
-}
 const rect = (x0, y0, x1, y1) => [
   [x0, y0],
   [x1, y0],
   [x1, y1],
   [x0, y1],
 ];
-/** The base on the plan, the ledge around the walls included. */
+/**
+ * The shape of a building on the table, in its own coordinates (as its
+ * parts are built): its outline, the box round it, and its front, the middle
+ * of the side that faces the track and the way it faces. A garage's front
+ * has its doors; a grandstand's, its parapet. A curved grandstand stands
+ * round the middle of its curve, its front an arc.
+ */
+export function shapeOf(b) {
+  let outline, front;
+  if (b.kind === 'grandstand') {
+    const D = standDepth(b),
+      ahead = b.roof === 'canopy' ? STAND.reach : 0;
+    if (!b.curve) {
+      outline = rect(0, -ahead, b.length, D);
+      front = { p: [b.length / 2, -ahead], f: [0, -1] };
+    } else {
+      const { radius: R, angle, facing } = b.curve;
+      const A = (angle * Math.PI) / 180,
+        inward = facing === 'in';
+      const near = inward ? R - ahead : R + ahead,
+        far = inward ? R + D : R - D;
+      const steps = Math.max(4, Math.ceil(angle / 3));
+      const arc = (r) => Array.from({ length: steps + 1 }, (_, k) => [r * Math.cos((A * k) / steps), r * Math.sin((A * k) / steps)]);
+      outline = [...arc(near), ...arc(far).reverse()];
+      const mid = [Math.cos(A / 2), Math.sin(A / 2)];
+      front = { p: [near * mid[0], near * mid[1]], f: inward ? [-mid[0], -mid[1]] : mid };
+    }
+  } else {
+    const m = KIT.ledge;
+    outline = rect(-m, -m, b.width + m, b.depth + m);
+    front = { p: [b.width / 2, -m], f: [0, -1] };
+  }
+  const xs = outline.map(([x]) => x),
+    ys = outline.map(([, y]) => y);
+  const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  return { outline, box, centre: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], front };
+}
+/** A point of the building, in its own coordinates, on the plan: turned by a round its middle. */
+export function toPlan({ building: b, pose }, [x, y]) {
+  const [cx, cy] = b.kind === 'grandstand' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
+  const u = x - cx,
+    v = y - cy,
+    c = Math.cos(pose.a),
+    s = Math.sin(pose.a);
+  return [pose.x + c * u - s * v, pose.y + s * u + c * v];
+}
+/** The building on the table, on the plan: a garage's base with its ledge, a grandstand's outline. */
 export function footprint(entry) {
-  const m = KIT.ledge,
-    b = entry.building;
-  return rect(-m, -m, b.width + m, b.depth + m).map((p) => toPlan(entry, p));
+  return shapeOf(entry.building).outline.map((p) => toPlan(entry, p));
 }
 /** What the plan draws: the base, each storey, its dividing walls, and the garage doors in the front wall. */
 export function planShapes(entry) {
   const b = validateBuilding(entry.building);
+  if (b.kind === 'grandstand') {
+    // Its rows, as lines along it.
+    const rows = Array.from({ length: b.rows - 1 }, (_, i) => STAND.shell + (i + 1) * b.rowDepth);
+    const line = (y) => {
+      if (!b.curve) return [[0, y], [b.length, y]];
+      const { radius: R, angle, facing } = b.curve;
+      const r = facing === 'in' ? R + y : R - y,
+        A = (angle * Math.PI) / 180;
+      return Array.from({ length: 13 }, (_, k) => [r * Math.cos((A * k) / 12), r * Math.sin((A * k) / 12)]);
+    };
+    return { base: footprint(entry), storeys: [], dividers: rows.map((y) => line(y).map((p) => toPlan(entry, p))), doors: [] };
+  }
   return {
     base: footprint(entry),
     storeys: storeyStack(b).map((s) => rect(s.ox, s.oy, s.ox + s.width, s.oy + s.depth).map((p) => toPlan(entry, p))),
@@ -154,9 +203,10 @@ function inside([x, y], loop) {
  * is no such edge.
  */
 export function snapPose(entry, loops, radius = SNAP) {
-  const b = entry.building,
-    m = KIT.ledge;
-  const front = toPlan(entry, [b.width / 2, -m]);
+  const b = entry.building;
+  const shape = shapeOf(b),
+    { p: fp, f } = shape.front;
+  const front = toPlan(entry, fp);
   const near = [];
   for (const loop of loops)
     for (let i = 0; i < loop.length; i++) {
@@ -178,10 +228,17 @@ export function snapPose(entry, loops, radius = SNAP) {
     }
   near.sort((a, c) => a.d - c.d);
   for (const { at, n } of near) {
-    const a = Math.atan2(-n[0], n[1]);
-    for (let out = 0; out <= 30; out += 1) {
-      const reach = GAP + out + m + b.depth / 2;
-      const pose = { x: at[0] + n[0] * reach, y: at[1] + n[1] * reach, a };
+    // Turned so its front faces the track: f, turned by a, points along -n.
+    const a = Math.atan2(-n[1], -n[0]) - Math.atan2(f[1], f[0]);
+    const c = Math.cos(a),
+      s = Math.sin(a);
+    const [ux, uy] = [fp[0] - shape.centre[0], fp[1] - shape.centre[1]];
+    // A curved grandstand's ends reach forward of the middle of its front: it may have to stand back that far.
+    const sag = b.kind === 'grandstand' && b.curve ? b.curve.radius * (1 - Math.cos((b.curve.angle * Math.PI) / 360)) : 0;
+    for (let out = 0; out <= 30 + sag; out += 1) {
+      // The middle of its front GAP (and more) from the edge; the rest follows.
+      const target = [at[0] + n[0] * (GAP + out), at[1] + n[1] * (GAP + out)];
+      const pose = { x: target[0] - (c * ux - s * uy), y: target[1] - (s * ux + c * uy), a };
       if (overlap({ ...entry, pose }, loops) < 0.5) return pose;
     }
   }
@@ -190,8 +247,7 @@ export function snapPose(entry, loops, radius = SNAP) {
 
 /** The outline loops of the track nearest the building, and how far its front is from them. */
 export function nearestRow(entry, rows) {
-  const b = entry.building;
-  const front = toPlan(entry, [b.width / 2, -KIT.ledge]);
+  const front = toPlan(entry, shapeOf(entry.building).front.p);
   let best = null;
   for (const row of rows)
     for (const loop of row.polys)
