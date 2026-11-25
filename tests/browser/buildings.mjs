@@ -61,7 +61,39 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.waitFor();
   assert.equal(await host.locator('[name="buildingName"]').inputValue(), 'Test garage');
   assert.equal(await action('mode-buildings').getAttribute('aria-pressed'), 'true');
+  // A two-sided roof: two panels in place of the flat roof.
+  const partCount = (n) => page.waitForFunction((n) => new RegExp('^' + n + ' parts').test(document.querySelector('[data-bd-chips]').textContent), n);
+  await host.locator('[data-bd-roof="gable"]').click();
+  await partCount(8);
+  assert.deepEqual(
+    await host.locator('.bd-parts [data-bd-part^="roof"]').evaluateAll((parts) => parts.map((p) => p.dataset.bdPart)),
+    ['roof-left', 'roof-right'],
+  );
+  assert.ok(await setting('pitch').isVisible());
+  assert.ok(await setting('ridge').isVisible());
+  // A window in the left wall: a hole, and with a frame a part of its own.
+  await host.locator('[data-bd-wall="left"]').click();
+  await host.locator('[data-bd-add="window"]').click();
+  await host.locator('.bd-opening').waitFor();
+  await partCount(8);
+  await host.locator('.bd-opening [name="frame"]').check();
+  await partCount(9);
+  assert.match(await host.locator('[data-bd-part="frame-1"]').textContent(), /Left window frame/);
+  // Placed too high, it is refused with how high it can go.
+  await host.locator('.bd-opening [name="sill"]').fill('60');
+  await host.locator('.bd-opening [name="sill"]').press('Tab');
+  await host.locator('.bd-error').waitFor();
+  assert.match(await host.locator('.bd-error').textContent(), /left window reaches too high: its top can be at most 69 mm/);
+  await host.locator('.bd-opening [name="sill"]').fill('25');
+  await host.locator('.bd-opening [name="sill"]').press('Tab');
+  await host.locator('.bd-error').waitFor({ state: 'hidden' });
+  // Removed again, and back to a flat roof.
+  await host.locator('[data-bd-remove]').click();
+  await partCount(8);
+  await host.locator('[data-bd-roof="flat"]').click();
+  await partCount(7);
+  assert.ok(await setting('pitch').isHidden());
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
-  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library');
+  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof and a framed window change its parts');
 }

@@ -1,7 +1,7 @@
 import { validateLibraryTrack } from './library-profile.js';
 import { plannerSource, plannerSupports, plannerPrint } from './planner-source.js';
 import { crossingCoupon } from './special-print.js';
-import { buildGarage, buildingLayout, printPose } from './geometry/building.js';
+import { buildGarage, printPose, printSize } from './geometry/building.js';
 import {
   buildTrack,
   fitPlate,
@@ -886,9 +886,8 @@ export function createEngine(wasm) {
     buildingParts: ({ building, plate }) => {
       const parts = buildGarage(wasm, building);
       try {
-        const sizes = buildingLayout(building).parts;
         const shown = describeParts(parts, { plate });
-        return shown.map((p) => ({ ...p, print: sizes.find((s) => s.id === p.id).print }));
+        return shown.map((p, i) => ({ ...p, print: printSize(parts[i]) }));
       } finally {
         for (const p of parts) p.solid.delete();
       }
