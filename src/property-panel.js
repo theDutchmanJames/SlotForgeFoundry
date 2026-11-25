@@ -71,6 +71,25 @@ function disclosureKey(section) {
 
 // Keep the user's place when a change of shape, tool option, or selection
 // rebuilds this form. A different tool starts with its own default sections.
+// Settings outside any folder are grouped in a card too, so a panel reads
+// as a few cards and not as one long list.
+function cardLooseSettings(panel) {
+  const scroll = panel.querySelector('.property-scroll');
+  if (!scroll) return;
+  let card = null;
+  for (const child of [...scroll.children]) {
+    if (child.tagName === 'DETAILS' || child.classList.contains('pack-own')) {
+      card = null;
+      continue;
+    }
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'property-card';
+      scroll.insertBefore(card, child);
+    }
+    card.append(child);
+  }
+}
 export function replacePropertyPanel(panel, key, html) {
   const sameTool = panel.dataset.view === key;
   const previous = new Map();
@@ -82,6 +101,7 @@ export function replacePropertyPanel(panel, key, html) {
   }
   panel.dataset.view = key;
   panel.innerHTML = html;
+  cardLooseSettings(panel);
   for (const section of panel.querySelectorAll('details')) {
     const label = disclosureKey(section);
     if (previous.has(label)) section.open = previous.get(label);

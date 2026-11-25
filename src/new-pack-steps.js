@@ -11,7 +11,7 @@ import { markingControls, markingsOf, readMarkingFields } from './markings-contr
 import { readTextureFields, textureFields } from './texture-controls.js';
 import { readTracksideFields, tracksideControls } from './trackside-controls.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
-import { BORDER_DEFAULTS, validatePackBorders } from './track-pack-rules.js';
+import { BORDER_DEFAULTS, packSectionFrom, validatePackBorders } from './track-pack-rules.js';
 
 // Each step: its group in the column on the left, its icon, a short
 // subtitle under its heading and a hint in its card.
@@ -81,18 +81,37 @@ export const NEW_PACK_STEPS = Object.freeze([
     hint: 'Barriers, advertising boards with fences and guard rails beside the road.',
   },
 ]);
+// Pack rules has the same steps, its dimensions in place of Basics, and the
+// print segments of its pieces.
+export const RULES_STEPS = Object.freeze([
+  {
+    ...NEW_PACK_STEPS[0],
+    title: 'Dimensions',
+    subtitle: 'The road width, the lanes and the corners',
+    hint: 'These dimensions apply when adding a piece. Existing pieces keep their designed dimensions.',
+  },
+  ...NEW_PACK_STEPS.slice(1),
+  {
+    key: 'segments',
+    group: 'Print',
+    icon: 'plate',
+    title: 'Print segments',
+    subtitle: 'How the pieces are cut',
+    hint: 'Every piece of a new pack starts in one road segment. Segment for printing in the Track Planner cuts the pieces of a layout to fit your print bed.',
+  },
+]);
 /** The heading of a step and the start of its card. */
 export const stepHead = (s) =>
   '<h3 class="np-h">' + esc(s.title) + '</h3><p class="np-sub">' + esc(s.subtitle) + '</p>' +
   '<div class="np-card"><p class="hint">' + esc(s.hint) +
-  (s.key === 'basics' ? '' : ' Skip this step to keep what the pack starts with; you can change it later under Pack rules or Shared print profile.') +
+  (s.key === 'basics' || s.key === 'segments' ? '' : ' Skip this step to keep what the pack starts with; you can change it later under Pack rules.') +
   '</p>';
 
 /** The column of steps, in groups, each with a line on what it holds now. */
-export function stepRail() {
+export function stepRail(steps = NEW_PACK_STEPS, legend = 'Your settings') {
   let group = '';
   return (
-    NEW_PACK_STEPS.map((s) => {
+    steps.map((s) => {
       const label = s.group !== group ? '<div class="np-group">' + esc((group = s.group)) + '</div>' : '';
       return (
         label +
@@ -101,7 +120,7 @@ export function stepRail() {
         '<span class="np-dot" aria-hidden="true"></span></button>'
       );
     }).join('') +
-    '<p class="np-legend"><span class="np-dot" aria-hidden="true"></span>Your settings</p>'
+    '<p class="np-legend"><span class="np-dot" aria-hidden="true"></span>' + esc(legend) + '</p>'
   );
 }
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -113,7 +132,7 @@ export function stepSummary(key, form) {
   const text = (name) => el(name)?.selectedOptions?.[0]?.textContent ?? value(name);
   switch (key) {
     case 'basics': {
-      if (value('startWith') !== 'empty') return text('startWith').split(' · ')[0];
+      if (el('startWith') && value('startWith') !== 'empty') return text('startWith').split(' · ')[0];
       const lanes = Number(value('packLanes'));
       return value('packWidth') + ' mm · ' + lanes + (lanes === 1 ? ' lane' : ' lanes') + ' · R1 ' + value('packR1') + ' mm';
     }
@@ -136,12 +155,18 @@ export function stepSummary(key, form) {
       return value('roadTexture') === 'none' ? 'Plain road' : text('roadTexture') + ' · ' + text('textureSize');
     case 'trackside':
       return value('tracksideSide') === 'none' ? 'None' : SIDES[value('tracksideSide')] + ' · ' + text('tracksideShape').toLowerCase();
+    case 'segments':
+      return form.dataset.summary ?? '';
   }
   return '';
 }
 /** The line under the steps: which steps are yours. */
-export function footNote(changed) {
-  const mine = NEW_PACK_STEPS.filter((s) => changed.has(s.key)).map((s) => s.title);
+export function footNote(changed, steps = NEW_PACK_STEPS) {
+  const mine = steps.filter((s) => changed.has(s.key)).map((s) => s.title);
+  if (steps !== NEW_PACK_STEPS)
+    return mine.length
+      ? 'Your changes: ' + mine.join(', ') + '. Applying gives them to every piece; new pieces start with them.'
+      : 'Nothing changed yet. Change a step, then apply it to every piece.';
   if (!mine.length) return 'Everything after Basics keeps what the pack starts with.';
   return 'Your settings: ' + mine.join(', ') + '. Everything else keeps what the pack starts with.';
 }
@@ -229,13 +254,7 @@ export function readProfileFields(forms, previous) {
 /** The borders of a pack that has none in its rules, read from one of its corners. */
 export function bordersOf(params) {
   if (!params || params.borderSide === undefined) return { ...BORDER_DEFAULTS };
-  return {
-    borderSide: params.borderSide,
-    borderWidth: params.borderEntry ?? BORDER_DEFAULTS.borderWidth,
-    borderApexWidth: params.outerApexWidth ?? params.innerApexWidth ?? params.borderApex ?? BORDER_DEFAULTS.borderApexWidth,
-    borderMount: params.borderMount ?? 'none',
-    borderJoint: params.borderJoint ?? 'none',
-  };
+  return packSectionFrom('borders', params);
 }
 const CONNECTIONS = [
   ['none', 'Plain'],

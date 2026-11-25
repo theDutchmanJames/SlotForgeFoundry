@@ -73,22 +73,34 @@
   scroll-padding-block: 12px;
 }
 
+/* Each group of settings is a card of its own, so a panel reads as a few
+   clear groups rather than one long list. */
 .property-scroll > details,
 .property-scroll > .details-body > details {
-  margin: 0;
-  border-top: 1px solid var(--line);
+  margin: 0 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--box);
 }
 
 .property-scroll > details > summary {
-  min-height: 41px;
+  min-height: 38px;
   gap: 6px;
-  padding: 8px 0;
-  font-size: 12px;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  font-weight: 700;
   color: var(--ink);
 }
 
 .property-scroll > details[open] > summary {
-  padding-bottom: 5px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  margin-bottom: 8px;
+}
+
+/* A folder inside a card: a light divider, not a card in a card. */
+.property-scroll > details details {
+  border-top: 1px solid var(--line);
 }
 
 .property-scroll > details > summary > .i {
@@ -113,7 +125,7 @@ details[open] > summary > [data-property-readout] {
 }
 
 .property-scroll > details > .details-body {
-  padding-bottom: 10px;
+  padding: 0 11px 10px;
 }
 
 .property-scroll .field {
@@ -281,12 +293,27 @@ details[open] > summary > [data-property-readout] {
   }
 }
 
-/* Apply to collection: shown when an edit changes a pack rule. */
+/* Apply to Pack Rules: always there for a piece of a pack. */
 .property-commit [data-action='apply-collection'] {
   display: none;
 }
-.property-commit.pack-rule [data-action='apply-collection'] {
+.property-commit.pack-linked [data-action='apply-collection'] {
   display: inline-flex;
+}
+/* Apply to Pack Rules takes a row of its own under the other two. */
+.property-commit [data-action='apply-collection'] {
+  grid-column: 1 / -1;
+}
+.property-commit .form-actions {
+  gap: 6px;
+}
+/* When the edit can only go to the pack, it is the main action: beside
+   Restore, in full red. */
+.property-commit.pack-rule [data-action='apply-collection'] {
+  grid-column: auto;
+  border-color: transparent;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 .property-commit.pack-rule [data-action='apply'] {
   display: none;
@@ -315,4 +342,45 @@ details[open] > summary > [data-property-readout] {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* A pack piece that does not follow its pack rules in this section. */
+.pack-own {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--good) 45%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--good) 8%, var(--panel));
+}
+.pack-own p {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.pack-own b {
+  display: block;
+  color: var(--ink);
+}
+
+/* Settings outside any folder, as a card like the folders. */
+.property-card {
+  margin: 0 0 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--box);
+}
+.property-card:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.property-card > :first-child {
+  margin-top: 0;
+}
+.property-card > :last-child {
+  margin-bottom: 0;
 }

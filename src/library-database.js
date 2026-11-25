@@ -7,6 +7,7 @@ import {
 import { currentJointSettings } from './geometry/joint-fit.js';
 import {
   applyPackBorders,
+  packRuleExtras,
   rulesFromPieces,
   takesPackBorders,
   validatePackBorders,
@@ -388,10 +389,12 @@ export function setCollectionProfile(
   updateRevision(db, id, profile, row.revision);
 }
 
+// The dimensions of a pack. Its lines, texture, trackside and borders stay
+// unless the rules given set them.
 export function setCollectionRules(db, id, rules, { expectedRevision } = {}) {
   const row = collectionRow(db, id, expectedRevision);
   const checked = validatePackRules(
-    rules,
+    { ...packRuleExtras(JSON.parse(row.rules)), ...rules },
     validateLibraryProfile(JSON.parse(row.profile)),
   );
   db.run('UPDATE collections SET rules=?, revision=? WHERE id=?', [

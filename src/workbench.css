@@ -161,6 +161,7 @@ body:has(.track-library[open]) .appbar nav .active {
   padding: 0;
 }
 #track-sections .component-nav button {
+  position: relative;
   flex-direction: column;
   justify-content: center;
   min-height: 54px;
@@ -189,11 +190,20 @@ body:has(.track-library[open]) .appbar nav .active {
   border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
   background: var(--sel);
 }
+/* The open section in muted red; a dot where the piece has its own settings. */
 #track-sections .component-nav button.active {
-  border-color: var(--accent-fill);
-  background: var(--accent-fill);
-  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--ink);
   box-shadow: none;
+}
+#track-sections .component-nav button.active .i {
+  color: var(--accent-text);
+}
+#track-sections .component-nav button .np-dot {
+  position: absolute;
+  top: 6px;
+  right: 7px;
 }
 .track-selection {
   position: absolute;
@@ -422,61 +432,70 @@ body:has(.track-library[open]) .appbar nav .active {
   font-family: var(--font-ui);
 }
 
-/* Track Set's specials shelf: every special the pack can have, two a row. */
-.pack-specials h3 {
-  margin: 4px 0 6px;
-  color: var(--muted);
-  font: 700 10.5px var(--font-ui);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+
+/* The pack in Track Set: the pieces in groups, a dot on a piece with its own
+   settings, and the specials it can still have as small buttons. */
+.pack-rules-button {
+  justify-content: flex-start;
+  text-align: left;
 }
-.pack-special-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-}
-.pack-special {
+.pack-rules-button span {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 3px;
   min-width: 0;
-  padding: 6px 4px 5px;
-  border: 1px dashed color-mix(in srgb, var(--ink) 22%, var(--line));
-  border-radius: 8px;
-  background: transparent;
-  text-align: center;
 }
-.pack-special.owned {
-  border-style: solid;
-  border-color: var(--line);
-  background: var(--box);
-}
-.pack-special:hover {
-  background: var(--hover);
-}
-.pack-special.active {
-  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
-  background: var(--sel);
-}
-.pack-special .lib-thumb {
-  width: 100%;
-  height: 28px;
-}
-.pack-special b {
-  max-width: 100%;
+.pack-rules-button small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  font-weight: 600;
-}
-.pack-special small {
-  color: var(--accent-text);
   font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+.pack-group {
+  margin: 8px 2px 2px;
+  color: var(--muted);
+  font: 700 10px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.pack-pieces .pack-group:first-child {
+  margin-top: 0;
+}
+.pack-piece span:not(.np-dot) {
+  flex: 1;
+}
+.pack-special-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+.pack-add-special {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px 4px 6px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 22%, var(--line));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11.5px;
   font-weight: 600;
 }
-.pack-special.owned small {
+.pack-add-special .i {
+  width: 13px;
+  height: 13px;
+  color: var(--accent-text);
+}
+.pack-add-special:hover {
+  background: var(--hover);
+}
+.pack-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px;
   color: var(--muted);
-  font-weight: 500;
+  font-size: 11px;
 }

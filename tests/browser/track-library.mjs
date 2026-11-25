@@ -20,6 +20,7 @@ export async function checkTrackLibrary({
   const setting = (key) => dialog.locator('[name="' + key + '"]');
   const card = (name) =>
     dialog.getByRole('button', { name: new RegExp('^' + name + '\\b') });
+  const step = (key) => dialog.locator('.np-rail [data-np-go="' + key + '"]');
   const basic = 'SlotForge Basic';
   const collection = 'Club test collection';
   async function library(group) {
@@ -127,11 +128,14 @@ export async function checkTrackLibrary({
   await openMember('Full straight');
   await checkPrint(200, 2);
   await library(basic);
-  await control('profile').click();
-  await snap('track-library-shared-profile');
+  // The shared print profile is part of Pack rules.
+  await control('rules').click();
+  await step('slot').click();
+  await snap('track-library-pack-rules');
   assert.equal(await setting('slotDepth').inputValue(), '8');
   await setting('slotDepth').fill('9');
-  await control('commit-profile').click();
+  assert.ok(await step('slot').evaluate((b) => b.classList.contains('np-done')));
+  await control('commit-rules').click();
   await dialog.locator('.lib-error').waitFor();
   assert.match(await dialog.locator('.lib-error').innerText(), /slot|floor/i);
   await control('browse').click();
@@ -142,10 +146,13 @@ export async function checkTrackLibrary({
     'rejected shared dimensions made a partial change',
   );
 
-  await control('profile').click();
+  await control('rules').click();
+  await step('slot').click();
   await setting('slotDepth').fill('6.75');
+  await step('connections').click();
+  await dialog.locator('form[data-step="connections"] summary', { hasText: 'Tabs and clips' }).click();
   await setting('tabWidth').fill('8.5');
-  await control('commit-profile').click();
+  await control('commit-rules').click();
   await card('Half straight').waitFor({ timeout: 90000 });
   await openMember('Half straight');
   await checkPrint(100, 3.25);
@@ -221,9 +228,10 @@ export async function checkTrackLibrary({
   await control('commit-new').click();
   await card('Workshop straight').waitFor();
   assert.equal(await dialog.locator('[data-open-piece]').count(), 1);
-  await control('profile').click();
+  await control('rules').click();
+  await step('slot').click();
   await setting('slotDepth').fill('6.5');
-  await control('commit-profile').click();
+  await control('commit-rules').click();
   await openMember('Workshop straight');
   await checkPrint(123, 3.5);
   await library(collection);
@@ -242,7 +250,6 @@ export async function checkTrackLibrary({
   // A new pack in steps: Basics first, then any optional step.
   await library(basic);
   await control('new').click();
-  const step = (key) => dialog.locator('.np-rail [data-np-go="' + key + '"]');
   const shown = () => dialog.locator('.np-step:not([hidden])').getAttribute('data-step');
   // Without a name the steps after Basics stay shut.
   await step('borders').click();
@@ -281,6 +288,36 @@ export async function checkTrackLibrary({
   await openMember('Full straight');
   await tab('borders').click();
   assert.equal(await input('outerApexWidth').inputValue(), '20');
+  // Apply to Pack Rules is always there for a piece of a pack; with nothing
+  // of its own it says the piece follows the pack already.
+  const toPack = action('apply-collection');
+  assert.ok(await toPack.isVisible());
+  await toPack.click();
+  await waitText('#notice', 'already follows the pack rules');
+  // Borders of its own on this piece only: a dot on the section, on the
+  // piece in the pack column, and a note with Use the pack rules.
+  await input('borderSide').selectOption('outer');
+  await live();
+  await action('apply').click();
+  await page.locator('#track-sections [data-tab="borders"] .np-dot').waitFor();
+  await page.locator('#pack-rail [data-pack-piece][aria-current="true"] .np-dot').waitFor();
+  await page.locator('.pack-own').waitFor();
+  await action('use-pack-section').click();
+  await page.locator('#track-sections [data-tab="borders"] .np-dot').waitFor({ state: 'detached' });
+  assert.equal(await input('borderSide').inputValue(), 'both');
+  // The same edit applied to the pack rules: every straight and corner takes it.
+  await input('borderSide').selectOption('outer');
+  await live();
+  await toPack.click();
+  await waitText('#notice', 'Pack rules for borders');
+  await library('Bordered pack');
+  await control('rules').click();
+  assert.equal(await setting('borderSide').inputValue(), 'outer');
+  await control('browse').click();
+  await openMember('R1 corner');
+  await tab('borders').click();
+  assert.equal(await input('borderSide').inputValue(), 'outer');
+  assert.equal(await input('outerApexWidth').inputValue(), '35');
   // A corner added to the pack afterwards starts with its borders.
   await library('Bordered pack');
   await control('create-piece').click();
@@ -290,7 +327,7 @@ export async function checkTrackLibrary({
   await borderedCreator.waitFor({ state: 'detached' });
   const bordered = JSON.parse((await download(action('save'))).bytes).track.params;
   assert.equal(bordered.kind, 'curve');
-  assert.equal(bordered.borderSide, 'both');
+  assert.equal(bordered.borderSide, 'outer');
   assert.deepEqual([bordered.borderEntry, bordered.borderApex, bordered.borderExit], [20, 35, 20]);
   await library(collection);
   const membersBefore = await dialog.locator('[data-open-piece]').count();

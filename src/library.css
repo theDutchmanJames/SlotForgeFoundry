@@ -326,13 +326,6 @@ dialog.track-library.lib-wide[open] {
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
-.np-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--good);
-}
 .np-rail button .np-dot {
   margin-top: 6px;
   visibility: hidden;

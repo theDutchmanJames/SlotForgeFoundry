@@ -121,3 +121,55 @@ test('the line under the steps names the steps you changed', () => {
   assert.equal(NEW_PACK_STEPS[0].key, 'basics');
   for (const s of NEW_PACK_STEPS) assert.ok(s.group && s.icon && s.title && s.subtitle && s.hint, s.key);
 });
+
+test('saving the dimensions of a pack keeps its lines, texture, trackside and borders', async (t) => {
+  const { setCollectionRules, setCollectionMarkings } = await import('../src/library-database.js');
+  const db = newLibraryDatabase(SQL, false);
+  t.after(() => db.close());
+  const pack = starterPack(2);
+  const id = addCollection(db, 'Kept', pack.profile, pack.pieces, pack.rules);
+  const first = readCollections(db).find((c) => c.id === id);
+  setCollectionBorders(db, id, { borderSide: 'outer' }, { expectedRevision: first.revision });
+  const second = readCollections(db).find((c) => c.id === id);
+  setCollectionMarkings(db, id, { whiteLineRoad: 'both' }, { expectedRevision: second.revision });
+  const third = readCollections(db).find((c) => c.id === id);
+  setCollectionRules(db, id, { ...pack.rules, r1InnerRadius: 225 }, { expectedRevision: third.revision });
+  const after = readCollections(db).find((c) => c.id === id);
+  assert.equal(after.rules.r1InnerRadius, 225);
+  assert.equal(after.rules.borders?.borderSide, 'outer');
+  assert.equal(after.rules.markings?.whiteLineRoad, 'both');
+});
+
+test('a piece with settings of its own is found, and follows its pack again on request', async () => {
+  const { packDifferences, withPackSections, changedPackSections, packSectionFrom } = await import(
+    '../src/track-pack-rules.js'
+  );
+  const pack = starterPack(2);
+  const corner = structuredClone(pack.pieces.find((p) => p.track.params.kind === 'curve').track.params);
+  const straight = structuredClone(pack.pieces.find((p) => p.track.params.kind === 'straight').track.params);
+  // A pack without these rules: nothing to differ from.
+  assert.equal(packDifferences(corner, pack.rules).size, 0);
+  const rules = {
+    ...pack.rules,
+    borders: { ...BORDER_DEFAULTS, borderSide: 'both', borderWidth: 20, borderApexWidth: 30 },
+    markings: { whiteLineRoad: 'both' },
+    trackside: { tracksideSide: 'outer' },
+  };
+  assert.deepEqual([...packDifferences(corner, rules)].sort(), ['borders', 'markings', 'trackside']);
+  const following = withPackSections(corner, rules, ['borders', 'markings', 'trackside']);
+  assert.equal(packDifferences(following, rules).size, 0);
+  assert.deepEqual([following.borderEntry, following.borderApex], [20, 30]);
+  // One side of its own again: only that part differs.
+  const own = { ...following, outerApexWidth: 50 };
+  assert.deepEqual([...packDifferences(own, rules)], ['borders']);
+  assert.deepEqual(changedPackSections(following, own), ['borders']);
+  assert.deepEqual(changedPackSections(following, { ...following, kerbWidth: 7 }), ['markings']);
+  // A pack takes its rules from a piece: a straight keeps the pack's apex.
+  const edged = withPackSections(straight, rules, ['borders']);
+  assert.deepEqual(packSectionFrom('borders', { ...edged, borderEntry: 18 }, rules), {
+    ...rules.borders,
+    borderWidth: 18,
+  });
+  assert.equal(packSectionFrom('borders', { ...following, outerApexWidth: 44 }, rules).borderApexWidth, 44);
+  assert.equal(packSectionFrom('markings', following, rules).whiteLineRoad, 'both');
+});

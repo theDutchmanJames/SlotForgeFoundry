@@ -38,15 +38,16 @@ import {
 } from './connection-controls.js';
 const num = (p, k, label, unit, opts) => field(k, label, p[k], unit, opts);
 const full = (act, label, glyph) => button(act, label, glyph, 'secondary full');
-const settingsForm = (body, label) =>
+// A piece of a pack also has Apply to Pack Rules, always shown.
+const settingsForm = (body, label, linked = false) =>
   '<form id="settings-form"><div class="property-scroll">' + body + '</div>' +
-  '<div class="property-commit">' +
+  '<div class="property-commit' + (linked ? ' pack-linked' : '') + '">' +
   '<div class="pack-apply" data-pack-apply hidden></div>' +
   '<div id="live-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">Live view</div>' +
   '<div class="form-actions">' +
   button('restore', 'Restore', 'reset', 'secondary') +
   button('apply', label, 'check', 'primary') +
-  button('apply-collection', 'Apply to collection', 'check', 'primary') +
+  button('apply-collection', 'Apply to Pack Rules', 'settings', 'soft') +
   '</div></div></form>';
 
 const separateAddition = (enabled) =>
@@ -199,7 +200,9 @@ export function sectionForField(field, fallback) {
   return SECTION_OF_FIELD.find(([re]) => re.test(field ?? ''))?.[1] ?? fallback;
 }
 
-export function trackNavigation(tab) {
+// A dot marks the sections where a pack piece has settings of its own, not
+// its pack rules.
+export function trackNavigation(tab, own = new Set()) {
   return (
     '<nav class="component-nav" aria-label="Track components">' +
     trackTasks
@@ -211,11 +214,15 @@ export function trackNavigation(tab) {
           (id === tab) +
           '" class="' +
           (id === tab ? 'active' : '') +
-          '">' +
+          '"' +
+          (own.has(id) ? ' title="' + label + ': own settings, not the pack rules"' : '') +
+          '>' +
           icon(glyph) +
           '<span>' +
           label +
-          '</span></button>',
+          '</span>' +
+          (own.has(id) ? '<span class="np-dot" aria-label="Own settings"></span>' : '') +
+          '</button>',
       )
       .join('') +
     '</nav>'
@@ -232,9 +239,15 @@ export function syncPitAssemblyNotes(form, params) {
   if (notes.innerHTML !== markup) notes.innerHTML = markup;
 }
 
-export function trackInspector(project, tab, draft = {}) {
+// pack: for a piece of a pack, whether this section has settings of its own.
+export function trackInspector(project, tab, draft = {}, pack = null) {
   const p = project.track.params;
   let html = '';
+  if (pack?.own)
+    html +=
+      '<div class="pack-own"><p><b>Own settings</b>This piece does not follow the pack rules here.</p>' +
+      button('use-pack-section', 'Use the pack rules', 'reset', 'secondary') +
+      '</div>';
   if (tab === 'geometry') {
     const kinds = [
       ['curve', 'Circular bend'],
@@ -487,7 +500,7 @@ export function trackInspector(project, tab, draft = {}) {
   return (
     '<h3 class="property-title">' + icon(glyph) + title + '</h3>' +
     '<p class="property-note">' + trackNotes[tab] + '</p>' +
-    settingsForm(html, 'Apply changes')
+    settingsForm(html, pack ? 'Apply to this piece' : 'Apply changes', Boolean(pack))
   );
 }
 

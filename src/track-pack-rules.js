@@ -2,8 +2,14 @@ import { defaultTrack } from './track.js';
 import { braidSpan } from './geometry/solids.js';
 import { TRACKSIDE_DEFAULTS, validateTrackside } from './geometry/trackside.js';
 import { validatePaint } from './geometry/paint-guides.js';
-import { MARKING_DEFAULTS } from './markings-controls.js';
-import { TEXTURE_DEFAULTS, validateRoadTexture } from './geometry/road-texture.js';
+import { MARKING_DEFAULTS, markingsOf } from './markings-controls.js';
+import {
+  TEXTURE_DEFAULTS,
+  TEXTURE_KEYS,
+  takesRoadTexture,
+  textureSettings,
+  validateRoadTexture,
+} from './geometry/road-texture.js';
 
 // The white lines and kerbstones every piece of a pack starts with. Optional,
 // like its trackside accessories.
@@ -223,3 +229,109 @@ export function rulesFromPieces(pieces, name) {
     return defaults;
   }
 }
+
+// The parts of a pack's rules a piece may still set its own way: its
+// borders, lines and kerbs, road texture and trackside accessories. The
+// shared print profile, the road width and the lanes it cannot.
+export const PACK_SECTIONS = Object.freeze(['borders', 'markings', 'texture', 'trackside']);
+/** The section of Track Set that shows each part. */
+export const PACK_SECTION_TAB = Object.freeze({
+  borders: 'borders',
+  markings: 'markings',
+  texture: 'markings',
+  trackside: 'trackside',
+});
+const BORDER_KEYS = [
+  'borderSide',
+  'borderEntry',
+  'borderApex',
+  'borderExit',
+  'apexPosition',
+  'innerApexWidth',
+  'outerApexWidth',
+  'innerApexPosition',
+  'outerApexPosition',
+  'borderMount',
+  'borderJoint',
+];
+/** The piece settings each part covers. */
+export const PACK_SECTION_KEYS = Object.freeze({
+  borders: BORDER_KEYS,
+  markings: [...Object.keys(MARKING_DEFAULTS), 'whiteLineGroove'],
+  texture: TEXTURE_KEYS,
+  trackside: Object.keys(TRACKSIDE_DEFAULTS),
+});
+const isTurnout = (params) => params.special?.type === 'turnout';
+/**
+ * The settings a pack's rules give this piece for one part, or null when the
+ * pack has no rule for it or the piece does not take it.
+ */
+export function packSectionFor(section, rules = {}, params) {
+  if (section === 'borders')
+    return rules.borders && takesPackBorders(params) ? packBorderParams(rules.borders, params.kind) : null;
+  if (section === 'markings')
+    return rules.markings && !isTurnout(params) ? validatePackMarkings(rules.markings) : null;
+  if (section === 'texture')
+    return rules.texture && takesRoadTexture(params) ? { ...TEXTURE_DEFAULTS, ...rules.texture } : null;
+  if (section === 'trackside')
+    return rules.trackside && !isTurnout(params) ? { ...TRACKSIDE_DEFAULTS, ...rules.trackside } : null;
+  return null;
+}
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** The parts in which this piece has settings of its own, not its pack's. */
+export function packDifferences(params, rules = {}) {
+  const have = { ...defaultTrack(), ...params, ...textureSettings(params), ...markingsOf(params) };
+  return new Set(
+    PACK_SECTIONS.filter((section) => {
+      const want = packSectionFor(section, rules, params);
+      return want && Object.entries(want).some(([key, value]) => !same(have[key], value));
+    }),
+  );
+}
+/** This piece with its pack's settings for these parts. */
+export function withPackSections(params, rules, sections) {
+  const next = { ...params };
+  for (const section of sections) {
+    const want = packSectionFor(section, rules, params);
+    if (!want) continue;
+    if (section === 'markings') delete next.whiteLineGroove;
+    for (const [key, value] of Object.entries(want))
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+  }
+  return next;
+}
+/** The parts an edit of a piece changed. */
+export function changedPackSections(before, after) {
+  return PACK_SECTIONS.filter((section) =>
+    PACK_SECTION_KEYS[section].some((key) => !same(before[key], after[key])),
+  );
+}
+/**
+ * The rule a pack takes from one of its pieces for a part. A straight has no
+ * apex of its own, so the pack keeps the apex it has for its corners.
+ */
+export function packSectionFrom(section, params, rules = {}) {
+  if (section === 'borders')
+    return validatePackBorders({
+      borderSide: params.borderSide ?? 'none',
+      borderWidth: params.borderEntry ?? BORDER_DEFAULTS.borderWidth,
+      borderApexWidth:
+        params.kind === 'curve'
+          ? (params.outerApexWidth ?? params.innerApexWidth ?? params.borderApex ?? BORDER_DEFAULTS.borderApexWidth)
+          : (rules.borders?.borderApexWidth ?? BORDER_DEFAULTS.borderApexWidth),
+      borderMount: params.borderMount ?? 'none',
+      borderJoint: params.borderJoint ?? 'none',
+    });
+  if (section === 'markings') return validatePackMarkings(markingsOf(params));
+  if (section === 'texture') return validatePackTexture(textureSettings(params));
+  return validatePackTrackside(
+    Object.fromEntries(Object.keys(TRACKSIDE_DEFAULTS).map((key) => [key, params[key] ?? TRACKSIDE_DEFAULTS[key]])),
+  );
+}
+/** The extra parts of a pack's rules, kept when its dimensions are saved. */
+export const packRuleExtras = (rules = {}) =>
+  Object.fromEntries(['trackside', 'markings', 'texture', 'borders'].filter((k) => rules[k] !== undefined).map((k) => [k, rules[k]]));
+/** Whether a piece takes this part of its pack's rules at all. */
+export const takesPackSection = (section, params) =>
+  packSectionFor(section, { borders: BORDER_DEFAULTS, markings: {}, texture: {}, trackside: {} }, params) !== null;

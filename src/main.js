@@ -122,6 +122,14 @@ import {
 } from './library-profile.js';
 import { COLLECTION_RULE_FIELDS, packRuleSlotChanges } from './library-database.js';
 import { pieceDetail, sharedLabels, trackThumbnail } from './library-view.js';
+import {
+  changedPackSections,
+  packDifferences,
+  packSectionFrom,
+  PACK_SECTION_TAB,
+  takesPackSection,
+  withPackSections,
+} from './track-pack-rules.js';
 import { changeJointCount, parseConnectionControls, syncJointCountControls } from './connection-controls.js';
 import { editConnectorPlacement } from './connector-placement.js';
 import { createWorkerClient } from './worker-client.js';
@@ -835,15 +843,21 @@ function renderInspector() {
           },
         }
       : project;
+  // The sections where a pack piece has settings of its own.
+  const ownTabs = new Set(
+    project.mode === 'track' && project.libraryPiece && currentPack?.id === project.libraryPiece.collectionId
+      ? [...packDifferences(project.track.params, currentPack.rules)].map((s) => PACK_SECTION_TAB[s])
+      : [],
+  );
   if (project.mode === 'track')
-    $('#track-sections').innerHTML = trackNavigation(trackTab);
+    $('#track-sections').innerHTML = trackNavigation(trackTab, ownTabs);
   replacePropertyPanel(
     $('#inspector'),
     project.mode === 'track'
       ? 'track/' + trackTab + '/' + (project.libraryPiece?.pieceId ?? '')
       : 'editor/' + (pickMode === 'measure' ? 'measure' : editorTab),
     project.mode === 'track'
-      ? trackInspector(display, trackTab, draft)
+      ? trackInspector(display, trackTab, draft, project.libraryPiece ? { own: ownTabs.has(trackTab) } : null)
       : editorInspector(editorTab, {
           creation: { ...creationContext(), draft },
           features: { ...featureContext(op), draft },
@@ -1940,31 +1954,6 @@ async function openLibrary({ collectionId, screen } = {}) {
     validateTrack: (track) => call('validateLibraryTrack', track),
     createPiece: (collection, save) => drawTrack(false, collection, save),
     openPiece: openPackPiece,
-    updateProfile: async (collection, oldRevision) => {
-      // A library edit from the STL workspace changes the stored recipes.
-      // Only rebuild a linked track when it is the active workpiece.
-      if (!canSavePiece) return;
-      const link = project.libraryPiece;
-      if (
-        link?.collectionId !== collection.id ||
-        link.revision !== oldRevision ||
-        collection.revision !== oldRevision + 1
-      )
-        return;
-      const next = {
-        ...project,
-        track: trackWithProfile(project.track, collection.profile),
-        libraryPiece: { ...link, revision: collection.revision },
-      };
-      if (
-        !(await rebuild(next, {
-          onError: (e) => {
-            throw e;
-          },
-        }))
-      )
-        throw Error('Open the piece to reload its shared profile.');
-    },
   });
 }
 actions['track-library'] = openLibrary;
@@ -3710,26 +3699,43 @@ function renderPackRail(track) {
     .join('')
     .slice(0, 3)
     .toUpperCase();
-  const pieces = pack.pieces
-    .map(
-      (p) =>
-        '<button type="button" class="pack-piece' +
-        (p.id === link.pieceId ? ' active' : '') +
-        '" data-pack-piece="' +
-        esc(p.id) +
-        '"' +
-        (p.id === link.pieceId ? ' aria-current="true"' : '') +
-        '>' +
-        trackThumbnail(p.track, pack.profile) +
-        '<span><b>' +
-        esc(p.name) +
-        '</b><small>' +
-        esc(pieceDetail(p.track)) +
-        '</small>' +
-        usedInNote(p.id) +
-        '</span></button>',
-    )
+  // The open piece as it is now, the others as the pack has them.
+  const paramsOf = (p) => (p.id === link.pieceId ? project.track.params : p.track.params);
+  const own = (p) => packDifferences(paramsOf(p), r).size > 0;
+  const row = (p) =>
+    '<button type="button" class="pack-piece' +
+    (p.id === link.pieceId ? ' active' : '') +
+    '" data-pack-piece="' +
+    esc(p.id) +
+    '"' +
+    (p.id === link.pieceId ? ' aria-current="true"' : '') +
+    '>' +
+    trackThumbnail(p.track, pack.profile) +
+    '<span><b>' +
+    esc(p.name) +
+    '</b><small>' +
+    esc(pieceDetail(p.track)) +
+    '</small>' +
+    usedInNote(p.id) +
+    '</span>' +
+    (own(p) ? '<span class="np-dot" title="Own settings, not the pack rules"></span>' : '') +
+    '</button>';
+  const groups = [
+    ['Straights', (p) => !p.track.params.special && p.track.params.kind === 'straight'],
+    ['Corners', (p) => !p.track.params.special && p.track.params.kind === 'curve'],
+    ['Drawn pieces', (p) => !p.track.params.special && !['straight', 'curve'].includes(p.track.params.kind)],
+    ['Special pieces', (p) => Boolean(p.track.params.special)],
+  ];
+  const pieces = groups
+    .map(([title, takes]) => {
+      const members = pack.pieces.filter(takes);
+      return members.length
+        ? '<div class="pack-group">' + esc(title) + '</div>' + members.map(row).join('')
+        : '';
+    })
     .join('');
+  const anyOwn = pack.pieces.some(own);
+  const ruleLine = packRuleSummary(r);
   rail.innerHTML =
     '<div class="pack-head"><span class="pack-tile">' +
     esc(initials) +
@@ -3738,57 +3744,54 @@ function renderPackRail(track) {
     '</b><small>' +
     esc(fmt(r.width ?? 0) + ' mm · ' + (r.lanes ?? 2) + ' lanes · ' + pack.pieces.length + ' pieces') +
     '</small></span></div>' +
-    button('pack-rules', 'Pack rules', 'settings', 'secondary full') +
+    '<button type="button" data-action="pack-rules" class="primary full pack-rules-button">' +
+    icon('settings') +
+    '<span><b>Pack rules</b>' +
+    (ruleLine ? '<small>' + esc(ruleLine) + '</small>' : '') +
+    '</span></button>' +
     '<div class="pack-pieces" role="list">' +
     pieces +
     '</div>' +
-    specialShelf(pack, link) +
+    specialShelf(pack) +
+    (anyOwn
+      ? '<p class="np-legend pack-legend"><span class="np-dot" aria-hidden="true"></span>Own settings, not the pack rules</p>'
+      : '') +
     '<div class="pack-tools">' +
     button('pack-add-piece', 'Add piece', 'plus', 'secondary') +
     button('track-library', 'Library', 'library', 'quiet') +
     '</div>';
 }
-// The special pieces this pack can have: the ones it has open as pieces,
-// the others are added from its rules with one click.
-function specialShelf(pack, link) {
-  const tiles = shelfSpecialsFor(pack.rules?.lanes ?? 2)
-    .map(([type, name]) => {
-      const owned = pack.pieces.find((p) => p.track.params.special?.type === type);
-      // Some rules cannot make every special (a narrow road for the chicane,
-      // say). The tile stays; choosing it explains why.
-      let picture = '';
-      try {
-        picture = trackThumbnail(owned?.track ?? packSpecialTrack(pack, type), pack.profile);
-      } catch {
-        /* Drawn without a picture. */
-      }
-      const attrs = owned
-        ? ' data-pack-piece="' + esc(owned.id) + '"' +
-          (owned.id === link.pieceId ? ' aria-current="true"' : '') +
-          ' title="Open ' + esc(owned.name) + '"'
-        : ' data-add-special="' + esc(type) + '" title="Add a ' + esc(name.toLowerCase()) + ' to this pack"';
-      return (
-        '<button type="button" class="pack-special' +
-        (owned ? ' owned' : '') +
-        (owned?.id === link.pieceId ? ' active' : '') +
-        '"' +
-        attrs +
-        '>' +
-        picture +
-        '<b>' +
+// What the pack rules set beyond the road: one short line.
+function packRuleSummary(r) {
+  const on = [];
+  if (r.borders && r.borders.borderSide !== 'none') on.push('borders');
+  if (r.markings && (r.markings.whiteLineRoad !== 'none' || r.markings.whiteLineBorder !== 'none')) on.push('white lines');
+  if (r.markings && (r.markings.roadKerbSide !== 'none' || r.markings.kerbEdge !== 'none')) on.push('kerbs');
+  if (r.texture && r.texture.roadTexture !== 'none') on.push('cobbles');
+  if (r.trackside && r.trackside.tracksideSide !== 'none') on.push('trackside');
+  return on.length ? on.join(' · ').replace(/^./, (c) => c.toUpperCase()) : '';
+}
+// The special pieces this pack can still have, added from its rules with one
+// click. The ones it has are listed with its pieces.
+function specialShelf(pack) {
+  const chips = shelfSpecialsFor(pack.rules?.lanes ?? 2)
+    .filter(([type]) => !pack.pieces.some((p) => p.track.params.special?.type === type))
+    .map(
+      ([type, name]) =>
+        '<button type="button" class="pack-add-special" data-add-special="' +
+        esc(type) +
+        '" title="Add a ' +
+        esc(name.toLowerCase()) +
+        ' to this pack">' +
+        icon('plus') +
         esc(SPECIAL_SHORT_NAMES[type] ?? name) +
-        '</b><small>' +
-        (owned ? 'In pack' : '+ Add') +
-        '</small></button>'
-      );
-    })
+        '</button>',
+    )
     .join('');
-  return (
-    '<section class="pack-specials" aria-label="Special pieces"><h3>Special pieces</h3>' +
-    '<div class="pack-special-grid">' +
-    tiles +
-    '</div></section>'
-  );
+  return chips
+    ? '<section class="pack-specials" aria-label="Add a special piece"><div class="pack-group">Add a special piece</div>' +
+        '<div class="pack-special-chips">' + chips + '</div></section>'
+    : '';
 }
 // Adds a special piece made from the pack's rules, then opens it.
 async function addSpecialToPack(type) {
@@ -3854,11 +3857,20 @@ function packRuleChanges() {
     (k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null),
   );
 }
+// The parts of the pack rules a piece may set its own way (borders, lines,
+// texture, trackside) that a pending edit changes.
+function packSectionChanges() {
+  if (project.mode !== 'track' || !project.libraryPiece || !activeTrial) return [];
+  const after = activeTrial.next.track.params;
+  return changedPackSections(project.track.params, after).filter((s) => takesPackSection(s, after));
+}
 function syncPackApply(form = $('#settings-form')) {
   const commit = form?.querySelector('.property-commit');
   const box = form?.querySelector('[data-pack-apply]');
   if (!commit || !box) return;
   const changed = liveState === 'error' ? [] : packRuleChanges();
+  // A pack rule goes to the pack only; borders, lines, texture and trackside
+  // go to this piece, or to the pack rules as well.
   commit.classList.toggle('pack-rule', changed.length > 0);
   box.hidden = !changed.length;
   if (!changed.length) return;
@@ -3891,46 +3903,125 @@ function offCentreLoss(changed, p) {
   );
   return packRuleSlotNote(packRuleSlotChanges(pieces, values));
 }
-// Applies the edit to this piece, then writes the pack rules into every
-// piece of its pack. The library checks all pieces first.
+const PACK_SECTION_SETTERS = {
+  borders: ['setBorders', 'borders'],
+  markings: ['setMarkings', 'lines and kerbs'],
+  texture: ['setTexture', 'road surface'],
+  trackside: ['setTrackside', 'trackside'],
+};
+// Applies the edit to this piece, then makes it the pack's: the shared
+// profile and dimensions it changed, and its borders, lines, texture or
+// trackside as the pack rules for every piece. The library checks all pieces
+// first.
 async function applyToCollectionAction() {
   const link = project.libraryPiece;
   if (!link) return applyForm();
-  const previous = project;
-  if (!(await applyForm())) return;
-  const store = await openTrackLibrary();
-  const values = Object.fromEntries(
-    COLLECTION_RULE_FIELDS.map((k) => [k, project.track.params[k]]),
-  );
-  let result;
-  try {
-    result = await store.applyToCollection(
-      link.collectionId,
-      {
-        profile: profileFromTrack(project.track),
-        values,
-        piece: { id: link.pieceId, track: project.track },
-      },
-      {
-        expectedRevision: Math.max(
-          link.revision,
-          savedPackRevisions.get(link.collectionId) ?? -Infinity,
-        ),
-      },
+  const linked = packRuleChanges().length > 0;
+  const edited = packSectionChanges();
+  // An edit for the pack: its shared settings, or its borders, lines,
+  // texture or trackside. With none, the parts in which this piece has
+  // settings of its own become the pack rules.
+  const pending = linked || edited.length > 0;
+  const sections = pending
+    ? edited
+    : currentPack?.id === link.collectionId
+      ? [...packDifferences(project.track.params, currentPack.rules)]
+      : [];
+  // An edit that is for this piece only is applied to it all the same.
+  const pieceOnly =
+    !pending &&
+    Boolean(activeTrial) &&
+    JSON.stringify(activeTrial.next.track.params) !== JSON.stringify(project.track.params);
+  if (!sections.length && !pending) {
+    notice(
+      pieceOnly
+        ? 'This edit is for this piece only, not a pack rule: use Apply to this piece.'
+        : 'This piece already follows the pack rules. Change its borders, lines, road surface, trackside or a shared setting, then apply it to the pack rules.',
     );
-  } catch (err) {
-    // The pack refused the rules (another piece cannot take them): this piece
-    // goes back too, so it never disagrees with its pack.
-    if (history.at(-1) === previous) history.pop();
-    await rebuild(previous, { record: false });
-    throw err;
+    return;
   }
-  savedPackRevisions.set(link.collectionId, result.revision);
-  project = { ...project, libraryPiece: { ...link, revision: result.revision } };
-  await savePieceToPack();
+  const previous = project;
+  if ((pending || pieceOnly) && !(await applyForm())) return;
+  const store = await openTrackLibrary();
+  let result = null;
+  if (linked) {
+    const values = Object.fromEntries(
+      COLLECTION_RULE_FIELDS.map((k) => [k, project.track.params[k]]),
+    );
+    try {
+      result = await store.applyToCollection(
+        link.collectionId,
+        {
+          profile: profileFromTrack(project.track),
+          values,
+          piece: { id: link.pieceId, track: project.track },
+        },
+        {
+          expectedRevision: Math.max(
+            link.revision,
+            savedPackRevisions.get(link.collectionId) ?? -Infinity,
+          ),
+        },
+      );
+    } catch (err) {
+      // The pack refused the rules (another piece cannot take them): this piece
+      // goes back too, so it never disagrees with its pack.
+      if (history.at(-1) === previous) history.pop();
+      await rebuild(previous, { record: false });
+      throw err;
+    }
+    savedPackRevisions.set(link.collectionId, result.revision);
+    project = { ...project, libraryPiece: { ...link, revision: result.revision } };
+  }
+  if (pending || pieceOnly) await savePieceToPack();
+  if (sections.length) {
+    // This piece keeps the edit even when another piece refuses it.
+    try {
+      for (const section of sections) {
+        const pack = (await store.list()).find((c) => c.id === link.collectionId);
+        const { revision } = await store[PACK_SECTION_SETTERS[section][0]](
+          pack.id,
+          packSectionFrom(section, project.track.params, pack.rules),
+          { expectedRevision: pack.revision },
+        );
+        savedPackRevisions.set(pack.id, revision);
+      }
+    } finally {
+      currentPack = null;
+      render();
+    }
+    // The pack rules can tidy this piece (one border width at both ends, say):
+    // it shows what the pack now holds.
+    const pack = (await store.list()).find((c) => c.id === link.collectionId);
+    const stored = pack.pieces.find((p) => p.id === link.pieceId);
+    project = { ...project, libraryPiece: { ...project.libraryPiece, revision: pack.revision } };
+    if (stored && JSON.stringify(stored.track.params) !== JSON.stringify(project.track.params))
+      await rebuild({ ...project, track: stored.track }, { record: false });
+    persist();
+  }
   currentPack = null;
   render();
-  notice(packApplyNotice(result));
+  const names = sections.map((s) => PACK_SECTION_SETTERS[s][1]);
+  notice(
+    result
+      ? packApplyNotice(result) + (names.length ? ' Pack rules for ' + names.join(', ') + ' too.' : '')
+      : 'Pack rules for ' + names.join(', ') + ' now come from this piece. Every piece of the pack follows them.',
+  );
+}
+// Gives this piece its pack's rules again for the section shown.
+async function usePackSection() {
+  const link = project.libraryPiece;
+  if (!link || currentPack?.id !== link.collectionId) return;
+  const sections = Object.keys(PACK_SECTION_TAB).filter((s) => PACK_SECTION_TAB[s] === trackTab);
+  const params = withPackSections(project.track.params, currentPack.rules, sections);
+  let failure = null;
+  if (!(await rebuild({ ...project, track: { ...project.track, params } }, { onError: (e) => (failure = e) }))) {
+    if (failure) throw failure;
+    return;
+  }
+  await savePieceToPack();
+  render();
+  notice('This piece follows the pack rules again here.');
 }
 // A pack piece is saved into its pack whenever an edit is applied.
 // The latest pack revision this window saved. Undo and reload can bring back a
@@ -4599,6 +4690,7 @@ Object.assign(actions, {
     if ((await applyForm()) && pieceOnly) await savePieceToPack();
   },
   'apply-collection': applyToCollectionAction,
+  'use-pack-section': usePackSection,
   'view-fit-warning': () => $('#live-status')?.focus(),
   'show-warning-setting': () => focusTrackSetting(activeWarning?.setting),
   'line-dimensions': () =>
