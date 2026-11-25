@@ -395,3 +395,119 @@ test('the kit notes tell to join the pieces of a cut part first', async () => {
   assert.match(notes, /1\. Join the pieces of each cut part first/);
   assert.doesNotMatch(kitNotes('Garage', b, [{ id: 'front', name: 'Front wall' }], {}), /Join the pieces/);
 });
+
+/* ---------- Storeys, and cuts across the height ---------- */
+
+const STOREYS = {
+  roof: 'gable',
+  upper: [
+    { width: 100, depth: 120, x: 10, y: 30, wallTexture: 'brick', openings: [window('front', 50, { frame: true, sill: 15 }), door('back', 30)] },
+    { width: 80, depth: 80, x: 10, y: 20, openings: [window('left', 40, { sill: 15 })] },
+  ],
+};
+
+test('a storey above has its own size, place, height, walls and openings, and stays on the one below', () => {
+  const b = validateBuilding({ upper: [{}] });
+  assert.deepEqual([b.upper[0].width, b.upper[0].depth, b.upper[0].height], [120, 180, 65], 'a new storey covers the one below');
+  const { parts, storeys } = buildingLayout(STOREYS);
+  assert.deepEqual(storeys.map((s) => [s.n, s.ox, s.oy, s.floor, s.eave]), [[1, 0, 0, 10, 85], [2, 10, 30, 89, 154], [3, 20, 50, 158, 223]]);
+  const ids = parts.map((p) => p.id);
+  for (const id of ['base', 'front', 'floor2', 'front2', 'floor3', 'right3', 'roof-left', 'frame2-1']) assert.ok(ids.includes(id), id);
+  assert.equal(parts.find((p) => p.id === 'front2').name, 'Front wall, storey 2');
+  assert.equal(parts.find((p) => p.id === 'front').name, 'Front wall, ground floor');
+  assert.equal(parts.find((p) => p.id === 'frame2-1').name, 'Front window frame, storey 2');
+  assert.throws(() => validateBuilding({ upper: [{ width: 100, x: 30 }] }), /Storey 2 reaches past the storey below/);
+  assert.throws(() => validateBuilding({ upper: [{ width: 100 }, { width: 110 }] }), /Storey 3: Width must be between 60 and 100 mm/);
+  assert.throws(() => validateBuilding({ upper: [{}, {}, {}] }), /at most 2 storeys above/);
+  assert.throws(() => validateBuilding({ upper: [{ chimney: 1 }] }), /Storey 2 has an unknown setting: chimney/);
+  assert.throws(() => validateBuilding({ upper: [{ wallTexture: 'marble' }] }), /wall texture from the list for storey 2/);
+  // Openings are checked against their own storey: its height, its walls.
+  assert.throws(() => validateBuilding({ upper: [{ height: 40, openings: [window('front', 60)] }] }), /front window, storey 2 reaches too high: .* at most 34 mm/);
+  assert.throws(() => validateBuilding({ upper: [{ width: 70, openings: [window('front', 25)] }] }), /front window, storey 2 reaches into a corner/);
+  // The garage door is on the ground floor only: a window above it is fine.
+  assert.doesNotThrow(() => validateBuilding({ upper: [{ openings: [window('front', 60)] }] }));
+});
+
+test('storeys are one body each and take no space of another; each stands in the groove of its floor', () => {
+  for (const settings of [STOREYS, { ...STOREYS, roof: 'flat', wallTexture: 'block' }, { roof: 'slope', upper: [{ x: 0, y: 0, height: 40 }] }])
+    withParts(settings, (parts, part) => {
+      const label = JSON.stringify(settings).slice(0, 60);
+      for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body ' + label);
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap by ' + both.volume() + ' ' + label);
+          both.delete();
+        }
+      const floor = part('floor2').solid.boundingBox();
+      const wall = part('front2').solid.boundingBox();
+      // The floor covers the storey below, a lip under it; the walls above stand 2 mm into its top.
+      assert.ok(near(floor.max[2], 89) && near(floor.min[2], 82), 'floor ' + floor.min[2] + '–' + floor.max[2]);
+      assert.ok(near(wall.min[2], 89 - KIT.groove), 'wall stands in the groove: ' + wall.min[2]);
+      assert.ok(near(floor.min[0], 0) && near(floor.max[0], 120));
+    });
+  // The roof covers the top storey, with its overhangs.
+  withParts(STOREYS, (_, part) => {
+    const l = part('roof-left').solid.boundingBox(),
+      r = part('roof-right').solid.boundingBox();
+    assert.ok(near(l.min[0], 20 - 3, 0.05) && near(r.max[0], 100 + 3, 0.05), 'roof across the top storey: ' + l.min[0] + ' ' + r.max[0]);
+    assert.ok(near(l.min[1], 50 - 3, 0.05) && near(l.max[1], 130 + 3, 0.05));
+  });
+});
+
+test('a wall taller than the plate is cut across its height too; bricks along a course', () => {
+  const plan = buildingCuts({ height: 160 }, SMALL);
+  for (const w of ['front', 'back', 'left', 'right']) assert.equal(plan[w + 'Z'].cuts.length, 1, w + 'Z');
+  // 180 mm side walls are cut along too; the 120 mm front lies along the plate.
+  assert.deepEqual([plan.front.cuts.length, plan.left.cuts.length], [0, 1]);
+  assert.equal(buildingCuts({}, SMALL).frontZ.cuts.length, 0, 'a low wall is not cut across');
+  const settings = { height: 160, wallTexture: 'brick', openings: [window('left', 60, { sill: 90 })] };
+  const parts = buildGarage(wasm, settings, SMALL);
+  try {
+    for (const p of parts) {
+      assert.ok(fitsPlate(printSize(p), SMALL), p.name + ' fits: ' + printSize(p));
+      assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
+    }
+    const whole = buildGarage(wasm, settings);
+    const volume = (list) => list.filter((p) => p.role === 'wall').reduce((v, p) => v + p.solid.volume(), 0);
+    const lost = volume(whole) - volume(parts);
+    assert.ok(lost >= 0 && lost < volume(whole) * 0.01, 'walls lost ' + lost);
+    freeAll(whole);
+    // The seam across the front wall runs along a course line of the bricks.
+    const low = parts.find((p) => p.id === 'front-1').solid.boundingBox();
+    const course = 3.4;
+    const rows = (low.max[2] - 10) / course;
+    assert.ok(Math.abs(rows - Math.round(rows)) < 0.05, 'seam on a course: ' + low.max[2]);
+  } finally {
+    freeAll(parts);
+  }
+  // A plain wall's seam across its height has tabs, and a cut can be moved.
+  withParts({ height: 160, cuts: { backZ: [90] } }, (_, part) => {
+    const low = part('back-1').solid.boundingBox(),
+      high = part('back-2').solid.boundingBox();
+    assert.ok(low.max[2] > 8 + 90 + 4 && low.max[2] < 8 + 90 + 5.2, 'tab reaches up: ' + low.max[2]);
+    assert.ok(near(high.min[2], 8 + 90 + 0.15, 0.02), 'next band starts at the cut: ' + high.min[2]);
+  }, SMALL);
+  assert.throws(() => buildingCuts({ height: 160, cuts: { backZ: [5] } }, SMALL), /Back wall, across its height: cut 1 at 5 mm/);
+  // A block seam moves up to half a block onto its course, so it keeps that much more from an opening.
+  const high = { height: 160, openings: [window('back', 60, { sill: 70 })], cuts: { backZ: [108] } };
+  assert.doesNotThrow(() => buildingCuts(high, SMALL));
+  assert.throws(() => buildingCuts({ ...high, wallTexture: 'block' }, SMALL), /runs along the side of a window/);
+});
+
+test('upper storeys are cut to fit as well, and the kit notes lay the floors', async () => {
+  const big = { width: 200, depth: 200, upper: [{ height: 60 }] };
+  const plan = buildingCuts(big, SMALL);
+  for (const key of ['front2', 'left2', 'floor2X', 'floor2Y']) assert.equal(plan[key].cuts.length, 1, key);
+  const { cutLabel } = await import('../src/geometry/building-cuts.js');
+  assert.equal(cutLabel('left3Z'), 'Left wall, storey 3, across its height');
+  assert.equal(cutLabel('floor2Y'), 'Floor of storey 2, front to back');
+  assert.equal(cutLabel('front'), 'Front wall');
+  const { kitNotes } = await import('../src/building-kit.js');
+  const b = validateBuilding(STOREYS);
+  const notes = kitNotes('Workshop', b, buildingLayout(b).parts, {});
+  assert.match(notes, /Lay the floor of storey 2 on the walls below/);
+  assert.match(notes, /Lay the floor of storey 3/);
+  assert.match(notes, /3 storeys: storey 2 100 × 120 mm/);
+  assert.match(notes, /The base and the floors print upside down; each roof panel/);
+});

@@ -12,15 +12,20 @@ export function kitNotes(name, b, parts, sizes) {
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
     .join('\n');
+  const upper = b.upper ?? [];
   const sloped = b.roof !== 'flat';
-  const framed = b.openings.some((o) => o.frame);
+  const framed = [b, ...upper].some((s) => s.openings.some((o) => o.frame));
   const steps = [
     ...(cut
       ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
       : []),
-    'Stand the four walls in the groove of the base. The front wall has the garage door opening.',
+    'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base. The front wall has the garage door opening.',
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(b.door === 'roller' ? ['Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.'] : []),
+    ...upper.map(
+      (_, i) =>
+        'Lay the floor of storey ' + (i + 2) + ' on the walls below: its lip drops inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top of it, and glue them as you did below.',
+    ),
     ...(framed ? ['Glue each frame around its window or door on the outside of the wall; a window frame has the cross.'] : []),
     sloped
       ? b.roof === 'gable'
@@ -28,10 +33,13 @@ export function kitNotes(name, b, parts, sizes) {
         : 'Lay the roof panel on the walls, its high edge on the tallest wall, and glue it along the tops of the walls.'
       : 'Drop the roof on: its lip fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.',
   ];
+  const storeys = upper.length
+    ? ' ' + (upper.length + 1) + ' storeys: ' + upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.width) + ' × ' + fmt(u.depth) + ' mm, ' + fmt(u.height) + ' mm high').join('; ') + '.'
+    : '';
   return [
     name + ' · SlotForge Foundry building kit',
     '',
-    'Outside ' + fmt(b.width) + ' × ' + fmt(b.depth) + ' mm, walls ' + fmt(b.height) + ' mm high to the eaves on a base ' + fmt(b.baseHeight) + ' mm high.',
+    'Outside ' + fmt(b.width) + ' × ' + fmt(b.depth) + ' mm, walls ' + fmt(b.height) + ' mm high to the eaves on a base ' + fmt(b.baseHeight) + ' mm high.' + storeys,
     '',
     'Parts, as they lie on the plate:',
     list,
@@ -39,9 +47,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Printing',
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
-    sloped
-      ? '- The base prints upside down; each roof panel lies on its underside.'
-      : '- The base and the roof print upside down, their flat top on the plate.',
+    (sloped ? '- The base' : '- The base and the roof') + (upper.length ? ' and the floors' : '') + (sloped && !upper.length ? ' prints' : ' print') + ' upside down' + (sloped ? '; each roof panel lies on its underside.' : ', their flat top on the plate.'),
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),

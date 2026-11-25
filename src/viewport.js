@@ -36,6 +36,7 @@ const COLORS = {
   buildingBase: 0x727b86,
   wall: 0xc8c1b0,
   roof: 0x4b5058,
+  floor: 0x9a938a,
   door: 0xd2444a,
   frame: 0xe8e4da,
   body: 0x5b626c,

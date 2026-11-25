@@ -12,7 +12,9 @@ import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
   KIT,
+  MAX_UPPER,
   OPENING_DEFAULTS,
+  UPPER_DEFAULTS,
   ROOFS,
   WALLS,
   WALL_NAMES,
@@ -52,12 +54,21 @@ const SIDES = [
   ['overhangRight', 'Right'],
 ];
 
-/** A place on a wall where a new window or door fits, or null. */
-export function freePlace(building, wall, opening) {
-  const L = wallLength(building, wall);
+/** A storey of a building: 0 is the ground floor, its settings at the top level. */
+export const storeyOf = (b, k) => (k ? b.upper[k - 1] : b);
+/** The building with a storey's settings changed. */
+export function withStorey(b, k, patch) {
+  if (!k) return { ...b, ...patch };
+  return { ...b, upper: b.upper.map((u, i) => (i === k - 1 ? { ...u, ...patch } : u)) };
+}
+
+/** A place on a wall of a storey where a new window or door fits, or null. */
+export function freePlace(building, wall, opening, k = 0) {
+  const s = storeyOf(building, k);
+  const L = wallLength(s, wall);
   for (let at = opening.width / 2; at <= L - opening.width / 2; at += 1) {
     try {
-      validateBuilding({ ...building, openings: [...building.openings, { ...opening, wall, at }] });
+      validateBuilding(withStorey(building, k, { openings: [...s.openings, { ...opening, wall, at }] }));
       return at;
     } catch {
       // Not here: try further along.
@@ -74,6 +85,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     sizes = {},
     view = 'model',
     wall = 'left',
+    storey = 0,
     selected = null,
     viewport = null,
     serial = 0,
@@ -114,7 +126,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <div class="bd-group">Your buildings</div>
   <div class="bd-saved"></div>
   <div class="bd-group">Coming later</div>
-  <p class="bd-later">Storeys, and clipping to the track.</p>
+  <p class="bd-later">Clipping to the track.</p>
 </aside>
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>
@@ -134,7 +146,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('width', 'Width', building.width, BUILDING_LIMITS.width)}
       ${field('depth', 'Depth', building.depth, BUILDING_LIMITS.depth)}
       ${field('height', 'Wall height', building.height, BUILDING_LIMITS.height)}
-      <p class="bd-hint">Outside the walls, up to the eaves. A one-car garage of 120 × 180 mm and 75 mm high takes practically any 1:32 slot car.</p></section>
+      <p class="bd-hint">The ground floor, outside the walls, up to the eaves. A one-car garage of 120 × 180 mm and 75 mm high takes practically any 1:32 slot car.</p></section>
+    <section class="bd-box"><h3>Storeys</h3>
+      <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-storeys></div>
+      <div class="bd-storey"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-storey>${icon('plus')}Storey</button></div>
+      <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable"')}
@@ -144,7 +161,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it; a flat roof has a lip under it that holds the walls square.</p></section>
     <section class="bd-box"><h3>Surface</h3>
-      <div class="bd-sub">Walls</div>
+      <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
       <div data-bd-roof-texture-box><div class="bd-sub">Roof</div>
       ${swatches(ROOF_TEXTURES, 'data-bd-roof-texture')}</div>
@@ -178,29 +195,53 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 
   const form = $('.bd-form');
 
-  // The windows and doors of the chosen wall, each a small card.
+  // The storeys, and the size and place of the one chosen.
+  function drawStoreys() {
+    const count = building.upper.length + 1;
+    storey = Math.min(storey, count - 1);
+    $('[data-bd-storeys]').innerHTML = Array.from(
+      { length: count },
+      (_, k) => `<button type="button" data-bd-storey="${k}" aria-pressed="${k === storey}">${k ? 'Storey ' + (k + 1) : 'Ground floor'}</button>`,
+    ).join('');
+    $('[data-bd-add-storey]').hidden = building.upper.length >= MAX_UPPER;
+    const s = storeyOf(building, storey);
+    const below = storeyOf(building, storey - 1);
+    $('.bd-storey').innerHTML = storey
+      ? `<div class="bd-opening"><div class="bd-op-head">${icon('building')}<b>Storey ${storey + 1}</b><span class="bd-grow"></span>
+    <button type="button" class="bd-remove" data-bd-remove-storey title="Remove" aria-label="Remove storey ${storey + 1}">${icon('close')}</button></div>
+  ${field('upWidth', 'Width', s.width, [60, below.width])}
+  ${field('upDepth', 'Depth', s.depth, [60, below.depth])}
+  ${field('upX', 'From the left', s.x, [0, below.width])}
+  ${field('upY', 'From the front', s.y, [0, below.depth])}
+  ${field('upHeight', 'Wall height', s.height, BUILDING_LIMITS.height)}
+  <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside.</p></div>`
+      : '<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>';
+  }
+  // The windows and doors of the chosen wall on the chosen storey, each a small card.
   function drawOpenings() {
-    const rows = building.openings
+    const s = storeyOf(building, storey);
+    const rows = s.openings
       .map((o, i) => [o, i])
       .filter(([o]) => o.wall === wall)
       .map(
         ([o, i]) => `<div class="bd-opening" data-op="${i}">
   <div class="bd-op-head">${icon(o.type === 'door' ? 'open' : 'view')}<b>${o.type === 'door' ? 'Door' : 'Window'}</b><span class="bd-grow"></span>
     <button type="button" class="bd-remove" data-bd-remove="${i}" title="Remove" aria-label="Remove this ${o.type}">${icon('close')}</button></div>
-  ${field('at', 'Place', o.at, [0, wallLength(building, o.wall)])}
-  ${field('opWidth', 'Width', o.width, [8, wallLength(building, o.wall)])}
-  ${field('opHeight', 'Height', o.height, [8, building.height])}
-  ${o.type === 'window' ? field('sill', 'Up from the floor', o.sill, [0, building.height]) : ''}
+  ${field('at', 'Place', o.at, [0, wallLength(s, o.wall)])}
+  ${field('opWidth', 'Width', o.width, [8, wallLength(s, o.wall)])}
+  ${field('opHeight', 'Height', o.height, [8, s.height])}
+  ${o.type === 'window' ? field('sill', 'Up from the floor', o.sill, [0, s.height]) : ''}
   <label class="bd-check"><input type="checkbox" name="frame"${o.frame ? ' checked' : ''}><span>Frame</span></label>
 </div>`,
       );
-    $('.bd-openings').innerHTML = rows.join('') || '<p class="bd-hint">No windows or doors in the ' + wall + ' wall.</p>';
+    const where = building.upper.length ? (storey ? ' of storey ' + (storey + 1) : ' of the ground floor') : '';
+    $('.bd-openings').innerHTML = rows.join('') || '<p class="bd-hint">No windows or doors in the ' + wall + ' wall' + where + '.</p>';
     for (const b of host.querySelectorAll('[data-bd-wall]')) b.setAttribute('aria-pressed', String(b.dataset.bdWall === wall));
   }
   function readForm() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const openings = building.openings.map((o, i) => {
+    const openings = storeyOf(building, storey).openings.map((o, i) => {
       const row = form.querySelector('[data-op="' + i + '"]');
       if (!row) return o;
       const get = (n) => row.querySelector('[name="' + n + '"]');
@@ -213,8 +254,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         frame: get('frame').checked,
       };
     });
+    const upper = storey
+      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), openings }
+      : { openings };
     return {
-      ...building,
+      ...withStorey(building, storey, upper),
       width: num(e.width),
       depth: num(e.depth),
       height: num(e.height),
@@ -232,7 +276,6 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       door: e.door.value,
       ridge: e.ridge.value,
       rises: e.rises.value,
-      openings,
       cuts: readCuts(building),
     };
   }
@@ -251,10 +294,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
     for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
     for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
-    for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === building.wallTexture));
+    const walls = storeyOf(building, storey);
+    for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
+    $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
     for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
     $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
-    $('[data-bd-texture-size]').hidden = building.wallTexture === 'plain' && (building.roof === 'flat' || building.roofTexture === 'plain');
+    const textured = [building, ...building.upper].some((u) => u.wallTexture !== 'plain');
+    $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
     $('.bd-model').hidden = view !== 'model';
     $('.bd-plates').hidden = view !== 'plate';
     // The parts as built (a part cut to fit the plate is in pieces), or as
@@ -271,7 +317,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('.bd-parts').innerHTML = list
       .map(
         (p) =>
-          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id.split('-')[0]] ?? (p.role === 'roof' ? 'building' : p.role === 'frame' ? 'view' : 'box'))}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
+          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id.split('-')[0]] ?? { roof: 'building', frame: 'view', floor: 'plate' }[p.role] ?? 'box')}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
       )
       .join('');
     const grams = (parts.reduce((sum, p) => sum + p.volume, 0) / 1000) * density();
@@ -424,6 +470,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises']) form.elements[k].value = b[k];
     $('[name="buildingName"]').value = name;
+    drawStoreys();
     drawOpenings();
   }
   async function exportKit() {
@@ -450,12 +497,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       showError(err.message);
       return;
     }
-    const at = freePlace(base, wall, opening);
+    const s = storeyOf(base, storey);
+    // A storey above has lower walls: a window starts lower in them.
+    if (type === 'window' && opening.sill + opening.height > s.height - KIT.frame) opening.sill = Math.max(0, s.height - KIT.frame - opening.height - 10);
+    const at = freePlace(base, wall, opening, storey);
     if (at === null) {
       showError('There is no room for a ' + type + ' of ' + opening.width + ' mm in the ' + wall + ' wall. Make the wall longer, or the other openings smaller.');
       return;
     }
-    building = { ...base, openings: [...base.openings, { ...opening, wall, at }] };
+    building = withStorey(base, storey, { openings: [...s.openings, { ...opening, wall, at }] });
     drawOpenings();
     await rebuild(building);
   }
@@ -489,9 +539,40 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const cuts = { ...building.cuts };
         delete cuts[b.dataset.bdEven];
         await rebuild({ ...readForm(), cuts });
-      } else if (b.dataset.bdWallTexture) await rebuild({ ...readForm(), wallTexture: b.dataset.bdWallTexture });
+      } else if (b.dataset.bdWallTexture) await rebuild(withStorey(readForm(), storey, { wallTexture: b.dataset.bdWallTexture }));
       else if (b.dataset.bdRoofTexture) await rebuild({ ...readForm(), roofTexture: b.dataset.bdRoofTexture });
-      else if (b.dataset.bdWall) {
+      else if (b.dataset.bdStorey !== undefined) {
+        const next = readForm();
+        try {
+          building = validateBuilding(next);
+        } catch {
+          // Keep the last good building; the error stays in view.
+        }
+        storey = Number(b.dataset.bdStorey);
+        drawStoreys();
+        drawOpenings();
+        sync();
+      } else if (b.dataset.bdAddStorey !== undefined) {
+        const base = validateBuilding(readForm());
+        const top = storeyOf(base, base.upper.length);
+        const next = { ...base, upper: [...base.upper, { ...UPPER_DEFAULTS, width: top.width, depth: top.depth, openings: [] }] };
+        fitted = false;
+        storey = next.upper.length;
+        building = validateBuilding(next);
+        drawStoreys();
+        drawOpenings();
+        await rebuild(building);
+      } else if (b.dataset.bdRemoveStorey !== undefined) {
+        const base = readForm();
+        // A storey above the one removed goes with it: it stood on it.
+        const next = { ...base, upper: base.upper.slice(0, storey - 1) };
+        fitted = false;
+        storey -= 1;
+        building = { ...building, upper: next.upper };
+        drawStoreys();
+        drawOpenings();
+        await rebuild(next);
+      } else if (b.dataset.bdWall) {
         const next = readForm();
         wall = b.dataset.bdWall;
         try {
@@ -503,10 +584,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       } else if (b.dataset.bdAdd) await addOpening(b.dataset.bdAdd);
       else if (b.dataset.bdRemove !== undefined) {
         const next = readForm();
-        next.openings = next.openings.filter((_, i) => i !== Number(b.dataset.bdRemove));
-        building = { ...building, openings: next.openings };
+        const openings = storeyOf(next, storey).openings.filter((_, i) => i !== Number(b.dataset.bdRemove));
+        building = withStorey(building, storey, { openings });
         drawOpenings();
-        await rebuild({ ...next });
+        await rebuild(withStorey(next, storey, { openings }));
       } else if (b.dataset.bdPart) choose(b.dataset.bdPart);
       else if (b.dataset.bdOpen) await open(b.dataset.bdOpen);
       else if (b.dataset.bd === 'export') await exportKit();
@@ -515,6 +596,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         building = validateBuilding({});
         name = 'Garage';
         savedId = null;
+        storey = 0;
         fitted = false;
         fill(building);
         await rebuild(building);
@@ -529,6 +611,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     building = saved.building;
     name = saved.name;
     savedId = saved.id;
+    storey = 0;
     fitted = false;
     fill(building);
     await rebuild(building);

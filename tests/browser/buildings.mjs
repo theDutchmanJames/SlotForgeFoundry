@@ -142,7 +142,32 @@ export async function checkBuildings({ page, action, download, snap }) {
   await setting('depth').fill('180');
   await setting('depth').press('Tab');
   await host.locator('[data-bd-fitting]').waitFor({ state: 'hidden' });
+  // A second storey: a floor and four walls of its own, which stay on the storey below.
+  await host.locator('[data-bd-add-storey]').click();
+  await partCount(12);
+  assert.match(await host.locator('[data-bd-part="floor2"]').textContent(), /Floor of storey 2/);
+  assert.equal(await host.locator('[data-bd-storey="1"]').getAttribute('aria-pressed'), 'true');
+  await setting('upWidth').fill('140');
+  await setting('upWidth').press('Tab');
+  await host.locator('.bd-error').waitFor();
+  assert.match(await host.locator('.bd-error').textContent(), /Storey 2: Width must be between 60 and 120 mm/);
+  await setting('upWidth').fill('100');
+  await setting('upX').fill('10');
+  await setting('upX').press('Tab');
+  await host.locator('.bd-error').waitFor({ state: 'hidden' });
+  // Its windows and wall texture are its own.
+  await host.locator('[data-bd-wall="front"]').click();
+  await host.locator('[data-bd-add="window"]').click();
+  await host.locator('.bd-openings .bd-opening').waitFor();
+  await host.locator('.bd-openings .bd-opening [name="frame"]').check();
+  await partCount(13);
+  assert.match(await host.locator('[data-bd-part="frame2-1"]').textContent(), /Front window frame, storey 2/);
+  await host.locator('[data-bd-storey="0"]').click();
+  assert.match(await host.locator('.bd-openings').textContent(), /No windows or doors in the front wall of the ground floor/);
+  await host.locator('[data-bd-storey="1"]').click();
+  await host.locator('[data-bd-remove-storey]').click();
+  await partCount(7);
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
-  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window and textures change its parts; on a small plate the parts are cut into pieces that fit');
+  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window, textures and a second storey change its parts; on a small plate the parts are cut into pieces that fit');
 }

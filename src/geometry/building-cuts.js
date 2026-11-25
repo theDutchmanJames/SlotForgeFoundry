@@ -14,18 +14,31 @@ export const JOINT = Object.freeze({
   edge: 8, // a cut keeps this far from the end of a part
   aside: 4, // and this far from the side of an opening or its frame: it may run through one
 });
-export const CUT_KEYS = Object.freeze(['front', 'back', 'left', 'right', 'baseX', 'baseY', 'roofX', 'roofY']);
-const LABEL = {
-  front: 'Front wall',
-  back: 'Back wall',
-  left: 'Left wall',
-  right: 'Right wall',
-  baseX: 'Base, across',
-  baseY: 'Base, front to back',
-  roofX: 'Roof, across',
-  roofY: 'Roof, front to back',
-};
-export const cutLabel = (key) => LABEL[key];
+// The parts that may be cut, and which way: a wall along its length (front,
+// front2 for the second storey, ...) and across its height (frontZ); the
+// base, a floor and the roof across (X) and front to back (Y).
+const WALL_IDS = ['front', 'back', 'left', 'right'];
+const STOREY_NAMES = ['', '', ', storey 2', ', storey 3'];
+export const CUT_KEYS = Object.freeze([
+  ...[1, 2, 3].flatMap((s) => WALL_IDS.flatMap((w) => [w + (s > 1 ? s : ''), w + (s > 1 ? s : '') + 'Z'])),
+  'baseX',
+  'baseY',
+  'floor2X',
+  'floor2Y',
+  'floor3X',
+  'floor3Y',
+  'roofX',
+  'roofY',
+]);
+/** What a cut key is called on the page. */
+export function cutLabel(key) {
+  const m = /^(front|back|left|right)(\d?)(Z?)$/.exec(key);
+  if (m) return m[1][0].toUpperCase() + m[1].slice(1) + ' wall' + STOREY_NAMES[Number(m[2] || 1)] + (m[3] ? ', across its height' : '');
+  const f = /^(base|roof|floor)(\d?)([XY])$/.exec(key);
+  if (!f) return key;
+  const name = f[1] === 'floor' ? 'Floor of storey ' + f[2] : f[1] === 'base' ? 'Base' : 'Roof';
+  return name + (f[3] === 'X' ? ', across' : ', front to back');
+}
 
 /** The settings for the cuts: for each part, where its cuts are, or nothing for the default. */
 export function validateCuts(cuts) {
@@ -35,7 +48,7 @@ export function validateCuts(cuts) {
   for (const [key, list] of Object.entries(cuts)) {
     if (!CUT_KEYS.includes(key)) throw Error('The building has a cut for an unknown part: ' + key + '.');
     if (!Array.isArray(list) || list.length > 12 || !list.every(Number.isFinite))
-      throw Error('The cuts of the ' + LABEL[key].toLowerCase() + ' are not a list of places.');
+      throw Error('The cuts of the ' + cutLabel(key).toLowerCase() + ' are not a list of places.');
     out[key] = [...list].sort((a, b) => a - b);
   }
   return out;
@@ -96,38 +109,40 @@ export function planPart(key, length, maxPiece, forbidden, chosen) {
     for (let i = 0; i < cuts.length; i++) {
       const [lo, hi] = rangeOf(cuts, i);
       if (cuts[i] < lo - 1e-9 || cuts[i] > hi + 1e-9)
-        throw Error(LABEL[key] + ': cut ' + (i + 1) + ' at ' + round(cuts[i]) + ' mm leaves a piece that does not fit the plate. Put it between ' + round(lo) + ' and ' + round(hi) + ' mm.');
+        throw Error(cutLabel(key) + ': cut ' + (i + 1) + ' at ' + round(cuts[i]) + ' mm leaves a piece that does not fit the plate. Put it between ' + round(lo) + ' and ' + round(hi) + ' mm.');
       if (blocked(cuts[i], no))
-        throw Error(LABEL[key] + ': cut ' + (i + 1) + ' at ' + round(cuts[i]) + ' mm runs ' + (cuts[i] < JOINT.edge || cuts[i] > length - JOINT.edge ? 'too close to the end of the part' : 'along the side of a window, a door or a frame, and would leave a sliver') + '. Move it a little.');
+        throw Error(cutLabel(key) + ': cut ' + (i + 1) + ' at ' + round(cuts[i]) + ' mm runs ' + (cuts[i] < JOINT.edge || cuts[i] > length - JOINT.edge ? 'too close to the end of the part' : 'along the side of a window, a door or a frame, and would leave a sliver') + '. Move it a little.');
     }
   } else {
     cuts = settle(Array.from({ length: n - 1 }, (_, i) => ((i + 1) * length) / n));
-    if (!cuts) throw Error(LABEL[key] + ' cannot be cut to fit the plate: the windows and doors leave no room for a cut. Move an opening, or use a bigger plate.');
+    if (!cuts) throw Error(cutLabel(key) + ' cannot be cut to fit the plate: the windows and doors leave no room for a cut. Move an opening, or use a bigger plate.');
   }
   return { key, length, cuts, ranges: cuts.map((_, i) => rangeOf(cuts, i).map(round)), forbidden: no.filter(([a, b]) => a > -Infinity && b < Infinity) };
 }
 const round = (v) => Math.round(v * 10) / 10;
 
 /**
- * Where each part of a building is cut to fit the plate. walls: the height
- * of each wall as it prints; extents: how long the base and the roof are
- * along x and y; keepOut: for each wall, its openings as [from, to] along
- * it; slopeCos: for the roof, how much longer it is along its slope.
+ * Where each part of a building is cut to fit the plate. walls: each wall
+ * as { key, length, height (as it prints), keepOut along it, keepOutUp
+ * across its height }; flats: the base, the floors and the roof as { name,
+ * extent [x, y], scale [x, y] (how much longer it prints than its plan) }.
  */
-export function planCuts(b, plate, { wallHeight, keepOut, base, roof }) {
+export function planCuts(b, plate, { walls, flats }) {
   const room = plateRoom(plate);
   const cuts = b.cuts ?? {};
   const plan = {};
-  for (const w of ['front', 'back', 'left', 'right']) {
-    const length = w === 'front' || w === 'back' ? b.width : b.depth;
-    // A wall lies with its height across the plate if it fits that way.
-    const maxPiece = wallHeight[w] <= room.short ? room.long : room.short;
-    plan[w] = planPart(w, length, maxPiece, keepOut[w], cuts[w]);
+  for (const w of walls) {
+    // A wall lies with its height across the plate if it fits that way;
+    // taller than the plate's long side, it is cut across its height too.
+    const tall = w.height > room.long;
+    // Cut across its height, its bands lie across the plate and its length along it.
+    const maxPiece = tall || w.height <= room.short ? room.long : room.short;
+    plan[w.key] = planPart(w.key, w.length, maxPiece, w.keepOut, cuts[w.key]);
+    plan[w.key + 'Z'] = planPart(w.key + 'Z', w.height, tall ? room.short : Infinity, w.keepOutUp ?? [], cuts[w.key + 'Z']);
   }
-  // The base and the roof are cut one way or both ways. Their long side may
-  // lie along either side of the plate: the way that needs fewer pieces.
-  // A roof panel prints longer than it is on the plan by its slope (scale).
-  for (const [name, [x, y], [sx, sy]] of [['base', base, [1, 1]], ['roof', roof.extent, roof.scale]]) {
+  // The base, a floor and the roof are cut one way or both ways. Their long
+  // side may lie along either side of the plate: the way with fewer pieces.
+  for (const { name, extent: [x, y], scale: [sx, sy] } of flats) {
     const pieces = (len, lim) => (len <= lim ? 1 : Math.ceil(len / (lim - JOINT.length)));
     const ways = [
       [room.long, room.short],

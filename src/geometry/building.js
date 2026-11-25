@@ -1,9 +1,11 @@
 // A building as a kit: a base plate as high as the track, four walls that
 // drop into a groove in it and meet at mitred corners, a roof, a door
 // insert, and windows and doors cut into any wall, with frames if wanted.
-// Every part prints flat without supports. Sizes are toy proportions for
-// 1:32 by default: a one-car garage is about 120 × 180 mm and 75 mm high and
-// takes practically any slot car.
+// Up to two more storeys stand on top, each a building of its own size on a
+// floor slab: its own height, windows, doors and wall texture. The roof sits
+// on the top storey. Every part prints flat without supports. Sizes are toy
+// proportions for 1:32 by default: a one-car garage is about 120 × 180 mm
+// and 75 mm high and takes practically any slot car.
 
 import { DRAWN, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, WALL_TEXTURES, roofJoints, wallJoints } from './building-texture.js';
 import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
@@ -34,6 +36,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   overhangRight: 3,
   openings: Object.freeze([]),
   ...TEXTURE_DEFAULTS,
+  upper: Object.freeze([]), // the storeys above the ground floor, at most two
   cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
@@ -50,6 +53,10 @@ export const BUILDING_LIMITS = Object.freeze({
   overhangRight: [0, 30],
   ...TEXTURE_LIMITS,
 });
+// A storey above: its size, its place on the storey below (from that
+// storey's left and front walls), its height, wall texture and openings.
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]) });
+export const MAX_UPPER = 2;
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
   window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false }),
@@ -60,13 +67,14 @@ export const MAX_OPENINGS = 16;
 export const KIT = Object.freeze({
   wall: 3, // wall thickness
   ledge: 3, // base beyond the walls
-  groove: 2, // depth of the wall groove in the base
-  play: 0.2, // clearance each side of a wall in its groove, and around the roof lip
+  groove: 2, // depth of the wall groove in the base and in a floor
+  play: 0.2, // clearance each side of a wall in its groove, and around a lip
   shell: 2, // the base's side walls, it is hollow underneath
   deck: 4, // the base's top, under the groove too
+  slab: 4, // a floor between two storeys
   roof: 3, // roof thickness
-  lip: 2, // flat roof lip, its width
-  lipDepth: 3, // flat roof lip, how far it reaches down
+  lip: 2, // a lip under a flat roof or a floor, its width
+  lipDepth: 3, // and how far it reaches down between the walls
   frame: 6, // wall kept beside and above an opening, and between two
   insert: 2, // door insert plate
   rib: 1, // its ribs stand out this far
@@ -94,37 +102,62 @@ const LABELS = {
 };
 const UNITS = { pitch: '°', textureScale: ' %' };
 const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame'];
+const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
+const STOREY_SUFFIX = ['', ', ground floor', ', storey 2', ', storey 3'];
 
-/** The length of a wall along its outside face. */
-export const wallLength = (b, wall) => (wall === 'front' || wall === 'back' ? b.width : b.depth);
-const openingName = (o, i, all) => {
+/** The length of a wall along its outside face, on a storey of this size. */
+export const wallLength = (dims, wall) => (wall === 'front' || wall === 'back' ? dims.width : dims.depth);
+const fmtMm = (v) => String(Math.round(v * 10) / 10);
+const openingName = (o, all) => {
   const same = all.filter((x) => x.wall === o.wall && x.type === o.type);
-  const n = same.indexOf(o) + 1;
-  return WALL_NAMES[o.wall] + ' ' + o.type + (same.length > 1 ? ' ' + n : '');
+  return WALL_NAMES[o.wall] + ' ' + o.type + (same.length > 1 ? ' ' + (same.indexOf(o) + 1) : '');
 };
 
-function checkOpening(o, i, b) {
-  if (!o || typeof o !== 'object' || Array.isArray(o)) throw Error('Opening ' + (i + 1) + ' is not a window or a door.');
+function checkOpening(o, i, dims, where) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) throw Error('Opening ' + (i + 1) + where + ' is not a window or a door.');
   for (const key of Object.keys(o))
-    if (!OPENING_KEYS.includes(key)) throw Error('Opening ' + (i + 1) + ' has an unknown setting: ' + key + '.');
+    if (!OPENING_KEYS.includes(key)) throw Error('Opening ' + (i + 1) + where + ' has an unknown setting: ' + key + '.');
   const kind = o.type === 'window' || o.type === 'door' ? o.type : null;
-  if (!kind) throw Error('Opening ' + (i + 1) + ' must be a window or a door.');
+  if (!kind) throw Error('Opening ' + (i + 1) + where + ' must be a window or a door.');
   const full = { ...OPENING_DEFAULTS[kind], ...o, sill: kind === 'door' ? 0 : (o.sill ?? OPENING_DEFAULTS.window.sill) };
-  if (!WALLS.includes(full.wall)) throw Error('Choose a wall for opening ' + (i + 1) + '.');
-  if (typeof full.frame !== 'boolean') throw Error('Choose whether opening ' + (i + 1) + ' has a frame.');
-  const L = wallLength(b, full.wall);
+  if (!WALLS.includes(full.wall)) throw Error('Choose a wall for opening ' + (i + 1) + where + '.');
+  if (typeof full.frame !== 'boolean') throw Error('Choose whether opening ' + (i + 1) + where + ' has a frame.');
+  const L = wallLength(dims, full.wall);
   if (full.at === undefined) full.at = L / 2;
   for (const [key, min, max] of [
     ['width', 8, L],
-    ['height', 8, b.height],
-    ['sill', 0, b.height],
+    ['height', 8, dims.height],
+    ['sill', 0, dims.height],
     ['at', 0, L],
   ])
     if (!Number.isFinite(full[key]) || full[key] < min || full[key] > max)
-      throw Error('The ' + kind + ' on the ' + full.wall + ' wall: ' + key + ' must be between ' + min + ' and ' + fmtMm(max) + ' mm.');
+      throw Error('The ' + kind + ' on the ' + full.wall + ' wall' + where + ': ' + key + ' must be between ' + min + ' and ' + fmtMm(max) + ' mm.');
   return full;
 }
-const fmtMm = (v) => String(Math.round(v * 10) / 10);
+
+// The windows and doors of one storey: each keeps wall beside it, at the
+// corners, above it, and between it and the next one, the garage door included.
+function checkOpenings(list, dims, garage, where) {
+  if (!Array.isArray(list)) throw Error('The windows and doors' + where + ' are not a list.');
+  if (list.length > MAX_OPENINGS) throw Error('A storey has at most ' + MAX_OPENINGS + ' windows and doors.');
+  const openings = list.map((o, i) => checkOpening(o, i, dims, where));
+  const named = openings.map((o) => ({ ...o, name: openingName(o, openings) + where }));
+  for (const o of named) {
+    const L = wallLength(dims, o.wall);
+    const edge = KIT.wall + KIT.frame;
+    if (o.at - o.width / 2 < edge || o.at + o.width / 2 > L - edge)
+      throw Error('The ' + o.name.toLowerCase() + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
+    if (o.sill + o.height > dims.height - KIT.frame)
+      throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (dims.height - KIT.frame) + ' mm above the floor.');
+  }
+  for (const [i, a] of named.entries())
+    for (const c of [...named.slice(i + 1), ...(garage ? [garage] : [])]) {
+      if (a.wall !== c.wall) continue;
+      if (Math.abs(a.at - c.at) - (a.width + c.width) / 2 < KIT.frame)
+        throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
+    }
+  return openings;
+}
 
 /** The building as it is kept: known settings only, each checked. */
 export function validateBuilding(input) {
@@ -148,52 +181,100 @@ export function validateBuilding(input) {
   const tall = b.height - KIT.frame;
   if (b.doorHeight > tall)
     throw Error('The door is too high for these walls: at most ' + tall + ' mm at ' + b.height + ' mm high.');
-  if (!Array.isArray(b.openings)) throw Error('The windows and doors of the building are not a list.');
-  if (b.openings.length > MAX_OPENINGS) throw Error('A building has at most ' + MAX_OPENINGS + ' windows and doors.');
-  const openings = b.openings.map((o, i) => checkOpening(o, i, b));
-  // Each opening keeps wall beside it: at the corners, above it, and
-  // between it and the next one, the garage door included.
-  const named = openings.map((o, i) => ({ ...o, name: openingName(o, i, openings) }));
-  for (const o of named) {
-    const L = wallLength(b, o.wall);
-    const lo = o.at - o.width / 2,
-      hi = o.at + o.width / 2,
-      edge = KIT.wall + KIT.frame;
-    if (lo < edge || hi > L - edge)
-      throw Error('The ' + o.name.toLowerCase() + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
-    if (o.sill + o.height > b.height - KIT.frame)
-      throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (b.height - KIT.frame) + ' mm above the floor.');
-  }
+  if (!Array.isArray(b.upper) || b.upper.length > MAX_UPPER) throw Error('A building has at most ' + MAX_UPPER + ' storeys above the ground floor.');
+  const several = b.upper.length > 0;
   const garage = { wall: 'front', at: b.width / 2, width: b.doorWidth, name: 'garage door' };
-  for (const [i, a] of named.entries())
-    for (const c of [...named.slice(i + 1), garage]) {
-      if (a.wall !== c.wall) continue;
-      const gap = Math.abs(a.at - c.at) - (a.width + c.width) / 2;
-      if (gap < KIT.frame)
-        throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
-    }
-  return { ...b, openings, cuts: validateCuts(b.cuts) };
+  const openings = checkOpenings(b.openings, b, garage, several ? STOREY_SUFFIX[1] : '');
+  // Each storey above stands on the one below, inside its walls.
+  let below = { width: b.width, depth: b.depth };
+  const upper = b.upper.map((u, i) => {
+    const n = i + 2,
+      where = STOREY_SUFFIX[n];
+    if (!u || typeof u !== 'object' || Array.isArray(u)) throw Error('Storey ' + n + ' is not readable.');
+    for (const key of Object.keys(u)) if (!UPPER_KEYS.includes(key)) throw Error('Storey ' + n + ' has an unknown setting: ' + key + '.');
+    const s = { ...UPPER_DEFAULTS, ...u };
+    s.width ??= below.width - s.x;
+    s.depth ??= below.depth - s.y;
+    for (const [key, name, min, max] of [
+      ['x', 'its place from the left', 0, below.width],
+      ['y', 'its place from the front', 0, below.depth],
+      ['width', 'Width', 60, below.width],
+      ['depth', 'Depth', 60, below.depth],
+      ['height', 'Wall height', 30, 200],
+    ])
+      if (!Number.isFinite(s[key]) || s[key] < min || s[key] > max)
+        throw Error('Storey ' + n + ': ' + name + ' must be between ' + min + ' and ' + fmtMm(max) + ' mm.');
+    if (s.x + s.width > below.width + 1e-9 || s.y + s.depth > below.depth + 1e-9)
+      throw Error('Storey ' + n + ' reaches past the storey below: it is ' + fmtMm(s.width) + ' × ' + fmtMm(s.depth) + ' mm at ' + fmtMm(s.x) + ', ' + fmtMm(s.y) + ' mm on a storey of ' + fmtMm(below.width) + ' × ' + fmtMm(below.depth) + ' mm.');
+    if (!WALL_TEXTURES.some(([id]) => id === s.wallTexture)) throw Error('Choose a wall texture from the list for storey ' + n + '.');
+    s.openings = checkOpenings(s.openings, s, null, where);
+    below = s;
+    return s;
+  });
+  return { ...b, openings, upper, cuts: validateCuts(b.cuts) };
 }
 
-/** How the roof stands: the slope of each panel, and how high it rises. */
+/**
+ * The storeys of a building from the ground up: each with its size, where
+ * it stands (ox, oy from the ground floor's left and front walls), the
+ * height of its floor (the top of the base, or of the slab under it) and
+ * of its eaves, its wall texture and openings, and its part ids.
+ */
+export function storeyStack(b) {
+  const several = b.upper.length > 0;
+  const out = [];
+  let z = b.baseHeight;
+  let ox = 0,
+    oy = 0;
+  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings }, ...b.upper];
+  all.forEach((s, i) => {
+    const n = i + 1;
+    if (i) z += KIT.slab;
+    ox += s.x;
+    oy += s.y;
+    out.push({
+      n,
+      width: s.width,
+      depth: s.depth,
+      ox,
+      oy,
+      floor: z,
+      eave: z + s.height,
+      height: s.height,
+      wallTexture: s.wallTexture,
+      openings: s.openings,
+      garage: i === 0,
+      top: i === all.length - 1,
+      suffix: n > 1 ? String(n) : '',
+      label: several ? STOREY_SUFFIX[n] : '',
+    });
+    z += s.height;
+  });
+  return out;
+}
+
+/** How the roof stands on the top storey: the slope of each panel, and how high it rises. */
 export function roofShape(b) {
+  const top = storeyStack(b).at(-1);
+  const W = top.width,
+    D = top.depth;
   const t = Math.tan((b.pitch * Math.PI) / 180);
   if (b.roof === 'slope') {
     const dir = { back: [0, 1], front: [0, -1], right: [1, 0], left: [-1, 0] }[b.rises];
-    const run = dir[1] ? b.depth : b.width;
-    return { t, panels: [{ dir, s0: dir[0] < 0 ? -b.width : dir[1] < 0 ? -b.depth : 0, id: 'roof', name: 'Roof panel' }], rise: run * t };
+    const run = dir[1] ? D : W;
+    return { t, panels: [{ dir, s0: dir[0] < 0 ? -W : dir[1] < 0 ? -D : 0, id: 'roof', name: 'Roof panel' }], rise: run * t };
   }
   if (b.roof === 'gable') {
-    const half = (b.ridge === 'depth' ? b.width : b.depth) / 2;
+    const half = (b.ridge === 'depth' ? W : D) / 2;
     const panels =
       b.ridge === 'depth'
         ? [
-            { dir: [1, 0], s0: 0, keep: [[-1, 0, 0], -b.width / 2], id: 'roof-left', name: 'Roof panel, left' },
-            { dir: [-1, 0], s0: -b.width, keep: [[1, 0, 0], b.width / 2], id: 'roof-right', name: 'Roof panel, right' },
+            { dir: [1, 0], s0: 0, keep: [[-1, 0, 0], -W / 2], id: 'roof-left', name: 'Roof panel, left' },
+            { dir: [-1, 0], s0: -W, keep: [[1, 0, 0], W / 2], id: 'roof-right', name: 'Roof panel, right' },
           ]
         : [
-            { dir: [0, 1], s0: 0, keep: [[0, -1, 0], -b.depth / 2], id: 'roof-front', name: 'Roof panel, front' },
-            { dir: [0, -1], s0: -b.depth, keep: [[0, 1, 0], b.depth / 2], id: 'roof-back', name: 'Roof panel, back' },
+            { dir: [0, 1], s0: 0, keep: [[0, -1, 0], -D / 2], id: 'roof-front', name: 'Roof panel, front' },
+            { dir: [0, -1], s0: -D, keep: [[0, 1, 0], D / 2], id: 'roof-back', name: 'Roof panel, back' },
           ];
     return { t, panels, rise: half * t };
   }
@@ -203,21 +284,20 @@ export function roofShape(b) {
 /** The parts of the kit, without geometry: their ids, names and roles. */
 export function buildingLayout(input) {
   const b = validateBuilding(input);
-  const parts = [
-    { id: 'base', name: 'Base plate', role: 'buildingBase' },
-    { id: 'front', name: 'Front wall', role: 'wall' },
-    { id: 'back', name: 'Back wall', role: 'wall' },
-    { id: 'left', name: 'Left wall', role: 'wall' },
-    { id: 'right', name: 'Right wall', role: 'wall' },
-  ];
+  const storeys = storeyStack(b);
+  const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
+  for (const s of storeys) {
+    if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' });
+    for (const w of ['front', 'back', 'left', 'right']) parts.push({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall' });
+  }
   if (b.roof === 'flat') parts.push({ id: 'roof', name: 'Flat roof', role: 'roof' });
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
   if (b.door === 'roller') parts.push({ id: 'door', name: 'Roller door', role: 'door' });
-  b.openings.forEach((o, i) => {
-    if (o.frame)
-      parts.push({ id: 'frame-' + (i + 1), name: openingName(o, i, b.openings) + ' frame', role: 'frame' });
-  });
-  return { building: b, parts, door: { x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight } };
+  for (const s of storeys)
+    s.openings.forEach((o, i) => {
+      if (o.frame) parts.push({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame' });
+    });
+  return { building: b, storeys, parts, door: { x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight } };
 }
 
 /** Whether a part of this print size fits the plate, turned if need be. */
@@ -227,16 +307,21 @@ export function fitsPlate([x, y], plate) {
   return (x <= w && y <= d) || (x <= d && y <= w);
 }
 
-// The building stands with its front (the garage door) at y = 0, from x = 0
-// to its width and y = 0 to its depth; the table is z = 0.
-// The places along each wall where it may not be cut: its openings and their frames.
-function wallKeepOut(b, door) {
-  const out = { front: [[door.x, door.x + door.width]], back: [], left: [], right: [] };
-  for (const o of b.openings) {
-    const extra = o.frame ? KIT.trim : 0;
-    out[o.wall].push([o.at - o.width / 2 - extra, o.at + o.width / 2 + extra]);
+// The openings of a storey along each wall, as [from, to], frames included;
+// and across the height of the wall, measured from its foot in the groove.
+function wallOpenings(s, door) {
+  const along = { front: [], back: [], left: [], right: [] },
+    up = { front: [], back: [], left: [], right: [] };
+  if (s.garage) {
+    along.front.push([door.x, door.x + door.width]);
+    up.front.push([KIT.groove, KIT.groove + door.height]);
   }
-  return out;
+  for (const o of s.openings) {
+    const extra = o.frame ? KIT.trim : 0;
+    along[o.wall].push([o.at - o.width / 2 - extra, o.at + o.width / 2 + extra]);
+    up[o.wall].push([KIT.groove + o.sill - (o.type === 'window' ? extra : 0), KIT.groove + o.sill + o.height + extra]);
+  }
+  return { along, up };
 }
 
 /**
@@ -244,42 +329,55 @@ function wallKeepOut(b, door) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
-  const { building: b, door } = buildingLayout(input);
+  const { building: b, storeys, door } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
-  // A wall prints as tall as it stands, its foot in the groove included.
-  const wallHeight = {};
-  for (const w of WALLS) {
-    let high = b.height;
-    if (b.roof === 'gable') high += (b.ridge === 'depth') === (w === 'front' || w === 'back') ? rise : 0;
-    if (b.roof === 'slope') high += w === b.rises ? rise : (w === 'front' || w === 'back') === (b.rises === 'front' || b.rises === 'back') ? 0 : rise;
-    wallHeight[w] = high + KIT.groove + KIT.wall;
+  const walls = [];
+  for (const s of storeys) {
+    // A brick or block wall is cut along its joints: the seam steps half a brick either way.
+    const step = ['brick', 'block'].includes(s.wallTexture) ? (DRAWN[s.wallTexture].length * b.textureScale) / 200 : 0;
+    const aside = JOINT.aside + step;
+    // Across the height a brick seam moves onto the nearest course line: up to half a course.
+    const asideUp = JOINT.aside + (step ? (DRAWN[s.wallTexture].course * b.textureScale) / 200 : 0);
+    const { along, up } = wallOpenings(s, door);
+    for (const w of ['front', 'back', 'left', 'right']) {
+      // A wall prints as tall as it stands, its foot in the groove included.
+      let high = s.height;
+      if (s.top && b.roof === 'gable') high += (b.ridge === 'depth') === (w === 'front' || w === 'back') ? rise : 0;
+      if (s.top && b.roof === 'slope') high += w === b.rises ? rise : (w === 'front' || w === 'back') === (b.rises === 'front' || b.rises === 'back') ? 0 : rise;
+      walls.push({
+        key: w + s.suffix,
+        length: wallLength(s, w),
+        height: high + KIT.groove,
+        // A cut may run through an opening, not along its side; across the
+        // height, not along its top or bottom, nor through the foot of the wall.
+        keepOut: along[w].flatMap(([a, c]) => [[a - aside, a + aside], [c - aside, c + aside]]),
+        keepOutUp: [[-1, KIT.groove + JOINT.edge], ...up[w].flatMap(([a, c]) => [[a - asideUp, a + asideUp], [c - asideUp, c + asideUp]])],
+      });
+    }
   }
-  // A brick or block wall is cut along its joints: the seam steps half a brick either way.
-  const step = ['brick', 'block'].includes(b.wallTexture) ? (DRAWN[b.wallTexture].length * b.textureScale) / 200 : 0;
-  // A cut may run through an opening, not along its side.
-  const aside = JOINT.aside + step;
-  const keepOut = Object.fromEntries(
-    Object.entries(wallKeepOut(b, door)).map(([w, list]) => [w, list.flatMap(([a, c]) => [[a - aside, a + aside], [c - aside, c + aside]])]),
-  );
+  const top = storeys.at(-1);
   const ov = [b.overhangLeft + b.overhangRight, b.overhangFront + b.overhangBack];
   const slope = Math.hypot(1, shape.t);
   // A two-sided roof is cut along its ridge only; a slope prints longer than its plan.
-  const roofExtent = [b.width + ov[0], b.depth + ov[1]];
+  const roofExtent = [top.width + ov[0], top.depth + ov[1]];
   let scale = [1, 1];
   if (b.roof === 'slope') scale = b.rises === 'left' || b.rises === 'right' ? [slope, 1] : [1, slope];
   if (b.roof === 'gable') roofExtent[b.ridge === 'depth' ? 0 : 1] = 0;
   return planCuts(b, plate, {
-    wallHeight,
-    keepOut,
-    base: [b.width + 2 * KIT.ledge, b.depth + 2 * KIT.ledge],
-    roof: { extent: roofExtent, scale },
+    walls,
+    flats: [
+      { name: 'base', extent: [b.width + 2 * KIT.ledge, b.depth + 2 * KIT.ledge], scale: [1, 1] },
+      // A floor covers the storey below it.
+      ...storeys.slice(1).map((s, i) => ({ name: 'floor' + s.n, extent: [storeys[i].width, storeys[i].depth], scale: [1, 1] })),
+      { name: 'roof', extent: roofExtent, scale },
+    ],
   });
 }
 
 export function buildGarage(wasm, input, plate = null) {
   const { Manifold } = wasm;
-  const { building: b, door } = buildingLayout(input);
+  const { building: b, storeys, door } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
   const temp = [];
   const own = (s) => (temp.push(s), s);
@@ -287,264 +385,189 @@ export function buildGarage(wasm, input, plate = null) {
     own(Manifold.cube([Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)]).translate([Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)]));
   const minus = (a, ...cuts) => (cuts.length ? own(a.subtract(own(Manifold.union(cuts)))) : a);
   const trim = (s, n, offset) => own(s.trimByPlane(n, offset));
-  const W = b.width,
-    D = b.depth,
-    top = b.baseHeight,
-    z1 = top + b.height;
   const shape = roofShape(b);
-  // A box given along a wall: u along its outside face from its left end as
-  // seen from outside, n outward from that face, z up.
-  const onWall = (wall, u0, u1, n0, n1, za, zb) => {
-    if (wall === 'front') return box(u0, -n0, za, u1, -n1, zb);
-    if (wall === 'back') return box(W - u0, D + n0, za, W - u1, D + n1, zb);
-    if (wall === 'left') return box(-n0, D - u0, za, -n1, D - u1, zb);
-    return box(W + n0, u0, za, W + n1, u1, zb);
-  };
   const OUTWARD = { front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
+  const plan = plate ? buildingCuts(b, plate) : null;
+  const parts = [];
   try {
     // Base: a hollow tray as high as the track, with the wall groove on top.
-    const outer = box(-m, -m, 0, W + m, D + m, top);
-    const hollow = box(-m + shell, -m + shell, -1, W + m - shell, D + m - shell, top - deck);
-    const groove = minus(
-      box(-c, -c, top - g, W + c, D + c, top + 1),
-      box(t + c, t + c, top - g - 1, W - t - c, D - t - c, top + 2),
-    );
-    const base = minus(outer, hollow, groove);
-
-    // Walls: each from the bottom of the groove up to the roof, mitred at 45°
-    // so the outside of a corner has no seam. Under a sloped or two-sided
-    // roof a wall follows the underside of the roof: a gable gets its point.
-    const z0 = top - g,
-      zTop = z1 + shape.rise + 1;
-    const r = Math.SQRT1_2;
-    const underRoof = (s) => {
-      for (const p of shape.panels) {
-        const [dx, dy] = p.dir;
-        const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
-        s = trim(s, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0) / len);
-      }
-      return s;
-    };
-    const wallTop = b.roof === 'flat' ? z1 : zTop;
-    const walls = {
-      front: trim(trim(box(0, 0, z0, W, t, wallTop), [1, -1, 0], 0), [-1, -1, 0], -W * r),
-      back: trim(trim(box(0, D - t, z0, W, D, wallTop), [1, 1, 0], D * r), [-1, 1, 0], (D - W) * r),
-      left: trim(trim(box(0, 0, z0, t, D, wallTop), [-1, 1, 0], 0), [-1, -1, 0], -D * r),
-      right: trim(trim(box(W - t, 0, z0, W, D, wallTop), [1, 1, 0], W * r), [1, -1, 0], (W - D) * r),
-    };
-    for (const w of WALLS) walls[w] = underRoof(walls[w]);
-    // The garage door: open from the top of the base, so the doorstep is level.
-    const holes = { front: [box(door.x, -1, top, door.x + door.width, t + 1, top + door.height)], back: [], left: [], right: [] };
-    for (const o of b.openings)
-      holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
-    for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
-    // A wall texture: joints in the outside face, clear of every opening
-    // and of the frame around it, and of the wall's foot in the groove.
-    if (b.wallTexture !== 'plain') {
-      const keepOut = { front: [[door.x, top, door.x + door.width, top + door.height]], back: [], left: [], right: [] };
-      for (const o of b.openings) {
-        const extra = o.frame ? KIT.trim : 0;
-        keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
-      }
-      for (const w of WALLS) {
-        const joints = wallJoints(
-          wasm,
-          own,
-          w,
-          { W, D, length: w === 'front' || w === 'back' ? W : D, bottom: top, top: zTop },
-          keepOut[w],
-          b,
-          b.wallTexture,
-        );
-        if (joints) walls[w] = own(walls[w].subtract(joints));
-      }
+    {
+      const W = b.width,
+        D = b.depth,
+        top = b.baseHeight;
+      const outer = box(-m, -m, 0, W + m, D + m, top);
+      const hollow = box(-m + shell, -m + shell, -1, W + m - shell, D + m - shell, top - deck);
+      const groove = minus(box(-c, -c, top - g, W + c, D + c, top + 1), box(t + c, t + c, top - g - 1, W - t - c, D - t - c, top + 2));
+      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, hollow, groove), flip: true };
+      parts.push(...cutFlat(base, plan && [plan.baseX, plan.baseY], [-m, -m]));
     }
 
-    // Roof.
-    const ov = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight };
-    const roofParts = [];
-    if (b.roof === 'flat') {
-      // A plate with its overhangs, and a lip underneath that drops between
-      // the walls and keeps them square.
-      const plate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
-      const lip = minus(
-        box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
-        box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
-      );
-      roofParts.push({ id: 'roof', name: 'Flat roof', role: 'roof', solid: own(plate.add(lip)), flip: true });
-    } else {
-      // Each panel lies on the walls at the pitch, as thick as the roof, and
-      // reaches past the walls by the overhang of each side.
-      const cosA = 1 / Math.hypot(shape.t, 1);
-      for (const p of shape.panels) {
-        const [dx, dy] = p.dir;
-        const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
-        let s = box(-ov.left, -ov.front, z1 - 60, W + ov.right, D + ov.back, z1 + shape.rise + 60);
-        s = trim(s, [-shape.t * dx, -shape.t * dy, 1], (z1 - shape.t * p.s0) / len);
-        s = trim(s, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0 + rt / cosA) / len);
-        if (p.keep) s = trim(s, p.keep[0], p.keep[1]);
-        // Tiles or corrugations in its top, starting at the eave.
-        if (b.roofTexture !== 'plain') {
-          const joints = roofJoints(
-            wasm,
-            own,
-            s,
-            {
-              dir: p.dir,
-              t: shape.t,
-              eave: [dx < 0 ? W : 0, dy < 0 ? D : 0],
-              topAt: (x, y) => z1 + shape.t * (dx * x + dy * y - p.s0) + rt / cosA,
-              bounds: s.boundingBox(),
-            },
-            b,
-            b.roofTexture,
+    // Each storey is made where it stands on the storey below, in its own
+    // frame (x from its left wall, y from its front wall), and moved into place.
+    for (const s of storeys) {
+      const W = s.width,
+        D = s.depth,
+        top = s.floor,
+        z1 = s.eave;
+      const own2 = [];
+      const local = (...ps) => own2.push(...ps);
+      const onWall = (wall, u0, u1, n0, n1, za, zb) => {
+        if (wall === 'front') return box(u0, -n0, za, u1, -n1, zb);
+        if (wall === 'back') return box(W - u0, D + n0, za, W - u1, D + n1, zb);
+        if (wall === 'left') return box(-n0, D - u0, za, -n1, D - u1, zb);
+        return box(W + n0, u0, za, W + n1, u1, zb);
+      };
+      // Walls: each from the bottom of its groove up to the floor above or
+      // the roof, mitred at 45° so a corner has no seam on the outside.
+      // Under a sloped or two-sided roof the top storey's walls follow it.
+      const z0 = top - g,
+        sloped = s.top && b.roof !== 'flat',
+        zTop = sloped ? z1 + shape.rise + 1 : z1;
+      const r = Math.SQRT1_2;
+      const underRoof = (solid) => {
+        if (!sloped) return solid;
+        for (const p of shape.panels) {
+          const [dx, dy] = p.dir;
+          const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
+          solid = trim(solid, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0) / len);
+        }
+        return solid;
+      };
+      const walls = {
+        front: trim(trim(box(0, 0, z0, W, t, zTop), [1, -1, 0], 0), [-1, -1, 0], -W * r),
+        back: trim(trim(box(0, D - t, z0, W, D, zTop), [1, 1, 0], D * r), [-1, 1, 0], (D - W) * r),
+        left: trim(trim(box(0, 0, z0, t, D, zTop), [-1, 1, 0], 0), [-1, -1, 0], -D * r),
+        right: trim(trim(box(W - t, 0, z0, W, D, zTop), [1, 1, 0], W * r), [1, -1, 0], (W - D) * r),
+      };
+      for (const w of WALLS) walls[w] = underRoof(walls[w]);
+      // The garage door on the ground floor: open from the top of the base, so the doorstep is level.
+      const holes = { front: s.garage ? [box(door.x, -1, top, door.x + door.width, t + 1, top + door.height)] : [], back: [], left: [], right: [] };
+      for (const o of s.openings)
+        holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
+      for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
+      // A wall texture: joints in the outside face, clear of every opening
+      // and of the frame around it, and of the wall's foot in the groove.
+      if (s.wallTexture !== 'plain') {
+        const keepOut = { front: s.garage ? [[door.x, top, door.x + door.width, top + door.height]] : [], back: [], left: [], right: [] };
+        for (const o of s.openings) {
+          const extra = o.frame ? KIT.trim : 0;
+          keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
+        }
+        for (const w of WALLS) {
+          const joints = wallJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s.wallTexture);
+          if (joints) walls[w] = own(walls[w].subtract(joints));
+        }
+      }
+      for (const w of ['front', 'back', 'left', 'right'])
+        local(...cutWall({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall', solid: walls[w], outward: OUTWARD[w] }, w, s, { W, D, z0, zTop, top, z1 }));
+
+      // The roof, on the top storey.
+      if (s.top) {
+        const ov = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight };
+        if (b.roof === 'flat') {
+          // A plate with its overhangs, and a lip underneath that drops between
+          // the walls and keeps them square.
+          const roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
+          const lip = minus(
+            box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
+            box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
           );
-          if (joints) s = own(s.subtract(joints));
-        }
-        const deg = (Math.atan(shape.t) * 180) / Math.PI;
-        roofParts.push({ id: p.id, name: p.name, role: 'roof', solid: s, lie: [-deg * dy, deg * dx, 0] });
-      }
-    }
-
-    const parts = [
-      { id: 'base', name: 'Base plate', role: 'buildingBase', solid: base, flip: true },
-      ...['front', 'back', 'left', 'right'].map((w) => ({
-        id: w,
-        name: WALL_NAMES[w] + ' wall',
-        role: 'wall',
-        solid: walls[w],
-        outward: OUTWARD[w],
-      })),
-      ...roofParts,
-    ];
-    if (b.door === 'roller') {
-      // A plate behind the opening, standing on the floor inside, with ribs
-      // facing out through the opening like the slats of a roller door.
-      const x0 = door.x - KIT.margin,
-        x1 = door.x + door.width + KIT.margin;
-      let insert = box(x0, t, top, x1, t + KIT.insert, top + door.height + KIT.margin);
-      const ribs = [];
-      for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
-        ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
-      if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
-      parts.push({ id: 'door', name: 'Roller door', role: 'door', solid: insert, outward: [0, -1, 0] });
-    }
-    // Frames: a band around the opening on the outside of the wall, open at
-    // the bottom for a door; a window gets a cross in it.
-    const { trim: k, trimDepth: fd, bar } = KIT;
-    b.openings.forEach((o, i) => {
-      if (!o.frame) return;
-      const u0 = o.at - o.width / 2,
-        u1 = o.at + o.width / 2,
-        za = top + o.sill,
-        zb = za + o.height;
-      const bottom = o.type === 'window' ? za - k : za;
-      let frame = minus(onWall(o.wall, u0 - k, u1 + k, 0, fd, bottom, zb + k), onWall(o.wall, u0, u1, -1, fd + 1, za, zb));
-      if (o.type === 'window') {
-        const um = (u0 + u1) / 2,
-          zm = (za + zb) / 2;
-        frame = own(frame.add(own(Manifold.union([
-          onWall(o.wall, um - bar / 2, um + bar / 2, 0, fd, za, zb),
-          onWall(o.wall, u0, u1, 0, fd, zm - bar / 2, zm + bar / 2),
-        ]))));
-      }
-      parts.push({ id: 'frame-' + (i + 1), name: openingName(o, i, b.openings) + ' frame', role: 'frame', solid: frame, outward: OUTWARD[o.wall] });
-    });
-    // Cut to fit the plate.
-    if (plate) {
-      const plan = buildingCuts(b, plate);
-      const cs = (polys) => own(new wasm.CrossSection(polys, 'NonZero'));
-      const far = 1e4;
-      // The pieces between the seams of one part, in its own 2D frame (u along
-      // it, v across): each the region left of its seam, less the region
-      // left of the seam before it, grown by the play.
-      const wallStrips = (cuts, tabsOf) => {
-        const lefts = cuts.map((c) => cs(seamRegion(c, [z0, zTop], tabsOf(c))));
-        return [...lefts, cs([[[-far, z0 - far], [far, z0 - far], [far, zTop + far], [-far, zTop + far]]])].map((region, k) =>
-          k ? own(region.subtract(own(lefts[k - 1].offset(JOINT.play, 'Miter', 2)))) : region,
-        );
-      };
-      const strips = (cuts, [v0, v1], across, origin, steps) => {
-        const lefts = cuts.map((c) => cs(seamRegion(c - origin, [v0, v1], tabPlaces([v0, v1], across), steps ? steps(c) : null)));
-        return [...lefts, cs([[[-far, v0 - far], [far, v0 - far], [far, v1 + far], [-far, v1 + far]]])].map((region, k) =>
-          k ? own(region.subtract(own(lefts[k - 1].offset(JOINT.play, 'Miter', 2)))) : region,
-        );
-      };
-      const split = (part, pieces) => {
-        const made = pieces.map(({ solid }, k) => ({ ...part, id: part.id + '-' + (k + 1), name: part.name + ' ' + (k + 1) + ' of ' + pieces.length, solid }));
-        return made;
-      };
-      const out = [];
-      const wallFrame = {
-        // u along the wall, from 2 mm outside it through to 2 mm inside.
-        front: (u0) => [[1, 0, 0], [0, 1, 0], [u0, -2, 0]],
-        back: (u0) => [[-1, 0, 0], [0, -1, 0], [W - u0, D + 2, 0]],
-        left: (u0) => [[0, -1, 0], [1, 0, 0], [-2, D - u0, 0]],
-        right: (u0) => [[0, 1, 0], [-1, 0, 0], [W + 2, u0, 0]],
-      };
-      // A brick or block wall: in each course the seam takes the joint nearest the cut.
-      const brickSteps = (c) => {
-        const k = b.textureScale / 100,
-          { course, length } = DRAWN[b.wallTexture];
-        const rowH = course * k,
-          len = length * k;
-        const rows = [];
-        for (let r = -1; top + r * rowH < zTop + rowH; r++) {
-          const shift = ((((r % 2) + 2) % 2) * len) / 2;
-          const at = Math.round((c - shift) / len) * len + shift;
-          rows.push({ v: top + r * rowH, top: top + (r + 1) * rowH, at: at - c });
-        }
-        rows[0].v = z0 - 1;
-        return rows;
-      };
-      for (const part of parts) {
-        const wallPlan = plan[part.id];
-        if (part.role === 'wall' && wallPlan?.cuts.length) {
-          const stepped = ['brick', 'block'].includes(b.wallTexture);
-          const openingsOf = (c) => [
-            ...(part.id === 'front' && c > door.x && c < door.x + door.width ? [[top, top + door.height]] : []),
-            ...b.openings.filter((o) => o.wall === part.id && Math.abs(c - o.at) < o.width / 2).map((o) => [top + o.sill, top + o.sill + o.height]),
-          ];
-          const regions = stepped
-            ? strips(wallPlan.cuts, [z0, zTop], [], 0, (c) => brickSteps(c).map((row) => ({ ...row, at: row.at + c })))
-            : wallStrips(wallPlan.cuts, (c) => tabPlaces([z0, zTop], [top, z1], openingsOf(c), 3));
-          const [U, N, O] = wallFrame[part.id](0);
-          const pieces = regions
-            .map((region) => own(own(region.extrude(t + 4)).transform([...U, 0, 0, 0, 1, 0, ...N, 0, ...O, 1])))
-            .map((prism) => ({ solid: own(part.solid.intersect(prism)) }))
-            .filter((p) => !p.solid.isEmpty() && p.solid.volume() > 1);
-          out.push(...split(part, pieces));
-          continue;
-        }
-        const grid = part.role === 'buildingBase' ? ['baseX', 'baseY', -KIT.ledge, -KIT.ledge] : part.role === 'roof' ? ['roofX', 'roofY', -b.overhangLeft, -b.overhangFront] : null;
-        if (grid && (plan[grid[0]].cuts.length || plan[grid[1]].cuts.length)) {
-          const [kx, ky, x0, y0] = grid;
-          const xCuts = plan[kx].cuts.map((c) => c + x0),
-            yCuts = plan[ky].cuts.map((c) => c + y0);
-          const { min, max } = part.solid.boundingBox();
-          // Seams across x run along y, with their tabs between the y seams; and the other way.
-          const xs = strips(xCuts, [min[1], max[1]], yCuts, 0, null);
-          const ysLocal = strips(yCuts, [min[0], max[0]], xCuts, 0, null);
-          // A y seam is drawn with u along y: turn it to the plan.
-          const ys = ysLocal.map((region) => own(region.transform([0, 1, 0, 1, 0, 0, 0, 0, 1])));
-          const pieces = [];
-          for (const xr of xs)
-            for (const yr of ys) {
-              const cell = own(xr.intersect(yr));
-              if (cell.isEmpty()) continue;
-              const prism = own(own(cell.extrude(max[2] - min[2] + 4)).translate([0, 0, min[2] - 2]));
-              const solid = own(part.solid.intersect(prism));
-              if (!solid.isEmpty() && solid.volume() > 1) pieces.push({ solid });
+          const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: own(roofPlate.add(lip)), flip: true };
+          local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
+        } else {
+          // Each panel lies on the walls at the pitch, as thick as the roof, and
+          // reaches past the walls by the overhang of each side.
+          const cosA = 1 / Math.hypot(shape.t, 1);
+          for (const p of shape.panels) {
+            const [dx, dy] = p.dir;
+            const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
+            let panel = box(-ov.left, -ov.front, z1 - 60, W + ov.right, D + ov.back, z1 + shape.rise + 60);
+            panel = trim(panel, [-shape.t * dx, -shape.t * dy, 1], (z1 - shape.t * p.s0) / len);
+            panel = trim(panel, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0 + rt / cosA) / len);
+            if (p.keep) panel = trim(panel, p.keep[0], p.keep[1]);
+            // Tiles or corrugations in its top, starting at the eave.
+            if (b.roofTexture !== 'plain') {
+              const joints = roofJoints(
+                wasm,
+                own,
+                panel,
+                {
+                  dir: p.dir,
+                  t: shape.t,
+                  eave: [dx < 0 ? W : 0, dy < 0 ? D : 0],
+                  topAt: (x, y) => z1 + shape.t * (dx * x + dy * y - p.s0) + rt / cosA,
+                  bounds: panel.boundingBox(),
+                },
+                b,
+                b.roofTexture,
+              );
+              if (joints) panel = own(panel.subtract(joints));
             }
-          out.push(...(pieces.length > 1 ? split(part, pieces) : [part]));
-          continue;
+            const deg = (Math.atan(shape.t) * 180) / Math.PI;
+            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0] };
+            local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
+          }
         }
-        out.push(part);
       }
-      parts.length = 0;
-      parts.push(...out);
+
+      // The floor of the storey above: it covers this storey like a flat
+      // roof, a lip under it inside these walls, and a groove on top where
+      // the walls of the next storey stand.
+      const above = storeys[s.n];
+      if (above) {
+        const slabTop = z1 + KIT.slab;
+        const slab = box(0, 0, z1, W, D, slabTop);
+        const lip = minus(
+          box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
+          box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
+        );
+        const ax = above.ox - s.ox,
+          ay = above.oy - s.oy;
+        const groove = minus(
+          box(ax - c, ay - c, slabTop - g, ax + above.width + c, ay + above.depth + c, slabTop + 1),
+          box(ax + t + c, ay + t + c, slabTop - g - 1, ax + above.width - t - c, ay + above.depth - t - c, slabTop + 2),
+        );
+        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(own(slab.add(lip)), groove), flip: true };
+        local(...cutFlat(floor, plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']], [0, 0]));
+      }
+
+      if (s.garage && b.door === 'roller') {
+        // A plate behind the opening, standing on the floor inside, with ribs
+        // facing out through the opening like the slats of a roller door.
+        const x0 = door.x - KIT.margin,
+          x1 = door.x + door.width + KIT.margin;
+        let insert = box(x0, t, top, x1, t + KIT.insert, top + door.height + KIT.margin);
+        const ribs = [];
+        for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
+          ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
+        if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
+        local({ id: 'door', name: 'Roller door', role: 'door', solid: insert, outward: [0, -1, 0] });
+      }
+      // Frames: a band around the opening on the outside of the wall, open at
+      // the bottom for a door; a window gets a cross in it.
+      const { trim: k, trimDepth: fd, bar } = KIT;
+      s.openings.forEach((o, i) => {
+        if (!o.frame) return;
+        const u0 = o.at - o.width / 2,
+          u1 = o.at + o.width / 2,
+          za = top + o.sill,
+          zb = za + o.height;
+        const bottom = o.type === 'window' ? za - k : za;
+        let frame = minus(onWall(o.wall, u0 - k, u1 + k, 0, fd, bottom, zb + k), onWall(o.wall, u0, u1, -1, fd + 1, za, zb));
+        if (o.type === 'window') {
+          const um = (u0 + u1) / 2,
+            zm = (za + zb) / 2;
+          frame = own(frame.add(own(Manifold.union([onWall(o.wall, um - bar / 2, um + bar / 2, 0, fd, za, zb), onWall(o.wall, u0, u1, 0, fd, zm - bar / 2, zm + bar / 2)]))));
+        }
+        local({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame', solid: frame, outward: OUTWARD[o.wall] });
+      });
+      // Into place on the storey below.
+      for (const part of own2) parts.push(s.ox || s.oy ? { ...part, solid: own(part.solid.translate([s.ox, s.oy, 0])) } : part);
     }
-    // Keep the parts; free everything else.
+    // Keep the parts in the order of the kit; free everything else.
+    const order = buildingLayout(b).parts.map((p) => p.id);
+    const rank = (id) => order.indexOf(order.includes(id) ? id : id.replace(/-\d+$/, ''));
+    parts.sort((a, p) => rank(a.id) - rank(p.id));
     const keep = new Set(parts.map((p) => p.solid));
     for (const s of temp) if (!keep.has(s)) s.delete();
     return parts;
@@ -552,12 +575,111 @@ export function buildGarage(wasm, input, plate = null) {
     for (const s of temp) s.delete();
     throw e;
   }
+
+  /* ---------- Cutting to fit the plate ---------- */
+
+  function cs(polys) {
+    return own(new wasm.CrossSection(polys, 'NonZero'));
+  }
+  // The pieces between the seams of one part, in its own 2D frame (u along
+  // it, v across): each the region on the low side of its seam, less the
+  // region on the low side of the seam before it, grown by the play.
+  function strips(cuts, [v0, v1], tabsOf, stepsOf = null) {
+    const far = 1e4;
+    const lefts = cuts.map((at) => cs(seamRegion(at, [v0, v1], tabsOf(at), stepsOf ? stepsOf(at) : null)));
+    return [...lefts, cs([[[-far, v0 - far], [far, v0 - far], [far, v1 + far], [-far, v1 + far]]])].map((region, k) =>
+      k ? own(region.subtract(own(lefts[k - 1].offset(JOINT.play, 'Miter', 2)))) : region,
+    );
+  }
+  // Seams the other way: drawn with u along v, then turned.
+  function turned(regions) {
+    return regions.map((region) => own(region.transform([0, 1, 0, 1, 0, 0, 0, 0, 1])));
+  }
+  function named(part, pieces) {
+    if (pieces.length < 2) return pieces.length ? [{ ...part, solid: pieces[0] }] : [part];
+    return pieces.map((solid, k) => ({ ...part, id: part.id + '-' + (k + 1), name: part.name + ' ' + (k + 1) + ' of ' + pieces.length, solid }));
+  }
+  // The base, a floor or the roof: cut both ways in the plan. origin: where
+  // the cut places are counted from.
+  function cutFlat(part, planned, [x0, y0]) {
+    if (!planned || (!planned[0].cuts.length && !planned[1].cuts.length)) return [part];
+    const xCuts = planned[0].cuts.map((v) => v + x0),
+      yCuts = planned[1].cuts.map((v) => v + y0);
+    const { min, max } = part.solid.boundingBox();
+    // Seams across x run along y, with their tabs between the y seams; and the other way.
+    const xs = strips(xCuts, [min[1], max[1]], () => tabPlaces([min[1], max[1]], yCuts));
+    const ys = turned(strips(yCuts, [min[0], max[0]], () => tabPlaces([min[0], max[0]], xCuts)));
+    const pieces = [];
+    for (const xr of xs)
+      for (const yr of ys) {
+        const cell = own(xr.intersect(yr));
+        if (cell.isEmpty()) continue;
+        const prism = own(own(cell.extrude(max[2] - min[2] + 4)).translate([0, 0, min[2] - 2]));
+        const solid = own(part.solid.intersect(prism));
+        if (!solid.isEmpty() && solid.volume() > 1) pieces.push(solid);
+      }
+    return named(part, pieces);
+  }
+  // A wall: cut along its length, and across its height when it is taller
+  // than the plate. A brick or block wall is cut along its joints: along its
+  // length the seam steps from course to course, across its height it runs
+  // along a course, so either seam is one more joint.
+  function cutWall(part, wall, s, { W, D, z0, zTop, top, z1 }) {
+    const along = plan?.[part.id]?.cuts ?? [],
+      up = plan?.[part.id + 'Z']?.cuts ?? [];
+    if (!along.length && !up.length) return [part];
+    const stepped = ['brick', 'block'].includes(s.wallTexture);
+    const k = b.textureScale / 100;
+    const rowH = stepped ? DRAWN[s.wallTexture].course * k : 0,
+      brick = stepped ? DRAWN[s.wallTexture].length * k : 0;
+    const L = wallLength(s, wall);
+    // Across the height: measured from the foot of the wall, on a course line for bricks.
+    const ups = up.map((v) => (stepped ? top + Math.round((z0 + v - top) / rowH) * rowH : z0 + v));
+    const openingsAt = (u) => [
+      ...(s.garage && wall === 'front' && u > door.x && u < door.x + door.width ? [[top, top + door.height]] : []),
+      ...s.openings.filter((o) => o.wall === wall && Math.abs(u - o.at) < o.width / 2).map((o) => [top + o.sill, top + o.sill + o.height]),
+    ];
+    const brickSteps = (at) => {
+      const rows = [];
+      for (let r = -1; top + r * rowH < zTop + rowH; r++) {
+        const shift = ((((r % 2) + 2) % 2) * brick) / 2;
+        rows.push({ v: top + r * rowH, top: top + (r + 1) * rowH, at: Math.round((at - shift) / brick) * brick + shift });
+      }
+      rows[0].v = z0 - 1;
+      return rows;
+    };
+    const lengthWise = strips(along, [z0, zTop], (at) => (stepped ? [] : tabPlaces([z0, zTop], [top, z1, ...ups], openingsAt(at), 3)), stepped ? brickSteps : null);
+    // Openings the seam across the height runs through, along the wall.
+    const gapsAt = (v) => [
+      ...(s.garage && wall === 'front' && v > top && v < top + door.height ? [[door.x, door.x + door.width]] : []),
+      ...s.openings.filter((o) => o.wall === wall && v > top + o.sill && v < top + o.sill + o.height).map((o) => [o.at - o.width / 2, o.at + o.width / 2]),
+    ];
+    const heightWise = turned(strips(ups, [-1, L + 1], (v) => (stepped ? [] : tabPlaces([0, L], along, gapsAt(v), 3))));
+    const frame = {
+      // u along the wall, from 2 mm outside it through to 2 mm inside.
+      front: [[1, 0, 0], [0, 1, 0], [0, -2, 0]],
+      back: [[-1, 0, 0], [0, -1, 0], [W, D + 2, 0]],
+      left: [[0, -1, 0], [1, 0, 0], [-2, D, 0]],
+      right: [[0, 1, 0], [-1, 0, 0], [W + 2, 0, 0]],
+    }[wall];
+    const [U, N, O] = frame;
+    const pieces = [];
+    for (const a of lengthWise)
+      for (const h of heightWise) {
+        const cell = own(a.intersect(h));
+        if (cell.isEmpty()) continue;
+        const prism = own(own(cell.extrude(t + 4)).transform([...U, 0, 0, 0, 1, 0, ...N, 0, ...O, 1]));
+        const solid = own(part.solid.intersect(prism));
+        if (!solid.isEmpty() && solid.volume() > 1) pieces.push(solid);
+      }
+    return named(part, pieces);
+  }
 }
 
 /**
  * A part turned to how it prints, on the plate at the origin: a wall, a
- * frame or the door with its outside face up, the base and the flat roof
- * upside down, a roof panel lying on its underside.
+ * frame or the door with its outside face up, the base, a floor and the
+ * flat roof upside down, a roof panel lying on its underside.
  */
 export function printPose(part) {
   const s = part.solid;
