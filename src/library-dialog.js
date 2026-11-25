@@ -1,5 +1,4 @@
-import { esc, icon, field, check, choice } from './ui.js';
-import { clipChoices } from './joint-controls.js';
+import { esc, icon, field, choice } from './ui.js';
 import { card, sharedLabels } from './library-view.js';
 import { MAX_LIBRARY_BYTES } from './library-database.js';
 import {
@@ -9,17 +8,29 @@ import {
   SHARED_PROFILE_FIELDS,
   trackWithProfile,
 } from './library-profile.js';
-import { SCREW_CLIP_DEFAULTS } from './geometry/screw-clip.js';
 import './library.css';
-import { defaultPackRules, validatePackRules } from './track-pack-rules.js';
+import { defaultPackRules, takesPackBorders, validatePackRules } from './track-pack-rules.js';
 import { TRACKSIDE_DEFAULTS } from './geometry/trackside.js';
 import { readTracksideFields, syncTracksideControls, tracksideControls } from './trackside-controls.js';
 import { syncPropertyReadouts } from './property-panel.js';
 import { markingControls, markingsOf, readMarkingFields } from './markings-controls.js';
 import { readTextureFields, syncTextureControls, textureFields } from './texture-controls.js';
 import { takesRoadTexture } from './geometry/road-texture.js';
-import { centreLineStyles } from './paint-controls.js';
-import { braidStyleChoices } from './connection-controls.js';
+import {
+  borderControls,
+  bordersOf,
+  NEW_PACK_STEPS,
+  optionalStepForms,
+  readBorderFields,
+  profileControl,
+  readOptionalSteps,
+  readProfileFields,
+  footNote,
+  stepHead,
+  stepRail,
+  stepSummary,
+  stepValues,
+} from './new-pack-steps.js';
 
 const ruleFields = [
   ['packWidth', 'width', 'Road width', 'mm', { min: 2, max: 5000 }],
@@ -145,6 +156,125 @@ export async function showTrackLibrary({
       )
       .join('') +
     '</select></label>';
+  // The steps of a new pack: the one shown, the ones changed, and the
+  // values the optional steps started with.
+  let npStep = 0,
+    npChanged = new Set(),
+    npValues = null;
+  // The profile, pieces and rules a new pack starts with.
+  function startSource(from) {
+    if (from === 'copy') return active();
+    if (from === 'starter' || from === 'single-starter') return starterPack(from === 'single-starter' ? 1 : 2);
+    return {
+      profile: canSavePiece ? profileFromTrack(current().track) : starterPack().profile,
+      pieces: [],
+      rules: {},
+    };
+  }
+  function startValues(from) {
+    const source = startSource(from);
+    return { ...stepValues(source), baseProfile: source.profile, source };
+  }
+  // Each step says what it holds now, and has a dot once you changed it.
+  // The header shows the name of the pack, and whether it can be made.
+  function syncRail() {
+    for (const b of dialog.querySelectorAll('.np-rail [data-np-go]')) {
+      const key = b.dataset.npGo;
+      b.classList.toggle('np-done', npChanged.has(key));
+      const form = dialog.querySelector('form.np-step[data-step="' + key + '"]');
+      const line = form ? stepSummary(key, form) : '';
+      const sum = b.querySelector('[data-np-sum]');
+      if (sum.textContent !== line) sum.textContent = line;
+    }
+    const name = $('[name="itemName"]').value.trim();
+    $('[data-np-title]').textContent = name || 'Untitled pack';
+    const ready = name !== '' && $('form[data-step="basics"]').checkValidity();
+    const pill = $('[data-np-ready]');
+    pill.classList.toggle('np-ready-ok', ready);
+    pill.lastChild.textContent = ready ? 'Ready to create' : name ? 'Check the basics' : 'Give it a name';
+    $('[data-np-note]').textContent = footNote(npChanged);
+  }
+  function showStep(i) {
+    npStep = i;
+    const key = NEW_PACK_STEPS[i].key;
+    for (const step of dialog.querySelectorAll('.np-step')) step.hidden = step.dataset.step !== key;
+    for (const b of dialog.querySelectorAll('.np-rail [data-np-go]')) {
+      if (b.dataset.npGo === key) b.setAttribute('aria-current', 'step');
+      else b.removeAttribute('aria-current');
+    }
+    syncRail();
+    const last = i === NEW_PACK_STEPS.length - 1;
+    $('[data-np-first]').hidden = i > 0;
+    $('[data-lib="np-back"]').hidden = i === 0;
+    $('[data-lib="np-skip"]').hidden = i === 0 || last;
+    $('[data-lib="np-next"]').hidden = last;
+    $('[data-lib="commit-new"]').className = last ? 'primary' : 'outline';
+    $('.np-panel').scrollTop = 0;
+    syncTrackside();
+    syncTexture();
+  }
+  // The first step whose form is not valid is shown, with its message.
+  function validSteps(upTo = NEW_PACK_STEPS.length) {
+    for (const form of dialog.querySelectorAll('form.np-step')) {
+      const i = NEW_PACK_STEPS.findIndex((s) => s.key === form.dataset.step);
+      if (i >= upTo || form.checkValidity()) continue;
+      showStep(i);
+      form.reportValidity();
+      return false;
+    }
+    return true;
+  }
+  function readRules() {
+    return validatePackRules(
+      Object.fromEntries(ruleFields.map(([key, prop]) => [prop, $('[name="' + key + '"]').valueAsNumber])),
+    );
+  }
+  const PACK_SETTERS = [
+    ['borders', 'setBorders', 'the borders'],
+    ['markings', 'setMarkings', 'the lines and kerbs'],
+    ['texture', 'setTexture', 'the road surface'],
+    ['trackside', 'setTrackside', 'the trackside accessories'],
+  ];
+  async function commitNew() {
+    const name = $('[name="itemName"]').value.trim();
+    if (!name) {
+      showStep(0);
+      throw Error('Enter a pack name.');
+    }
+    const from = $('[name="startWith"]').value;
+    // The pack the steps were filled from: its profile is the one they change.
+    const { source } = npValues;
+    const chosen = readOptionalSteps(dialog, npChanged, npValues);
+    const rules = from === 'empty' ? readRules() : (source.rules ?? defaultPackRules());
+    if (source.pieces.length && chosen.profile !== source.profile) await verify(source.pieces, chosen.profile);
+    const setters = PACK_SETTERS.filter(([key]) => chosen[key]);
+    // An empty pack keeps them in its rules for new pieces; a pack with
+    // pieces gives them to its pieces as well, as Pack rules does.
+    const id = await store.createCollection(
+      name,
+      chosen.profile,
+      source.pieces,
+      source.pieces.length ? rules : { ...rules, ...Object.fromEntries(setters.map(([key]) => [key, chosen[key]])) },
+    );
+    if (source.pieces.length)
+      try {
+        for (const [key, setter, what] of setters) {
+          note('Applying ' + what + ' to ' + count(source.pieces.length) + '…');
+          await store[setter](id, chosen[key]);
+        }
+      } catch (e) {
+        // Nothing is left half made: the pack goes, and the dialog stays open.
+        await store.deletePack(id);
+        throw e;
+      }
+    activeId = id;
+    await reload();
+    page = 0;
+    copying = false;
+    screen = 'browse';
+    message = 'Track pack ' + name + ' created.';
+    render();
+  }
   function syncRuleSpacing() {
     const lanes = $('[name="packLanes"]');
     if (!lanes) return;
@@ -263,36 +393,7 @@ export async function showTrackLibrary({
       ...profileFromTrack(c.pieces[0]?.track ?? current().track),
       ...c.profile,
     };
-    const control = (k) =>
-      k === 'hollow' || k === 'reinforcement'
-        ? check(k, sharedLabels[k], v[k])
-        : k === 'roadCentreLine'
-          ? choice(k, sharedLabels[k], v[k] ?? 'none', centreLineStyles)
-        : k === 'braidStyle'
-          ? choice(k, sharedLabels[k], v[k] ?? 'recessed', braidStyleChoices)
-        : k === 'joint'
-          ? choice(k, sharedLabels[k], v[k] ?? 'none', [
-              ['none', 'Plain'],
-              ['tabs', 'Tabs and sockets'],
-              ['clips', 'Removable clips'],
-              ['both', 'Tabs and clips'],
-            ])
-          : k === 'clipType'
-            ? choice(k, sharedLabels[k], v[k] ?? '', clipChoices(v[k]))
-          : k === 'screwDirection'
-            ? choice(k, sharedLabels[k], v[k] ?? SCREW_CLIP_DEFAULTS[k], [
-                ['top', 'All from the top'],
-                ['bottom', 'All from the bottom'],
-                ['side', 'Per road side'],
-              ])
-          : k === 'screwLength'
-            ? field(k, sharedLabels[k], v[k] ?? '', 'mm', { optional: true, placeholder: 'Auto' })
-          : Object.hasOwn(SCREW_CLIP_DEFAULTS, k)
-            ? field(k, sharedLabels[k], v[k] ?? SCREW_CLIP_DEFAULTS[k], k === 'screwHeadAngle' ? '°' : 'mm')
-            : field(k, sharedLabels[k], v[k] ?? '', 'mm', {
-                optional: k === 'tabThickness',
-                placeholder: 'Auto',
-              });
+    const control = (k) => profileControl(k, v);
     return (
       '<h3>' +
       esc(c.name) +
@@ -338,6 +439,10 @@ export async function showTrackLibrary({
       body = '<form data-lib-form>'+ruleInputs(c.rules)+
         '<p class="hint">These dimensions apply when adding a piece. Existing pieces keep their designed dimensions.</p>'+
         '<div class="lib-footer">'+back()+btn('commit-rules','Save pack rules','primary','save')+'</div></form>'+
+        '<h3>Borders</h3>'+
+        '<p class="hint">Borders beside the road of the plain straights and corners of this pack. Applying them sets '+count(c.pieces.filter((piece) => takesPackBorders(piece.track.params)).length)+' the same way, and new straights and corners start with them. Special pieces you already have keep their own borders. You can still change a single piece afterwards under Track Set → Borders.</p>'+
+        '<form data-lib-borders class="lib-trackside">'+borderControls(c.rules.borders ?? bordersOf(c.pieces.find((piece) => piece.track.params.kind === 'curve' && !piece.track.params.special)?.track.params))+
+        '<div class="lib-footer">'+btn('commit-borders','Apply to all straights and corners','primary','check')+'</div></form>'+
         '<h3>White lines and kerbstones</h3>'+
         '<p class="hint">Markings for every piece of this pack. Applying them sets all '+count(c.pieces.length)+' the same way, and new pieces start with them. Border markings show on the pieces that have borders. You can still change a single piece afterwards under Track Set → Markings, or a section of a layout in the Track Planner.</p>'+
         '<form data-lib-markings class="lib-trackside">'+markingControls(c.rules.markings ?? markingsOf(c.pieces[0]?.track.params))+
@@ -357,21 +462,35 @@ export async function showTrackLibrary({
         (cutPieces(c) ? btn('reset-segments','Reset every piece to one segment','outline','reset') : '');
     } else if (screen === 'new') {
       title = 'New track pack';
+      npStep = 0;
+      npChanged = new Set();
+      npValues = startValues('empty');
       body =
-        '<form data-lib-form>' +
+        '<div class="np">' +
+        '<nav class="np-rail" aria-label="Steps of the new pack">' + stepRail() + '</nav>' +
+        '<div class="np-panel">' +
+        '<form data-lib-form class="np-step" data-step="basics">' +
+        stepHead(NEW_PACK_STEPS[0]) +
         nameField('Pack name', '') +
         choice('startWith', 'Start with', 'empty', [
           ['empty', 'Empty track pack'],
           ...(c
-            ? [['copy', 'Copy ' + c.name + ' (' + count(c.pieces.length) + ')']]
+            ? [['copy', 'Copy of ' + c.name + ' · ' + count(c.pieces.length)]]
             : []),
           ['starter', 'Two-lane starter pack · 200 mm wide'],
           ['single-starter', 'Single-lane starter pack · 100 mm wide'],
         ]) + '<div data-new-pack-rules>' + ruleInputs(defaultPackRules()) + '</div>' +
-        '<div class="lib-footer">' +
-        back() +
-        btn('commit-new', 'Create track pack', 'primary', 'plus') +
-        '</div></form>';
+        '</div></form>' +
+        '<div data-np-optional>' + optionalStepForms(npValues) + '</div>' +
+        '</div></div>' +
+        '<div class="lib-footer np-footer">' +
+        '<p class="np-note" data-np-note></p>' +
+        '<span data-np-first>' + back() + '</span>' +
+        btn('np-back', 'Back') +
+        btn('np-skip', 'Skip this step') +
+        btn('commit-new', 'Create track pack', 'outline', 'plus') +
+        btn('np-next', 'Next', 'primary') +
+        '</div>';
     } else if (screen === 'restore') {
       title = 'Restore SQLite backup';
       body =
@@ -408,13 +527,18 @@ export async function showTrackLibrary({
       body = browse(c);
     }
     dialog.innerHTML =
-      '<header><h2 id="lib-title">' +
-      esc(title) +
-      '</h2><button type="button" class="icon-button" aria-label="Close library" data-lib="close">' +
+      (screen === 'new'
+        ? '<header class="np-head"><span class="np-badge">' + icon('library') + '</span>' +
+          '<div><div class="sf-eyebrow">New track pack</div><h2 id="lib-title" data-np-title>Untitled pack</h2></div>' +
+          '<span class="np-ready" data-np-ready><span class="np-dot" aria-hidden="true"></span><span></span></span>'
+        : '<header><h2 id="lib-title">' + esc(title) + '</h2>') +
+      '<button type="button" class="icon-button" aria-label="Close library" data-lib="close">' +
       icon('close') +
       '</button></header>' +
       body +
       '<p class="lib-status" role="status"></p>';
+    dialog.classList.toggle('lib-wide', screen === 'new');
+    if (screen === 'new') showStep(0);
     syncRuleSpacing();
     note(message);
   }
@@ -489,42 +613,8 @@ export async function showTrackLibrary({
     dialog.close();
   }
   async function commitProfile() {
-    const c = active(),
-      next = { ...c.profile };
-    for (const control of $('[data-lib-form]').elements) {
-      if (!SHARED_PROFILE_FIELDS.includes(control.name)) continue;
-      if (control.type === 'checkbox') next[control.name] = control.checked;
-      else if (control.type === 'number') {
-        if (control.value === '') {
-          if (control.name !== 'tabThickness' && control.name !== 'screwLength')
-            throw Error('Enter ' + sharedLabels[control.name] + '.');
-          next[control.name] = null;
-        } else next[control.name] = control.valueAsNumber;
-      } else if (control.value) next[control.name] = control.value;
-      else next[control.name] = null;
-      // A Kevan Sideclip setting the pack never set stays unset at its default.
-      // An empty screw length is automatic.
-      if (
-        Object.hasOwn(SCREW_CLIP_DEFAULTS, control.name) &&
-        c.profile[control.name] == null &&
-        (control.name === 'screwLength'
-          ? next[control.name] == null
-          : next[control.name] === SCREW_CLIP_DEFAULTS[control.name])
-      )
-        delete next[control.name];
-    }
-    if (
-      different(next, c.profile).some((k) =>
-        [
-          'tabWidth',
-          'tabLength',
-          'tabClearance',
-          'tabThickness',
-          'clipType',
-        ].includes(k),
-      )
-    )
-      next.jointFitVersion = 2;
+    const c = active();
+    const next = readProfileFields([$('[data-lib-form]')], c.profile);
     await verify(c.pieces, next);
     if (current().link?.collectionId === c.id) await prepare();
     const work = current();
@@ -557,6 +647,15 @@ export async function showTrackLibrary({
   }
   dialog.addEventListener('input', syncTexture);
   dialog.addEventListener('change', syncTexture);
+  // A step the user changed sets the pack; a step left alone keeps what
+  // the pack starts with.
+  const markStep = (e) => {
+    const step = e.target.closest?.('form.np-step')?.dataset.step;
+    if (step && step !== 'basics') npChanged.add(step);
+    if (step) syncRail();
+  };
+  dialog.addEventListener('input', markStep);
+  dialog.addEventListener('change', markStep);
   dialog.addEventListener('input', (e) => {
     if (e.target.name === 'packLanes') syncRuleSpacing();
   });
@@ -564,6 +663,11 @@ export async function showTrackLibrary({
     if (e.target.name === 'startWith') {
       const group = $('[data-new-pack-rules]');
       group.hidden = group.querySelector('fieldset').disabled = e.target.value !== 'empty';
+      // The optional steps start again from the chosen pack.
+      npValues = startValues(e.target.value);
+      npChanged = new Set();
+      $('[data-np-optional]').innerHTML = optionalStepForms(npValues);
+      showStep(0);
     }
     if (e.target.name === 'collection') {
       activeId = e.target.value;
@@ -599,6 +703,10 @@ export async function showTrackLibrary({
   });
   dialog.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (screen === 'new' && npStep < NEW_PACK_STEPS.length - 1) {
+      $('[data-lib="np-next"]').click();
+      return;
+    }
     dialog.querySelector('[data-lib^="commit-"]')?.click();
   });
   dialog.addEventListener('click', (e) => {
@@ -618,6 +726,51 @@ export async function showTrackLibrary({
     }
     if (id === 'close') {
       dialog.close();
+      return;
+    }
+    if (b.dataset.npGo) {
+      const i = NEW_PACK_STEPS.findIndex((s) => s.key === b.dataset.npGo);
+      // Basics first: the steps after it need a valid start.
+      if (i > 0 && !validSteps(1)) return;
+      showStep(i);
+      return;
+    }
+    if (id === 'np-next' || id === 'np-skip') {
+      const form = $('.np-step:not([hidden])');
+      if (id === 'np-next' && form?.matches('form') && !form.reportValidity()) return;
+      showStep(Math.min(npStep + 1, NEW_PACK_STEPS.length - 1));
+      return;
+    }
+    if (id === 'np-back') {
+      showStep(Math.max(npStep - 1, 0));
+      return;
+    }
+    if (id === 'commit-new') {
+      if (!validSteps()) return;
+      void perform(commitNew);
+      return;
+    }
+    if (id === 'commit-borders') {
+      const form = $('[data-lib-borders]');
+      if (!form.reportValidity()) return;
+      void perform(async () => {
+        const work = current();
+        const open = work.link?.collectionId === c.id;
+        // Save the piece that is open before its pack changes under it.
+        if (open) await prepare();
+        const fresh = open ? (await reload(), active()) : c;
+        const borders = readBorderFields(form);
+        const { changed } = await store.setBorders(fresh.id, borders, { expectedRevision: fresh.revision });
+        await reload();
+        // The open piece is one of them: open it again as the pack has it now.
+        const again = open && active().pieces.find((p) => p.id === work.link.pieceId);
+        if (again) await openPiece(active(), again);
+        message =
+          borders.borderSide === 'none'
+            ? 'Borders are off for ' + count(changed) + ' and for new straights and corners.'
+            : 'Borders set for ' + count(changed) + '. New straights and corners start with them too.';
+        render();
+      });
       return;
     }
     if (id === 'commit-texture') {
@@ -741,21 +894,12 @@ export async function showTrackLibrary({
     if (
       id === 'commit-piece' ||
       id === 'commit-profile' ||
-      id === 'commit-new' || id === 'commit-rules'
+      id === 'commit-rules'
     ) {
       if (!$('[data-lib-form]').reportValidity()) return;
       void perform(async () => {
         if (id === 'commit-piece') return commitPiece();
         if (id === 'commit-profile') return commitProfile();
-        const readRules = () =>
-          validatePackRules(
-            Object.fromEntries(
-              ruleFields.map(([key, prop]) => [
-                prop,
-                $('[name="' + key + '"]').valueAsNumber,
-              ]),
-            ),
-          );
         if (id === 'commit-rules') {
           const work = current();
           if (work.link?.collectionId === c.id) await prepare();
@@ -773,25 +917,6 @@ export async function showTrackLibrary({
           render();
           return;
         }
-        const from = $('[name="startWith"]').value;
-        const initial =
-          from === 'copy'
-            ? c
-            : from === 'starter' || from === 'single-starter'
-              ? starterPack(from === 'single-starter' ? 1 : 2)
-              : { profile: canSavePiece ? profileFromTrack(current().track) : starterPack().profile, pieces: [] };
-        activeId = await store.createCollection(
-          $('[name="itemName"]').value.trim(),
-          initial.profile,
-          initial.pieces,
-          from === 'empty' ? readRules() : initial.rules ?? defaultPackRules(),
-        );
-        await reload();
-        page = 0;
-        copying = false;
-        screen = 'browse';
-        message = '';
-        render();
       });
       return;
     }

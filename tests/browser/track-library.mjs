@@ -238,6 +238,60 @@ export async function checkTrackLibrary({
   assert.equal(await dialog.locator('[data-open-piece]').count(), 10);
   await openMember('Full straight');
   await checkPrint(200, 2);
+
+  // A new pack in steps: Basics first, then any optional step.
+  await library(basic);
+  await control('new').click();
+  const step = (key) => dialog.locator('.np-rail [data-np-go="' + key + '"]');
+  const shown = () => dialog.locator('.np-step:not([hidden])').getAttribute('data-step');
+  // Without a name the steps after Basics stay shut.
+  await step('borders').click();
+  assert.equal(await shown(), 'basics');
+  assert.match(await dialog.locator('[data-np-ready]').innerText(), /Give it a name/);
+  await setting('itemName').fill('Bordered pack');
+  await setting('startWith').selectOption('starter');
+  assert.match(await dialog.locator('[data-np-ready]').innerText(), /Ready to create/);
+  assert.equal(await dialog.locator('[data-np-title]').innerText(), 'BORDERED PACK');
+  await control('np-next').click();
+  assert.equal(await shown(), 'road');
+  await control('np-skip').click();
+  await control('np-skip').click();
+  await control('np-skip').click();
+  assert.equal(await shown(), 'borders');
+  await setting('borderSide').selectOption('both');
+  await setting('borderWidth').fill('20');
+  assert.equal(await step('borders').locator('[data-np-sum]').innerText(), 'Both sides · 20 mm');
+  assert.ok(await step('borders').evaluate((b) => b.classList.contains('np-done')));
+  assert.ok(!(await step('road').evaluate((b) => b.classList.contains('np-done'))));
+  assert.match(await dialog.locator('[data-np-note]').innerText(), /Your settings: Borders\./);
+  await control('commit-new').click();
+  await card('R1 corner').waitFor();
+  assert.equal(await setting('collection').locator('option:checked').textContent(), 'Bordered pack');
+  // The pack keeps its borders, and Pack rules shows them.
+  await control('rules').click();
+  assert.equal(await setting('borderSide').inputValue(), 'both');
+  assert.equal(await setting('borderWidth').inputValue(), '20');
+  await control('browse').click();
+  await openMember('R1 corner');
+  await tab('borders').click();
+  assert.equal(await input('borderSide').inputValue(), 'both');
+  assert.equal(await input('borderEntry').inputValue(), '20');
+  assert.equal(await input('outerApexWidth').inputValue(), '35');
+  await library('Bordered pack');
+  await openMember('Full straight');
+  await tab('borders').click();
+  assert.equal(await input('outerApexWidth').inputValue(), '20');
+  // A corner added to the pack afterwards starts with its borders.
+  await library('Bordered pack');
+  await control('create-piece').click();
+  const borderedCreator = page.locator('dialog.piece-creator');
+  await borderedCreator.locator('[data-shape="curve"]').click();
+  await borderedCreator.locator('[data-pc-apply]').click();
+  await borderedCreator.waitFor({ state: 'detached' });
+  const bordered = JSON.parse((await download(action('save'))).bytes).track.params;
+  assert.equal(bordered.kind, 'curve');
+  assert.equal(bordered.borderSide, 'both');
+  assert.deepEqual([bordered.borderEntry, bordered.borderApex, bordered.borderExit], [20, 35, 20]);
   await library(collection);
   const membersBefore = await dialog.locator('[data-open-piece]').count();
   await control('create-piece').click();

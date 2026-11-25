@@ -1,4 +1,4 @@
-import { check, choice, field } from './ui.js';
+import { check, choice, details, field } from './ui.js';
 
 // White lines and kerbstones as one set of settings: for every piece of a
 // pack in the pack rules, and for the selected sections of a layout.
@@ -49,28 +49,39 @@ export function markingsOf(params = {}) {
   );
 }
 
-export function markingControls(values) {
+// Each group is a fieldset, or with folders a folder that opens and shuts.
+export function markingControls(values, { folders = false } = {}) {
   const p = { ...MARKING_DEFAULTS, ...values };
+  const group = (title, body, open) =>
+    folders
+      ? details(title, body, open)
+      : '<fieldset class="lib-pack-rules"><legend>' + title + '</legend>' + body + '</fieldset>';
   return (
-    '<fieldset class="lib-pack-rules"><legend>White lines</legend>' +
-    choice('whiteLineRoad', 'On the road', p.whiteLineRoad, MARKING_SIDES) +
-    choice('whiteLineBorder', 'On the borders', p.whiteLineBorder, MARKING_SIDES) +
-    field('whiteLineWidth', 'Line width', p.whiteLineWidth, 'mm', { min: 0.1, max: 2000 }) +
-    check('roadLineGroove', 'Recess road markings', p.roadLineGroove) +
-    check('borderLineGroove', 'Recess border-only lines', p.borderLineGroove) +
-    '</fieldset>' +
-    '<fieldset class="lib-pack-rules"><legend>Kerbstones</legend>' +
-    choice('roadKerbSide', 'On the road', p.roadKerbSide, MARKING_SIDES) +
-    choice('kerbEdge', 'On the borders', p.kerbEdge, KERB_EDGES) +
-    choice('kerbSide', 'Which borders', p.kerbSide, KERB_BORDERS) +
-    field('kerbWidth', 'Stripe width', p.kerbWidth, 'mm', { min: 0.1, max: 2000 }) +
-    field('kerbLength', 'Block length', p.kerbLength, 'mm', { min: 0.1, max: 20000 }) +
-    check('kerbGroove', 'Recess each kerbstone outline', p.kerbGroove) +
-    '</fieldset>' +
-    '<fieldset class="lib-pack-rules"><legend>Paint grooves</legend>' +
-    field('grooveWidth', 'Groove width', p.grooveWidth, 'mm', { min: 0.05, max: 20 }) +
-    field('grooveDepth', 'Groove depth', p.grooveDepth, 'mm', { min: 0.05, max: 50 }) +
-    '</fieldset>'
+    group(
+      'White lines',
+      choice('whiteLineRoad', 'On the road', p.whiteLineRoad, MARKING_SIDES) +
+        choice('whiteLineBorder', 'On the borders', p.whiteLineBorder, MARKING_SIDES) +
+        field('whiteLineWidth', 'Line width', p.whiteLineWidth, 'mm', { min: 0.1, max: 2000 }) +
+        check('roadLineGroove', 'Recess road markings', p.roadLineGroove) +
+        check('borderLineGroove', 'Recess border-only lines', p.borderLineGroove),
+      true,
+    ) +
+    group(
+      'Kerbstones',
+      choice('roadKerbSide', 'On the road', p.roadKerbSide, MARKING_SIDES) +
+        choice('kerbEdge', 'On the borders', p.kerbEdge, KERB_EDGES) +
+        choice('kerbSide', 'Which borders', p.kerbSide, KERB_BORDERS) +
+        field('kerbWidth', 'Stripe width', p.kerbWidth, 'mm', { min: 0.1, max: 2000 }) +
+        field('kerbLength', 'Block length', p.kerbLength, 'mm', { min: 0.1, max: 20000 }) +
+        check('kerbGroove', 'Recess each kerbstone outline', p.kerbGroove),
+      true,
+    ) +
+    group(
+      'Paint grooves',
+      field('grooveWidth', 'Groove width', p.grooveWidth, 'mm', { min: 0.05, max: 20 }) +
+        field('grooveDepth', 'Groove depth', p.grooveDepth, 'mm', { min: 0.05, max: 50 }),
+      false,
+    )
   );
 }
 

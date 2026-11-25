@@ -24,6 +24,7 @@ import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { fitUneditedPitGrid } from './starting-grid-controls.js';
 import { SPECIAL_PIECES, specialTrackParams } from './special-pieces.js';
 import { SPECIAL_SHORT_NAMES } from './pack-specials.js';
+import { applyPackBorders } from './track-pack-rules.js';
 import { trackThumbnail } from './library-view.js';
 import {
   specialControls,
@@ -217,6 +218,8 @@ export function openTrackPieceCreator({
         borderSide: input('pcBorderSide').value,
       });
     } else params.length = number('pcLength');
+    // A new straight or corner has the borders of its pack.
+    if (!special && packRules?.borders) applyPackBorders(params, packRules.borders);
     const adjustment = special ? null : lanes(params, changed);
     if (special) get('[data-lane-editor]').hidden = true;
     if (adjustment) params.laneAdjustment = adjustment;

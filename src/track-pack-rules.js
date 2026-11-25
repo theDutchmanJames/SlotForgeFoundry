@@ -46,6 +46,72 @@ export function validatePackTexture(texture) {
   return all;
 }
 
+// The borders of a pack: for its plain straights and corners. One width at
+// the ends of every piece, so the borders of two pieces meet; a corner can
+// be wider at its apex, a straight keeps the same width all along.
+export const BORDER_DEFAULTS = Object.freeze({
+  borderSide: 'none',
+  borderWidth: 22,
+  borderApexWidth: 35,
+  borderMount: 'none',
+  borderJoint: 'none',
+});
+const BORDER_SIDES = ['none', 'outer', 'inner', 'both'];
+const BORDER_CONNECTIONS = ['none', 'tabs', 'clips', 'both'];
+export function validatePackBorders(borders) {
+  if (
+    !borders ||
+    typeof borders !== 'object' ||
+    Array.isArray(borders) ||
+    Object.keys(borders).some((key) => !Object.hasOwn(BORDER_DEFAULTS, key))
+  )
+    throw Error('The track pack contains unknown border settings.');
+  const all = { ...BORDER_DEFAULTS, ...borders };
+  if (!BORDER_SIDES.includes(all.borderSide)) throw Error('Choose a side for the borders.');
+  for (const [key, name] of [
+    ['borderWidth', 'Border width'],
+    ['borderApexWidth', 'Apex width on corners'],
+  ])
+    if (!Number.isFinite(all[key]) || all[key] < 0 || all[key] > 2000)
+      throw Error(name + ' must be between 0 and 2000 mm.');
+  if (all.borderSide !== 'none' && !(all.borderWidth > 0))
+    throw Error('Give the borders a width at the ends of the pieces.');
+  for (const [key, name] of [
+    ['borderMount', 'Attach to road'],
+    ['borderJoint', 'Join border ends'],
+  ])
+    if (!BORDER_CONNECTIONS.includes(all[key])) throw Error('Choose a connection for ' + name + '.');
+  return all;
+}
+/** Whether a piece takes the borders of its pack: plain straights and corners. */
+export const takesPackBorders = (params) =>
+  ['straight', 'curve'].includes(params.kind) && !params.special;
+/** The piece settings for the borders of a pack, on a straight or a corner. */
+export function packBorderParams(borders, kind) {
+  const b = { ...BORDER_DEFAULTS, ...borders };
+  return {
+    borderSide: b.borderSide,
+    borderEntry: b.borderWidth,
+    borderExit: b.borderWidth,
+    borderApex: kind === 'curve' ? b.borderApexWidth : b.borderWidth,
+    // One apex for both sides, in the middle of the piece.
+    apexPosition: 0.5,
+    innerApexWidth: undefined,
+    outerApexWidth: undefined,
+    innerApexPosition: undefined,
+    outerApexPosition: undefined,
+    borderMount: b.borderMount,
+    borderJoint: b.borderJoint,
+  };
+}
+/** Gives a straight or a corner the borders of its pack, in place. */
+export function applyPackBorders(params, borders) {
+  for (const [key, value] of Object.entries(packBorderParams(borders, params.kind)))
+    if (value === undefined) delete params[key];
+    else params[key] = value;
+  return params;
+}
+
 export function validatePackTrackside(trackside) {
   if (
     !trackside ||
@@ -75,7 +141,7 @@ export function validatePackRules(rules, profile) {
     !rules ||
     typeof rules !== 'object' ||
     Array.isArray(rules) ||
-    Object.keys(rules).some((key) => !['trackside', 'markings', 'texture'].includes(key) && !Object.hasOwn(defaults, key))
+    Object.keys(rules).some((key) => !['trackside', 'markings', 'texture', 'borders'].includes(key) && !Object.hasOwn(defaults, key))
   )
     throw Error('The track pack contains unknown design rules.');
   for (const [key, name, min, max] of [
@@ -108,6 +174,7 @@ export function validatePackRules(rules, profile) {
     ...(rules.trackside !== undefined && { trackside: validatePackTrackside(rules.trackside) }),
     ...(rules.markings !== undefined && { markings: validatePackMarkings(rules.markings) }),
     ...(rules.texture !== undefined && { texture: validatePackTexture(rules.texture) }),
+    ...(rules.borders !== undefined && { borders: validatePackBorders(rules.borders) }),
   };
 }
 

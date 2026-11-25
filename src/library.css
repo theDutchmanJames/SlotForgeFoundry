@@ -187,3 +187,245 @@ dialog.track-library {
 }
 .lib-thumb .lib-border { fill: var(--d-border); stroke: var(--d-track-edge); stroke-width: .6; }
 .lib-thumb .lib-detail { fill: none; stroke: var(--warn-text); stroke-width: 1; }
+/* A new track pack: a larger dialog, its steps in a column on the left. */
+dialog.track-library.lib-wide {
+  width: min(1180px, 96vw);
+  height: min(860px, 90dvh);
+  overflow: hidden;
+  padding: 0;
+}
+dialog.track-library.lib-wide[open] {
+  display: flex;
+  flex-direction: column;
+}
+.np-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px 14px;
+}
+.np-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.np-head .sf-eyebrow {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.np-head h2 {
+  margin: 2px 0 0;
+  font-size: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+}
+.np-badge .i {
+  width: 20px;
+  height: 20px;
+}
+.np-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  border-radius: 999px;
+  color: var(--warn-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.np-ready .np-dot {
+  background: var(--warn);
+}
+.np-ready.np-ready-ok {
+  border-color: color-mix(in srgb, var(--good) 55%, transparent);
+  color: var(--good);
+}
+.np-ready.np-ready-ok .np-dot {
+  background: var(--good);
+}
+.np {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  border-top: 1px solid var(--line);
+}
+.np-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.np-group {
+  margin: 14px 8px 6px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.np-group:first-child {
+  margin-top: 2px;
+}
+.np-rail button {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.np-rail button .i {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.np-rail button:hover {
+  background: var(--box);
+}
+.np-rail button[aria-current='step'] {
+  background: var(--sel);
+}
+.np-rail button[aria-current='step'] .i {
+  color: var(--accent-text);
+}
+.np-item {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.np-item small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.np-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--good);
+}
+.np-rail button .np-dot {
+  margin-top: 6px;
+  visibility: hidden;
+}
+.np-rail button.np-done .np-dot {
+  visibility: visible;
+}
+.np-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: auto 8px 0;
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.np-panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 34px 28px;
+}
+.np-panel .np-h {
+  margin: 0;
+  font-size: 26px;
+}
+.np-sub {
+  margin: 2px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.np-card {
+  max-width: 900px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--box);
+}
+.np-card > .hint:first-child {
+  margin-top: 0;
+}
+.np-card details {
+  margin-bottom: 8px;
+}
+.np-card .lib-pack-rules {
+  margin-top: 12px;
+}
+.np-footer {
+  margin: 0;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+}
+.np-note {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+dialog.lib-wide > .lib-status:empty {
+  display: none;
+}
+dialog.lib-wide > .lib-status {
+  margin: 0;
+  padding: 0 22px 12px;
+}
+@media (max-width: 760px) {
+  .np {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .np-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 8px;
+  }
+  .np-group,
+  .np-legend,
+  .np-item small {
+    display: none;
+  }
+  .np-rail button {
+    width: auto;
+    flex: none;
+    align-items: center;
+  }
+  .np-rail button .np-dot {
+    margin-top: 0;
+  }
+  .np-panel {
+    padding: 16px;
+  }
+  .np-ready {
+    display: none;
+  }
+}

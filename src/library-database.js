@@ -6,7 +6,10 @@ import {
 } from './library-profile.js';
 import { currentJointSettings } from './geometry/joint-fit.js';
 import {
+  applyPackBorders,
   rulesFromPieces,
+  takesPackBorders,
+  validatePackBorders,
   validatePackMarkings,
   validatePackTexture,
   validatePackRules,
@@ -299,6 +302,10 @@ export function setCollectionTrackside(db, id, trackside, options) {
 export function setCollectionMarkings(db, id, markings, options) {
   return setCollectionDefaults(db, id, 'markings', validatePackMarkings(markings), options);
 }
+/** The borders of a pack: for its plain straights and corners. */
+export function setCollectionBorders(db, id, borders, options) {
+  return setCollectionDefaults(db, id, 'borders', validatePackBorders(borders), options);
+}
 /** The road surface texture of a pack: for its plain straights and corners. */
 export function setCollectionTexture(db, id, texture, options) {
   return setCollectionDefaults(db, id, 'texture', validatePackTexture(texture), options);
@@ -319,10 +326,16 @@ function setCollectionDefaults(db, id, kind, chosen, { expectedRevision, piece }
     const track = edited ? structuredClone(piece.track) : JSON.parse(r.track);
     // A turnout is a bare road: it takes no barriers, lines or kerbs, and
     // keeps the settings it has. A texture is for plain straights and corners.
-    const takes = kind === 'texture' ? takesRoadTexture(track.params) : track.params.special?.type !== 'turnout';
+    const takes =
+      kind === 'texture'
+        ? takesRoadTexture(track.params)
+        : kind === 'borders'
+          ? takesPackBorders(track.params)
+          : track.params.special?.type !== 'turnout';
     if (!takes && !edited) continue;
     if (takes) {
-      Object.assign(track.params, chosen);
+      if (kind === 'borders') applyPackBorders(track.params, chosen);
+      else Object.assign(track.params, chosen);
       changed++;
     }
     validateRecipe({ name: r.name, track }, profile);
