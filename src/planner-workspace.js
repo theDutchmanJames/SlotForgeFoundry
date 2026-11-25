@@ -108,6 +108,7 @@ const LADDER_DIALOG =
     '<label>Spacing · mm<input type="number" min="1" max="20000" step="any" data-pl-field="ladderSpacing"></label>' +
     '<label>Bay length · mm<input type="number" min="0" max="20000" step="any" data-pl-field="ladderBay"></label></div>' +
     '<label class="pl-ladder-parallel"><input type="checkbox" data-pl-field="ladderParallel"> Bring the bays back parallel to the main road</label>' +
+    '<label class="pl-ladder-garage">Garage over each bay<select data-pl-field="ladderGarage"></select></label>' +
     '<p class="pl-segment-note" role="status"></p>' +
     '<div class="pl-segment-actions">' +
     btn('ladder-cancel', 'Cancel', '', 'secondary') +
@@ -804,21 +805,21 @@ export function createPlanner({ host, call, download, current, promote }) {
   }
   // Garages over the pit bays, from a building in the Library: over the
   // chosen bay, or over every bay that has none yet.
-  async function addPitGarages(all) {
-    const saved = savedHomes.find((h) => h.id === field('pitHome')?.value);
-    if (!saved) throw Error('Choose a building for the pit garages.');
-    const stops = layout.nodes.filter((n) => recipe(n).track.params.endStop).map((n) => n.id);
-    const taken = new Set((layout.buildings ?? []).map((b) => b.bay).filter(Boolean));
-    const ids = (all ? stops : [choice.selected]).filter((id) => !taken.has(id));
-    if (!ids.length) throw Error(all ? 'Every pit bay has a garage already.' : 'This bay has a garage already.');
-    const bays = ids.map((id) => bayOf(layout, defs, id));
+  // Garages over the given bays of a layout, from a building in the Library:
+  // each made to fit its bay, wider or less deep if need be. Throws, saying
+  // what is in the way, when one cannot stand.
+  function planGarages(data, models, saved, ids) {
+    const rowsOf = surfaces(data, models),
+      loops = rowsOf.flatMap((r) => r.polys);
+    const stops = data.nodes.filter((n) => models.get(n.source).track.params.endStop).map((n) => n.id);
+    const taken = new Set((data.buildings ?? []).map((b) => b.bay).filter(Boolean));
+    const bays = ids.map((id) => bayOf(data, models, id));
     if (bays.some((bay) => bay.lifted))
       throw Error('A pit bay on a bridge cannot have a garage: its base stands on the table. Bring the bay down to the table first.');
     // The room across each bay, beside every other bay, with a garage or not.
-    const others = [...taken].map((id) => bayOf(layout, defs, id)).filter(Boolean);
-    const rooms = bayRoom([...bays, ...others], validateBuilding(saved.building).depth);
-    const loops = trackLoops(),
-      deep = validateBuilding(saved.building).depth;
+    const others = [...taken].map((id) => bayOf(data, models, id)).filter(Boolean);
+    const deep = validateBuilding(saved.building).depth;
+    const rooms = bayRoom([...bays, ...others], deep);
     let shallower = false;
     const entries = bays.map((bay, i) => {
       const number = stops.indexOf(ids[i]) + 1;
@@ -844,7 +845,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         return entry;
       }
       // Even the shallowest garage stands on the track: say on what.
-      const inWay = last ? [...new Set(rows.filter((r) => r.polys.some((loop) => overlap(last, [loop]) > 0.5)).map((r) => r.def.name))] : [];
+      const inWay = last ? [...new Set(rowsOf.filter((r) => r.polys.some((loop) => overlap(last, [loop]) > 0.5)).map((r) => r.def.name))] : [];
       throw Error(
         'There is no room for a garage over bay ' + number +
           (inWay.length
@@ -854,16 +855,26 @@ export function createPlanner({ host, call, download, current, promote }) {
               : '.'),
       );
     });
+    return { entries, shallower };
+  }
+  const garagesSaid = (count, shallower) =>
+    (count === 1
+      ? 'A garage stands over the bay: the track runs in through its open door to the end stop.'
+      : count + ' garages stand over the pit bays: the track runs into each through its open door.') +
+    (shallower ? ' Made less deep than the building, to stand on the straight end of the bay.' : '');
+  async function addPitGarages(all) {
+    const saved = savedHomes.find((h) => h.id === field('pitHome')?.value);
+    if (!saved) throw Error('Choose a building for the pit garages.');
+    const stops = layout.nodes.filter((n) => recipe(n).track.params.endStop).map((n) => n.id);
+    const taken = new Set((layout.buildings ?? []).map((b) => b.bay).filter(Boolean));
+    const ids = (all ? stops : [choice.selected]).filter((id) => !taken.has(id));
+    if (!ids.length) throw Error(all ? 'Every pit bay has a garage already.' : 'This bay has a garage already.');
+    const { entries, shallower } = planGarages(layout, defs, saved, ids);
     await edit((next) => {
       (next.buildings ??= []).push(...entries);
       return { ...choice, building: entries.at(-1).id };
     });
-    message(
-      (entries.length === 1
-        ? 'A garage stands over the bay: the track runs in through its open door to the end stop.'
-        : entries.length + ' garages stand over the pit bays: the track runs into each through its open door.') +
-        (shallower ? ' Made less deep than the building, to stand on the straight end of the bay.' : ''),
-    );
+    message(garagesSaid(entries.length, shallower));
   }
   // For an end stop: a garage over its bay.
   function pitPanel(n, def) {
@@ -1219,7 +1230,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       cornerRadius: corner ? corner.piece.track.params.radius : 0,
     });
   }
-  async function ladder({ bays, spacing, bayLength, parallel }) {
+  async function ladder({ bays, spacing, bayLength, parallel, garage = '' }) {
     const parts = ladderParts(),
       { collection, turnout, stop } = parts;
     if (![bays, spacing, bayLength].every(Number.isFinite) || bayLength < 0)
@@ -1249,20 +1260,54 @@ export function createPlanner({ host, call, download, current, promote }) {
     };
     if (bayLength > 0)
       keys.bay = await made(bayLength, 'in each bay', 'Use a longer bay, or a bay length of 0 for an end stop straight after the turnout.');
-    if (spacing - length > 0.001)
-      keys.spacer = await made(
-        spacing - length,
-        'between two turnouts',
-        'Use a spacing of ' + fmt(length) + ' mm, with no straight between the turnouts, or a larger one.',
-      );
+    const spaced = async (gap) => {
+      delete keys.spacer;
+      if (gap - length > 0.001)
+        keys.spacer = await made(
+          gap - length,
+          'between two turnouts',
+          'Use a spacing of ' + fmt(length) + ' mm, with no straight between the turnouts, or a larger one.',
+        );
+    };
+    // The bays of a ladder: its end stops, new in the layout.
+    const build = (next) => {
+      const before = new Set(next.nodes.map((n) => n.id));
+      Object.assign(next.sources, book.additions);
+      const at = pitLadder(next, book.models, keys, { bays, end: choice.end, curves: found?.count ?? 0 });
+      return { at, stops: next.nodes.filter((n) => !before.has(n.id) && book.models.get(n.source).track.params.endStop).map((n) => n.id) };
+    };
+    // With a garage over each bay: the spacing grows until one fits.
+    const home = garage && savedHomes.find((h) => h.id === garage);
+    let gap = spacing,
+      shallower = false;
+    if (home) {
+      let fitted = false,
+        problem = null;
+      for (; gap <= spacing + 1500; gap += 50) {
+        await spaced(gap);
+        try {
+          const trial = structuredClone(layout);
+          planGarages(trial, book.models, home, build(trial).stops);
+          fitted = true;
+          break;
+        } catch (error) {
+          problem = error;
+        }
+      }
+      if (!fitted)
+        throw Error(
+          'There is no room for a garage over each bay, even with the bays ' + fmt(spacing + 1500) + ' mm apart. ' +
+            (problem.message === 'ladder-overlap' ? 'The bays run into the layout.' : problem.message),
+        );
+    } else await spaced(spacing);
     try {
       await edit((next) => {
-        Object.assign(next.sources, book.additions);
-        return pitLadder(next, book.models, keys, {
-          bays,
-          end: choice.end,
-          curves: found?.count ?? 0,
-        });
+        const { at, stops } = build(next);
+        if (!home) return at;
+        const planned = planGarages(next, book.models, home, stops);
+        shallower = planned.shallower;
+        (next.buildings ??= []).push(...planned.entries);
+        return at;
       }, book.models);
     } catch (error) {
       if (error.message !== 'ladder-overlap') throw error;
@@ -1273,7 +1318,10 @@ export function createPlanner({ host, call, download, current, promote }) {
       );
     }
     message(
-      bays + (bays === 1 ? ' pit bay was' : ' pit bays were') + ' added. Every piece can still be changed or removed.',
+      bays + (bays === 1 ? ' pit bay was' : ' pit bays were') + ' added' +
+        (home && gap > spacing ? ', ' + fmt(gap) + ' mm apart to leave room for the garages' : '') +
+        '. Every piece can still be changed or removed.' +
+        (home ? ' ' + garagesSaid(bays, shallower) : ''),
     );
   }
   function render(fit = false) {
@@ -2064,15 +2112,20 @@ export function createPlanner({ host, call, download, current, promote }) {
       field('ladderBays').value = 3;
       field('ladderBay').value = 200;
       field('ladderParallel').checked = true;
+      field('ladderGarage').innerHTML =
+        '<option value="">None</option>' + savedHomes.map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('');
+      field('ladderGarage').disabled = !savedHomes.length;
       const suggest = () => {
         const least = leastSpacing(parts, field('ladderBay').valueAsNumber || 0, field('ladderParallel').checked);
         field('ladderSpacing').value = least;
         dialog.querySelector('.pl-segment-note').textContent =
-          'The spacing is from one turnout to the next. ' + fmt(least) + ' mm keeps these bays apart. The branches leave to the ' + hand + ', as chosen under Corner and branch direction.';
+          'The spacing is from one turnout to the next. ' + fmt(least) + ' mm keeps these bays apart. The branches leave to the ' + hand + ', as chosen under Corner and branch direction.' +
+          (field('ladderGarage').value ? ' With a garage over each bay, the bays are spaced further apart if the garage needs it.' : '');
       };
       suggest();
       field('ladderBay').addEventListener('change', suggest);
       field('ladderParallel').addEventListener('change', suggest);
+      field('ladderGarage').addEventListener('change', suggest);
       dialog.showModal();
       return;
     }
@@ -2083,6 +2136,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         spacing: field('ladderSpacing').valueAsNumber,
         bayLength: field('ladderBay').valueAsNumber,
         parallel: field('ladderParallel').checked,
+        garage: field('ladderGarage').value,
       };
       $('.pl-ladder').close();
       message('Building the pit ladder…');

@@ -737,3 +737,14 @@ dialog.pl-segment p {
 .pl-note.warn {
   color: var(--warn);
 }
+
+/* The pit ladder window: a garage over each bay. */
+.pl-ladder-garage {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 12px;
+  font-size: 12px;
+}
+.pl-ladder-garage select {
+  width: 100%;
+}

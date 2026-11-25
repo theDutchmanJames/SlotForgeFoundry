@@ -27,7 +27,7 @@ export async function checkPlannerBuildings({ page, action, download, snap }) {
   assert.match(await panel.locator('.pl-message').textContent(), /Test garage was placed/);
   assert.match(await panel.locator('.pl-selection').textContent(), /Selected building[\s\S]*Test garage/);
   assert.match(await panel.locator('.pl-stats').textContent(), /1 building/);
-  assert.match(await panel.locator('.pl-inventory').textContent(), /Test garage · building×7/);
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Test garage · building×11/);
   // Turned round, and stood along the track again.
   await cmd('b-turn').click();
   await idle();
@@ -49,7 +49,7 @@ export async function checkPlannerBuildings({ page, action, download, snap }) {
   const kit = unzipSync((await download(action('export-menu'))).bytes);
   const names = Object.keys(kit);
   assert.ok(names.includes('buildings/Test garage/01 Base plate.stl'), names.join(' '));
-  assert.equal(names.filter((k) => /^buildings\/Test garage\/.*\.stl$/.test(k)).length, 7);
+  assert.equal(names.filter((k) => /^buildings\/Test garage\/.*\.stl$/.test(k)).length, 11);
   assert.match(strFromU8(kit['buildings/Test garage/README.txt']), /Test garage · SlotForge Foundry building kit/);
   assert.match(strFromU8(kit['parts.csv']), /"Roller door","buildings\/Test garage\/07 Roller door\.stl","1","Test garage"/);
   const plan = JSON.parse(strFromU8(kit['layout.slotplan']));
@@ -70,20 +70,30 @@ export async function checkPlannerBuildings({ page, action, download, snap }) {
   await idle();
   await cmd('ladder').click();
   await page.locator('dialog.pl-ladder').waitFor();
-  // Bays far enough apart for a garage over each: closer, a garage would
-  // stand on the corner that brings the next bay in, and says so.
-  await field('ladderSpacing').fill('600');
+  // With a garage over each bay, the bays are spaced as far apart as it needs:
+  // closer, a garage would stand on the corner that brings the next bay in.
+  await field('ladderGarage').selectOption({ label: 'Test garage' });
   await cmd('ladder-confirm').click();
   await idle();
-  await panel.locator('svg.planner-map [data-node]').filter({ has: page.locator('title', { hasText: 'End stop' }) }).first().click();
-  await idle();
-  await panel.locator('.pl-pit').waitFor();
-  await field('pitHome').selectOption({ label: 'Test garage' });
-  await cmd('pit-all').click();
-  await idle();
-  assert.match(await panel.locator('.pl-message').textContent(), /3 garages stand over the pit bays/);
+  assert.match(await panel.locator('.pl-message').textContent(), /3 pit bays were added, [\d.,]+ mm apart to leave room for the garages[\s\S]*3 garages stand over the pit bays/);
   assert.equal(await panel.locator('svg.planner-map [data-building]').count(), 3);
+  // One taken away and put back over its bay from the end stop.
+  await panel.locator('svg.planner-map [data-building]').first().click();
   assert.match(await panel.locator('.pl-selection').textContent(), /over a pit bay/);
+  await cmd('remove').click();
+  await idle();
+  assert.equal(await panel.locator('svg.planner-map [data-building]').count(), 2);
+  const stops = panel.locator('svg.planner-map [data-node]').filter({ has: page.locator('title', { hasText: 'End stop' }) });
+  for (let i = 0; i < 3; i++) {
+    await stops.nth(i).click();
+    await idle();
+    if (await cmd('pit-one').count()) break;
+  }
+  await field('pitHome').selectOption({ label: 'Test garage' });
+  await cmd('pit-one').click();
+  await idle();
+  assert.match(await panel.locator('.pl-message').textContent(), /A garage stands over the bay/);
+  assert.equal(await panel.locator('svg.planner-map [data-building]').count(), 3);
   const row = JSON.parse((await download(action('save'))).bytes);
   assert.equal(row.buildings.length, 3);
   for (const entry of row.buildings) {

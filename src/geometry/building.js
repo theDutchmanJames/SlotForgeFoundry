@@ -38,6 +38,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   ...TEXTURE_DEFAULTS,
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
+  braces: true, // a corner brace in each inside corner, holding the walls square
   cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
@@ -84,6 +85,9 @@ export const KIT = Object.freeze({
   trim: 3, // a window or door frame: its width around the opening
   trimDepth: 2, // how far a frame stands out from the wall
   bar: 2, // the cross in a window frame
+  brace: 2, // a corner brace: its legs are this thick
+  braceLeg: 5.5, // and reach this far along each wall, clear of a window or a door
+  braceHeight: 60, // at most this tall, from the floor: the lip above holds the tops
   laneClear: 2, // a garage door beyond the track through it, each side
   lanePlay: 0.5, // the base beside the track through it, each side
 });
@@ -181,6 +185,7 @@ export function validateBuilding(input) {
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
   if (!WALL_TEXTURES.some(([id]) => id === b.wallTexture)) throw Error('Choose a wall texture from the list.');
+  if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
   if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
   for (const [key, [min, max]] of Object.entries(BUILDING_LIMITS))
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max)
@@ -299,11 +304,40 @@ export function roofShape(b) {
   return { t: 0, panels: [], rise: 0 };
 }
 
+/**
+ * The inside corners of a storey that take a corner brace: an L that stands
+ * on the floor against both walls, up to just under the lip of the roof or
+ * the floor above, at most braceHeight. Not where the track runs through a garage, nor where a
+ * roller door stands behind its opening. x, y: where each leg reaches.
+ */
+export function braceCorners(b, s, door) {
+  if (!b.braces || s.height - KIT.lipDepth - 1 < 10) return [];
+  const lo = KIT.wall + KIT.play,
+    leg = KIT.braceLeg,
+    W = s.width,
+    D = s.depth;
+  const corners = [
+    { key: 'fl', name: 'front left', x: [lo, lo + leg], y: [lo, lo + leg], sx: 1, sy: 1 },
+    { key: 'fr', name: 'front right', x: [W - lo - leg, W - lo], y: [lo, lo + leg], sx: -1, sy: 1 },
+    { key: 'bl', name: 'back left', x: [lo, lo + leg], y: [D - lo - leg, D - lo], sx: 1, sy: -1 },
+    { key: 'br', name: 'back right', x: [W - lo - leg, W - lo], y: [D - lo - leg, D - lo], sx: -1, sy: -1 },
+  ];
+  return corners.filter((q) => {
+    if (s.garage && b.lane) {
+      const half = b.lane.width / 2 + KIT.lanePlay;
+      if (q.x[1] > W / 2 - half && q.x[0] < W / 2 + half) return false;
+    }
+    if (s.garage && b.door === 'roller' && q.sy > 0 && q.x[1] > door.x - KIT.margin && q.x[0] < door.x + door.width + KIT.margin) return false;
+    return true;
+  });
+}
+
 /** The parts of the kit, without geometry: their ids, names and roles. */
 export function buildingLayout(input) {
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
+  const door = { x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight };
   for (const s of storeys) {
     if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' });
     for (const w of ['front', 'back', 'left', 'right']) parts.push({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall' });
@@ -312,10 +346,12 @@ export function buildingLayout(input) {
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
   if (b.door === 'roller') parts.push({ id: 'door', name: 'Roller door', role: 'door' });
   for (const s of storeys)
+    for (const q of braceCorners(b, s, door)) parts.push({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace' });
+  for (const s of storeys)
     s.openings.forEach((o, i) => {
       if (o.frame) parts.push({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame' });
     });
-  return { building: b, storeys, parts, door: { x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight } };
+  return { building: b, storeys, parts, door };
 }
 
 /** Whether a part of this print size fits the plate, turned if need be. */
@@ -535,10 +571,23 @@ export function buildGarage(wasm, input, plate = null) {
               );
               if (joints) panel = own(panel.subtract(joints));
             }
+            // A lip under it inside the walls, as under a flat roof: it drops
+            // between the walls and holds them square. It reaches 0.5 mm into
+            // the panel, so the two are one body.
+            const under = z1 - shape.t * p.s0;
+            let lip = minus(
+              box(t + c, t + c, z1 - KIT.lipDepth - 1, W - t - c, D - t - c, z1 + shape.rise + 1),
+              box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 2, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + shape.rise + 2),
+            );
+            lip = trim(lip, [shape.t * dx, shape.t * dy, -1], -(under + 0.5) / len);
+            lip = trim(lip, [-shape.t * dx, -shape.t * dy, 1], (under - KIT.lipDepth) / len);
+            if (p.keep) lip = trim(lip, p.keep[0], p.keep[1]);
+            if (!lip.isEmpty()) panel = own(panel.add(lip));
             const deg = (Math.atan(shape.t) * 180) / Math.PI;
             // The two panels of a two-sided roof also part at the ridge.
             const ridge = p.keep ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0];
-            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0], apart: add3(roofApart, ridge) };
+            // Laid flat, then turned over: it prints top down, its lip up.
+            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0], flip: true, apart: add3(roofApart, ridge) };
             local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
           }
         }
@@ -565,6 +614,18 @@ export function buildGarage(wasm, input, plate = null) {
         const floorApart = [0, 0, lift + APART.storey - APART.up];
         const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(own(slab.add(lip)), groove), flip: true, apart: floorApart };
         local(...cutFlat(floor, plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']], [0, 0]));
+      }
+
+      // Corner braces: an L in each inside corner, on the floor against both
+      // walls. Each prints lying on the leg along the front or back wall.
+      for (const q of braceCorners(b, s, door)) {
+        const k = KIT.brace,
+          lo = t + c;
+        const alongX = q.sy > 0 ? [lo, lo + k] : [D - lo - k, D - lo],
+          alongY = q.sx > 0 ? [lo, lo + k] : [W - lo - k, W - lo];
+        const zb = top + Math.min(s.height - KIT.lipDepth - 1, KIT.braceHeight);
+        const brace = own(Manifold.union([box(q.x[0], alongX[0], top, q.x[1], alongX[1], zb), box(alongY[0], q.y[0], top, alongY[1], q.y[1], zb)]));
+        local({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace', solid: brace, lie: [q.sy > 0 ? 90 : -90, 0, 0], apart: [0, 0, lift + APART.up] });
       }
 
       if (s.garage && b.door === 'roller') {
@@ -736,8 +797,14 @@ export function buildGarage(wasm, input, plate = null) {
 export function printPose(part) {
   const s = part.solid;
   let turned;
-  if (part.flip) turned = s.rotate([180, 0, 0]);
-  else if (part.lie) turned = s.rotate(part.lie);
+  if (part.lie) {
+    turned = s.rotate(part.lie);
+    if (part.flip) {
+      const over = turned.rotate([180, 0, 0]);
+      turned.delete();
+      turned = over;
+    }
+  } else if (part.flip) turned = s.rotate([180, 0, 0]);
   else {
     const [x, y] = part.outward;
     turned = y < 0 ? s.rotate([-90, 0, 0]) : y > 0 ? s.rotate([90, 0, 0]) : x < 0 ? s.rotate([0, 90, 0]) : s.rotate([0, -90, 0]);

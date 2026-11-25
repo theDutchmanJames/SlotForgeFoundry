@@ -190,7 +190,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
     <section class="bd-box"><h3>Walls</h3>
-      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base.</p></section>
+      <label class="bd-check"><input type="checkbox" name="braces"><span>Corner braces</span></label>
+      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. The roof, flat or sloped, and every floor have a lip that drops inside the walls and holds their tops.</p></section>
     <p class="bd-error" role="alert" hidden></p>
   </form>
 </aside></div>`;
@@ -278,6 +279,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       door: e.door.value,
       ridge: e.ridge.value,
       rises: e.rises.value,
+      braces: e.braces.checked,
       cuts: readCuts(building),
     };
   }
@@ -473,6 +475,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises']) form.elements[k].value = b[k];
+    form.elements.braces.checked = b.braces;
     $('[name="buildingName"]').value = name;
     drawStoreys();
     drawOpenings();
