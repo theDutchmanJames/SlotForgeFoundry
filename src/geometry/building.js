@@ -105,7 +105,7 @@ export const KIT = Object.freeze({
   tabLength: 6, // a tab on the frame, along the wall
   tabThick: 1.8, // and across it
   tabIn: 2.4, // in from the outside of the frame, so its slot keeps clear of the groove above
-  tabRoof: 2, // how far a tab reaches into the roof, in a pocket 0.2 mm deeper
+  tabRoof: 1.2, // how far a tab reaches into the roof, in a pocket 0.2 mm deeper: well clear of its texture
   tabPlay: 0.15, // round a tab in its slot or pocket, each side
   frame: 6, // wall kept beside and above an opening, and between two
   insert: 2, // door insert plate
@@ -559,6 +559,19 @@ export function buildGarage(wasm, input, plate = null) {
     own(Manifold.cube([Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)]).translate([Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)]));
   const minus = (a, ...cuts) => (cuts.length ? own(a.subtract(own(Manifold.union(cuts)))) : a);
   const trim = (s, n, offset) => own(s.trimByPlane(n, offset));
+  // A part after its texture is cut: where a grain line meets a joint or a
+  // step it can leave a speck of nothing loose. Only the part itself is kept.
+  const whole = (solid) => {
+    const bodies = solid.decompose();
+    if (bodies.length === 1) {
+      bodies[0].delete();
+      return solid;
+    }
+    const kept = bodies.filter((body) => body.volume() > 1);
+    for (const body of bodies) if (!kept.includes(body)) body.delete();
+    kept.forEach(own);
+    return kept.length === 1 ? kept[0] : own(Manifold.union(kept));
+  };
   const shape = roofShape(b);
   const OUTWARD = { front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
   const plan = plate ? buildingCuts(b, plate) : null;
@@ -702,7 +715,7 @@ export function buildGarage(wasm, input, plate = null) {
         }
         for (const w of WALLS) {
           const joints = wallJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s.wallTexture);
-          if (joints) walls[w] = own(walls[w].subtract(joints));
+          if (joints) walls[w] = whole(own(walls[w].subtract(joints)));
         }
       }
       for (const w of ['front', 'back', 'left', 'right'])
@@ -789,7 +802,7 @@ export function buildGarage(wasm, input, plate = null) {
                 b,
                 b.roofTexture,
               );
-              if (joints) panel = own(panel.subtract(joints));
+              if (joints) panel = whole(own(panel.subtract(joints)));
             }
             const deg = (Math.atan(shape.t) * 180) / Math.PI;
             // The two panels of a two-sided roof also part at the ridge.

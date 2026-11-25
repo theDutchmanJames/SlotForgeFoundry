@@ -1,6 +1,9 @@
 // Textures for a building: joints cut into the outside face of its walls
-// (bricks, concrete blocks, cracked concrete, corrugated metal) and into
-// the top of a sloped roof (tiles, corrugated sheet). The faces print up,
+// (bricks, concrete blocks, cracked concrete, corrugated metal, wooden
+// planks or boards) and into the top of a sloped roof (tiles, corrugated
+// sheet, wooden shingles). Planks and shingles also slope a little from
+// row to row, so the lower edge of each stands proud of the one below it,
+// as wood laid in overlapping rows does. The faces print up,
 // so the joints come out crisp. Sizes are as drawn for 1:32 toy proportions
 // and can be scaled; the joint keeps its own width and depth.
 
@@ -10,11 +13,14 @@ export const WALL_TEXTURES = Object.freeze([
   ['block', 'Concrete blocks'],
   ['crack', 'Cracked concrete'],
   ['metal', 'Corrugated metal'],
+  ['planks', 'Wooden planks'],
+  ['boards', 'Upright boards'],
 ]);
 export const ROOF_TEXTURES = Object.freeze([
   ['plain', 'Plain'],
   ['tile', 'Tiles'],
   ['metal', 'Corrugated'],
+  ['shingle', 'Wooden shingles'],
 ]);
 export const TEXTURE_DEFAULTS = Object.freeze({
   wallTexture: 'plain',
@@ -35,7 +41,12 @@ export const DRAWN = {
   metal: { pitch: 4 },
   tile: { course: 6, length: 8 },
   crack: { cell: [40, 30] },
+  planks: { course: 4, length: [28, 64] }, // a plank shows 4 mm; its ends are 28 to 64 mm apart
+  boards: { width: 6 },
+  shingle: { course: 5, length: [4, 8] },
 };
+// Rows of wood that overlap, each sloping from its lower edge to its top.
+export const LAPPED = Object.freeze(['planks', 'shingle']);
 const CLEAR = 1; // joints keep this far from an opening and from a frame
 
 // Rectangles as polygons, in the 2D frame of a face.
@@ -93,6 +104,20 @@ export function jointPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
     const p = DRAWN.metal.pitch * k,
       gw = Math.min(p / 2, w * 1.6);
     for (let x = Math.floor(x0 / p) * p + p / 2; x < x1; x += p) out.push(rect(x - gw / 2, y0 - 1, x + gw / 2, y1 + 1));
+  } else if (kind === 'planks' || kind === 'shingle') {
+    // The ends of each plank or shingle, at random lengths, row by row; the
+    // rows themselves are the steps of lappedRows.
+    const { course, length: [lo, hi] } = DRAWN[kind];
+    const c = course * k;
+    for (let row = Math.floor((y0 - yOrigin) / c); yOrigin + row * c < y1; row++) {
+      const yb = yOrigin + row * c;
+      const random = seeded(seed * 7919 + row * 104729 + 17);
+      for (let x = x0 - random() * hi * k; x < x1; x += (lo + random() * (hi - lo)) * k)
+        if (x > x0) out.push(rect(x - w / 2, Math.max(yb, y0), x + w / 2, Math.min(yb + c, y1)));
+    }
+  } else if (kind === 'boards') {
+    const bw = DRAWN.boards.width * k;
+    for (let x = Math.floor(x0 / bw) * bw; x < x1; x += bw) if (x > x0) out.push(rect(x - w / 2, y0 - 1, x + w / 2, y1 + 1));
   } else if (kind === 'crack') {
     const [cw, ch] = DRAWN.crack.cell.map((v) => v * k);
     const random = seeded(seed);
@@ -110,6 +135,48 @@ export function jointPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
           p = q;
         }
       }
+  }
+  return out;
+}
+
+/**
+ * The grain of wood: short, shallow lines along each plank, board or
+ * shingle, half as wide as a joint. Cut half as deep.
+ */
+export function grainPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJoint: w }, seed = 1) {
+  if (!['planks', 'boards', 'shingle'].includes(kind)) return [];
+  const k = textureScale / 100,
+    random = seeded(seed * 31 + 5),
+    out = [];
+  const across = kind === 'boards';
+  const area = (x1 - x0) * (y1 - y0);
+  const count = Math.min(4000, Math.round(area / (60 * k * k)));
+  for (let i = 0; i < count; i++) {
+    const x = x0 + random() * (x1 - x0),
+      y = y0 + random() * (y1 - y0),
+      len = (3 + random() * 7) * k;
+    out.push(across ? band([x, y], [x + (random() - 0.5) * 0.4, y + len], w / 2) : band([x, y], [x + len, y + (random() - 0.5) * 0.4], w / 2));
+  }
+  return out;
+}
+
+/**
+ * The rows of overlapping wood, as cross sections across them (v up the
+ * face from yOrigin, w into it, the face at w = 1): each row cut from
+ * nothing at its lower edge to the depth set at its top, so the next row
+ * stands proud of it.
+ */
+export function lappedRows(kind, [y0, y1], { textureScale, textureDepth: d }, yOrigin = y0) {
+  const c = DRAWN[kind].course * (textureScale / 100);
+  const out = [];
+  for (let row = Math.floor((y0 - yOrigin) / c); yOrigin + row * c < y1; row++) {
+    const yb = yOrigin + row * c;
+    out.push([
+      [yb, 0],
+      [yb + c, 0],
+      [yb + c, 1 + d],
+      [yb, 1],
+    ]);
   }
   return out;
 }
@@ -152,12 +219,32 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop },
         own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, zTop + 1)], 'Positive')),
       ))));
   }
-  if (keepOut.length)
-    section = own(section.subtract(own(new wasm.CrossSection(keepOut.map(([a, b, c, d]) => rect(a - CLEAR, b - CLEAR, c + CLEAR, d + CLEAR)), 'Positive'))));
-  if (section.isEmpty()) return null;
+  const clear = keepOut.length ? own(new wasm.CrossSection(keepOut.map(([a, b, c, d]) => rect(a - CLEAR, b - CLEAR, c + CLEAR, d + CLEAR)), 'Positive')) : null;
+  if (clear) section = own(section.subtract(clear));
   const { U, N, origin } = DIRS[wall];
-  const solid = own(section.extrude(settings.textureDepth + 1));
-  return own(solid.transform(matrix(U, [0, 0, 1], N, origin(W, D))));
+  const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, origin(W, D))));
+  const cuts = [];
+  if (!section.isEmpty()) cuts.push(place(own(section.extrude(settings.textureDepth + 1))));
+  // The grain, half as deep, clear of the ends and the openings like the joints.
+  const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, WALLS_SEED[wall]);
+  if (grain.length) {
+    let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, zTop + 1)], 'Positive'))));
+    if (clear) g = own(g.subtract(clear));
+    if (!g.isEmpty()) cuts.push(place(own(g.extrude(1 + settings.textureDepth / 2))));
+  }
+  // Planks: each row slopes into the wall, the rows running on round the corner.
+  if (LAPPED.includes(kind)) {
+    const rows = lappedRows(kind, [bottom, zTop + 1], settings, bottom);
+    // Across the rows (v, w), run along the wall (u): turned into the wall's frame.
+    const run = own(own(own(new wasm.CrossSection(rows, 'Positive')).extrude(length + 2)).translate([0, 0, -1]));
+    const across = own(run.transform(matrix([0, 0, 1], N, U, origin(W, D))));
+    let allowed = own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, zTop + 1)], 'Positive'));
+    if (clear) allowed = own(allowed.subtract(clear));
+    const within = place(own(allowed.extrude(settings.textureDepth + 1)));
+    cuts.push(own(across.intersect(within)));
+  }
+  if (!cuts.length) return null;
+  return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];
 }
 const WALLS_SEED = { front: 11, back: 23, left: 37, right: 53 };
 
@@ -191,8 +278,19 @@ export function roofJoints(wasm, own, panel, { dir: [dx, dy], t, eave: [ex, ey],
     1,
     0,
   );
-  if (!polys.length) return null;
-  const section = own(new wasm.CrossSection(polys, 'Positive'));
-  const solid = own(section.extrude(settings.textureDepth + 1));
-  return own(solid.transform(matrix(A, S, Nin, O)));
+  const alongR = [Math.min(...along) - 2, Math.max(...along) + 2],
+    upR = [Math.min(...up) - 2, Math.max(...up) + 2];
+  const cuts = [];
+  if (polys.length) cuts.push(own(own(own(new wasm.CrossSection(polys, 'Positive')).extrude(settings.textureDepth + 1)).transform(matrix(A, S, Nin, O))));
+  const grain = grainPolygons(kind === 'shingle' ? 'boards' : kind, alongR, upR, settings, 3);
+  if (grain.length) cuts.push(own(own(own(new wasm.CrossSection(grain, 'NonZero')).extrude(1 + settings.textureDepth / 2)).transform(matrix(A, S, Nin, O))));
+  // Shingles: each row slopes into the roof from its lower edge, so the row
+  // above lies proud of it, its lower edge facing down the slope.
+  if (LAPPED.includes(kind)) {
+    const rows = lappedRows(kind, upR, settings, 0);
+    const run = own(own(own(new wasm.CrossSection(rows, 'Positive')).extrude(alongR[1] - alongR[0])).translate([0, 0, alongR[0]]));
+    cuts.push(own(run.transform(matrix(S, Nin, A, O))));
+  }
+  if (!cuts.length) return null;
+  return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];
 }

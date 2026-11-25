@@ -247,8 +247,8 @@ test('the kit notes list every part as it prints and how the kit goes together',
 });
 
 test('wall and roof textures keep every part one body, with no two parts in the same space', () => {
-  for (const wallTexture of ['brick', 'block', 'crack', 'metal'])
-    for (const [roof, roofTexture] of [['flat', 'plain'], ['gable', 'tile'], ['slope', 'metal']])
+  for (const wallTexture of ['brick', 'block', 'crack', 'metal', 'planks', 'boards'])
+    for (const [roof, roofTexture] of [['flat', 'plain'], ['gable', 'tile'], ['slope', 'metal'], ['gable', 'shingle']])
       withParts(
         { wallTexture, roof, roofTexture, openings: [window('left', 60, { frame: true }), door('right', 120)] },
         (parts) => {
@@ -782,5 +782,43 @@ test('a frame under the roof or a floor is held by its tabs: in pockets under th
       assert.ok(hit.volume() < 0.01, w.name + ' clear of the tabs');
       hit.delete();
     }
+  });
+});
+
+test('wood: planks and shingles step from row to row, the lower edge of each proud; boards stand upright', async () => {
+  const { lappedRows, jointPolygons, grainPolygons, DRAWN } = await import('../src/geometry/building-texture.js');
+  const settings = { textureScale: 100, textureJoint: 0.6, textureDepth: 0.5 };
+  // Each row of planks is cut from nothing at its lower edge to the depth set at its top.
+  const rows = lappedRows('planks', [10, 30], settings, 10);
+  assert.equal(rows.length, 5);
+  assert.deepEqual(rows[0], [[10, 0], [14, 0], [14, 1.5], [10, 1]]);
+  // The ends of the planks fall at random but the same every time, and boards stand at their width.
+  const ends = jointPolygons('planks', [0, 200], [10, 30], settings, 11, 10);
+  assert.deepEqual(ends, jointPolygons('planks', [0, 200], [10, 30], settings, 11, 10));
+  assert.ok(ends.length >= 5 * 3 && ends.length <= 5 * 8, 'a few plank ends a row: ' + ends.length);
+  assert.equal(jointPolygons('boards', [0, 60], [0, 50], settings).length, 60 / DRAWN.boards.width - 1);
+  assert.ok(grainPolygons('planks', [0, 100], [0, 50], settings).length > 10);
+  assert.equal(grainPolygons('brick', [0, 100], [0, 50], settings).length, 0, 'only wood has a grain');
+  // On the wall: the face steps out at the lower edge of each plank; the step is as deep as set.
+  withParts({ wallTexture: 'planks' }, (_, part) => {
+    withParts({}, (__, plain) => {
+      const probe = (solid, y, z) => {
+        // How far in the outside face of the left wall is, at height z, in mm.
+        const slice = solid.intersect(wasm.Manifold.cube([KIT.wall, 0.2, 0.05]).translate([0, y, z]));
+        const x = slice.isEmpty() ? null : slice.boundingBox().min[0];
+        slice.delete();
+        return x;
+      };
+      const wall = part('left').solid;
+      // Just above a row's lower edge the face is whole; just under the next row it is cut 0.5 mm in.
+      const z = 10 + 4 * 3;
+      assert.ok(near(probe(wall, 47, z + 0.1), 0, 0.03), 'proud at its lower edge: ' + probe(wall, 47, z + 0.1));
+      assert.ok(near(probe(wall, 47, z + 3.9), 0.5, 0.05), 'in at its top: ' + probe(wall, 47, z + 3.9));
+      assert.ok(near(probe(plain('left').solid, 47, z + 3.9), 0, 0.01));
+    });
+  });
+  // A shingled roof keeps its pockets well under the texture.
+  withParts({ roof: 'gable', roofTexture: 'shingle', textureDepth: 1 }, (parts) => {
+    for (const p of parts.filter((q) => q.role === 'roof')) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
   });
 });
