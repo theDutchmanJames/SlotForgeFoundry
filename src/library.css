@@ -422,3 +422,19 @@ dialog.lib-wide > .lib-status {
     display: none;
   }
 }
+
+/* The header of the other screens of the Track packs window, and the
+   pieces of a pack in groups. */
+dialog.track-library:not(.lib-wide) > .np-head {
+  padding: 0 0 12px;
+}
+.lib-group {
+  margin: 14px 2px 6px;
+  color: var(--muted);
+  font: 700 10px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lib-group + .lib-cards {
+  margin-top: 0;
+}

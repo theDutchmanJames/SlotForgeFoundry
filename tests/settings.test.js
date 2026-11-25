@@ -40,3 +40,12 @@ test('choosing a printer fills the plate; editing the plate makes it custom', ()
   assert.equal(cleared.plate.margin, 0);
   assert.equal(cleared.braidSpare, 80);
 });
+
+test('each settings group says what it holds', async () => {
+  const { settingsSummary } = await import('../src/settings.js');
+  const s = cleanSettings({ plate: { width: 240, depth: 220, margin: 5 }, material: 'petg', infill: 40 });
+  assert.equal(settingsSummary('printer', s, { theme: 'dark' }), '240 × 220 mm · 5 mm margin');
+  assert.equal(settingsSummary('printer', cleanSettings({ plate: { width: 200, depth: 200, margin: 0 } }), {}), '200 × 200 mm');
+  assert.equal(settingsSummary('shopping', s, {}), 'PETG · 40 % fill');
+  assert.equal(settingsSummary('look', s, { theme: 'dark' }), 'Dark');
+});

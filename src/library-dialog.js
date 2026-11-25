@@ -373,6 +373,24 @@ export async function showTrackLibrary({
     const changes = different(c.profile, profileFromTrack(work.track));
     return { c, work, target, changes };
   }
+  // The pieces of a page in groups, as in Track Set.
+  function pieceGroups(pieces, profile) {
+    const plain = (p) => !p.track.params.special;
+    return [
+      ['Straights', (p) => plain(p) && p.track.params.kind === 'straight'],
+      ['Corners', (p) => plain(p) && p.track.params.kind === 'curve'],
+      ['Drawn pieces', (p) => plain(p) && !['straight', 'curve'].includes(p.track.params.kind)],
+      ['Special pieces', (p) => !plain(p)],
+    ]
+      .map(([title, takes]) => {
+        const members = pieces.filter(takes);
+        return members.length
+          ? '<div class="lib-group">' + esc(title) + '</div><div class="lib-cards">' +
+              members.map((piece) => card(piece, profile)).join('') + '</div>'
+          : '';
+      })
+      .join('');
+  }
   function browse(c) {
     if (!c)
       return (
@@ -399,16 +417,11 @@ export async function showTrackLibrary({
         : esc(c.rules.lanes) + ' lanes · ' + esc(c.rules.laneSpacing) + ' mm spacing' +
           (offCentre ? ' · some slots off-centre' : '')) +
       '</small></div>' +
-      (createPiece ? btn('create-piece', 'Add track piece', 'primary', 'plus') : '') +
-      btn('rules', 'Pack rules', 'outline', 'settings') +
+      (createPiece ? btn('create-piece', 'Add track piece', 'soft', 'plus') : '') +
+      btn('rules', 'Pack rules', 'primary', 'settings') +
       '</div>' +
       (c.pieces.length
-        ? '<div class="lib-cards">' +
-          c.pieces
-            .slice(start, start + perPage)
-            .map(piece => card(piece, c.profile))
-            .join('') +
-          '</div>'
+        ? pieceGroups(c.pieces.slice(start, start + perPage), c.profile)
           : '<p>Add a straight, corner or special piece, or draw a path of your own.</p>') +
       (c.pieces.length > perPage
         ? '<div class="lib-controls">' +
@@ -520,7 +533,11 @@ export async function showTrackLibrary({
           '<div><div class="sf-eyebrow">' + (screen === 'new' ? 'New track pack' : 'Pack rules') + '</div>' +
           '<h2 id="lib-title" data-np-title>' + esc(screen === 'new' ? 'Untitled pack' : c.name) + '</h2></div>' +
           '<span class="np-ready" data-np-ready><span class="np-dot" aria-hidden="true"></span><span></span></span>'
-        : '<header><h2 id="lib-title">' + esc(title) + '</h2>') +
+        : '<header class="np-head lib-head"><span class="np-badge">' +
+          icon(screen === 'restore' ? 'import' : screen === 'save' ? 'save' : 'library') +
+          '</span><div><div class="sf-eyebrow">' +
+          esc(screen === 'browse' && c ? 'Track pack' : 'Library') +
+          '</div><h2 id="lib-title">' + esc(screen === 'browse' && c ? c.name : title) + '</h2></div>') +
       '<button type="button" class="icon-button" aria-label="Close library" data-lib="close">' +
       icon('close') +
       '</button></header>' +

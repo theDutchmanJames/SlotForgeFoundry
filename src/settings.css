@@ -6,7 +6,7 @@
   background: var(--bg);
 }
 .st {
-  max-width: 760px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 24px 28px 40px;
 }
@@ -15,10 +15,93 @@
   font-size: 30px;
   line-height: 1;
 }
+/* A column of groups on the left, the chosen group on the right. */
+.st-body {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 22px;
+  margin-top: 18px;
+  align-items: start;
+}
+.st-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+.st-rail-label {
+  margin: 0 8px 6px;
+  color: var(--muted);
+  font: 700 10px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.st-rail button {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.st-rail button:hover {
+  background: var(--box);
+}
+.st-rail button[aria-current='true'] {
+  background: var(--sel);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.st-rail .i {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.st-rail button[aria-current='true'] .i {
+  color: var(--accent-text);
+}
+.st-rail span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.st-rail b {
+  font-size: 13px;
+  font-weight: 600;
+}
+.st-rail small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.st-panel [data-st-group]:not(.st-shown) {
+  display: none;
+}
 .st-groups {
   display: grid;
   gap: 12px;
-  margin-top: 18px;
+}
+.st-panel > .st-updates {
+  margin-top: 12px;
+}
+/* The print plate, drawn as on Home. */
+.st-plate {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--box);
+}
+.st-plate .home-plate-art {
+  width: 220px;
 }
 .st-group {
   padding: 14px 16px 16px;
@@ -28,7 +111,7 @@
 }
 .st-group h2 {
   margin: 0 0 6px;
-  font-size: 19px;
+  font-size: 24px;
 }
 .st-note {
   margin: 0 0 10px;
@@ -61,6 +144,24 @@
 }
 .st-group > .sf-btn {
   margin-top: 10px;
+}
+@media (max-width: 760px) {
+  .st-body {
+    grid-template-columns: 1fr;
+  }
+  .st-rail {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .st-rail-label,
+  .st-rail small {
+    display: none;
+  }
+  .st-rail button {
+    width: auto;
+    flex: none;
+  }
 }
 @media (max-width: 560px) {
   .st {

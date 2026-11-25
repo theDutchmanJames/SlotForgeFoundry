@@ -41,7 +41,14 @@ export async function checkWorkspaceNavigation({
   // Settings: a printer preset fills the plate and is kept on this device.
   await action('mode-settings').click();
   const settingsForm = page.locator('#app-settings-form');
+  // One group at a time, chosen in the column beside it, which says what each holds.
+  const settingsRail = page.locator('#settings-page .st-rail');
+  assert.deepEqual((await settingsRail.locator('[data-st-go] b').allTextContents()).slice(0, 3), ['Look', 'Printer', 'Shopping list']);
+  assert.ok(await settingsForm.locator('[name="printer"]').isHidden());
+  await settingsRail.locator('[data-st-go="printer"]').click();
   await settingsForm.locator('[name="printer"]').selectOption('bambu-a1');
+  assert.match(await settingsRail.locator('[data-st-go="printer"] small').textContent(), /^256 × 256 mm$/);
+  assert.match(await page.locator('#settings-page [data-st-plate] svg').getAttribute('aria-label'), /256 by 256/);
   assert.equal(await settingsForm.locator('[name="width"]').inputValue(), '256');
   assert.equal(await settingsForm.locator('[name="margin"]').inputValue(), '0');
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('foundry.settings')));
@@ -54,6 +61,14 @@ export async function checkWorkspaceNavigation({
   await action('mode-editor').click();
   await waitText('#model-title', 'Workshop enclosure');
   await action('mode-library').click();
+  // A pack card: two buttons, Plan in muted red; the rest as named icons.
+  const lpCard = page.locator('#library-page .lp-card').first();
+  await lpCard.waitFor();
+  assert.ok(await lpCard.locator('[data-lp="plan-pack"]').evaluate((b) => b.classList.contains('soft')));
+  assert.deepEqual(
+    await lpCard.locator('.lp-tool').evaluateAll((tools) => tools.map((t) => t.getAttribute('aria-label'))),
+    ['Pieces and rules', 'Rename', 'Duplicate', 'Delete'],
+  );
   await action('packs-dialog').click();
   const library = page.locator('dialog.track-library');
   await library.waitFor();

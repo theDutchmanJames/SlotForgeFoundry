@@ -6,6 +6,9 @@ import { esc, fmt, icon } from './ui.js';
 import { trackThumbnail } from './library-view.js';
 
 const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+// A small icon button with its name on hover and for screen readers.
+const tool = (action, id, label, glyph, danger = false) =>
+  `<button type="button" class="lp-tool${danger ? ' danger' : ''}" data-lp="${action}" data-id="${esc(id)}" title="${esc(label)}" aria-label="${esc(label)}">${icon(glyph)}</button>`;
 const when = (ms) => (ms ? new Date(ms).toLocaleDateString() : '');
 
 function packCard(pack, layouts) {
@@ -30,12 +33,12 @@ function packCard(pack, layouts) {
   </div>
   <div class="lp-foot">
     <button type="button" class="sf-btn sm" data-lp="edit-pack" data-id="${esc(pack.id)}">Edit pieces</button>
-    <button type="button" class="sf-btn sm" data-lp="plan-pack" data-id="${esc(pack.id)}">Plan</button>
-    <button type="button" class="sf-btn sm ghost" data-lp="manage-pack" data-id="${esc(pack.id)}">Pieces &amp; rules…</button>
+    <button type="button" class="sf-btn sm soft" data-lp="plan-pack" data-id="${esc(pack.id)}">${icon('track')}Plan</button>
     <span class="lp-sp"></span>
-    <button type="button" class="sf-btn sm ghost" data-lp="rename-pack" data-id="${esc(pack.id)}" title="Rename">Rename</button>
-    <button type="button" class="sf-btn sm ghost" data-lp="duplicate-pack" data-id="${esc(pack.id)}" title="Duplicate">Duplicate</button>
-    <button type="button" class="sf-btn sm danger" data-lp="delete-pack" data-id="${esc(pack.id)}" title="Delete">Delete</button>
+    ${tool('manage-pack', pack.id, 'Pieces and rules', 'settings')}
+    ${tool('rename-pack', pack.id, 'Rename', 'pencil')}
+    ${tool('duplicate-pack', pack.id, 'Duplicate', 'layers')}
+    ${tool('delete-pack', pack.id, 'Delete', 'close', true)}
   </div>
 </article>`;
 }
@@ -50,10 +53,10 @@ function layoutCard(layout, packs) {
     <div class="lp-chips"><span>${esc(plural(layout.sections ?? 0, 'section'))}</span><span>${esc(when(layout.updated))}</span></div>
   </div>
   <div class="lp-foot">
-    <button type="button" class="sf-btn sm primary" data-lp="open-layout" data-id="${esc(layout.id)}">Open</button>
+    <button type="button" class="sf-btn sm soft" data-lp="open-layout" data-id="${esc(layout.id)}">${icon('open')}Open</button>
     <span class="lp-sp"></span>
-    <button type="button" class="sf-btn sm ghost" data-lp="rename-layout" data-id="${esc(layout.id)}">Rename</button>
-    <button type="button" class="sf-btn sm danger" data-lp="delete-layout" data-id="${esc(layout.id)}">Delete</button>
+    ${tool('rename-layout', layout.id, 'Rename', 'pencil')}
+    ${tool('delete-layout', layout.id, 'Delete', 'close', true)}
   </div>
 </article>`;
 }
@@ -82,11 +85,11 @@ function partCard(part, parts, packs) {
     <div class="lp-chips"><span class="lp-link">${esc(link)}</span><span>${esc(Math.max(1, Math.round(part.size / 1024)) + ' KB')}</span></div>
   </div>
   <div class="lp-foot">
-    ${stale ? `<button type="button" class="sf-btn sm primary" data-lp="rebuild-part" data-id="${esc(part.id)}">Rebuild with my edits</button>` : ''}
-    <button type="button" class="sf-btn sm${stale ? '' : ' primary'}" data-lp="open-part" data-id="${esc(part.id)}">Open</button>
+    ${stale ? `<button type="button" class="sf-btn sm soft" data-lp="rebuild-part" data-id="${esc(part.id)}">Rebuild with my edits</button>` : ''}
+    <button type="button" class="sf-btn sm${stale ? '' : ' soft'}" data-lp="open-part" data-id="${esc(part.id)}">${icon('open')}Open</button>
     <span class="lp-sp"></span>
-    <button type="button" class="sf-btn sm ghost" data-lp="rename-part" data-id="${esc(part.id)}">Rename</button>
-    <button type="button" class="sf-btn sm danger" data-lp="delete-part" data-id="${esc(part.id)}">Delete</button>
+    ${tool('rename-part', part.id, 'Rename', 'pencil')}
+    ${tool('delete-part', part.id, 'Delete', 'close', true)}
   </div>
 </article>`;
 }
@@ -109,7 +112,7 @@ export function renderLibraryPage({ shelf, packs, layouts, parts, error }) {
     <div><div class="sf-eyebrow">On this device</div><h1>Library</h1></div>
     <span class="lp-sp"></span>
     <div class="lp-shelves" role="group" aria-label="Shelf">${tab('packs', 'Track packs')}${tab('layouts', 'Layouts')}${tab('parts', 'STL parts')}</div>
-    <button type="button" class="sf-btn ghost" data-action="packs-dialog">Backup &amp; restore…</button>
+    <button type="button" class="sf-btn soft" data-action="packs-dialog">${icon('save')}Backup and restore…</button>
   </div>
   ${error ? '<p class="lp-error">' + esc(error) + '</p>' : ''}
   <div class="lp-cards">${body}</div>
@@ -119,23 +122,29 @@ export function renderLibraryPage({ shelf, packs, layouts, parts, error }) {
 // A small themed window asking for a name or a confirmation. Plain buttons
 // (no form submission: the workbench cancels those page-wide); it answers
 // exactly once and removes itself.
-export function askUser({ title, text, value, confirm, danger }) {
+// eyebrow: the action in small capitals above the title, which then names
+// the thing it acts on.
+export function askUser({ eyebrow, title, text, value, confirm, danger }) {
   return new Promise((resolve) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'lp-dialog';
     dialog.innerHTML =
-      '<div><h3>' +
+      '<div><header class="lp-dialog-head"><span class="lp-dialog-tile' + (danger ? ' danger' : '') + '">' +
+      icon(danger ? 'close' : value !== undefined ? 'pencil' : 'check') +
+      '</span><div>' +
+      (eyebrow ? '<div class="sf-eyebrow">' + esc(eyebrow) + '</div>' : '') +
+      '<h3>' +
       esc(title) +
-      '</h3>' +
+      '</h3></div></header>' +
       (text ? '<p>' + esc(text) + '</p>' : '') +
       (value !== undefined
         ? '<input name="value" maxlength="200" value="' + esc(value) + '">'
         : '') +
       '<div class="lp-dialog-row"><button type="button" class="sf-btn ' +
-      (danger ? 'danger' : 'primary') +
+      'primary' +
       '" data-answer="ok">' +
       esc(confirm) +
-      '</button><button type="button" class="sf-btn" data-answer="cancel">Cancel</button></div></div>';
+      '</button><button type="button" class="sf-btn ghost" data-answer="cancel">Cancel</button></div></div>';
     document.body.append(dialog);
     const input = dialog.querySelector('input');
     let done = false;

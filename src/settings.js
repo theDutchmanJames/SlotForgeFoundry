@@ -1,6 +1,7 @@
 // App settings kept on this device: printer (print plate for new
 // projects and layouts), filament for weight estimates, and spare braid.
-import { esc, fmt } from './ui.js';
+import { esc, fmt, icon } from './ui.js';
+import { plateDrawing } from './plate-drawing.js';
 import { COLORS, THEMES, paletteOf, problems, themeName } from './app-theme.js';
 
 export const PRINTERS = [
@@ -91,18 +92,20 @@ export function renderSettings(s, themeState) {
   ].join('');
   return `<div class="st">
   <div class="st-head"><div class="sf-eyebrow">On this device</div><h1>Settings</h1></div>
+  <div class="st-body"><nav class="st-rail" aria-label="Settings groups"></nav><div class="st-panel">
   <form id="app-settings-form" class="st-groups" autocomplete="off">
     ${lookSection(themeState)}
-    <section class="st-group">
+    <section class="st-group" data-st-group="printer">
       <h2>Printer</h2>
       <p class="st-note">New projects start with this print plate, and the Track Planner takes it from there. Open projects keep their own plate.</p>
+      <div class="st-plate" data-st-plate>${plateDrawing(s.plate)}</div>
       ${row('Printer', `<select name="printer">${options}</select>`)}
       ${row('Plate width · mm', input('width', s.plate.width, 10, 5000))}
       ${row('Plate depth · mm', input('depth', s.plate.depth, 10, 5000))}
       ${row('Margin per edge · mm', input('margin', s.plate.margin, 0, 100, 0.5), 'Keeps parts clear of clips and the plate edge')}
       <button type="button" class="sf-btn sm" data-action="settings-plate-to-project">Use this plate in the open project</button>
     </section>
-    <section class="st-group">
+    <section class="st-group" data-st-group="shopping">
       <h2>Shopping list</h2>
       <p class="st-note">The Track Planner print kit includes a shopping list with these estimates.</p>
       ${row('Filament', `<select name="material">${MATERIALS.map((m) => `<option value="${m.id}"${m.id === s.material ? ' selected' : ''}>${esc(m.name)} · ${m.density} g/cm³</option>`).join('')}</select>`)}
@@ -110,13 +113,51 @@ export function renderSettings(s, themeState) {
       ${row('Spool price per kg', input('spoolPrice', s.spoolPrice, 0, 1000, 0.01), 'Leave 0 to skip the cost line')}
       ${row('Spare braid per lane · mm', input('braidSpare', s.braidSpare, 0, 2000), 'Extra for the lead-in at the power base')}
     </section>
-    <section class="st-group" data-unopened hidden>
+    <section class="st-group" data-st-group="recovery" data-unopened hidden>
       <h2>Recovery</h2>
       <p class="st-note">Your last project could not be reopened. Its copy is kept here; download it to keep it as a file or open it again later.</p>
       <button type="button" class="sf-btn sm" data-action="download-unopened">Download the last project</button>
     </section>
   </form>
+  </div></div>
 </div>`;
+}
+
+// The column of groups beside the settings: each with what it holds now.
+// Updates (desktop app) and Recovery show when they are there.
+const GROUP_ICONS = { look: 'markings', printer: 'plate', shopping: 'kit', recovery: 'reset', updates: 'export' };
+export function settingsSummary(key, s, themeState) {
+  if (key === 'look') return themeName(themeState.theme);
+  if (key === 'printer')
+    return fmt(s.plate.width) + ' × ' + fmt(s.plate.depth) + ' mm' + (s.plate.margin ? ' · ' + fmt(s.plate.margin) + ' mm margin' : '');
+  if (key === 'shopping')
+    return (MATERIALS.find((m) => m.id === s.material)?.name ?? '') + ' · ' + fmt(s.infill) + ' % fill';
+  if (key === 'recovery') return 'A project to recover';
+  if (key === 'updates') return 'The desktop app';
+  return '';
+}
+export function syncSettingsRail(host, s, themeState, chosen) {
+  const nav = host?.querySelector('.st-rail');
+  if (!nav) return chosen;
+  const groups = [...host.querySelectorAll('[data-st-group]')].filter((g) => !g.hidden);
+  if (!groups.some((g) => g.dataset.stGroup === chosen)) chosen = groups[0]?.dataset.stGroup;
+  nav.innerHTML =
+    '<div class="st-rail-label">This device</div>' +
+    groups
+      .map((g) => {
+        const key = g.dataset.stGroup;
+        const title = g.querySelector('h2')?.textContent ?? key;
+        return (
+          '<button type="button" data-st-go="' + key + '"' + (key === chosen ? ' aria-current="true"' : '') + '>' +
+          icon(GROUP_ICONS[key] ?? 'settings') +
+          '<span><b>' + esc(title) + '</b><small>' + esc(settingsSummary(key, s, themeState)) + '</small></span></button>'
+        );
+      })
+      .join('');
+  for (const g of host.querySelectorAll('[data-st-group]')) g.classList.toggle('st-shown', g.dataset.stGroup === chosen);
+  const art = host.querySelector('[data-st-plate]');
+  if (art) art.innerHTML = plateDrawing(s.plate);
+  return chosen;
 }
 
 // Reads the form; choosing a printer fills the plate, editing the plate makes it custom.
@@ -153,7 +194,7 @@ function lookSection(state) {
   const sources = THEMES.filter(([id]) => id !== 'custom')
     .map(([id, name]) => `<option value="${id}">${esc(name)}</option>`)
     .join('');
-  return `<section class="st-group" data-look>
+  return `<section class="st-group" data-st-group="look" data-look>
       <div class="st-look-head"><h2>Look</h2><span class="st-note">Current: <b data-theme-current>${esc(themeName(state.theme))}</b></span></div>
       <p class="st-note">The same themes as the other SlotForge apps. Track parts keep their print colours.</p>
       <div class="theme-presets" role="group" aria-label="App theme presets">${tiles}</div>

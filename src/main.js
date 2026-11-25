@@ -108,6 +108,7 @@ import {
   loadSettings,
   saveSettings,
   renderSettings,
+  syncSettingsRail,
   readSettingsForm,
   syncThemeSettings,
 } from './settings.js';
@@ -1690,6 +1691,10 @@ const actions = {};
 // before the first paint; this keeps the switches, Settings and the drawings
 // in step with it.
 let themeState = loadTheme();
+// The Settings page: whether it is open, the settings and the group shown.
+let settingsOpen = false,
+  settings = loadSettings(),
+  settingsGroup = 'look';
 function syncTheme() {
   applyThemeState(themeState);
   for (const b of document.querySelectorAll('[data-action^="theme-"]'))
@@ -1697,6 +1702,7 @@ function syncTheme() {
   for (const b of document.querySelectorAll('[data-pick-theme]'))
     b.setAttribute('aria-pressed', String(b.dataset.pickTheme === themeState.theme));
   syncThemeSettings($('#settings-page'), themeState);
+  if (settingsOpen) settingsGroup = syncSettingsRail($('#settings-page'), settings, themeState, settingsGroup);
   document.dispatchEvent(new CustomEvent('foundry-theme', { detail: themeState.theme }));
 }
 function chooseTheme(theme, customColors) {
@@ -1807,8 +1813,6 @@ function leaveLibraryPage() {
 actions['mode-library'] = showLibraryPage;
 
 // Settings covers the workspace too. Changes save as they are made.
-let settingsOpen = false,
-  settings = loadSettings();
 function showSettingsPage() {
   leavePlanner();
   leaveHome();
@@ -1822,14 +1826,23 @@ function showSettingsPage() {
   markNav('mode-settings');
   settings = loadSettings();
   host.innerHTML = renderSettings(settings, themeState);
-  if (desktopUpdates) host.querySelector('.st').append(updatesHolder);
+  if (desktopUpdates) host.querySelector('.st-panel').append(updatesHolder);
   syncThemeSettings(host, themeState);
+  const rail = () => (settingsGroup = syncSettingsRail(host, settings, themeState, settingsGroup));
+  rail();
   readUnopened()
     .then((kept) => {
       const box = host.querySelector('[data-unopened]');
       if (box) box.hidden = !kept;
+      rail();
     })
     .catch(() => {});
+  host.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-st-go]');
+    if (!go) return;
+    settingsGroup = go.dataset.stGo;
+    rail();
+  });
   // Look: theme tiles, your own colours and "start from".
   host.addEventListener('click', (e) => {
     const pick = e.target.closest('[data-pick-theme]');
@@ -1850,6 +1863,7 @@ function showSettingsPage() {
     settings = saveSettings(readSettingsForm(form, settings, e.target.name));
     form.elements.printer.value = settings.printer;
     for (const k of ['width', 'depth', 'margin']) form.elements[k].value = settings.plate[k];
+    rail();
   });
 }
 function leaveSettingsPage() {
@@ -1871,6 +1885,7 @@ actions['mode-settings'] = showSettingsPage;
 const updatesHolder = document.createElement('div');
 updatesHolder.className = 'st-updates';
 updatesHolder.dataset.updates = '';
+updatesHolder.dataset.stGroup = 'updates';
 const desktopUpdates = Boolean(globalThis.slotforgeDesktop?.updateCheck);
 globalThis.UpdateUI?.start({
   settings: updatesHolder,
@@ -2025,7 +2040,8 @@ async function deleteStep(id) {
   const op = project.editor.ops.find((o) => o.id === id);
   if (!op) return;
   const ok = await askUser({
-    title: 'Delete this step?',
+    eyebrow: 'Delete step',
+    title: op.label,
     text: '"' + op.label + '" is removed from the history. Undo brings it back.',
     confirm: 'Delete step',
     danger: true,
@@ -2103,7 +2119,7 @@ const libraryHandlers = {
   'manage-pack': (id) => openLibrary({ collectionId: id }),
   async 'rename-pack'(id, { packs }) {
     const pack = packs.find((p) => p.id === id);
-    const name = await askUser({ title: 'Rename pack', value: pack.name, confirm: 'Rename' });
+    const name = await askUser({ eyebrow: 'Rename track pack', title: pack.name, value: pack.name, confirm: 'Rename' });
     if (!name) return false;
     await (await openTrackLibrary()).renamePack(id, name);
     if (currentPack?.id === id) currentPack = null;
@@ -2116,7 +2132,8 @@ const libraryHandlers = {
   async 'delete-pack'(id, { packs }) {
     const pack = packs.find((p) => p.id === id);
     const ok = await askUser({
-      title: 'Delete ' + pack.name + '?',
+      eyebrow: 'Delete track pack',
+      title: pack.name,
       text:
         'Its ' +
         pack.pieces.length +
@@ -2139,7 +2156,7 @@ const libraryHandlers = {
   async 'rename-layout'(id) {
     const store = await openTrackLibrary();
     const saved = await store.layout(id);
-    const name = await askUser({ title: 'Rename layout', value: saved.name, confirm: 'Rename' });
+    const name = await askUser({ eyebrow: 'Rename layout', title: saved.name, value: saved.name, confirm: 'Rename' });
     if (!name) return false;
     await store.renameLayout(id, name);
     return true;
@@ -2147,7 +2164,8 @@ const libraryHandlers = {
   async 'delete-layout'(id, { layouts }) {
     const layout = layouts.find((l) => l.id === id);
     const ok = await askUser({
-      title: 'Delete ' + layout.name + '?',
+      eyebrow: 'Delete layout',
+      title: layout.name,
       text: 'The layout is removed from the Library. Files you saved or exported stay where they are. This cannot be undone.',
       confirm: 'Delete layout',
       danger: true,
@@ -2160,7 +2178,7 @@ const libraryHandlers = {
   'rebuild-part': (id) => rebuildStlPart(id),
   async 'rename-part'(id, { parts }) {
     const part = parts.find((p) => p.id === id);
-    const name = await askUser({ title: 'Rename STL part', value: part.name, confirm: 'Rename' });
+    const name = await askUser({ eyebrow: 'Rename STL part', title: part.name, value: part.name, confirm: 'Rename' });
     if (!name) return false;
     await (await openTrackLibrary()).renameStlPart(id, name);
     return true;
@@ -2168,7 +2186,8 @@ const libraryHandlers = {
   async 'delete-part'(id, { parts }) {
     const part = parts.find((p) => p.id === id);
     const ok = await askUser({
-      title: 'Delete ' + part.name + '?',
+      eyebrow: 'Delete STL part',
+      title: part.name,
       text: 'Parts based on it keep their own model. This cannot be undone.',
       confirm: 'Delete part',
       danger: true,
