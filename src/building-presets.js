@@ -178,6 +178,24 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'grandstand', length: 320, rows: 8, aisles: 2, roof: 'canopy' },
   },
   {
+    id: 'gantry-start',
+    name: 'Start gantry',
+    note: 'Two legs, a beam with five start lights and a board',
+    building: { kind: 'gantry', type: 'start' },
+  },
+  {
+    id: 'gantry-half',
+    name: 'Half gantry',
+    note: 'One leg, a beam with a board reaching out over the road',
+    building: { kind: 'gantry', type: 'half' },
+  },
+  {
+    id: 'footbridge',
+    name: 'Footbridge',
+    note: 'A walkway over the track, a staircase at each side',
+    building: { kind: 'gantry', type: 'bridge' },
+  },
+  {
     id: 'stand-curved',
     name: 'Curved grandstand',
     note: 'Round the outside of a bend, facing into it',

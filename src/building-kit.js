@@ -11,6 +11,7 @@ const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1
 
 export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'grandstand') return standNotes(name, b, parts, sizes);
+  if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -111,5 +112,43 @@ function standNotes(name, g, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the benches before you put the stand together, or print the sections in a colour of their own.',
+  ].join('\n');
+}
+
+// The notes of a gantry or a footbridge over the track.
+function gantryNotes(name, g, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
+  const bridge = g.type === 'bridge';
+  const steps = [
+    ...(cut ? ['Join the pieces of the ' + (bridge ? 'walkway' : 'beam') + ' first: push each tab into its socket, glue, and let it set flat.'] : []),
+    ...(bridge
+      ? [
+          'Stand a staircase on each side of the track, ' + fmt(g.span) + ' mm apart, their landings towards it.',
+          'Lay the walkway across, each end on a landing, and glue it there.',
+        ]
+      : [
+          'Stand the leg' + (g.type === 'half' ? ' beside the track.' : 's on each side of the track, ' + fmt(g.span) + ' mm apart inside.'),
+          'Drop the beam on' + (g.type === 'half' ? ': the socket at its end goes over the pin on top of the leg, and the beam reaches out over the road.' : ': the sockets at its ends go over the pins on top of the legs.') + ' Glue it.',
+        ]),
+  ];
+  return [
+    name + ' · SlotForge Foundry ' + (bridge ? 'footbridge' : 'gantry') + ' kit',
+    '',
+    (bridge ? 'A footbridge' : g.type === 'half' ? 'A half gantry' : 'A start gantry') + ' over ' + fmt(g.span) + ' mm of track, ' + fmt(g.clearance) + ' mm clear underneath.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    ...(bridge
+      ? ['- A staircase lies on its side; the walkway stands upright, its walls up.']
+      : ['- A leg stands on its foot. The beam lies on its back' + (g.board ? ', the board flat on the plate,' : '') + ' its front' + (g.type === 'start' && g.lights ? ' with the start lights' : '') + ' up.']),
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the start lights red, or put a sticker on the board.',
   ].join('\n');
 }

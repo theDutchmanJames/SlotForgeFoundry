@@ -10,6 +10,7 @@ import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
 import { BUILDING_PRESETS } from './building-presets.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
+import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -153,6 +154,21 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <form class="bd-form" autocomplete="off">
+    <section class="bd-box" data-bd-card="gantry" data-bd-gantry hidden><h3>Over the track</h3>
+      <div class="bd-seg bd-wide" role="group" aria-label="Type">${GANTRY_TYPES.map(([id, label]) => `<button type="button" data-bd-gantry-type="${id}">${label}</button>`).join('')}</div>
+      ${field('tSpan', 'Span', 220, GANTRY_LIMITS.span)}
+      ${field('tClearance', 'Clearance', 70, GANTRY_LIMITS.clearance)}
+      <p class="bd-hint" data-bd-gantry-size></p></section>
+    <section class="bd-box" data-bd-card="gantryBeam" data-bd-gantry data-bd-beam hidden><h3>Beam</h3>
+      ${field('tLights', 'Start lights', 5, GANTRY_LIMITS.lights, '', ' data-bd-lights')}
+      ${field('tReach', 'Reach over the road', 140, GANTRY_LIMITS.reach, 'mm', ' data-bd-reach')}
+      <label class="bd-check"><input type="checkbox" name="tBoard"><span>An advertising board on top</span></label>
+      ${field('tBoardHeight', 'Board height', 20, GANTRY_LIMITS.boardHeight)}
+      <p class="bd-hint">The beam drops onto a pin on top of each leg. It prints on its back: the board flat on the plate, the start lights facing up. Legs stand on their foot plates to print.</p></section>
+    <section class="bd-box" data-bd-card="gantryBridge" data-bd-gantry data-bd-bridge hidden><h3>Walkway</h3>
+      ${field('tDeck', 'Width', 30, GANTRY_LIMITS.deckWidth)}
+      ${field('tWalls', 'Walls above the walkway', 14, GANTRY_LIMITS.wallHeight)}
+      <p class="bd-hint">The walkway lies on the landings of the two staircases, between solid walls. It prints standing up like a channel; each staircase prints on its side.</p></section>
     <section class="bd-box" data-bd-card="stand" data-bd-stand hidden><h3>Grandstand</h3>
       ${field('gLength', 'Length', 240, GRANDSTAND_LIMITS.length)}
       ${field('gRows', 'Rows', 6, GRANDSTAND_LIMITS.rows, '')}
@@ -237,14 +253,51 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const form = $('.bd-form');
 
   const isStand = () => building.kind === 'grandstand';
-  // A garage's cards, or a grandstand's.
+  const isGantry = () => building.kind === 'gantry';
+  // A garage's cards, a grandstand's or a gantry's.
   function showKind() {
     for (const box of form.querySelectorAll('section.bd-box')) {
-      const mine = box.hasAttribute('data-bd-stand');
       if (box.hasAttribute('data-bd-fitting')) continue;
-      box.hidden = isStand() ? !mine : mine;
+      const stand = box.hasAttribute('data-bd-stand'),
+        gantry = box.hasAttribute('data-bd-gantry');
+      box.hidden = isStand() ? !stand : isGantry() ? !gantry : stand || gantry;
     }
-    if (isStand()) $('[data-bd-fitting]').hidden = true;
+    if (isStand() || isGantry()) $('[data-bd-fitting]').hidden = true;
+    if (isGantry()) drawGantry();
+  }
+  function fillGantry(g) {
+    const e = form.elements;
+    for (const [k, v] of [['tSpan', g.span], ['tClearance', g.clearance], ['tLights', g.lights], ['tReach', g.reach], ['tBoardHeight', g.boardHeight], ['tDeck', g.deckWidth], ['tWalls', g.wallHeight]]) e[k].value = v;
+    e.tBoard.checked = g.board;
+    drawGantry();
+  }
+  function drawGantry() {
+    const g = building;
+    for (const b of host.querySelectorAll('[data-bd-gantry-type]')) b.setAttribute('aria-pressed', String(b.dataset.bdGantryType === g.type));
+    host.querySelector('[data-bd-beam]').hidden = g.type === 'bridge';
+    host.querySelector('[data-bd-bridge]').hidden = g.type !== 'bridge';
+    host.querySelector('[data-bd-lights]').hidden = g.type !== 'start';
+    host.querySelector('[data-bd-reach]').hidden = g.type !== 'half';
+    const [w, d] = gantrySize(g);
+    $('[data-bd-gantry-size]').textContent =
+      (g.type === 'half' ? 'Its beam reaches ' + fmt(g.reach) + ' mm out over the road' : 'Span is the clear width between the ' + (g.type === 'bridge' ? 'staircases' : 'legs') + ': the track with its borders') +
+      ', ' + fmt(g.clearance) + ' mm clear underneath. On the table it takes ' + fmt(w) + ' × ' + fmt(d) + ' mm. In the Track Planner, a gantry over a straight takes the straight\'s width as its span.';
+  }
+  function readGantry() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return {
+      kind: 'gantry',
+      type: building.type,
+      span: num(e.tSpan),
+      clearance: num(e.tClearance),
+      lights: num(e.tLights),
+      reach: num(e.tReach),
+      board: e.tBoard.checked,
+      boardHeight: num(e.tBoardHeight),
+      deckWidth: num(e.tDeck),
+      wallHeight: num(e.tWalls),
+    };
   }
   function fillStand(g) {
     const e = form.elements;
@@ -364,6 +417,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
   function readForm() {
     if (isStand()) return readStand();
+    if (isGantry()) return readGantry();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -422,6 +476,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[data-bd-name]').textContent = name || 'Building';
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
     if (isStand()) drawStand();
+    else if (isGantry()) drawGantry();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
@@ -557,7 +612,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     showError('');
     // The width or depth the rooms make, without redrawing the room fields.
-    if (!isStand() && building.rooms) {
+    if (!isStand() && !isGantry() && building.rooms) {
       const along = building.rooms.along;
       form.elements[along].value = building[along];
       const sum = $('.bd-rooms .bd-hint');
@@ -602,6 +657,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       w = wall,
       opening = null;
     if (isStand()) card = /^canopy|^post/.test(id) ? 'standRoof' : 'stand';
+    else if (isGantry()) card = /^beam/.test(id) ? 'gantryBeam' : /^deck/.test(id) ? 'gantryBridge' : 'gantry';
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
       w = wallOf[1];
@@ -623,7 +679,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       card = 'walls';
     }
     if (!card) return;
-    if (!isStand() && (k !== storey || w !== wall)) {
+    if (!isStand() && !isGantry() && (k !== storey || w !== wall)) {
       // Keep what is typed, as the storey and wall buttons do.
       try {
         building = validateBuilding(readForm());
@@ -661,6 +717,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     showKind();
     $('[name="buildingName"]').value = name;
     if (b.kind === 'grandstand') return fillStand(b);
+    if (b.kind === 'gantry') return fillGantry(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -753,6 +810,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdGantryType) {
+        fitted = false;
+        await rebuild({ ...readGantry(), type: b.dataset.bdGantryType });
+        drawGantry();
       } else if (b.dataset.bdStandShape) {
         const next = readStand();
         next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;

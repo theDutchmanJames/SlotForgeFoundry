@@ -72,7 +72,7 @@ import {
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
-import { SNAP, bayEnd, bayPose, bayRoom, layoutBuilding, nearestRow, overlap, pitGarage, placeParts, snapPose } from './planner-buildings.js';
+import { SNAP, bayEnd, bayPose, bayRoom, layoutBuilding, nearestRow, overGantry, overPose, overlap, pitGarage, placeParts, snapPose, straightAcross } from './planner-buildings.js';
 import { buildingLayout, BUILDING_LIMITS, validateBuilding } from './geometry/building.js';
 import { sizeLine } from './geometry/grandstand.js';
 import { kitNotes } from './building-kit.js';
@@ -776,6 +776,10 @@ export function createPlanner({ host, call, download, current, promote }) {
       render();
       return message('This garage stands over a pit bay and moves with it. Delete it to place a building elsewhere.');
     }
+    if (homeOf(id)?.over) {
+      render();
+      return message('This gantry spans a straight and moves with it. Delete it to place it elsewhere.');
+    }
     let snapped = null;
     await edit((next) => {
       const entry = next.buildings.find((b) => b.id === id);
@@ -798,11 +802,58 @@ export function createPlanner({ host, call, download, current, promote }) {
   // one whose bay was removed stays where it was.
   function followBays(data, models) {
     for (const entry of data.buildings ?? []) {
+      // A gantry over a straight spans it, wherever it goes and however wide it is.
+      if (entry.over) {
+        const over = straightOf(data, models, entry.over);
+        if (over) {
+          entry.building = overGantry(entry.building, over.width);
+          entry.pose = overPose(entry.building, over);
+        } else delete entry.over;
+        continue;
+      }
       if (!entry.bay) continue;
       const bay = bayOf(data, models, entry.bay);
       if (bay) entry.pose = bayPose(entry.building, bay);
       else delete entry.bay;
     }
+  }
+  // A straight: the middle of its road, the way it runs, and its width.
+  function straightOf(data, models, id) {
+    const n = data.nodes.find((m) => m.id === id),
+      def = n && models.get(n.source);
+    if (!def || def.track.params.kind !== 'straight') return null;
+    const ends = frameFor(n, def);
+    if (ends.length < 2) return null;
+    return straightAcross(ends[0], ends[1], surfaces({ nodes: [n] }, models)[0].polys);
+  }
+  // A gantry or a footbridge from the Library over the chosen straight.
+  async function addGantry() {
+    const saved = savedHomes.find((h) => h.id === field('overHome')?.value);
+    if (!saved) throw Error('Choose a gantry or a footbridge.');
+    const over = straightOf(layout, defs, choice.selected);
+    if (!over) throw Error('Select a straight to put a gantry over.');
+    const building = overGantry(saved.building, over.width);
+    const entry = { ...layoutBuilding({ ...saved, building }, overPose(building, over), 'b-' + crypto.randomUUID()), over: choice.selected };
+    await edit((next) => {
+      (next.buildings ??= []).push(entry);
+      return { ...choice, building: entry.id };
+    });
+    message(saved.name + ' spans the straight: ' + Math.round(building.span) + ' mm between its ' + (building.type === 'bridge' ? 'staircases' : 'legs') + ', ' + Math.round(building.clearance) + ' mm clear underneath.');
+  }
+  // For a straight: a gantry over it.
+  function overPanel(n, def) {
+    if (def.track.params.kind !== 'straight' || def.track.params.endStop) return '';
+    const gantries = savedHomes.filter((h) => h.building.kind === 'gantry');
+    const over = (layout.buildings ?? []).find((b) => b.over === n.id);
+    return (
+      '<details class="pl-bridge pl-over"><summary><span>Over the track</span><small>' + (over ? esc(over.name) : 'None') + '</small></summary><div>' +
+      (gantries.length
+        ? '<label>Gantry<select data-pl-field="overHome">' + gantries.map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
+          btn('over-one', 'Gantry over this straight', 'plus')
+        : '<small>Save a start gantry, a half gantry or a footbridge to the Library on the Buildings page first.</small>') +
+      '<small>It spans the straight, its borders and ' + 8 + ' mm each side, its legs or staircases beside it. It follows the straight when the track changes.</small>' +
+      '</div></details>'
+    );
   }
   // Garages over the pit bays, from a building in the Library: over the
   // chosen bay, or over every bay that has none yet.
@@ -885,7 +936,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     return (
       '<details class="pl-bridge pl-pit" open><summary><span>Pit garage</span><small>' + (over ? esc(over.name) : 'None') + '</small></summary><div>' +
       (savedHomes.length
-        ? '<label>Building<select data-pl-field="pitHome">' + savedHomes.filter((h) => h.building.kind !== 'grandstand').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
+        ? '<label>Building<select data-pl-field="pitHome">' + savedHomes.filter((h) => !h.building.kind || h.building.kind === 'garage').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('') + '</select></label>' +
           (over ? '' : btn('pit-one', 'Garage over this bay', 'plus')) +
           (free > (over ? 0 : 1) ? btn('pit-all', 'Garages over every bay', 'plus') : '')
         : '<small>Save a building to the Library on the Buildings page first.</small>') +
@@ -1384,6 +1435,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         '</div>' +
         '<div class="pl-group">This section</div>' +
         pitPanel(n, def) +
+        overPanel(n, def) +
         '<details class="pl-bridge"><summary><span>Bridge and approaches</span><small>' + esc(liftSummary(n)) + '</small></summary><div><label>Lift at A · mm<input data-pl-field="a" type="number" min="0" max="500" value="' +
         n.h[0] +
         '"></label>' +
@@ -1625,8 +1677,14 @@ export function createPlanner({ host, call, download, current, promote }) {
   // The right panel for a building in the layout: where it stands, and its height.
   function homePanel(entry) {
     const b = entry.building,
-      stand = b.kind === 'grandstand',
+      stand = b.kind === 'grandstand' || b.kind === 'gantry',
       storeys = stand ? 0 : b.upper.length + 1;
+    if (entry.over)
+      return (
+        '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' + esc(sizeLine(b)) + ' · over a straight</p>' +
+        '<div class="pl-selection-actions">' + btn('remove', 'Delete', 'close') + '</div>' +
+        '<p class="pl-note">It spans the straight, ' + fmt(b.clearance) + ' mm clear underneath, its ' + (b.type === 'bridge' ? 'staircases' : 'legs') + ' beside the track. It moves with the straight, and takes its width. Delete it to free the straight.</p>'
+      );
     if (entry.bay)
       return (
         '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
@@ -2026,6 +2084,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     if (key === 'remove')
       return edit((n) => removeSection(n, defs, choice.selected));
     if (key === 'pit-one' || key === 'pit-all') return addPitGarages(key === 'pit-all');
+    if (key === 'over-one') return addGantry();
     if (key === 'b-turn') return editHome((entry) => (entry.pose = { ...entry.pose, a: entry.pose.a + Math.PI / 2 }));
     if (key === 'b-snap') {
       // Further than a drop snaps: to the nearest track in front of it.
@@ -2116,7 +2175,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       field('ladderBay').value = 200;
       field('ladderParallel').checked = true;
       field('ladderGarage').innerHTML =
-        '<option value="">None</option>' + savedHomes.filter((h) => h.building.kind !== 'grandstand').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('');
+        '<option value="">None</option>' + savedHomes.filter((h) => !h.building.kind || h.building.kind === 'garage').map((h) => '<option value="' + esc(h.id) + '">' + esc(h.name) + '</option>').join('');
       field('ladderGarage').disabled = !savedHomes.length;
       const suggest = () => {
         const least = leastSpacing(parts, field('ladderBay').valueAsNumber || 0, field('ladderParallel').checked);

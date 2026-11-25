@@ -223,6 +223,14 @@ export async function checkBuildings({ page, action, download, snap }) {
   await page.waitForFunction(() => /3 rows/.test(document.querySelector('[data-bd-stand-size]').textContent));
   await host.locator('[data-bd-stand-shape="straight"]').click();
   await page.waitForFunction(() => !document.querySelector('form.bd-form [name="gLength"]').disabled);
+  // A gantry over the track: a type to choose, its own cards.
+  await host.locator('[data-bd-preset="gantry-start"]').click();
+  await host.locator('[data-bd-part="leg-2"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="gantry"]').isVisible());
+  assert.ok(await host.locator('[data-bd-card="gantryBridge"]').isHidden());
+  await host.locator('[data-bd-gantry-type="bridge"]').click();
+  await host.locator('[data-bd-part^="deck"]').first().waitFor();
+  assert.ok(await host.locator('[data-bd-card="gantryBridge"]').isVisible());
   await bd('new').click();
   await partCount(12);
   assert.ok(await host.locator('[data-bd-card="size"]').isVisible());

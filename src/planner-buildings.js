@@ -7,11 +7,12 @@
 import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth } from './geometry/grandstand.js';
+import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
 
 export const MAX_BUILDINGS = 100;
 export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
 export const GAP = 1; // and stands this far from it
-const ENTRY_KEYS = ['id', 'name', 'libraryId', 'building', 'pose', 'bay'];
+const ENTRY_KEYS = ['id', 'name', 'libraryId', 'building', 'pose', 'bay', 'over'];
 
 /** The buildings of a layout as kept: each checked, or an error. */
 export function validateBuildings(list) {
@@ -29,6 +30,7 @@ export function validateBuildings(list) {
       e.name.length > 120 ||
       (e.libraryId !== undefined && (typeof e.libraryId !== 'string' || e.libraryId.length > 100)) ||
       (e.bay !== undefined && !/^[\w-]{1,100}$/.test(e.bay)) ||
+      (e.over !== undefined && !/^[\w-]{1,100}$/.test(e.over)) ||
       ![e.pose?.x, e.pose?.y, e.pose?.a].every((v) => Number.isFinite(v) && Math.abs(v) < 1e8)
     )
       throw Error('Invalid building in the layout file.');
@@ -61,7 +63,12 @@ const rect = (x0, y0, x1, y1) => [
  */
 export function shapeOf(b) {
   let outline, front;
-  if (b.kind === 'grandstand') {
+  if (b.kind === 'gantry') {
+    // Over the track: it has no front to stand against the track with.
+    const [w, d] = gantrySize(b);
+    outline = rect(0, 0, w, d);
+    front = null;
+  } else if (b.kind === 'grandstand') {
     const D = standDepth(b),
       ahead = b.roof === 'canopy' ? STAND.reach : 0;
     if (!b.curve) {
@@ -91,7 +98,7 @@ export function shapeOf(b) {
 }
 /** A point of the building, in its own coordinates, on the plan: turned by a round its middle. */
 export function toPlan({ building: b, pose }, [x, y]) {
-  const [cx, cy] = b.kind === 'grandstand' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
+  const [cx, cy] = b.kind === 'grandstand' || b.kind === 'gantry' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
   const u = x - cx,
     v = y - cy,
     c = Math.cos(pose.a),
@@ -105,6 +112,12 @@ export function footprint(entry) {
 /** What the plan draws: the base, each storey, its dividing walls, and the garage doors in the front wall. */
 export function planShapes(entry) {
   const b = validateBuilding(entry.building);
+  if (b.kind === 'gantry') {
+    // Its feet, and the beam or the walkway across.
+    const [w, d] = gantrySize(b);
+    const across = [[0, d / 2], [w, d / 2]].map((p) => toPlan(entry, p));
+    return { base: footprint(entry), storeys: gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p))), dividers: [across], doors: [] };
+  }
   if (b.kind === 'grandstand') {
     // Its rows, as lines along it.
     const rows = Array.from({ length: b.rows - 1 }, (_, i) => STAND.shell + (i + 1) * b.rowDepth);
@@ -166,6 +179,8 @@ const area = (multi) =>
 export function baseParts(entry) {
   const b = entry.building,
     m = KIT.ledge;
+  // A gantry meets the table only where its feet stand: its beam spans the track.
+  if (b.kind === 'gantry') return gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
   if (!b.lane) return [footprint(entry)];
   const half = b.lane.width / 2 + KIT.lanePlay,
     end = b.depth - KIT.wall - KIT.play;
@@ -204,6 +219,8 @@ function inside([x, y], loop) {
  */
 export function snapPose(entry, loops, radius = SNAP) {
   const b = entry.building;
+  // A gantry is put over a straight, not against the track.
+  if (b.kind === 'gantry') return null;
   const shape = shapeOf(b),
     { p: fp, f } = shape.front;
   const front = toPlan(entry, fp);
@@ -247,7 +264,9 @@ export function snapPose(entry, loops, radius = SNAP) {
 
 /** The outline loops of the track nearest the building, and how far its front is from them. */
 export function nearestRow(entry, rows) {
-  const front = toPlan(entry, shapeOf(entry.building).front.p);
+  const shape = shapeOf(entry.building);
+  if (!shape.front) return null;
+  const front = toPlan(entry, shape.front.p);
   let best = null;
   for (const row of rows)
     for (const loop of row.polys)
@@ -337,4 +356,55 @@ export function bayRoom(ends, depth) {
     });
     return room;
   });
+}
+
+/* ---------- Gantries over a straight ---------- */
+
+/**
+ * A straight on the plan: the middle of its road, the way it runs, and how
+ * wide it is across, borders included, from its two ends and its outlines.
+ */
+export function straightAcross(a, b, polys) {
+  const len = Math.hypot(b.xy[0] - a.xy[0], b.xy[1] - a.xy[1]) || 1;
+  const d = [(b.xy[0] - a.xy[0]) / len, (b.xy[1] - a.xy[1]) / len],
+    across = [-d[1], d[0]];
+  const mid = [(a.xy[0] + b.xy[0]) / 2, (a.xy[1] + b.xy[1]) / 2];
+  let lo = Infinity,
+    hi = -Infinity;
+  for (const loop of polys)
+    for (const [x, y] of loop) {
+      const v = (x - mid[0]) * across[0] + (y - mid[1]) * across[1];
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+  const c = (lo + hi) / 2;
+  return { at: [mid[0] + across[0] * c, mid[1] + across[1] * c], dir: d, across, width: hi - lo };
+}
+/** Clear of the track each side, between a gantry's legs and the border. */
+export const OVER_CLEAR = 8;
+/**
+ * A gantry made to span a straight of this width: OVER_CLEAR from the
+ * road's edge to its feet, which reach in beyond its legs.
+ */
+export function overGantry(building, width) {
+  const feet = building.type === 'bridge' ? 0 : GANTRY.foot[0] - GANTRY.leg;
+  return validateBuilding({ ...building, span: Math.round((width + 2 * OVER_CLEAR + feet) * 10) / 10 });
+}
+/**
+ * Where a gantry stands over a straight: across it, the middle of its span
+ * on the middle of the road; a half gantry with its leg beside the road and
+ * its beam reaching out over it.
+ */
+export function overPose(building, { at, across }) {
+  const shape = shapeOf(building);
+  const [w] = gantrySize(building);
+  let mid = w / 2;
+  if (building.type === 'half') {
+    // Its foot OVER_CLEAR from the road's edge: the middle of the road half a span on.
+    const f = GANTRY.foot[0] + 10;
+    mid = f + (building.span - (GANTRY.foot[0] - GANTRY.leg)) / 2;
+  }
+  const u = mid - shape.centre[0];
+  const a = Math.atan2(across[1], across[0]);
+  return { x: at[0] - across[0] * u, y: at[1] - across[1] * u, a };
 }
