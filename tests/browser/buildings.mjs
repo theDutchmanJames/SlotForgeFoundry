@@ -171,6 +171,19 @@ export async function checkBuildings({ page, action, download, snap }) {
   await partCount(22);
   assert.match(await host.locator('[data-bd-part="floor2"]').textContent(), /Floor of storey 2/);
   assert.equal(await host.locator('[data-bd-storey="1"]').getAttribute('aria-pressed'), 'true');
+  // Clicking a part opens its settings: its storey and its wall are chosen.
+  const pressed = (attr) => host.locator('[' + attr + '][aria-pressed="true"]').first().textContent();
+  await host.locator('[data-bd-part="right"]').click();
+  assert.equal(await pressed('data-bd-storey'), 'Ground floor');
+  assert.equal(await pressed('data-bd-wall'), 'Right');
+  await host.locator('[data-bd-part="right"]').click();
+  await host.locator('[data-bd-part="back2"]').click();
+  assert.equal(await pressed('data-bd-storey'), 'Storey 2');
+  assert.equal(await pressed('data-bd-wall'), 'Back');
+  await host.locator('[data-bd-part="back2"]').click();
+  await host.locator('[data-bd-part^="roof"]').first().click();
+  assert.equal(await host.locator('.bd-flash').getAttribute('data-bd-card'), 'roof');
+  await host.locator('[data-bd-part^="roof"]').first().click();
   await setting('upWidth').fill('140');
   await setting('upWidth').press('Tab');
   await host.locator('.bd-error').waitFor();

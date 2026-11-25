@@ -569,3 +569,15 @@
 .bd-input input:disabled {
   opacity: 0.6;
 }
+/* The card of the part just clicked lights up for a moment. */
+@keyframes bd-flash {
+  from {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.bd-flash {
+  animation: bd-flash 1.2s ease-out;
+}

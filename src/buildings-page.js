@@ -149,7 +149,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <form class="bd-form" autocomplete="off">
-    <section class="bd-box"><h3>Size</h3>
+    <section class="bd-box" data-bd-card="size"><h3>Size</h3>
       ${field('width', 'Width', building.width, BUILDING_LIMITS.width)}
       ${field('depth', 'Depth', building.depth, BUILDING_LIMITS.depth)}
       ${field('height', 'Wall height', building.height, BUILDING_LIMITS.height)}
@@ -157,12 +157,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-seg bd-wide" role="group" aria-label="Rooms"><button type="button" data-bd-rooms="">One room</button><button type="button" data-bd-rooms="width">Side by side</button><button type="button" data-bd-rooms="depth">Front to back</button></div>
       <div class="bd-rooms"></div>
       <p class="bd-hint">The ground floor, outside the walls, up to the eaves. A one-car garage of 120 × 180 mm and 75 mm high takes practically any 1:32 slot car. Rooms are measured outside to outside, each to the middle of a dividing wall, so they add up to the width or the depth: two rooms of 200 and 150 make a building 350 mm wide. Side by side, each room has its own garage door.</p></section>
-    <section class="bd-box"><h3>Storeys</h3>
+    <section class="bd-box" data-bd-card="storeys"><h3>Storeys</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-storeys></div>
       <div class="bd-storey"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-storey>${icon('plus')}Storey</button></div>
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
-    <section class="bd-box"><h3>Roof</h3>
+    <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable"')}
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
@@ -171,7 +171,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
-    <section class="bd-box"><h3>Surface</h3>
+    <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
       <div data-bd-roof-texture-box><div class="bd-sub">Roof</div>
@@ -182,12 +182,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row"><span>Joint depth</span><span class="bd-input"><input type="number" name="textureDepth" value="${building.textureDepth}" min="${BUILDING_LIMITS.textureDepth[0]}" max="${BUILDING_LIMITS.textureDepth[1]}" step="0.05"><small>mm</small></span></label>
       </div>
       <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain.</p></section>
-    <section class="bd-box"><h3>Garage door</h3>
+    <section class="bd-box" data-bd-card="garage"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
       <label class="bd-row"><span>Door</span><select name="door"><option value="roller">Roller door</option><option value="open">Open, no door</option></select></label>
       <p class="bd-hint">The opening starts at the top of the base, so a car rolls straight in from the road.</p></section>
-    <section class="bd-box"><h3>Windows and doors</h3>
+    <section class="bd-box" data-bd-card="openings"><h3>Windows and doors</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall">${WALLS.map((w) => `<button type="button" data-bd-wall="${w}">${WALL_NAMES[w]}</button>`).join('')}</div>
       <div class="bd-openings"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add="window">${icon('plus')}Window</button><button type="button" class="bd-add" data-bd-add="door">${icon('plus')}Door</button></div>
@@ -195,10 +195,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
       <div class="bd-cuts"></div>
       <p class="bd-hint">A part longer than your plate is cut into pieces that join like a puzzle: dovetail tabs, or along the joints of a brick or block wall so the seam is one more joint. Move a cut anywhere in its range: both pieces still fit the plate, with the tab. A cut may run through a window or a door, not along its side.</p></section>
-    <section class="bd-box"><h3>Base</h3>
+    <section class="bd-box" data-bd-card="base"><h3>Base</h3>
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
-    <section class="bd-box"><h3>Walls</h3>
+    <section class="bd-box" data-bd-card="walls"><h3>Walls</h3>
       <label class="bd-check"><input type="checkbox" name="braces"><span>Corner braces</span></label>
       <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. Under the roof and every floor a frame drops inside the walls and holds their tops.</p></section>
     <p class="bd-error" role="alert" hidden></p>
@@ -504,7 +504,57 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function choose(id) {
     selected = selected === id ? null : id;
     viewport?.select(selected ?? undefined, new Set());
+    if (selected) focusPart(selected);
     sync();
+  }
+  // The settings of a part, on the right: its storey and wall chosen, its card in view.
+  function focusPart(id) {
+    const wallOf = /^(front|back|left|right)(\d?)(?:-\d+)?$/.exec(id),
+      frameOf = /^frame(\d?)-(\d+)$/.exec(id),
+      storeyOfPart = /^(?:floor|brace|divide)(\d?)/.exec(id);
+    let card = null,
+      k = storey,
+      w = wall,
+      opening = null;
+    if (wallOf) {
+      k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
+      w = wallOf[1];
+      card = 'openings';
+    } else if (frameOf) {
+      k = frameOf[1] ? Number(frameOf[1]) - 1 : 0;
+      opening = Number(frameOf[2]) - 1;
+      w = storeyOf(building, k)?.openings[opening]?.wall ?? wall;
+      card = 'openings';
+    } else if (/^floor/.test(id)) {
+      k = Number(/^floor(\d)/.exec(id)[1]) - 1;
+      card = 'storeys';
+    } else if (/^roof/.test(id)) card = 'roof';
+    else if (/^base/.test(id)) card = 'base';
+    else if (/^door/.test(id)) card = 'garage';
+    else if (/^divide/.test(id)) card = 'size';
+    else if (/^brace/.test(id)) {
+      k = storeyOfPart[1] ? Number(storeyOfPart[1]) - 1 : 0;
+      card = 'walls';
+    }
+    if (!card) return;
+    if (k !== storey || w !== wall) {
+      // Keep what is typed, as the storey and wall buttons do.
+      try {
+        building = validateBuilding(readForm());
+      } catch {
+        // The last good building stays; the error stays in view.
+      }
+      storey = Math.min(k, building.upper.length);
+      wall = w;
+      drawStoreys();
+      drawOpenings();
+    }
+    const box = host.querySelector('[data-bd-card="' + card + '"]');
+    const target = (opening !== null && box.querySelector('[data-op="' + opening + '"]')) || box;
+    target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    for (const el of host.querySelectorAll('.bd-flash')) el.classList.remove('bd-flash');
+    void target.offsetWidth;
+    target.classList.add('bd-flash');
   }
   async function listSaved() {
     try {
