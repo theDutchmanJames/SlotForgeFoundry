@@ -204,6 +204,15 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-storey="1"]').click();
   await host.locator('[data-bd-remove-storey]').click();
   await partCount(12);
+  // Start from a standard building: its name and its parts, then back to the plain garage.
+  await host.locator('[data-bd-preset="tower"]').click();
+  await host.locator('[data-bd-part="floor3"]').waitFor();
+  assert.equal(await host.locator('[name="buildingName"]').inputValue(), 'Control tower');
+  await host.locator('[data-bd-preset="pitrow"]').click();
+  await host.locator('[data-bd-part="divide3"]').waitFor();
+  assert.match(await host.locator('.bd-rooms .bd-hint').textContent(), /110 \+ 110 \+ 110 \+ 110 = 440 mm wide/);
+  await bd('new').click();
+  await partCount(12);
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
   console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window, textures and a second storey change its parts; on a small plate the parts are cut into pieces that fit');

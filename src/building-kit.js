@@ -29,7 +29,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...(b.lane
       ? ['Stand the base over the end of its pit bay: the track runs in through the open front, its end stop inside, with the base beside it as high as the road.']
       : []),
-    'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base. The front wall has the garage door opening.',
+    'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(divided
       ? ['Stand each dividing wall in its groove in the base, between the walls, and glue its ends to them. Its notched top corners let the lip of the roof or the floor above pass over it.']

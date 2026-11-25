@@ -79,7 +79,7 @@ test('every part of the default garage fits a 200 mm plate; a bigger one says wh
 
 test('settings are checked, and a door or window has to fit its wall', () => {
   assert.throws(() => validateBuilding({ roofColour: 'red' }), /unknown setting: roofColour/);
-  assert.throws(() => validateBuilding({ width: 20 }), /Width must be between 60 and 400 mm/);
+  assert.throws(() => validateBuilding({ width: 20 }), /Width must be between 60 and 1500 mm/);
   assert.throws(() => validateBuilding({ door: 'barn' }), /Choose a door/);
   assert.throws(() => validateBuilding({ roof: 'dome' }), /Choose a roof/);
   assert.throws(() => validateBuilding({ pitch: 60 }), /Roof pitch must be between 10 and 45°/);
@@ -681,10 +681,10 @@ test('rooms make the building: their sizes add up to its outside, each to the mi
   assert.deepEqual(doors.map((d) => [d.room, d.from, d.to]), [[1, 3, 118.5], [2, 121.5, 267]]);
   for (const d of doors) assert.ok(near(d.x + d.width / 2, (d.from + d.to) / 2));
   assert.equal(validateBuilding({ rooms: { along: 'depth', sizes: [100, 80, 60] } }).depth, 240);
-  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120] } }), /2 to 4 sizes/);
-  assert.throws(() => validateBuilding({ rooms: { along: 'up', sizes: [120, 120] } }), /2 to 4 sizes/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120] } }), /2 to 24 sizes/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'up', sizes: [120, 120] } }), /2 to 24 sizes/);
   assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120, 20] } }), /Room 2 must be between 40 and 400 mm/);
-  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [300, 200] } }), /add up to 500 mm, more than the 400 mm/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [400, 400, 400, 400] } }), /add up to 1600 mm, more than the 1500 mm/);
   assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [80, 200] } }), /door is too wide for room 1: at most 63.5 mm/);
   assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120, 120] }, lane: { width: 80 }, door: 'open' }), /pit bay has one room/);
   // A window keeps wall beside a dividing wall, where it meets the outside wall.
@@ -821,4 +821,29 @@ test('wood: planks and shingles step from row to row, the lower edge of each pro
   withParts({ roof: 'gable', roofTexture: 'shingle', textureDepth: 1 }, (parts) => {
     for (const p of parts.filter((q) => q.role === 'roof')) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
   });
+});
+
+test('the standard buildings are good buildings: each builds, one body a part, and fits the plate once cut', async () => {
+  const { BUILDING_PRESETS, pitRow } = await import('../src/building-presets.js');
+  const plate = { width: 200, depth: 200, margin: 0 };
+  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'tower', 'vip', 'marshal', 'timing', 'container', 'classic', 'shed']);
+  for (const preset of [...BUILDING_PRESETS, { id: 'nine bays', building: pitRow(9) }])
+    withParts(
+      preset.building,
+      (parts) => {
+        for (const p of parts) {
+          assert.equal(p.solid.decompose().length, 1, preset.id + ': ' + p.name + ' is one body');
+          assert.ok(fitsPlate(printSize(p), plate), preset.id + ': ' + p.name + ' fits: ' + printSize(p));
+        }
+      },
+      plate,
+    );
+  // A pit row as long as wanted: nine bays make a building 990 mm long, each with its door.
+  const row = validateBuilding(pitRow(9));
+  assert.equal(row.width, 990);
+  assert.equal(buildingLayout(row).parts.filter((p) => p.role === 'door').length, 9);
+  // Without a garage door, a building has only its own doors and windows.
+  const hut = buildingLayout(BUILDING_PRESETS.find((p) => p.id === 'marshal').building);
+  assert.equal(hut.parts.filter((p) => p.role === 'door').length, 0);
+  assert.equal(validateBuilding({ door: 'none', doorHeight: 190 }).door, 'none', 'its garage door sizes do not matter');
 });

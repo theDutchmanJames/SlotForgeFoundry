@@ -140,8 +140,8 @@ export function jointPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
 }
 
 /**
- * The grain of wood: short, shallow lines along each plank, board or
- * shingle, half as wide as a joint. Cut half as deep.
+ * The grain of wood: a few long, fine lines along each plank, board or
+ * shingle, a third as wide as a joint. Cut a third as deep.
  */
 export function grainPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJoint: w }, seed = 1) {
   if (!['planks', 'boards', 'shingle'].includes(kind)) return [];
@@ -150,12 +150,13 @@ export function grainPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
     out = [];
   const across = kind === 'boards';
   const area = (x1 - x0) * (y1 - y0);
-  const count = Math.min(4000, Math.round(area / (60 * k * k)));
+  // A few long, fine lines: grain, not scratches.
+  const count = Math.min(1500, Math.round(area / (260 * k * k)));
   for (let i = 0; i < count; i++) {
     const x = x0 + random() * (x1 - x0),
       y = y0 + random() * (y1 - y0),
-      len = (3 + random() * 7) * k;
-    out.push(across ? band([x, y], [x + (random() - 0.5) * 0.4, y + len], w / 2) : band([x, y], [x + len, y + (random() - 0.5) * 0.4], w / 2));
+      len = (8 + random() * 14) * k;
+    out.push(across ? band([x, y], [x + (random() - 0.5) * 0.3, y + len], w / 3) : band([x, y], [x + len, y + (random() - 0.5) * 0.3], w / 3));
   }
   return out;
 }
@@ -225,12 +226,12 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop },
   const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, origin(W, D))));
   const cuts = [];
   if (!section.isEmpty()) cuts.push(place(own(section.extrude(settings.textureDepth + 1))));
-  // The grain, half as deep, clear of the ends and the openings like the joints.
+  // The grain, a third as deep, clear of the ends and the openings like the joints.
   const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, WALLS_SEED[wall]);
   if (grain.length) {
     let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, zTop + 1)], 'Positive'))));
     if (clear) g = own(g.subtract(clear));
-    if (!g.isEmpty()) cuts.push(place(own(g.extrude(1 + settings.textureDepth / 2))));
+    if (!g.isEmpty()) cuts.push(place(own(g.extrude(1 + settings.textureDepth / 3))));
   }
   // Planks: each row slopes into the wall, the rows running on round the corner.
   if (LAPPED.includes(kind)) {
@@ -283,7 +284,7 @@ export function roofJoints(wasm, own, panel, { dir: [dx, dy], t, eave: [ex, ey],
   const cuts = [];
   if (polys.length) cuts.push(own(own(own(new wasm.CrossSection(polys, 'Positive')).extrude(settings.textureDepth + 1)).transform(matrix(A, S, Nin, O))));
   const grain = grainPolygons(kind === 'shingle' ? 'boards' : kind, alongR, upR, settings, 3);
-  if (grain.length) cuts.push(own(own(own(new wasm.CrossSection(grain, 'NonZero')).extrude(1 + settings.textureDepth / 2)).transform(matrix(A, S, Nin, O))));
+  if (grain.length) cuts.push(own(own(own(new wasm.CrossSection(grain, 'NonZero')).extrude(1 + settings.textureDepth / 3)).transform(matrix(A, S, Nin, O))));
   // Shingles: each row slopes into the roof from its lower edge, so the row
   // above lies proud of it, its lower edge facing down the slope.
   if (LAPPED.includes(kind)) {

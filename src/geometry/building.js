@@ -25,7 +25,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   baseHeight: 10, // as high as the track, so the doorstep is level with the road
   doorWidth: 90,
   doorHeight: 55,
-  door: 'roller', // 'roller' or 'open'
+  door: 'roller', // 'roller', 'open' (an opening without a door) or 'none' (no garage door)
   roof: 'flat', // 'flat', 'slope' or 'gable'
   pitch: 30, // degrees, for a sloped or two-sided roof
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -47,8 +47,8 @@ export const BUILDING_DEFAULTS = Object.freeze({
   cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
-  width: [60, 400],
-  depth: [60, 400],
+  width: [60, 1500], // a long building, a pit row of many bays, is cut to fit the plate
+  depth: [60, 1500],
   height: [30, 200],
   baseHeight: [4, 40],
   doorWidth: [20, 380],
@@ -70,7 +70,7 @@ export const OPENING_DEFAULTS = Object.freeze({
   door: Object.freeze({ type: 'door', width: 28, height: 48, sill: 0, frame: false }),
 });
 export const MAX_OPENINGS = 16;
-export const MAX_ROOMS = 4;
+export const MAX_ROOMS = 24;
 export const MIN_ROOM = 40;
 /** Where the dividing walls stand: their middles, from the left or the front wall, outside. */
 export const dividers = (b) =>
@@ -81,6 +81,7 @@ export const dividers = (b) =>
  */
 export function garageDoors(b) {
   const t = KIT.wall;
+  if (b.door === 'none') return [];
   if (b.rooms?.along !== 'width') return [{ x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight, from: t, to: b.width - t, room: 1 }];
   const walls = dividers(b),
     edges = [0, ...walls, b.width];
@@ -210,7 +211,7 @@ export function validateBuilding(input) {
   for (const key of Object.keys(b))
     if (!Object.hasOwn(BUILDING_DEFAULTS, key)) throw Error('The building has an unknown setting: ' + key + '.');
   if (b.kind !== 'garage') throw Error('Choose a building type from the list.');
-  if (!['roller', 'open'].includes(b.door)) throw Error('Choose a door from the list.');
+  if (!['roller', 'open', 'none'].includes(b.door)) throw Error('Choose a door from the list.');
   if (!ROOFS.some(([id]) => id === b.roof)) throw Error('Choose a roof from the list.');
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
@@ -246,7 +247,7 @@ export function validateBuilding(input) {
           : 'The door is too wide for this building: at most ' + fmtMm(d.to - d.from - 2 * KIT.frame) + ' mm at ' + b.width + ' mm wide.',
       );
   const tall = b.height - KIT.frame;
-  if (b.doorHeight > tall)
+  if (b.door !== 'none' && b.doorHeight > tall)
     throw Error('The door is too high for these walls: at most ' + tall + ' mm at ' + b.height + ' mm high.');
   // A garage over a pit bay: the track runs in through an open door, as wide as the track and more.
   if (b.lane !== null) {

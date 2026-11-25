@@ -581,3 +581,21 @@
 .bd-flash {
   animation: bd-flash 1.2s ease-out;
 }
+/* Start from: the standard buildings. */
+.bd-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.bd-preset {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+.bd-preset:hover {
+  border-color: var(--accent);
+}

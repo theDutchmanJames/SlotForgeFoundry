@@ -8,6 +8,7 @@ import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
+import { BUILDING_PRESETS } from './building-presets.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -126,13 +127,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 
   host.innerHTML = `<div class="bd">
 <aside class="bd-col" aria-label="The building and its parts">
-  <div class="bd-card-head"><span class="bd-tile">${icon('building')}</span><span><b>One-car garage</b><small>Toy proportions for 1:32</small></span></div>
+  <div class="bd-card-head"><span class="bd-tile">${icon('building')}</span><span><b>Buildings</b><small>Toy proportions for 1:32</small></span></div>
+  <div class="bd-group">Start from</div>
+  <div class="bd-presets">${BUILDING_PRESETS.map((p) => `<button type="button" class="bd-preset" data-bd-preset="${p.id}" title="${esc(p.note)}">${esc(p.name)}</button>`).join('')}</div>
   <div class="bd-group">Parts of the kit</div>
   <div class="bd-parts" role="list"></div>
   <div class="bd-group">Your buildings</div>
   <div class="bd-saved"></div>
   <div class="bd-group">Coming later</div>
-  <p class="bd-later">Clipping to the track. Place a saved building beside the track, or a row of garages over the pit bays, in the Track Planner.</p>
+  <p class="bd-later">Grandstands, gantries and bridges over the track, billboards and a podium; clipping to the track. Place a saved building beside the track, or a row of garages over the pit bays, in the Track Planner.</p>
 </aside>
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>
@@ -185,7 +188,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="garage"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
-      <label class="bd-row"><span>Door</span><select name="door"><option value="roller">Roller door</option><option value="open">Open, no door</option></select></label>
+      <label class="bd-row"><span>Door</span><select name="door"><option value="roller">Roller door</option><option value="open">Open, no door</option><option value="none">No garage door</option></select></label>
       <p class="bd-hint">The opening starts at the top of the base, so a car rolls straight in from the road.</p></section>
     <section class="bd-box" data-bd-card="openings"><h3>Windows and doors</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall">${WALLS.map((w) => `<button type="button" data-bd-wall="${w}">${WALL_NAMES[w]}</button>`).join('')}</div>
@@ -727,9 +730,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       else if (b.dataset.bdOpen) await open(b.dataset.bdOpen);
       else if (b.dataset.bd === 'export') await exportKit();
       else if (b.dataset.bd === 'save') await save();
-      else if (b.dataset.bd === 'new') {
-        building = validateBuilding({});
-        name = 'Garage';
+      else if (b.dataset.bd === 'new' || b.dataset.bdPreset) {
+        // A new building: the plain garage, or one of the standard buildings.
+        const preset = BUILDING_PRESETS.find((p) => p.id === b.dataset.bdPreset);
+        building = validateBuilding(preset?.building ?? {});
+        name = preset?.name ?? 'Garage';
         savedId = null;
         storey = 0;
         fitted = false;
