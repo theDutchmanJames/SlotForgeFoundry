@@ -27,7 +27,15 @@ export async function checkPlanner({ page, action, download, snap }) {
     'Library',
     'Settings',
   ]);
+  // The pieces in groups, the specials it can still have as small buttons,
+  // and the state of the layout beside its name.
+  const groups = await panel.locator('.pl-catalog .pl-group').allTextContents();
+  for (const g of ['Straights', 'Corners', 'Add a special piece', 'From Track Set']) assert.ok(groups.includes(g), g);
+  assert.ok((await panel.locator('.pl-chips .pl-chip').count()) >= 3);
+  assert.equal(await panel.locator('[data-pl-pill]').textContent(), 'Empty layout');
   await add(/^Full straight/);
+  assert.equal(await panel.locator('[data-pl-pill]').textContent(), '2 open ends');
+  assert.ok(await panel.locator('[data-pl-pill]').evaluate((p) => p.classList.contains('warn')));
   await add(/^R4 corner/);
   // Built pieces are kept on this device for the next session.
   await page.waitForFunction(async () => {
@@ -102,8 +110,7 @@ export async function checkPlanner({ page, action, download, snap }) {
   assert.match(shopping, /Estimated weight: \d+\.\d\d kg/);
   const laneBraid = [...shopping.matchAll(/Lane \d: slot (\d+\.\d\d) m/g)].map((m) => Number(m[1]));
   assert.ok(laneBraid.length >= 2 && laneBraid.every((v) => v > 0.1), shopping);
-  await cmd('special').click();
-  await add(/^Timing straight/);
+  await add(/^Timing$/);
   assert.equal((await state()).nodes.length, 11);
   const old = JSON.stringify(next);
   await action('mode-track').click();
@@ -129,9 +136,7 @@ export async function checkPlanner({ page, action, download, snap }) {
   await cmd('new').click();
   await idle();
   await field('pack').selectOption({ label: 'SlotForge Basic Single Lane' });
-  await cmd('standard').click();
   await add(/^Full straight/);
-  await cmd('special').click();
   await cmd('left').click();
   await add(/^Turnout/);
   const ends = () => field('end').locator('option').allTextContents();
@@ -157,7 +162,6 @@ export async function checkPlanner({ page, action, download, snap }) {
   assert.match(await panel.locator('.pl-inventory').textContent(), /Turnout insert · Closed/);
   assert.match(await panel.locator('.pl-inventory').textContent(), /Turnout · L/);
   // A corner on the branch, then a straight on the main exit: both join.
-  await cmd('standard').click();
   await field('end').selectOption({ label: (await ends()).find((text) => /Turnout · C$/.test(text)) });
   await add(/^R1 corner/);
   await field('end').selectOption({ label: (await ends()).find((text) => /Turnout · B$/.test(text)) });
@@ -168,7 +172,6 @@ export async function checkPlanner({ page, action, download, snap }) {
   assert.match(await panel.locator('.pl-stats').textContent(), /3 open ends/);
   assert.equal(await panel.locator('.pl-crossings button').count(), 0);
   // A right-hand turnout is its own piece in the parts list.
-  await cmd('special').click();
   await cmd('right').click();
   await add(/^Turnout/);
   plan = await state();
@@ -197,17 +200,13 @@ export async function checkPlanner({ page, action, download, snap }) {
   await cmd('new').click();
   await idle();
   await cmd('left').click();
-  await cmd('standard').click();
   await add(/^Full straight/);
   await cmd('fill-gap').click();
   await idle();
   assert.match(await note(), /No open end faces the chosen build end in a straight line/);
-  await cmd('special').click();
   assert.equal(await cmd('split').getAttribute('aria-pressed'), 'true');
   await add(/^Turnout/);
-  await cmd('standard').click();
   for (let i = 0; i < 4; i++) await add(/^Full straight/);
-  await cmd('special').click();
   await cmd('merge').click();
   await add(/^Turnout/);
   plan = await state();
@@ -238,7 +237,6 @@ export async function checkPlanner({ page, action, download, snap }) {
   await cmd('new').click();
   await idle();
   await cmd('split').click();
-  await cmd('standard').click();
   await add(/^Full straight/);
   await pick(/^1 · Full straight · A$/);
   assert.equal(await panel.locator('.pl-texture').count(), 1);
@@ -254,7 +252,6 @@ export async function checkPlanner({ page, action, download, snap }) {
   assert.equal(textured.textureSize, 'full');
   assert.equal(textured.textureFit, 'piece');
   assert.equal(await panel.locator('.pl-message.error').count(), 0);
-  await cmd('special').click();
   await pick(/^1 · Full straight · B$/);
   await add(/^Turnout/);
   assert.equal(await panel.locator('.pl-texture').count(), 0, 'a turnout has no texture panel');
@@ -268,7 +265,6 @@ export async function checkPlanner({ page, action, download, snap }) {
   await cmd('new').click();
   await idle();
   await cmd('split').click();
-  await cmd('standard').click();
   await add(/^Full straight/);
   await cmd('ladder').click();
   const ladderBox = page.locator('dialog.pl-ladder');
@@ -309,14 +305,12 @@ export async function checkPlanner({ page, action, download, snap }) {
   await idle();
   assert.equal((await state()).nodes.length, 1);
   // The end stop is a piece of its own under Specials, and closes the run.
-  await cmd('special').click();
   await add(/^End stop/);
   assert.match(await panel.locator('.pl-stats').textContent(), /1 open end/);
   console.log(
     '✓ Track Planner places a turnout that joins two lanes, turns both branches back with return curves, fits a straight to the gap, builds a pit ladder of three bays in one step and closes a run with an end stop',
   );
   await cmd('left').click();
-  await cmd('standard').click();
   await action('mode-track').click();
   console.log(
     '✓ Track Planner places a left and a right turnout with three ends, builds on the branch and the main exit, swaps the insert of a placed turnout, and exports its parts and notes',

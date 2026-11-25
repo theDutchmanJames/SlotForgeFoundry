@@ -10,11 +10,12 @@ import {
 import { openTrackLibrary } from './library-store.js';
 import { trackWithProfile } from './library-profile.js';
 import { piecePreview } from './track-piece-preview.js';
-import { END_STOP, packSpecialTrack, shelfSpecialsFor } from './pack-specials.js';
+import { END_STOP, packSpecialTrack, shelfSpecialsFor, SPECIAL_SHORT_NAMES } from './pack-specials.js';
 import { TURNOUT_MODES, turnoutModeName } from './geometry/turnout-layout.js';
 import { openStore, cleanName } from './project.js';
 import { esc, icon } from './ui.js';
 import { createPlanView } from './planner-view.js';
+import { plateDrawing } from './plate-drawing.js';
 import { fitPlate } from './geometry/plate.js';
 import {
   newLayout,
@@ -150,14 +151,31 @@ async function storage(value, key = 'planner-layout') {
     db.close();
   }
 }
+// One line on what a section has: its lift, its barriers, its lines.
+function liftSummary(n) {
+  const [a, b] = n.h;
+  if (!a && !b) return 'Level';
+  return a === b ? 'Lifted ' + fmt(a) + ' mm' : fmt(a) + ' → ' + fmt(b) + ' mm';
+}
+const SIDE_NAMES = { outer: 'Outside', inner: 'Inside', both: 'Both sides' };
+function markingSummary(params) {
+  const m = markingsOf(params);
+  const on = [];
+  if (m.whiteLineRoad !== 'none' || m.whiteLineBorder !== 'none') on.push('Lines');
+  if (m.roadKerbSide !== 'none' || m.kerbEdge !== 'none') on.push('Kerbs');
+  return on.length ? on.join(' and ') : 'None';
+}
+function barrierSummary(def) {
+  const b = barrierOf(def);
+  const sides = ['outer', 'inner'].filter((side) => b[side].kind !== 'none');
+  if (!sides.length) return 'None';
+  return sides.length === 2 ? SIDE_NAMES.both : SIDE_NAMES[sides[0]];
+}
 export function createPlanner({ host, call, download, current, promote }) {
   host.innerHTML =
-    '<aside class="pl-catalog"><h2>Piece catalogue</h2><label>Track pack<select data-pl-field="pack"></select></label>' +
-    '<div class="pl-tabs" role="group" aria-label="Catalogue">' +
-    btn('standard', 'Track pieces') +
-    btn('special', 'Specials') +
-    '</div>' +
-    '<div class="pl-hand"><span>Corner and branch direction</span><div>' +
+    '<aside class="pl-catalog">' +
+    '<div class="pl-pack"><span class="pl-pack-tile" data-pl-tile></span><label><small>Track pack</small><select data-pl-field="pack"></select></label></div>' +
+    '<div class="pl-hand"><span>Corners and branches turn</span><div>' +
     btn('left', 'Left') +
     btn('right', 'Right') +
     '</div></div>' +
@@ -166,29 +184,36 @@ export function createPlanner({ host, call, download, current, promote }) {
     btn('merge', 'Joins two lanes') +
     '</div></div>' +
     '<div class="pl-cards"></div>' +
-    btn('current', 'Place current Track Set piece', 'plus', 'pl-current') +
+    '<div class="pl-group">From Track Set</div>' +
+    btn('current', 'Place the open piece', 'plus', 'pl-chip pl-current') +
     '</aside>' +
-    '<section class="pl-centre"><header><input data-pl-field="name" aria-label="Layout name" maxlength="200"><div class="pl-tools">' +
-    btn('undo', 'Undo', 'undo') +
-    btn('redo', 'Redo', 'redo') +
+    '<section class="pl-centre"><header><div class="pl-title"><small class="sf-eyebrow">Track Planner</small>' +
+    '<input data-pl-field="name" aria-label="Layout name" maxlength="200"></div>' +
+    '<span class="pl-pill" data-pl-pill></span><div class="pl-tools">' +
+    '<button type="button" data-pl="undo" class="pl-icon" title="Undo" aria-label="Undo">' + icon('undo') + '</button>' +
+    '<button type="button" data-pl="redo" class="pl-icon" title="Redo" aria-label="Redo">' + icon('redo') + '</button>' +
     btn('new', 'New layout', 'plus') +
-    btn('library-save', 'Save to Library', 'library') +
+    btn('library-save', 'Save to Library', 'library', 'pl-soft') +
     '</div></header>' +
     '<div class="pl-toolbar"><div class="pl-tabs">' +
     btn('plan', 'Plan', 'track') +
     btn('solid', '3D', 'box') +
-    '</div>' +
-    '<label>Build from <select data-pl-field="end" aria-label="Build from open end"></select></label>' +
+    '</div><span class="pl-sep"></span>' +
+    '<label>Build from <select data-pl-field="end" aria-label="Build from open end"></select></label><span class="pl-sep"></span>' +
     btn('fill-gap', 'Fit a straight', 'join') +
     btn('ladder', 'Pit ladder', 'plus') +
-    btn('fit', 'Fit', 'fit') +
-    btn('segment', 'Segment for printing', 'split') +
+    btn('fit', 'Fit view', 'fit') +
+    '<span class="pl-grow"></span>' +
+    btn('segment', 'Segment for printing', 'split', 'pl-soft') +
     '</div>' +
     '<div class="pl-stage"><svg class="planner-map" role="img" aria-label="Track layout and open ends"></svg><div class="planner-solid" hidden></div>' +
-    '<div class="pl-empty"><b>Place your first track piece</b><span>Choose a piece from the catalogue to start the layout.</span></div>' +
+    '<div class="pl-empty"><b>Place your first track piece</b><span>Choose a piece from the column on the left to start the layout.</span></div>' +
     '<div class="pl-message" role="status" hidden></div></div><div class="pl-stats"></div></section>' +
-    '<aside class="pl-inspector"><div class="pl-selection"></div><details class="pl-inventory" open><summary>Parts tally</summary><div></div></details>' +
-    '<div class="pl-crossings"></div><details class="pl-bed"><summary>Print plate</summary><div><label>Width · mm<input type="number" min="10" max="5000" data-pl-field="width"></label>' +
+    '<aside class="pl-inspector"><div class="pl-selection"></div>' +
+    '<div class="pl-group">This layout</div>' +
+    '<details class="pl-inventory" open><summary><span>Parts tally</span><small data-pl-sum="tally"></small></summary><div></div></details>' +
+    '<div class="pl-crossings"></div><details class="pl-bed"><summary><span>Print plate</span><small data-pl-sum="plate"></small></summary><div><div class="pl-plate-art"></div>' +
+    '<label>Width · mm<input type="number" min="10" max="5000" data-pl-field="width"></label>' +
     '<label>Depth · mm<input type="number" min="10" max="5000" data-pl-field="depth"></label><label>Margin · mm<input type="number" min="0" data-pl-field="margin"></label>' +
     '<small>Pieces are placed whole, with their preset cuts. Segment for printing cuts them to fit this plate.</small></div></details></aside>';
   let layout = newLayout(),
@@ -199,7 +224,6 @@ export function createPlanner({ host, call, download, current, promote }) {
     pairMemo = new Map(),
     packs = [],
     pack = '',
-    group = 'standard',
     hand = 'right',
     turnoutAs = 'split',
     viewMode = 'plan',
@@ -731,17 +755,24 @@ export function createPlanner({ host, call, download, current, promote }) {
     adopt(prior.data, models, computed, prior.choice);
     persist();
   }
+  // Every piece of the pack, then the specials it does not have yet, made
+  // from its rules.
   function listCards() {
     const collection = packs.find((p) => p.id === pack);
     if (!collection) return [];
-    if (group === 'standard')
-      return collection.pieces.map((p, i) => ({ ...p, index: i, collection }));
-    return [...shelfSpecialsFor(collection.rules.lanes), [END_STOP, 'End stop']].map(([type, name]) => ({
-      name,
-      collection,
-      special: type,
-      track: packSpecialTrack(collection, type),
-    }));
+    const owned = new Set(collection.pieces.map((p) => p.track.params.special?.type).filter(Boolean));
+    return [
+      ...collection.pieces.map((p, i) => ({ ...p, index: i, collection })),
+      ...[...shelfSpecialsFor(collection.rules.lanes), [END_STOP, 'End stop']]
+        .filter(([type]) => !owned.has(type))
+        .map(([type, name]) => ({
+          name,
+          collection,
+          special: type,
+          chip: true,
+          track: packSpecialTrack(collection, type),
+        })),
+    ];
   }
   function catalog() {
     field('pack').innerHTML = packs
@@ -756,56 +787,63 @@ export function createPlanner({ host, call, download, current, promote }) {
           '</option>',
       )
       .join('');
-    activeBtn('standard', group === 'standard');
-    activeBtn('special', group === 'special');
+    const chosenPack = activePack();
+    $('[data-pl-tile]').textContent = (chosenPack?.name ?? '')
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join('')
+      .slice(0, 3)
+      .toUpperCase();
     activeBtn('left', hand === 'left');
     activeBtn('right', hand === 'right');
     activeBtn('split', turnoutAs === 'split');
     activeBtn('merge', turnoutAs === 'merge');
     $('.pl-turnout-as').hidden = activePack()?.rules.lanes !== 1;
     cards = listCards();
+    const tileOf = (card, i) => {
+      const p = card.track.params,
+        key = JSON.stringify(p);
+      let image = previewCache.get(key);
+      if (!image) {
+        try {
+          const v = p.kind === 'import' ? null : piecePreview(p);
+          image = v
+            ? '<svg aria-hidden="true" viewBox="' + v.viewBox + '">' + v.marks + '</svg>'
+            : icon('sketch');
+        } catch {
+          image = icon('track');
+        }
+        previewCache.set(key, image);
+      }
+      const meta =
+        p.kind === 'curve'
+          ? fmt(p.angle) + '° · R ' + fmt(p.radius) + ' mm'
+          : p.kind === 'straight'
+            ? fmt(p.length) + ' × ' + fmt(p.width) + ' mm'
+            : 'Custom path';
+      return (
+        '<button type="button" class="pl-card" data-place="' + i + '" title="Place ' + esc(card.name) + '"><span>' +
+        image + '</span><b>' + esc(card.name) + '</b><small>' + meta + esc(slotNote(p, card.name)) + '</small></button>'
+      );
+    };
+    const chipOf = (card, i) =>
+      '<button type="button" class="pl-chip" data-place="' + i + '" title="Place a ' + esc(card.name.toLowerCase()) +
+      ' made from the pack rules">' + icon('plus') + esc(SPECIAL_SHORT_NAMES[card.special] ?? card.name) + '</button>';
+    const groups = [
+      ['Straights', (c) => !c.chip && !c.track.params.special && c.track.params.kind === 'straight', tileOf],
+      ['Corners', (c) => !c.chip && !c.track.params.special && c.track.params.kind === 'curve', tileOf],
+      ['Drawn pieces', (c) => !c.chip && !c.track.params.special && !['straight', 'curve'].includes(c.track.params.kind), tileOf],
+      ['Special pieces', (c) => !c.chip && Boolean(c.track.params.special), tileOf],
+      ['Add a special piece', (c) => c.chip, chipOf],
+    ];
     $('.pl-cards').innerHTML =
-      cards
-        .map((card, i) => {
-          const p = card.track.params,
-            key = JSON.stringify(p);
-          let image = previewCache.get(key);
-          if (!image) {
-            try {
-              const v = p.kind === 'import' ? null : piecePreview(p);
-              image = v
-                ? '<svg aria-hidden="true" viewBox="' +
-                  v.viewBox +
-                  '">' +
-                  v.marks +
-                  '</svg>'
-                : icon('sketch');
-            } catch {
-              image = icon('track');
-            }
-            previewCache.set(key, image);
-          }
-          const meta =
-            p.kind === 'curve'
-              ? fmt(p.angle) + '° · R ' + fmt(p.radius) + ' mm'
-              : p.kind === 'straight'
-                ? fmt(p.length) + ' × ' + fmt(p.width) + ' mm'
-                : 'Custom path';
-          const slot = esc(slotNote(p, card.name));
-          return (
-            '<button type="button" class="pl-card" data-place="' +
-            i +
-            '" title="Place ' +
-            esc(card.name) +
-            '"><span>' +
-            image +
-            '</span><b>' +
-            esc(card.name) +
-            '</b><small>' +
-            meta +
-            slot +
-            '</small></button>'
-          );
+      groups
+        .map(([title, takes, draw]) => {
+          const members = cards.map((card, i) => [card, i]).filter(([card]) => takes(card));
+          return members.length
+            ? '<div class="pl-group">' + esc(title) + '</div><div class="' + (draw === chipOf ? 'pl-chips' : 'pl-tiles') + '">' +
+                members.map(([card, i]) => draw(card, i)).join('') + '</div>'
+            : '';
         })
         .join('') || '<p class="pl-note">This pack has no saved pieces.</p>';
     warmUp();
@@ -1075,7 +1113,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     $('[data-pl="undo"]').disabled = !undo.length;
     $('[data-pl="redo"]').disabled = !redo.length;
     $('.pl-selection').innerHTML = n
-      ? '<small>Selected section</small><h2>' +
+      ? '<small class="sf-eyebrow">Selected section</small><h2>' +
         esc(def.name) +
         '</h2><p>Section ' +
         (n.index + 1) +
@@ -1094,9 +1132,10 @@ export function createPlanner({ host, call, download, current, promote }) {
         def.track.params.special?.type === 'chicane'
           ? btn('reverse', 'Reverse turn', 'reset')
           : '') +
-        btn('remove', 'Delete section', 'close') +
+        btn('remove', 'Delete', 'close') +
         '</div>' +
-        '<details class="pl-bridge"><summary>Bridge &amp; approaches</summary><div><label>Lift at A · mm<input data-pl-field="a" type="number" min="0" max="500" value="' +
+        '<div class="pl-group">This section</div>' +
+        '<details class="pl-bridge"><summary><span>Bridge and approaches</span><small>' + esc(liftSummary(n)) + '</small></summary><div><label>Lift at A · mm<input data-pl-field="a" type="number" min="0" max="500" value="' +
         n.h[0] +
         '"></label>' +
         '<label>Lift at B · mm<input data-pl-field="b" type="number" min="0" max="500" value="' +
@@ -1128,7 +1167,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         btn('elevate', 'Apply heights', 'check') +
         '</div></details>' +
         (isTurnout(def.track.params)
-          ? '<details class="pl-bridge pl-turnout" open><summary>Turnout insert</summary><div>' +
+          ? '<details class="pl-bridge pl-turnout" open><summary><span>Turnout insert</span><small>' + esc(turnoutModeName(turnoutChoice(def.track.params).turnoutMode)) + '</small></summary><div>' +
             '<label>Insert<select data-pl-field="turnoutMode">' +
             barrierOptions(TURNOUT_MODES, turnoutChoice(def.track.params).turnoutMode) +
             '</select></label>' +
@@ -1142,7 +1181,7 @@ export function createPlanner({ host, call, download, current, promote }) {
               : '') +
             '</div></details>'
           : '') +
-        '<details class="pl-bridge pl-barriers"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary>Barriers</summary><div>' +
+        '<details class="pl-bridge pl-barriers"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary><span>Barriers</span><small>' + esc(barrierSummary(def)) + '</small></summary><div>' +
         barrierFields('outer', 'Outside / left', barrierOf(def).outer) +
         barrierFields('inner', 'Inside / right', barrierOf(def).inner) +
         '<small>' +
@@ -1152,7 +1191,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         'Ctrl-click sections in the plan to select more than one. Each side has its own type and settings; choose None for a side without a barrier. A sloped end is for the section where a row of barriers stops. Face angle and end shape are for a concrete barrier; the fence stands on an advertising board. A guard rail comes from the post of the section before it: give the first section of a row a start post.</small>' +
         btn('barriers', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply barriers', 'check') +
         '</div></details>' +
-        '<details class="pl-bridge pl-markings"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary>White lines &amp; kerbs</summary><div>' +
+        '<details class="pl-bridge pl-markings"' + (isTurnout(def.track.params) ? ' hidden' : '') + '><summary><span>Lines and kerbs</span><small>' + esc(markingSummary(def.track.params)) + '</small></summary><div>' +
         '<label>White lines on the road<select data-pl-field="lineRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineRoad) + '</select></label>' +
         '<label>White lines on the borders<select data-pl-field="lineBorder">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).whiteLineBorder) + '</select></label>' +
         '<label>Kerbs on the road<select data-pl-field="kerbRoad">' + barrierOptions(MARKING_SIDES, markingsOf(def.track.params).roadKerbSide) + '</select></label>' +
@@ -1165,7 +1204,7 @@ export function createPlanner({ host, call, download, current, promote }) {
         btn('markings', chosenIds().size > 1 ? 'Apply to ' + chosenIds().size + ' sections' : 'Apply markings', 'check') +
         '</div></details>' +
         (takesRoadTexture(def.track.params)
-          ? '<details class="pl-bridge pl-texture"><summary>Road surface texture</summary><div>' +
+          ? '<details class="pl-bridge pl-texture"><summary><span>Road surface</span><small>' + esc(textureSettings(def.track.params).roadTexture === 'none' ? 'Plain' : 'Cobbles') + '</small></summary><div>' +
             '<label>Texture<select data-pl-field="texKind">' + barrierOptions(TEXTURE_CHOICES, textureSettings(def.track.params).roadTexture) + '</select></label>' +
             '<label>Stone size<select data-pl-field="texSize">' + barrierOptions(TEXTURE_SIZES, textureSettings(def.track.params).textureSize) + '</select></label>' +
             '<label>Custom size · %<input data-pl-field="texScale" type="number" min="' + TEXTURE_LIMITS.textureScale[0] + '" max="' + TEXTURE_LIMITS.textureScale[1] + '" step="any" value="' + textureSettings(def.track.params).textureScale + '"></label>' +
@@ -1180,7 +1219,7 @@ export function createPlanner({ host, call, download, current, promote }) {
             btn('texture', chosenIds().size > 1 ? 'Apply to ' + chosenTextured() + ' sections' : 'Apply texture', 'check') +
             '</div></details>'
           : '')
-      : '<h2>Layout details</h2><p>Select a placed section to change it.</p>';
+      : '<small class="sf-eyebrow">Selected section</small><h2>None</h2><p>Click a section in the plan to change its height, barriers, lines or road surface.</p>';
     const from = net.open.find((e) => e.key === choice.end),
       members = from && connectedRun(net, from.id);
     const others = members ? net.open.filter((e) => !members.has(e.id)) : [];
@@ -1225,7 +1264,10 @@ export function createPlanner({ host, call, download, current, promote }) {
         'Bridge supports',
         (grouped.get('Bridge supports') || 0) + blocks.length,
       );
-    $('.pl-inventory div').innerHTML =
+    $('[data-pl-sum="tally"]').textContent = count ? count + (count === 1 ? ' part' : ' parts') : '';
+    $('[data-pl-sum="plate"]').textContent = fmt(plate.width) + ' × ' + fmt(plate.depth) + ' mm';
+    $('.pl-plate-art').innerHTML = plateDrawing(plate);
+    $('.pl-inventory > div').innerHTML =
       [...grouped]
         .map(
           ([k, v]) => '<div><span>' + esc(k) + '</span><b>×' + v + '</b></div>',
@@ -1274,25 +1316,35 @@ export function createPlanner({ host, call, download, current, promote }) {
             .join(''),
       );
     const over = partsOverPlate(quantities);
-    $('.pl-stats').textContent =
-      layout.nodes.length +
-      ' sections   ·   ' +
-      count +
-      ' printable parts   ·   ' +
-      fmt(totalLength(layout, defs) / 1000) +
-      ' m road   ·   ' +
-      (net.open.length
-        ? net.open.length + ' open ends'
-        : layout.nodes.length
-          ? 'Closed layout'
-          : '0 open ends') +
-      (misfits.length
-        ? '   ·   ' +
-          misfits.length +
-          (misfits.length === 1 ? ' joint' : ' joints') +
-          ' with slots out of line'
-        : '') +
-      (over ? '   ·   ' + over + ' over plate' : '');
+    const chip = (text, warn = false) => '<span' + (warn ? ' class="warn"' : '') + '>' + esc(text) + '</span>';
+    const openText = net.open.length
+      ? net.open.length + (net.open.length === 1 ? ' open end' : ' open ends')
+      : layout.nodes.length
+        ? 'Closed layout'
+        : '0 open ends';
+    $('.pl-stats').innerHTML = [
+      chip(layout.nodes.length + ' sections'),
+      chip(count + ' printable parts'),
+      chip(fmt(totalLength(layout, defs) / 1000) + ' m road'),
+      chip(openText, net.open.length > 0),
+      misfits.length
+        ? chip(misfits.length + (misfits.length === 1 ? ' joint' : ' joints') + ' with slots out of line', true)
+        : '',
+      over ? chip(over + ' over plate', true) : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    // The state of the layout, beside its name.
+    const pill = $('[data-pl-pill]');
+    const state = !layout.nodes.length
+      ? ['Empty layout', '']
+      : misfits.length || hits.some((h) => !(h.clearance > 0))
+        ? ['Check the joints', 'warn']
+        : net.open.length
+          ? [openText, 'warn']
+          : ['Closed loop', 'ok'];
+    pill.textContent = state[0];
+    pill.className = 'pl-pill ' + state[1];
     view.draw(
       {
         rows,
@@ -1771,11 +1823,6 @@ export function createPlanner({ host, call, download, current, promote }) {
     if (key === 'fit') return view.fit();
     if (['left', 'right'].includes(key)) {
       hand = key;
-      catalog();
-      return;
-    }
-    if (['standard', 'special'].includes(key)) {
-      group = key;
       catalog();
       return;
     }

@@ -394,7 +394,6 @@ export async function checkFlowingCurve({
   await panel.waitFor();
   await command('new').click();
   await idle();
-  await command('standard').click();
   await command('left').click();
   await panel.locator('[data-pl-field="pack"]').selectOption({ label: pack });
   await page.waitForFunction(
