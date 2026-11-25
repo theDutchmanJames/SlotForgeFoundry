@@ -887,7 +887,7 @@ export function createEngine(wasm) {
       const parts = buildGarage(wasm, building, plate);
       try {
         const shown = describeParts(parts, { plate });
-        return shown.map((p, i) => ({ ...p, print: printSize(parts[i]) }));
+        return shown.map((p, i) => ({ ...p, print: printSize(parts[i]), apart: parts[i].apart }));
       } finally {
         for (const p of parts) p.solid.delete();
       }

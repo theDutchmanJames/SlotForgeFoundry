@@ -580,6 +580,18 @@ export class Viewport {
     if (fit) this.fit();
     else this.draw();
   }
+  /**
+   * Pulls the parts apart, as far as t (0 together, 1 fully apart) of the
+   * offset each part carries as apart [x, y, z]; parts without one stay.
+   */
+  setApart(t) {
+    for (const mesh of this.group.children) {
+      const a = mesh.userData.part?.apart;
+      if (a) mesh.position.set(a[0] * t, a[1] * t, a[2] * t);
+    }
+    this.scene.updateMatrixWorld(true);
+    this.draw();
+  }
   // Show rigid placement directly while the worker calculates the exact draft.
   // Moving the display mesh leaves the part arrays used for history/export intact.
   setDisplayTranslation(id, translation, tinted = false) {

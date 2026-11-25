@@ -15,6 +15,11 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.match(await host.locator('[data-bd-fit]').textContent(), /^Fits a \d+ × \d+ plate$/);
   assert.equal(await host.locator('.bd-parts [data-bd-part]').count(), 7);
   await snap('buildings');
+  // Exploded: the parts come apart to show how they fit, and back together.
+  const apart = host.locator('.bd-apart input');
+  await apart.fill('100');
+  await snap('buildings-exploded');
+  await apart.fill('0');
   // Wider than the plate: the base, the roof and the long walls are cut into pieces that fit.
   await setting('width').fill('230');
   await setting('width').press('Tab');
@@ -37,6 +42,7 @@ export async function checkBuildings({ page, action, download, snap }) {
   // Every part on a plate of its own.
   await host.locator('[data-bd-view="plate"]').click();
   assert.equal(await host.locator('.bd-plates .bd-plate').count(), 7);
+  assert.ok(await apart.isHidden(), 'the exploded view belongs to the model');
   await host.locator('[data-bd-view="model"]').click();
   // The kit: an STL for each part as it prints, and the notes.
   await host.locator('[name="buildingName"]').fill('Test garage');

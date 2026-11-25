@@ -511,3 +511,54 @@ test('upper storeys are cut to fit as well, and the kit notes lay the floors', a
   assert.match(notes, /3 storeys: storey 2 100 × 120 mm/);
   assert.match(notes, /The base and the floors print upside down; each roof panel/);
 });
+
+/* ---------- The exploded view ---------- */
+
+test('exploded, every part comes off the way it goes on, and no two parts take the same space', async () => {
+  const { APART } = await import('../src/geometry/building.js');
+  const moved = (p) => {
+    const s = p.solid.translate(p.apart);
+    return s;
+  };
+  for (const settings of [STOREYS, { ...STOREYS, roof: 'flat', upper: [STOREYS.upper[0]] }, { width: 200, depth: 200, roof: 'gable', wallTexture: 'brick' }])
+    withParts(
+      settings,
+      (parts, part) => {
+        const label = JSON.stringify(settings).slice(0, 60);
+        for (const p of parts) assert.ok(Array.isArray(p.apart) && p.apart.length === 3, p.name + ' has its way apart ' + label);
+        // Fully apart, nothing touches: every groove, lip and tab is in view.
+        const apart = parts.map(moved);
+        try {
+          for (let i = 0; i < parts.length; i++)
+            for (let j = i + 1; j < parts.length; j++) {
+              const both = apart[i].intersect(apart[j]);
+              assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap apart ' + label);
+              both.delete();
+            }
+        } finally {
+          apart.forEach((s) => s.delete());
+        }
+        for (const p of parts.filter((q) => q.role === 'buildingBase')) assert.equal(p.apart[2], 0, 'the base stays on the table');
+      },
+      settings.width === 200 ? SMALL : null,
+    );
+  withParts(STOREYS, (_, part) => {
+    // A wall moves out and up out of its groove; the next storey lifts above.
+    assert.deepEqual(part('front').apart, [0, -APART.out, APART.up]);
+    assert.deepEqual(part('left2').apart, [-APART.out, 0, APART.up + APART.storey]);
+    // A floor hangs between the walls below and the walls above.
+    const floor = part('floor2').apart[2];
+    assert.ok(floor > part('front').apart[2] && floor < part('front2').apart[2]);
+    // The roof comes off the top storey, its panels part at the ridge; the door slides in.
+    assert.ok(part('roof-left').apart[2] > part('front3').apart[2]);
+    assert.ok(part('roof-left').apart[0] < 0 && part('roof-right').apart[0] > 0);
+    assert.deepEqual(part('door').apart, [0, APART.door, 0]);
+    // A frame comes off further than its wall.
+    assert.ok(part('frame2-1').apart[1] < part('front2').apart[1]);
+  });
+  // The pieces of a cut part part at their seams.
+  withParts({ width: 200, depth: 200 }, (_, part) => {
+    assert.ok(part('front-1').apart[0] < 0 && part('front-2').apart[0] > 0, 'front pieces part along the wall');
+    assert.equal(part('front-1').apart[1], -APART.out);
+  }, SMALL);
+});

@@ -90,6 +90,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     viewport = null,
     serial = 0,
     timer = 0,
+    apart = 0,
     fitted = false;
   delete building.name;
   delete building.savedId;
@@ -131,6 +132,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>
     <span class="bd-pill" data-bd-fit></span>
+    <label class="bd-apart" title="Pull the parts apart to see how they fit together"><span>Exploded</span><input type="range" name="apart" min="0" max="100" step="1" value="0" aria-label="Exploded view: how far apart the parts are"></label>
     <div class="bd-seg" role="group" aria-label="View"><button type="button" data-bd-view="model">Model</button><button type="button" data-bd-view="plate">Parts on the plate</button></div>
   </header>
   <div class="bd-stage"><div class="bd-model"></div><div class="bd-plates" hidden></div><div class="bd-message" role="status" hidden></div></div>
@@ -302,6 +304,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const textured = [building, ...building.upper].some((u) => u.wallTexture !== 'plain');
     $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
     $('.bd-model').hidden = view !== 'model';
+    $('.bd-apart').hidden = view !== 'model';
     $('.bd-plates').hidden = view !== 'plate';
     // The parts as built (a part cut to fit the plate is in pieces), or as
     // planned while the first build is under way.
@@ -443,6 +446,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     viewport.resize();
     viewport.setParts(parts, !fitted);
     fitted = true;
+    viewport.setApart(apart);
     viewport.select(selected ?? undefined, new Set());
   }
   function choose(id) {
@@ -517,6 +521,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   form.addEventListener('change', () => {
     clearTimeout(timer);
     rebuild();
+  });
+  $('[name="apart"]').addEventListener('input', (e) => {
+    apart = Number(e.target.value) / 100;
+    viewport?.setApart(apart);
   });
   $('[name="buildingName"]').addEventListener('input', (e) => {
     name = e.target.value.trim();

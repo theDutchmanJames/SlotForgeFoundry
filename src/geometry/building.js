@@ -84,6 +84,13 @@ export const KIT = Object.freeze({
   trimDepth: 2, // how far a frame stands out from the wall
   bar: 2, // the cross in a window frame
 });
+// The exploded view: how far each part comes off, in mm, fully apart. A
+// wall moves out and up out of its groove, a floor lifts off the walls
+// below, each storey lifts above the one below, the roof comes off the top,
+// the door slides in from behind its opening, and a frame comes off its wall.
+export const APART = Object.freeze({ out: 20, up: 12, storey: 45, roof: 30, door: 25, frame: 15, ridge: 8, piece: 6 });
+const add3 = (a, b) => a.map((v, i) => v + b[i]);
+const scale3 = (a, k) => a.map((v) => v * k);
 const LABELS = {
   width: 'Width',
   depth: 'Depth',
@@ -398,7 +405,7 @@ export function buildGarage(wasm, input, plate = null) {
       const outer = box(-m, -m, 0, W + m, D + m, top);
       const hollow = box(-m + shell, -m + shell, -1, W + m - shell, D + m - shell, top - deck);
       const groove = minus(box(-c, -c, top - g, W + c, D + c, top + 1), box(t + c, t + c, top - g - 1, W - t - c, D - t - c, top + 2));
-      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, hollow, groove), flip: true };
+      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, hollow, groove), flip: true, apart: [0, 0, 0] };
       parts.push(...cutFlat(base, plan && [plan.baseX, plan.baseY], [-m, -m]));
     }
 
@@ -410,6 +417,9 @@ export function buildGarage(wasm, input, plate = null) {
         top = s.floor,
         z1 = s.eave;
       const own2 = [];
+      // How far this storey lifts in the exploded view, and its walls with it.
+      const lift = (s.n - 1) * APART.storey;
+      const wallApart = (w) => add3(scale3(OUTWARD[w], APART.out), [0, 0, APART.up + lift]);
       const local = (...ps) => own2.push(...ps);
       const onWall = (wall, u0, u1, n0, n1, za, zb) => {
         if (wall === 'front') return box(u0, -n0, za, u1, -n1, zb);
@@ -459,7 +469,8 @@ export function buildGarage(wasm, input, plate = null) {
         }
       }
       for (const w of ['front', 'back', 'left', 'right'])
-        local(...cutWall({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall', solid: walls[w], outward: OUTWARD[w] }, w, s, { W, D, z0, zTop, top, z1 }));
+        local(...cutWall({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall', solid: walls[w], outward: OUTWARD[w], apart: wallApart(w) }, w, s, { W, D, z0, zTop, top, z1 }));
+      const roofApart = [0, 0, lift + APART.up + APART.roof];
 
       // The roof, on the top storey.
       if (s.top) {
@@ -472,7 +483,7 @@ export function buildGarage(wasm, input, plate = null) {
             box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
             box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
           );
-          const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: own(roofPlate.add(lip)), flip: true };
+          const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: own(roofPlate.add(lip)), flip: true, apart: roofApart };
           local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
         } else {
           // Each panel lies on the walls at the pitch, as thick as the roof, and
@@ -504,7 +515,9 @@ export function buildGarage(wasm, input, plate = null) {
               if (joints) panel = own(panel.subtract(joints));
             }
             const deg = (Math.atan(shape.t) * 180) / Math.PI;
-            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0] };
+            // The two panels of a two-sided roof also part at the ridge.
+            const ridge = p.keep ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0];
+            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0], apart: add3(roofApart, ridge) };
             local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
           }
         }
@@ -527,7 +540,9 @@ export function buildGarage(wasm, input, plate = null) {
           box(ax - c, ay - c, slabTop - g, ax + above.width + c, ay + above.depth + c, slabTop + 1),
           box(ax + t + c, ay + t + c, slabTop - g - 1, ax + above.width - t - c, ay + above.depth - t - c, slabTop + 2),
         );
-        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(own(slab.add(lip)), groove), flip: true };
+        // Exploded, it hangs between the walls below and the walls above.
+        const floorApart = [0, 0, lift + APART.storey - APART.up];
+        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(own(slab.add(lip)), groove), flip: true, apart: floorApart };
         local(...cutFlat(floor, plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']], [0, 0]));
       }
 
@@ -541,7 +556,7 @@ export function buildGarage(wasm, input, plate = null) {
         for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
           ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
         if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
-        local({ id: 'door', name: 'Roller door', role: 'door', solid: insert, outward: [0, -1, 0] });
+        local({ id: 'door', name: 'Roller door', role: 'door', solid: insert, outward: [0, -1, 0], apart: [0, APART.door, 0] });
       }
       // Frames: a band around the opening on the outside of the wall, open at
       // the bottom for a door; a window gets a cross in it.
@@ -559,7 +574,7 @@ export function buildGarage(wasm, input, plate = null) {
             zm = (za + zb) / 2;
           frame = own(frame.add(own(Manifold.union([onWall(o.wall, um - bar / 2, um + bar / 2, 0, fd, za, zb), onWall(o.wall, u0, u1, 0, fd, zm - bar / 2, zm + bar / 2)]))));
         }
-        local({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame', solid: frame, outward: OUTWARD[o.wall] });
+        local({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame', solid: frame, outward: OUTWARD[o.wall], apart: add3(wallApart(o.wall), scale3(OUTWARD[o.wall], APART.frame)) });
       });
       // Into place on the storey below.
       for (const part of own2) parts.push(s.ox || s.oy ? { ...part, solid: own(part.solid.translate([s.ox, s.oy, 0])) } : part);
@@ -595,9 +610,20 @@ export function buildGarage(wasm, input, plate = null) {
   function turned(regions) {
     return regions.map((region) => own(region.transform([0, 1, 0, 1, 0, 0, 0, 0, 1])));
   }
+  // The pieces of a cut part, numbered. Exploded, they also part at their
+  // seams: each moves away from the middle of the part, so the tabs show.
   function named(part, pieces) {
     if (pieces.length < 2) return pieces.length ? [{ ...part, solid: pieces[0] }] : [part];
-    return pieces.map((solid, k) => ({ ...part, id: part.id + '-' + (k + 1), name: part.name + ' ' + (k + 1) + ' of ' + pieces.length, solid }));
+    const box = part.solid.boundingBox();
+    const mid = box.min.map((v, i) => (v + box.max[i]) / 2);
+    return pieces.map((solid, k) => {
+      const { min, max } = solid.boundingBox();
+      const away = min.map((v, i) => {
+        const d = (v + max[i]) / 2 - mid[i];
+        return Math.abs(d) > 1 ? Math.sign(d) * APART.piece : 0;
+      });
+      return { ...part, id: part.id + '-' + (k + 1), name: part.name + ' ' + (k + 1) + ' of ' + pieces.length, solid, apart: add3(part.apart, away) };
+    });
   }
   // The base, a floor or the roof: cut both ways in the plan. origin: where
   // the cut places are counted from.
