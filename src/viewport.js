@@ -38,6 +38,7 @@ const COLORS = {
   roof: 0x4b5058,
   floor: 0x9a938a,
   divider: 0xb5ae9d,
+  lip: 0xd9a441,
   brace: 0xd8d2c4,
   door: 0xd2444a,
   frame: 0xe8e4da,

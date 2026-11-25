@@ -164,9 +164,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable"')}
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
+      <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
-      <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it; a flat roof has a lip under it that holds the walls square.</p></section>
+      <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
     <section class="bd-box"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
@@ -196,7 +197,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
     <section class="bd-box"><h3>Walls</h3>
       <label class="bd-check"><input type="checkbox" name="braces"><span>Corner braces</span></label>
-      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. The roof, flat or sloped, and every floor have a lip that drops inside the walls and holds their tops.</p></section>
+      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. Under the roof and every floor a frame drops inside the walls and holds their tops.</p></section>
     <p class="bd-error" role="alert" hidden></p>
   </form>
 </aside></div>`;
@@ -318,6 +319,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ridge: e.ridge.value,
       rises: e.rises.value,
       braces: e.braces.checked,
+      roofLip: e.roofLip.value,
       cuts: readCuts(building),
     };
   }
@@ -519,7 +521,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function fill(b) {
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
-    for (const k of ['door', 'ridge', 'rises']) form.elements[k].value = b[k];
+    for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
     $('[name="buildingName"]').value = name;
     drawRooms();

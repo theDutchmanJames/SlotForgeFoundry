@@ -52,8 +52,10 @@ test('the garage starts at toy proportions for 1:32, with a flat roof and no win
     [building.width, building.depth, building.height, building.baseHeight, building.roof, building.openings.length],
     [120, 180, 75, 10, 'flat', 0],
   );
-  assert.deepEqual(parts.map((p) => p.id), ['base', 'front', 'back', 'left', 'right', 'roof', 'door', 'brace-fl', 'brace-fr', 'brace-bl', 'brace-br']);
-  assert.equal(buildingLayout({ braces: false }).parts.length, 7, 'braces can be left out');
+  assert.deepEqual(parts.map((p) => p.id), ['base', 'front', 'back', 'left', 'right', 'roof', 'roof-frame', 'door', 'brace-fl', 'brace-fr', 'brace-bl', 'brace-br']);
+  assert.equal(buildingLayout({ braces: false }).parts.length, 8, 'braces can be left out');
+  assert.equal(buildingLayout({ roofLip: 'none' }).parts.filter((p) => p.role === 'lip').length, 0, 'and the roof frame');
+  assert.throws(() => validateBuilding({ roofLip: 'glued' }), /frame under the roof, or none/);
   assert.throws(() => validateBuilding({ braces: 'yes' }), /corners get braces/);
   assert.ok(!buildingLayout({ door: 'open' }).parts.some((p) => p.id === 'door'));
   assert.deepEqual(buildingLayout({ roof: 'gable' }).parts.filter((p) => p.role === 'roof').map((p) => p.id), ['roof-left', 'roof-right']);
@@ -71,7 +73,7 @@ test('every part of the default garage fits a 200 mm plate; a bigger one says wh
     for (const p of parts) assert.ok(fitsPlate(printSize(p), plate), p.name);
   });
   withParts({ width: 200, depth: 260 }, (parts) => {
-    assert.deepEqual(parts.filter((p) => !fitsPlate(printSize(p), plate)).map((p) => p.id), ['base', 'left', 'right', 'roof']);
+    assert.deepEqual(parts.filter((p) => !fitsPlate(printSize(p), plate)).map((p) => p.id), ['base', 'left', 'right', 'roof', 'roof-frame']);
   });
 });
 
@@ -205,12 +207,15 @@ test('walls print flat outside face up; base, roof and roof panels upside down, 
           bottom.delete();
           topSlice.delete();
         }
-        if (part.role === 'roof' && part.lie) {
-          // Its top on the plate, its lip standing up from the underside.
-          assert.ok(max[2] > KIT.roof + 1, part.name + ' has its lip: ' + max[2]);
+        // A roof prints the right way up, as thick as the roof: its frame is a part of its own.
+        if (part.role === 'roof') assert.ok(near(max[2], KIT.roof, 0.01), part.name + ' lies on its underside: ' + max[2]);
+        if (part.role === 'lip') {
+          // The frame lies flat, its tabs standing up.
+          // Under a sloped roof it is lipDepth deep straight down, a little less square to the panel.
+          assert.ok(max[2] > KIT.tabRoof + 2 && max[2] < KIT.lipDepth + KIT.tabRoof + 0.05, part.name + ' with its tabs: ' + max[2]);
           const bottom = printed.trimByPlane([0, 0, -1], -0.2),
             topSlice = printed.trimByPlane([0, 0, 1], max[2] - 0.2);
-          assert.ok(bottom.volume() > 5 * topSlice.volume(), part.name + ' lies top down, lip up');
+          assert.ok(bottom.volume() > 5 * topSlice.volume(), part.name + ' lies flat, tabs up');
           bottom.delete();
           topSlice.delete();
         }
@@ -230,13 +235,15 @@ test('the kit notes list every part as it prints and how the kit goes together',
   assert.match(withDoor, /- Roller door: 96 × 58 × 3 mm/);
   assert.match(withDoor, /3\. Glue a corner brace into each inside corner/);
   assert.match(withDoor, /4\. Glue the roller door behind its opening/);
-  assert.match(withDoor, /5\. Drop the roof on/);
+  assert.match(withDoor, /5\. Push the roof frame onto the underside of the roof, each tab into its pocket/);
+  assert.match(withDoor, /6\. Drop the roof on: its frame fits inside the walls/);
   const shed = buildingLayout({ door: 'open', roof: 'gable', openings: [window('left', 90, { frame: true })] });
   const gable = kitNotes('Shed', shed.building, shed.parts, {});
   assert.doesNotMatch(gable, /Roller door/);
   assert.match(gable, /4\. Glue each frame around its window or door/);
-  assert.match(gable, /5\. Lay the two roof panels on the walls so they meet at the ridge, their lips inside the walls/);
-  assert.match(gable, /The base and the roof panels print upside down, their top on the plate and their lip up\. A corner brace lies on one leg\./);
+  assert.match(gable, /5\. Push the roof frames onto the underside of the roof/);
+  assert.match(gable, /6\. Lay the two roof panels on the walls so they meet at the ridge, their frames inside the walls/);
+  assert.match(gable, /The base prints upside down\. The roof panels and their frames print the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up\. A corner brace lies on one leg\./);
 });
 
 test('wall and roof textures keep every part one body, with no two parts in the same space', () => {
@@ -298,14 +305,14 @@ test('joints are cut into the outside face only, as deep as set, and keep clear 
     });
     left.delete();
     around.delete();
-    // The underside of a tiled roof panel is whole: it prints top down, so
-    // everything above the depth of the joints is the same as a plain one.
+    // The underside of a tiled roof panel is as a plain one: it prints top up,
+    // so everything below the depth of the joints is the same.
     const panel = part('roof-left');
     const printed = printPose(panel);
-    const under = printed.trimByPlane([0, 0, 1], 0.8 + 0.05);
+    const under = printed.trimByPlane([0, 0, -1], -(KIT.roof - 0.8 - 0.05));
     withParts({ ...settings, roofTexture: 'plain' }, (__, plainPart) => {
       const plainPrinted = printPose(plainPart('roof-left'));
-      const whole = plainPrinted.trimByPlane([0, 0, 1], 0.8 + 0.05);
+      const whole = plainPrinted.trimByPlane([0, 0, -1], -(KIT.roof - 0.8 - 0.05));
       assert.ok(near(under.volume(), whole.volume(), 0.5), 'roof underside untouched: ' + under.volume() + ' vs ' + whole.volume());
       whole.delete();
       plainPrinted.delete();
@@ -455,7 +462,10 @@ test('storeys are one body each and take no space of another; each stands in the
       const floor = part('floor2').solid.boundingBox();
       const wall = part('front2').solid.boundingBox();
       // The floor covers the storey below, a lip under it; the walls above stand 2 mm into its top.
-      assert.ok(near(floor.max[2], 89) && near(floor.min[2], 82), 'floor ' + floor.min[2] + '–' + floor.max[2]);
+      assert.ok(near(floor.max[2], 89) && near(floor.min[2], 85), 'floor ' + floor.min[2] + '–' + floor.max[2]);
+      // Its frame hangs under it inside the walls, the tabs up through the floor, flush with its top.
+      const frame = part('floor2-frame').solid.boundingBox();
+      assert.ok(near(frame.min[2], 85 - KIT.lipDepth) && near(frame.max[2], 89), 'frame ' + frame.min[2] + '–' + frame.max[2]);
       assert.ok(near(wall.min[2], 89 - KIT.groove), 'wall stands in the groove: ' + wall.min[2]);
       assert.ok(near(floor.min[0], 0) && near(floor.max[0], 120));
     });
@@ -519,10 +529,10 @@ test('upper storeys are cut to fit as well, and the kit notes lay the floors', a
   const { kitNotes } = await import('../src/building-kit.js');
   const b = validateBuilding(STOREYS);
   const notes = kitNotes('Workshop', b, buildingLayout(b).parts, {});
-  assert.match(notes, /Lay the floor of storey 2 on the walls below/);
-  assert.match(notes, /Lay the floor of storey 3/);
+  assert.match(notes, /Push the floor frame of storey 2 onto the underside of its floor, each tab up into its slot/);
+  assert.match(notes, /floor frame of storey 3/);
   assert.match(notes, /3 storeys: storey 2 100 × 120 mm/);
-  assert.match(notes, /The base, the roof panels and the floors print upside down, their top on the plate and their lip up/);
+  assert.match(notes, /The roof panels, the floors and their frames print the right way up/);
 });
 
 /* ---------- The exploded view ---------- */
@@ -746,4 +756,31 @@ test('a dividing wall is cut to fit the plate like the walls, and the notes stan
   assert.match(notes, /2 rooms side by side: 120 \+ 150 mm, outside to outside/);
   assert.match(notes, /Stand each dividing wall in its groove in the base/);
   assert.match(notes, /Glue each roller door behind its opening/);
+});
+
+test('a frame under the roof or a floor is held by its tabs: in pockets under the roof, through slots in a floor', () => {
+  const pocket = (KIT.tabLength + 2 * KIT.tabPlay) * (KIT.tabThick + 2 * KIT.tabPlay) * (KIT.tabRoof + 0.2);
+  withParts({}, (_, part) => {
+    withParts({ roofLip: 'none' }, (__, bare) => {
+      // Eight tabs, two a side, each in a pocket that does not reach the top of the roof.
+      const taken = bare('roof').solid.volume() - part('roof').solid.volume();
+      assert.ok(near(taken, 8 * pocket, 0.5), 'eight pockets: ' + taken);
+      assert.ok(near(part('roof').solid.boundingBox().max[2], bare('roof').solid.boundingBox().max[2]));
+    });
+  });
+  // A floor: its slots go right through, clear of the groove for the walls above, even where those stand flush.
+  withParts({ upper: [{}] }, (parts, part) => {
+    const floor = part('floor2').solid,
+      frame = part('floor2-frame').solid;
+    const both = floor.intersect(frame);
+    assert.ok(both.volume() < 0.01, 'the tabs sit in their slots');
+    both.delete();
+    // The groove for the walls above is whole: the upper walls stand in it without touching a slot.
+    const walls = parts.filter((p) => p.id.endsWith('2') && p.role === 'wall');
+    for (const w of walls) {
+      const hit = w.solid.intersect(frame);
+      assert.ok(hit.volume() < 0.01, w.name + ' clear of the tabs');
+      hit.delete();
+    }
+  });
 });

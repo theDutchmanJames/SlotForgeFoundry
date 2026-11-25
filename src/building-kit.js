@@ -18,6 +18,8 @@ export function kitNotes(name, b, parts, sizes) {
   const sloped = b.roof !== 'flat';
   const framed = [b, ...upper].some((s) => s.openings.some((o) => o.frame));
   const braced = parts.some((p) => /^brace/.test(p.id));
+  // The roof has a frame under it, held by tabs in pockets in its underside.
+  const framed2 = parts.some((p) => /^roof.*-frame/.test(p.id));
   const divided = parts.some((p) => /^divide/.test(p.id));
   const doors = parts.filter((p) => /^door\d*$/.test(p.id)).length;
   const steps = [
@@ -40,14 +42,17 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     ...upper.map(
       (_, i) =>
-        'Lay the floor of storey ' + (i + 2) + ' on the walls below: its lip drops inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top of it, and glue them as you did below.',
+        'Push the floor frame of storey ' + (i + 2) + ' onto the underside of its floor, each tab up into its slot until it is flush, with a drop of glue. Lay the floor on the walls below, the frame inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top, and glue them as you did below.',
     ),
     ...(framed ? ['Glue each frame around its window or door on the outside of the wall; a window frame has the cross.'] : []),
+    ...(framed2 ? ['Push the roof frame' + (sloped && b.roof === 'gable' ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
       ? b.roof === 'gable'
-        ? 'Lay the two roof panels on the walls so they meet at the ridge, their lips inside the walls, and glue them along the tops of the walls and to each other.'
-        : 'Lay the roof panel on the walls, its high edge on the tallest wall: its lip drops inside the walls. Glue it along the tops of the walls.'
-      : 'Drop the roof on: its lip fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.',
+        ? 'Lay the two roof panels on the walls so they meet at the ridge' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
+        : 'Lay the roof panel on the walls, its high edge on the tallest wall' + (framed2 ? ', its frame inside the walls' : '') + '. Glue it along the tops of the walls.'
+      : framed2
+        ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
+        : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
   ];
   const storeys = upper.length
     ? ' ' + (upper.length + 1) + ' storeys: ' + upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.width) + ' × ' + fmt(u.depth) + ' mm, ' + fmt(u.height) + ' mm high').join('; ') + '.'
@@ -64,7 +69,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Printing',
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
-    '- ' + andList(['The base', sloped ? 'the roof panels' : 'the roof', ...(upper.length ? ['the floors'] : [])]) + ' print upside down, their top on the plate and their lip up.' +
+    '- The base prints upside down. ' + andList([sloped ? 'The roof panels' : 'The roof', ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) + ' print the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.' +
       (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : ''),
     '',
     'Putting it together',

@@ -11,9 +11,9 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.waitFor();
   // The model is built: seven parts, and the filament it takes.
   await page.waitForFunction(() => /g filament/.test(document.querySelector('[data-bd-chips]')?.textContent));
-  assert.match(await host.locator('[data-bd-chips]').textContent(), /^11 parts/);
+  assert.match(await host.locator('[data-bd-chips]').textContent(), /^12 parts/);
   assert.match(await host.locator('[data-bd-fit]').textContent(), /^Fits a \d+ × \d+ plate$/);
-  assert.equal(await host.locator('.bd-parts [data-bd-part]').count(), 11);
+  assert.equal(await host.locator('.bd-parts [data-bd-part]').count(), 12);
   await snap('buildings');
   // Exploded: the parts come apart to show how they fit, and back together.
   const apart = host.locator('.bd-apart input');
@@ -36,12 +36,12 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('.bd-error').waitFor({ state: 'hidden' });
   // Without a door the kit has six parts.
   await setting('door').selectOption('open');
-  await page.waitForFunction(() => /^10 parts/.test(document.querySelector('[data-bd-chips]').textContent));
-  await setting('door').selectOption('roller');
   await page.waitForFunction(() => /^11 parts/.test(document.querySelector('[data-bd-chips]').textContent));
+  await setting('door').selectOption('roller');
+  await page.waitForFunction(() => /^12 parts/.test(document.querySelector('[data-bd-chips]').textContent));
   // Every part on a plate of its own.
   await host.locator('[data-bd-view="plate"]').click();
-  assert.equal(await host.locator('.bd-plates .bd-plate').count(), 11);
+  assert.equal(await host.locator('.bd-plates .bd-plate').count(), 12);
   assert.ok(await apart.isHidden(), 'the exploded view belongs to the model');
   await host.locator('[data-bd-view="model"]').click();
   // The kit: an STL for each part as it prints, and the notes.
@@ -50,7 +50,7 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.equal(kit.name, 'Test garage kit.zip');
   const files = unzipSync(new Uint8Array(kit.bytes));
   const stls = Object.keys(files).filter((n) => n.endsWith('.stl'));
-  assert.deepEqual(stls, ['01 Base plate.stl', '02 Front wall.stl', '03 Back wall.stl', '04 Left wall.stl', '05 Right wall.stl', '06 Flat roof.stl', '07 Roller door.stl', '08 Corner brace, front left.stl', '09 Corner brace, front right.stl', '10 Corner brace, back left.stl', '11 Corner brace, back right.stl']);
+  assert.deepEqual(stls, ['01 Base plate.stl', '02 Front wall.stl', '03 Back wall.stl', '04 Left wall.stl', '05 Right wall.stl', '06 Flat roof.stl', '07 Roof frame.stl', '08 Roller door.stl', '09 Corner brace, front left.stl', '10 Corner brace, front right.stl', '11 Corner brace, back left.stl', '12 Corner brace, back right.stl']);
   for (const n of stls) {
     const bytes = files[n];
     const count = new DataView(bytes.buffer, bytes.byteOffset).getUint32(80, true);
@@ -71,10 +71,10 @@ export async function checkBuildings({ page, action, download, snap }) {
   // A two-sided roof: two panels in place of the flat roof.
   const partCount = (n) => page.waitForFunction((n) => new RegExp('^' + n + ' parts').test(document.querySelector('[data-bd-chips]').textContent), n);
   await host.locator('[data-bd-roof="gable"]').click();
-  await partCount(12);
+  await partCount(14);
   assert.deepEqual(
     await host.locator('.bd-parts [data-bd-part^="roof"]').evaluateAll((parts) => parts.map((p) => p.dataset.bdPart)),
-    ['roof-left', 'roof-right'],
+    ['roof-left', 'roof-right', 'roof-left-frame', 'roof-right-frame'],
   );
   assert.ok(await setting('pitch').isVisible());
   assert.ok(await setting('ridge').isVisible());
@@ -87,7 +87,7 @@ export async function checkBuildings({ page, action, download, snap }) {
   await built();
   assert.equal(await host.locator('[data-bd-wall-texture="brick"]').getAttribute('aria-pressed'), 'true');
   assert.ok(await host.locator('[data-bd-texture-size]').isVisible());
-  await partCount(12);
+  await partCount(14);
   await setting('textureDepth').fill('2');
   await setting('textureDepth').press('Tab');
   await host.locator('.bd-error').waitFor();
@@ -103,9 +103,9 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-wall="left"]').click();
   await host.locator('[data-bd-add="window"]').click();
   await host.locator('.bd-opening').waitFor();
-  await partCount(12);
+  await partCount(14);
   await host.locator('.bd-opening [name="frame"]').check();
-  await partCount(13);
+  await partCount(15);
   assert.match(await host.locator('[data-bd-part="frame-1"]').textContent(), /Left window frame/);
   // Placed too high, it is refused with how high it can go.
   await host.locator('.bd-opening [name="sill"]').fill('60');
@@ -117,9 +117,9 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('.bd-error').waitFor({ state: 'hidden' });
   // Removed again, and back to a flat roof.
   await host.locator('[data-bd-remove]').click();
-  await partCount(12);
+  await partCount(14);
   await host.locator('[data-bd-roof="flat"]').click();
-  await partCount(11);
+  await partCount(12);
   assert.ok(await setting('pitch').isHidden());
   // A 200 × 200 garage on a 150 × 150 plate: the parts are cut into pieces
   // that fit, and each cut can be moved within its range.
@@ -165,10 +165,10 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.ok(!(await setting('width').isDisabled()));
   await setting('width').fill('120');
   await setting('width').press('Tab');
-  await partCount(11);
+  await partCount(12);
   // A second storey: a floor and four walls of its own, which stay on the storey below.
   await host.locator('[data-bd-add-storey]').click();
-  await partCount(20);
+  await partCount(22);
   assert.match(await host.locator('[data-bd-part="floor2"]').textContent(), /Floor of storey 2/);
   assert.equal(await host.locator('[data-bd-storey="1"]').getAttribute('aria-pressed'), 'true');
   await setting('upWidth').fill('140');
@@ -184,13 +184,13 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-add="window"]').click();
   await host.locator('.bd-openings .bd-opening').waitFor();
   await host.locator('.bd-openings .bd-opening [name="frame"]').check();
-  await partCount(21);
+  await partCount(23);
   assert.match(await host.locator('[data-bd-part="frame2-1"]').textContent(), /Front window frame, storey 2/);
   await host.locator('[data-bd-storey="0"]').click();
   assert.match(await host.locator('.bd-openings').textContent(), /No windows or doors in the front wall of the ground floor/);
   await host.locator('[data-bd-storey="1"]').click();
   await host.locator('[data-bd-remove-storey]').click();
-  await partCount(11);
+  await partCount(12);
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
   console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window, textures and a second storey change its parts; on a small plate the parts are cut into pieces that fit');

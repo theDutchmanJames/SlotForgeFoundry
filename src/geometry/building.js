@@ -39,6 +39,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   braces: true, // a corner brace in each inside corner, holding the walls square
+  roofLip: 'frame', // under the roof a frame held by tabs, as under every floor; or 'none'
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -99,8 +100,13 @@ export const KIT = Object.freeze({
   deck: 4, // the base's top, under the groove too
   slab: 4, // a floor between two storeys
   roof: 3, // roof thickness
-  lip: 2, // a lip under a flat roof or a floor, its width
+  lip: 2, // the frame under a roof or a floor, its width
   lipDepth: 3, // and how far it reaches down between the walls
+  tabLength: 6, // a tab on the frame, along the wall
+  tabThick: 1.8, // and across it
+  tabIn: 2.4, // in from the outside of the frame, so its slot keeps clear of the groove above
+  tabRoof: 2, // how far a tab reaches into the roof, in a pocket 0.2 mm deeper
+  tabPlay: 0.15, // round a tab in its slot or pocket, each side
   frame: 6, // wall kept beside and above an opening, and between two
   insert: 2, // door insert plate
   rib: 1, // its ribs stand out this far
@@ -210,6 +216,7 @@ export function validateBuilding(input) {
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
   if (!WALL_TEXTURES.some(([id]) => id === b.wallTexture)) throw Error('Choose a wall texture from the list.');
   if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
+  if (!['frame', 'none'].includes(b.roofLip)) throw Error('Choose a frame under the roof, or none.');
   if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
   // Rooms: their sizes make the width or the depth of the building.
   if (b.rooms !== null) {
@@ -388,6 +395,38 @@ export function braceCorners(b, s, doors) {
   });
 }
 
+/**
+ * Where the tabs of a frame stand: two on each side, a quarter of the way
+ * in from each end, or nearby where something is in the way. p: the middle
+ * of the tab on the plan; d: along the wall; out: how to measure in from the
+ * wall's outside face; side: which wall.
+ */
+export function tabSpots(W, D, avoid = () => false) {
+  const centre = KIT.wall + KIT.play + KIT.tabIn + KIT.tabThick / 2;
+  const sides = [
+    { side: 'front', len: W, d: [1, 0], at: (u, v) => [u, v] },
+    { side: 'back', len: W, d: [1, 0], at: (u, v) => [u, D - v] },
+    { side: 'left', len: D, d: [0, 1], at: (u, v) => [v, u] },
+    { side: 'right', len: D, d: [0, 1], at: (u, v) => [W - v, u] },
+  ];
+  const out = [];
+  for (const sd of sides)
+    for (const pair of [[0.25, 0.75], [0.2, 0.8], [0.32, 0.68], [0.15, 0.85], [0.4, 0.6]]) {
+      const spots = pair.map((f) => ({ side: sd.side, d: sd.d, at: sd.at, u: sd.len * f, p: sd.at(sd.len * f, centre) }));
+      if (spots.every((q) => !avoid(q))) {
+        out.push(...spots);
+        break;
+      }
+    }
+  return out;
+}
+const frameIds = (b, storeys) => {
+  const out = [];
+  if (b.roofLip === 'none') return out;
+  if (b.roof === 'flat') out.push({ id: 'roof-frame', name: 'Roof frame', role: 'lip' });
+  else for (const p of roofShape(b).panels) out.push({ id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip' });
+  return out;
+};
 const doorPart = (d, doors) =>
   doors.length > 1 ? { id: 'door' + d.room, name: 'Roller door, room ' + d.room, role: 'door' } : { id: 'door', name: 'Roller door', role: 'door' };
 const dividerParts = (b) =>
@@ -405,12 +444,13 @@ export function buildingLayout(input) {
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
   const doors = garageDoors(b);
   for (const s of storeys) {
-    if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' });
+    if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' }, { id: 'floor' + s.n + '-frame', name: 'Floor frame, storey ' + s.n, role: 'lip' });
     for (const w of ['front', 'back', 'left', 'right']) parts.push({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall' });
     if (s.garage) parts.push(...dividerParts(b));
   }
   if (b.roof === 'flat') parts.push({ id: 'roof', name: 'Flat roof', role: 'roof' });
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
+  parts.push(...frameIds(b, storeys));
   if (b.door === 'roller') parts.push(...doors.map((d) => doorPart(d, doors)));
   for (const s of storeys)
     for (const q of braceCorners(b, s, doors)) parts.push({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace' });
@@ -522,6 +562,63 @@ export function buildGarage(wasm, input, plate = null) {
   const shape = roofShape(b);
   const OUTWARD = { front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
   const plan = plate ? buildingCuts(b, plate) : null;
+  /**
+   * The frame under a ceiling of a storey W × D: a ring just inside the
+   * walls, lipDepth deep, with a block on its inside at each tab and the tabs
+   * standing up from it, square to the ceiling. ceil: the plane of the
+   * ceiling, z = z1 + T (dir · p - s0); keep: for a panel of a two-sided
+   * roof, the half it covers. high: how far the tabs reach up, through: the
+   * holes go right through. Returns the frame and the holes for its tabs.
+   */
+  function lipFrame(W, D, { z1, T = 0, dir: [dx, dy] = [0, 0], s0 = 0 }, { keep = null, avoid, high, through = false }) {
+    const lo = t + c,
+      li = lo + KIT.lip,
+      L = KIT.tabLength,
+      th = KIT.tabThick,
+      pl = KIT.tabPlay;
+    const N = [-T * dx, -T * dy, 1],
+      len = Math.hypot(...N),
+      n = N.map((v) => v / len);
+    const under = z1 - T * s0;
+    const at = (x, y) => z1 + T * (dx * x + dy * y - s0);
+    const zs = [at(0, 0), at(W, 0), at(0, D), at(W, D)];
+    const z0 = Math.min(...zs) - KIT.lipDepth - 2,
+      zHigh = Math.max(...zs) + 2;
+    const inside = (q) => !keep || keep[0][0] * q[0] + keep[0][1] * q[1] >= keep[1] + L;
+    const spots = tabSpots(W, D, avoid).filter((q) => inside(q.p));
+    // The ring and the blocks under the tabs, then cut to between the ceiling and lipDepth below it.
+    const blockAt = (q) => {
+      const [a0, b0] = q.at(q.u - L / 2 - 1, lo),
+        [a1, b1] = q.at(q.u + L / 2 + 1, lo + KIT.tabIn + th + 0.4);
+      return box(a0, b0, z0, a1, b1, zHigh);
+    };
+    let ring = minus(box(lo, lo, z0, W - lo, D - lo, zHigh), box(li, li, z0 - 1, W - li, D - li, zHigh + 1));
+    if (spots.length) ring = own(Manifold.union([ring, ...spots.map(blockAt)]));
+    ring = trim(ring, [T * dx, T * dy, -1], -under / len);
+    ring = trim(ring, [-T * dx, -T * dy, 1], (under - KIT.lipDepth) / len);
+    if (keep) ring = trim(ring, keep[0], keep[1]);
+    // A box square to the ceiling, its middle on the ceiling at q.
+    const square = (q, along, across, zFrom, zTo) => {
+      const a0 = [q.d[0], q.d[1], T * (dx * q.d[0] + dy * q.d[1])],
+        al = Math.hypot(...a0),
+        a = a0.map((v) => v / al);
+      const bb = [n[1] * a[2] - n[2] * a[1], n[2] * a[0] - n[0] * a[2], n[0] * a[1] - n[1] * a[0]];
+      const C = [q.p[0], q.p[1], at(q.p[0], q.p[1])];
+      return own(own(Manifold.cube([along, across, zTo - zFrom]).translate([-along / 2, -across / 2, zFrom])).transform([...a, 0, ...bb, 0, ...n, 0, ...C, 1]));
+    };
+    const tabs = spots.map((q) => square(q, L, th, -0.5, high));
+    const frame = tabs.length ? own(Manifold.union([ring, ...tabs])) : ring;
+    const holes = spots.map((q) => square(q, L + 2 * pl, th + 2 * pl, -1, high + (through ? 1 : 0.2)));
+    return { frame, holes };
+  }
+  // A tab keeps clear of a dividing wall where it meets the frame.
+  const clearOfDividers = (s) => (q) =>
+    s.garage &&
+    dividers(b).some((at) => {
+      const across = b.rooms.along === 'width';
+      const meets = across ? q.side === 'front' || q.side === 'back' : q.side === 'left' || q.side === 'right';
+      return meets && Math.abs((across ? q.p[0] : q.p[1]) - at) < KIT.tabLength / 2 + 1 + t / 2 + 2;
+    });
   const parts = [];
   try {
     // Base: a hollow tray as high as the track, with the wall groove on top.
@@ -628,7 +725,7 @@ export function buildGarage(wasm, input, plate = null) {
             const z = Math.min(...[u0, u1].flatMap((u) => faces.map((v) => ceiling(u, v)))) - KIT.lipDepth - c;
             return across ? box(at - t / 2 - 1, u0, z, at + t / 2 + 1, u1, zTop + 1) : box(u0, at - t / 2 - 1, z, u1, at + t / 2 + 1, zTop + 1);
           };
-          wall = minus(wall, notch(lo - 1, reach), notch(far, (across ? D : W) - lo + 1));
+          if (storeys[s.n] || b.roofLip !== 'none') wall = minus(wall, notch(lo - 1, reach), notch(far, (across ? D : W) - lo + 1));
           const part = dividerParts(b)[i];
           local(
             ...cutWall(
@@ -652,14 +749,18 @@ export function buildGarage(wasm, input, plate = null) {
       if (s.top) {
         const ov = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight };
         if (b.roof === 'flat') {
-          // A plate with its overhangs, and a lip underneath that drops between
-          // the walls and keeps them square.
-          const roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
-          const lip = minus(
-            box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
-            box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
-          );
-          const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: own(roofPlate.add(lip)), flip: true, apart: roofApart };
+          // A plate with its overhangs. Under it a frame drops between the
+          // walls and keeps them square; its tabs go into pockets in the
+          // underside of the roof, so nothing shows on top.
+          let roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
+          if (b.roofLip !== 'none') {
+            const { frame, holes } = lipFrame(W, D, { z1 }, { avoid: clearOfDividers(s), high: KIT.tabRoof });
+            roofPlate = minus(roofPlate, ...holes);
+            const part = { id: 'roof-frame', name: 'Roof frame', role: 'lip', solid: frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.up + APART.roof / 2] };
+            local(...cutFlat(part, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
+          }
+          // It prints the right way up, its top on the plate side up.
+          const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: roofPlate, lie: [0, 0, 0], apart: roofApart };
           local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
         } else {
           // Each panel lies on the walls at the pitch, as thick as the roof, and
@@ -690,23 +791,20 @@ export function buildGarage(wasm, input, plate = null) {
               );
               if (joints) panel = own(panel.subtract(joints));
             }
-            // A lip under it inside the walls, as under a flat roof: it drops
-            // between the walls and holds them square. It reaches 0.5 mm into
-            // the panel, so the two are one body.
-            const under = z1 - shape.t * p.s0;
-            let lip = minus(
-              box(t + c, t + c, z1 - KIT.lipDepth - 1, W - t - c, D - t - c, z1 + shape.rise + 1),
-              box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 2, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + shape.rise + 2),
-            );
-            lip = trim(lip, [shape.t * dx, shape.t * dy, -1], -(under + 0.5) / len);
-            lip = trim(lip, [-shape.t * dx, -shape.t * dy, 1], (under - KIT.lipDepth) / len);
-            if (p.keep) lip = trim(lip, p.keep[0], p.keep[1]);
-            if (!lip.isEmpty()) panel = own(panel.add(lip));
             const deg = (Math.atan(shape.t) * 180) / Math.PI;
             // The two panels of a two-sided roof also part at the ridge.
             const ridge = p.keep ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0];
-            // Laid flat, then turned over: it prints top down, its lip up.
-            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie: [-deg * dy, deg * dx, 0], flip: true, apart: add3(roofApart, ridge) };
+            const lie = [-deg * dy, deg * dx, 0];
+            // Under it a frame, as under a flat roof, following the pitch: its
+            // tabs stand square to the panel, in pockets in its underside.
+            if (b.roofLip !== 'none') {
+              const { frame, holes } = lipFrame(W, D, { z1, T: shape.t, dir: p.dir, s0: p.s0 }, { keep: p.keep, avoid: clearOfDividers(s), high: KIT.tabRoof });
+              panel = minus(panel, ...holes);
+              const part = { id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip', solid: frame, lie, apart: add3([0, 0, lift + APART.up + APART.roof / 2], ridge) };
+              local(...cutFlat(part, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
+            }
+            // Laid flat on its underside: it prints top up, the texture crisp.
+            const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie, apart: add3(roofApart, ridge) };
             local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
           }
         }
@@ -719,20 +817,33 @@ export function buildGarage(wasm, input, plate = null) {
       if (above) {
         const slabTop = z1 + KIT.slab;
         const slab = box(0, 0, z1, W, D, slabTop);
-        const lip = minus(
-          box(t + c, t + c, z1 - KIT.lipDepth, W - t - c, D - t - c, z1),
-          box(t + c + KIT.lip, t + c + KIT.lip, z1 - KIT.lipDepth - 1, W - t - c - KIT.lip, D - t - c - KIT.lip, z1 + 1),
-        );
         const ax = above.ox - s.ox,
           ay = above.oy - s.oy;
+        // The frame under the floor: its tabs go through slots in the floor,
+        // flush with its top, clear of the groove for the walls above.
+        const groovedAt = (q) => {
+          const r = KIT.tabLength / 2 + KIT.tabPlay + 1,
+            w = KIT.tabThick / 2 + KIT.tabPlay + 1;
+          const [hx, hy] = q.d[0] ? [r, w] : [w, r];
+          const [x0, y0, x1, y1] = [q.p[0] - hx, q.p[1] - hy, q.p[0] + hx, q.p[1] + hy];
+          const out = [ax - c, ay - c, ax + above.width + c, ay + above.depth + c],
+            inn = [ax + t + c, ay + t + c, ax + above.width - t - c, ay + above.depth - t - c];
+          const meets = x0 < out[2] && x1 > out[0] && y0 < out[3] && y1 > out[1];
+          const within = x0 >= inn[0] && x1 <= inn[2] && y0 >= inn[1] && y1 <= inn[3];
+          return meets && !within;
+        };
+        const { frame, holes } = lipFrame(W, D, { z1 }, { avoid: (q) => groovedAt(q) || clearOfDividers(s)(q), high: KIT.slab, through: true });
         const groove = minus(
           box(ax - c, ay - c, slabTop - g, ax + above.width + c, ay + above.depth + c, slabTop + 1),
           box(ax + t + c, ay + t + c, slabTop - g - 1, ax + above.width - t - c, ay + above.depth - t - c, slabTop + 2),
         );
         // Exploded, it hangs between the walls below and the walls above.
         const floorApart = [0, 0, lift + APART.storey - APART.up];
-        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(own(slab.add(lip)), groove), flip: true, apart: floorApart };
-        local(...cutFlat(floor, plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']], [0, 0]));
+        // It prints the right way up, the groove open on top, the slots straight through.
+        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(slab, groove, ...holes), lie: [0, 0, 0], apart: floorApart };
+        const floorPlan = plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']];
+        local(...cutFlat(floor, floorPlan, [0, 0]));
+        local(...cutFlat({ id: 'floor' + above.n + '-frame', name: 'Floor frame, storey ' + above.n, role: 'lip', solid: frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.storey - APART.up - 10] }, floorPlan, [0, 0]));
       }
 
       // Corner braces: an L in each inside corner, on the floor against both

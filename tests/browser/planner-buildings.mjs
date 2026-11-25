@@ -27,7 +27,7 @@ export async function checkPlannerBuildings({ page, action, download, snap }) {
   assert.match(await panel.locator('.pl-message').textContent(), /Test garage was placed/);
   assert.match(await panel.locator('.pl-selection').textContent(), /Selected building[\s\S]*Test garage/);
   assert.match(await panel.locator('.pl-stats').textContent(), /1 building/);
-  assert.match(await panel.locator('.pl-inventory').textContent(), /Test garage · building×11/);
+  assert.match(await panel.locator('.pl-inventory').textContent(), /Test garage · building×12/);
   // Turned round, and stood along the track again.
   await cmd('b-turn').click();
   await idle();
@@ -49,9 +49,9 @@ export async function checkPlannerBuildings({ page, action, download, snap }) {
   const kit = unzipSync((await download(action('export-menu'))).bytes);
   const names = Object.keys(kit);
   assert.ok(names.includes('buildings/Test garage/01 Base plate.stl'), names.join(' '));
-  assert.equal(names.filter((k) => /^buildings\/Test garage\/.*\.stl$/.test(k)).length, 11);
+  assert.equal(names.filter((k) => /^buildings\/Test garage\/.*\.stl$/.test(k)).length, 12);
   assert.match(strFromU8(kit['buildings/Test garage/README.txt']), /Test garage · SlotForge Foundry building kit/);
-  assert.match(strFromU8(kit['parts.csv']), /"Roller door","buildings\/Test garage\/07 Roller door\.stl","1","Test garage"/);
+  assert.match(strFromU8(kit['parts.csv']), /"Roller door","buildings\/Test garage\/08 Roller door\.stl","1","Test garage"/);
   const plan = JSON.parse(strFromU8(kit['layout.slotplan']));
   assert.equal(plan.buildings.length, 1);
   assert.equal(plan.buildings[0].building.width, 120);
