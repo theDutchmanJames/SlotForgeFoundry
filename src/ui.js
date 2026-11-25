@@ -44,12 +44,14 @@ import {
   Pencil,
   CarFront,
   Fence,
+  Warehouse,
 } from 'lucide';
 
 export const navigationHint =
   'Drag to orbit · Middle-drag to pan · Scroll to zoom';
 
 const symbols = {
+  building: Warehouse,
   box: Box,
   home: House,
   track: Route,
@@ -236,7 +238,7 @@ export function shell() {
   const collectionMarkLight = new URL('../assets/brand/slotforge-light.svg?inline', import.meta.url);
   return `<header class="appbar">
   <div class="brand" role="img" aria-label="SlotForge Foundry"><img class="brand-icon" src="${esc(brandIcon.href)}" width="42" height="42" alt=""><span class="brand-copy"><span class="brand-wordmark"><img class="wm-dark" src="${esc(wordmark.href)}" width="590" height="89" alt=""><img class="wm-light" src="${esc(wordmarkLight.href)}" width="590" height="89" alt=""></span><small>${BRAND_SLOGAN}</small></span></div>
-  <nav aria-label="Workspaces and library">${button('mode-home', 'Home', 'home')}${button('mode-track', 'Track Set', 'layers')}${button('mode-planner', 'Track Planner', 'track')}${button('mode-editor', 'STL Edit', 'box')}<button type="button" data-action="mode-library" aria-pressed="false">${icon('library')}<span>Library</span></button><button type="button" data-action="mode-settings" aria-pressed="false" title="Settings">${icon('settings')}<span>Settings</span></button></nav>
+  <nav aria-label="Workspaces and library">${button('mode-home', 'Home', 'home')}${button('mode-track', 'Track Set', 'layers')}${button('mode-planner', 'Track Planner', 'track')}${button('mode-buildings', 'Buildings', 'building')}${button('mode-editor', 'STL Edit', 'box')}<button type="button" data-action="mode-library" aria-pressed="false">${icon('library')}<span>Library</span></button><button type="button" data-action="mode-settings" aria-pressed="false" title="Settings">${icon('settings')}<span>Settings</span></button></nav>
   <div class="app-actions" role="group" aria-label="Project files"><button type="button" class="quiet" data-action="open" title="Open project or model" aria-label="Open project or model">${icon('open')}<span>Open</span></button>${button('save', 'Save', 'save', 'quiet')}<i aria-hidden="true"></i>${button('export-menu', 'Export STLs', 'export', 'primary')}<span class="tone-switch" role="group" aria-label="Theme"><button type="button" data-action="theme-light" aria-pressed="false" title="Light theme">☼ Light</button><button type="button" data-action="theme-dark" aria-pressed="true" title="Dark theme">☾ Dark</button></span></div>
 </header>
 <main class="workspace"><aside id="project-panel" class="sidebar" aria-label="Workspace tools, parts and history">
@@ -252,7 +254,7 @@ export function shell() {
 <div class="canvas-foot"><span class="axis"><b>X</b><b>Y</b><b>Z</b></span><span id="view-hint">${navigationHint}</span></div><div id="model-info"></div></div>
 <div class="part-summary"><div id="editor-selection-meta">${icon('part')}<strong id="selected-name">—</strong></div><div class="dimensions"><small>Dimensions · X × Y × Z</small><strong id="selected-size">—</strong></div><button type="button" id="move-selected" data-open-tool="transform" class="part-output" aria-label="Move selected part" title="Move selected part" hidden>${icon('move')}<span>Move</span></button><button data-action="plate" class="fit-result" id="fit-result"></button></div></section>
 <aside class="inspector" aria-label="Tool settings"><div id="inspector"></div></aside></main>
-<main id="track-planner" hidden aria-label="Track Planner"></main><main id="home" hidden aria-label="Home"></main><main id="library-page" hidden aria-label="Library"></main><main id="settings-page" hidden aria-label="Settings"></main>
+<main id="track-planner" hidden aria-label="Track Planner"></main><main id="home" hidden aria-label="Home"></main><main id="buildings-page" hidden aria-label="Buildings"></main><main id="library-page" hidden aria-label="Library"></main><main id="settings-page" hidden aria-label="Settings"></main>
 <footer class="statusbar"><span id="status" role="status">Opening workbench…</span><button type="button" id="cancel-work" hidden>Cancel calculation</button><span id="mesh-info"></span><span class="units">mm</span><span class="sf-footer-brand"><img class="wm-dark" src="${esc(collectionMark.href)}" width="621" height="90" alt="SlotForge App Collection"><img class="wm-light" src="${esc(collectionMarkLight.href)}" width="621" height="90" alt="SlotForge App Collection"></span></footer>
 <div id="notice" role="alert" hidden></div><dialog id="dialog"><div id="dialog-content"></div></dialog><input id="file" type="file" hidden>`;
 }

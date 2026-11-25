@@ -143,6 +143,12 @@ Select the upper road at a crossing and open **Bridge and approaches**. Set the 
 
 **Save** downloads an editable `.slotplan` with the piece recipes. **Export STLs** downloads the placed sections, joining hardware, requested supports and a quantity list in `parts.csv`.
 
+### Buildings
+
+**Buildings** in the top bar makes a building for beside the track as a kit of parts. The first is a one-car garage, in toy proportions for 1:32: 120 mm wide, 180 mm deep and 75 mm high, which takes practically any 1:32 slot car. Set its **Width**, **Depth** and **Wall height** (outside the walls), the **Garage door** opening and whether it has a **Roller door** or stays open, and the **Base** height: make the base as high as your track, so the doorstep is level with the road. The model rebuilds as you type; a size that does not work is refused with the size that does, and the label beside the name says whether every part fits your print plate (from Settings → Printer).
+
+The kit has a base plate (hollow underneath, with a groove for the walls), four walls with mitred corners, a flat roof whose lip drops between the walls, and the roller door. **Parts on the plate** shows each part as it prints. Every part prints flat without supports: the walls with their outside face up, the base and the roof upside down. **Export kit** downloads an STL file for each part and a README with the printing and assembly steps; glue the walls into the base, the door behind its opening and the roof on top, or paint the parts first. **Save to Library** keeps the building on the Library's **Buildings** shelf, where you can open, rename or delete it. Windows, other roofs, wall textures, storeys and clipping a building to the track come later.
+
 ### Creating from an empty workspace
 
 Choose **STL Edit → New design**. **Solid shape** starts a dimensioned box, cylinder, cone, sphere or tube. **Sketch** opens a drawing on the top, front or side workplane. Pick a flat face before starting a sketch to draw on the part. Set a plane offset for a parallel drawing. **Import outline** opens SVG or DXF geometry in the same sketch editor.

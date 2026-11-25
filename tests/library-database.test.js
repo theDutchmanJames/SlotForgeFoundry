@@ -35,8 +35,11 @@ import {
 
 const SQL = await initSqlJs();
 // A real library from before version 5 has only the pack tables.
+// A library as an earlier version made it, without the tables added since.
 function asVersion(db, version) {
-  db.run('DROP TABLE layouts; DROP TABLE stl_parts; PRAGMA user_version=' + version);
+  db.run('DROP TABLE buildings');
+  if (version < 5) db.run('DROP TABLE layouts; DROP TABLE stl_parts');
+  db.run('PRAGMA user_version=' + version);
 }
 function dbFor(t, seed = false) {
   const db = newLibraryDatabase(SQL, seed);
@@ -291,7 +294,8 @@ test('restores SQL data only after checking the file, schema, references, dimens
     }
   }
   rejects('PRAGMA application_id=1234', /SlotForge/);
-  rejects('PRAGMA user_version=6', /SlotForge/);
+  rejects('PRAGMA user_version=7', /SlotForge/);
+  rejects('PRAGMA user_version=5', /SlotForge/);
   rejects('PRAGMA user_version=4', /SlotForge/);
   rejects('PRAGMA user_version=1', /SlotForge/);
   rejects("UPDATE collections SET rules='{}'", /Road width/);
@@ -964,4 +968,42 @@ test('a pack keeps its road surface texture in its rules and gives it to its str
   const restored = inspectLibraryBytes(SQL, db.export()).find((c) => c.id === id);
   assert.deepEqual(restored.rules.texture, cleared.rules.texture);
   for (const key of Object.keys(TEXTURE_DEFAULTS)) assert.equal(layoutOwned(key), true, key);
+});
+
+test('buildings are kept with their settings, renamed and deleted, and refused when faulty', async (t) => {
+  const { saveBuilding, readBuildings, readBuilding, renameBuilding, deleteBuilding } = await import('../src/library-database.js');
+  const db = dbFor(t);
+  const id = saveBuilding(db, { name: 'Pit garage', building: { width: 140, door: 'open' }, updated: 5 });
+  const [kept] = readBuildings(db);
+  assert.equal(kept.name, 'Pit garage');
+  assert.equal(kept.building.width, 140);
+  assert.equal(kept.building.depth, 180, 'the settings left out are the defaults');
+  renameBuilding(db, id, 'Garage 1');
+  assert.equal(readBuilding(db, id).name, 'Garage 1');
+  saveBuilding(db, { id, name: 'Garage 1', building: { ...kept.building, height: 90 }, updated: 6 });
+  assert.equal(readBuildings(db).length, 1);
+  assert.equal(readBuilding(db, id).building.height, 90);
+  assert.throws(() => saveBuilding(db, { name: 'Huge', building: { width: 9000 } }), /Width must be between/);
+  assert.throws(() => renameBuilding(db, crypto.randomUUID(), 'X'), /no longer exists/);
+  deleteBuilding(db, id);
+  assert.equal(readBuildings(db).length, 0);
+});
+
+test('a full backup restores the buildings; a backup from before them leaves them in place', async (t) => {
+  const { saveBuilding, readBuildings } = await import('../src/library-database.js');
+  const source = dbFor(t, true);
+  saveBuilding(source, { name: 'Backed up', building: {}, updated: 1 });
+  const restored = inspectLibraryBytes(SQL, source.export());
+  assert.equal(restored.buildings.length, 1);
+  const device = dbFor(t, true);
+  saveBuilding(device, { name: 'On this device', building: {}, updated: 2 });
+  replaceLibrary(device, restored);
+  assert.deepEqual(readBuildings(device).map((b) => b.name), ['Backed up']);
+  // A version 5 backup: its packs, layouts and parts come back, the buildings stay.
+  const older = dbFor(t, true);
+  asVersion(older, 5);
+  const fromOlder = inspectLibraryBytes(SQL, older.export());
+  assert.equal(fromOlder.buildings, undefined);
+  replaceLibrary(device, fromOlder);
+  assert.deepEqual(readBuildings(device).map((b) => b.name), ['Backed up']);
 });

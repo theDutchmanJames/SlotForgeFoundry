@@ -23,6 +23,7 @@ export async function checkPlanner({ page, action, download, snap }) {
     'Home',
     'Track Set',
     'Track Planner',
+    'Buildings',
     'STL Edit',
     'Library',
     'Settings',

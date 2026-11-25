@@ -20,9 +20,10 @@ import { defaultStartingGrid } from './geometry/starting-grid.js';
 import { validateLayout } from './planner-model.js';
 import { checkProject } from './project.js';
 import { normaliseSlotPosition, slotForm } from './slot-position.js';
+import { validateBuilding } from './geometry/building.js';
 
 const applicationId = 0x53464c42; // SFLB
-export const LIBRARY_VERSION = 5;
+export const LIBRARY_VERSION = 6;
 export const MAX_LIBRARY_BYTES = 128 * 1024 * 1024;
 const legacyTables = {
   collections:
@@ -38,15 +39,21 @@ const packTables = {
 // Version 5 adds the other two shelves of the Library. A layout keeps the
 // pack it was planned with (it may outlive that pack: no foreign key), and an
 // STL part may be based on another STL part or on a piece of a pack.
-const tables = {
+const shelfTables = {
   ...packTables,
   layouts:
     'CREATE TABLE layouts (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, collection_id TEXT, data TEXT NOT NULL, updated INTEGER NOT NULL)',
   stl_parts:
     'CREATE TABLE stl_parts (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, based_on TEXT, source TEXT, project TEXT NOT NULL, updated INTEGER NOT NULL)',
 };
+// Version 6 adds a shelf of buildings: each keeps its settings, not its STL.
+const tables = {
+  ...shelfTables,
+  buildings:
+    'CREATE TABLE buildings (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL, updated INTEGER NOT NULL)',
+};
 const tablesFor = (version) =>
-  version === 1 ? legacyTables : version < 5 ? packTables : tables;
+  version === 1 ? legacyTables : version < 5 ? packTables : version < 6 ? shelfTables : tables;
 const invalidFile = () =>
   Error('Choose a SlotForge track library (.sqlite) exported from Foundry.');
 
@@ -478,6 +485,10 @@ export function inspectLibraryBytes(SQL, bytes) {
       Object.defineProperty(collections, 'layouts', { value: layouts });
       Object.defineProperty(collections, 'stlParts', { value: stlParts });
     }
+    if (version.user_version >= 6) {
+      const buildings = readBuildings(db).map((b) => readBuilding(db, b.id));
+      Object.defineProperty(collections, 'buildings', { value: buildings });
+    }
     return collections;
   } finally {
     db.close();
@@ -520,6 +531,11 @@ export function replaceLibrary(db, collections, expectedCollections, { restore =
   if (collections.stlParts) {
     db.run('DELETE FROM stl_parts');
     for (const p of collections.stlParts) saveStlPart(db, p);
+  }
+  // A backup from before version 6 has no buildings: the ones on this device stay.
+  if (collections.buildings) {
+    db.run('DELETE FROM buildings');
+    for (const b of collections.buildings) saveBuilding(db, b);
   }
 }
 
@@ -868,4 +884,36 @@ export function deleteStlPart(db, id) {
   checkedId(id);
   db.run('UPDATE stl_parts SET based_on=NULL WHERE based_on=?', [id]);
   db.run('DELETE FROM stl_parts WHERE id=?', [id]);
+}
+
+/* ---------- Buildings ---------- */
+
+export function readBuildings(db) {
+  return rows(db, 'SELECT id, name, data, updated FROM buildings ORDER BY updated DESC, rowid').map((r) => ({
+    id: r.id,
+    name: r.name,
+    building: validateBuilding(JSON.parse(r.data)),
+    updated: r.updated,
+  }));
+}
+export function readBuilding(db, id) {
+  const [row] = rows(db, 'SELECT id, name, data, updated FROM buildings WHERE id=?', [checkedId(id)]);
+  if (!row) throw Error('This building no longer exists. Reopen the library.');
+  return { id: row.id, name: row.name, building: validateBuilding(JSON.parse(row.data)), updated: row.updated };
+}
+export function saveBuilding(db, { id, name, building, updated }) {
+  const buildingId = id === undefined ? crypto.randomUUID() : checkedId(id);
+  db.run(
+    'INSERT INTO buildings(id, name, data, updated) VALUES (?,?,?,?) ' +
+      'ON CONFLICT(id) DO UPDATE SET name=excluded.name, data=excluded.data, updated=excluded.updated',
+    [buildingId, nameOf(name), JSON.stringify(validateBuilding(building)), stamp(updated)],
+  );
+  return buildingId;
+}
+export function renameBuilding(db, id, name) {
+  db.run('UPDATE buildings SET name=? WHERE id=?', [nameOf(name), checkedId(id)]);
+  if (db.getRowsModified() !== 1) throw Error('This building no longer exists. Reopen the library.');
+}
+export function deleteBuilding(db, id) {
+  db.run('DELETE FROM buildings WHERE id=?', [checkedId(id)]);
 }

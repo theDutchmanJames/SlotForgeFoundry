@@ -1,6 +1,7 @@
 import { validateLibraryTrack } from './library-profile.js';
 import { plannerSource, plannerSupports, plannerPrint } from './planner-source.js';
 import { crossingCoupon } from './special-print.js';
+import { buildGarage, buildingLayout, printPose } from './geometry/building.js';
 import {
   buildTrack,
   fitPlate,
@@ -880,6 +881,34 @@ export function createEngine(wasm) {
     plannerSource: args => plannerSource(wasm,args,describeParts),
     plannerSupports: args => plannerSupports(wasm,args,describeParts),
     plannerPrint: args => plannerPrint(wasm,args),
+    // A building: its parts where they stand, for the 3D view, with their
+    // print sizes and how much filament the kit takes.
+    buildingParts: ({ building, plate }) => {
+      const parts = buildGarage(wasm, building);
+      try {
+        const sizes = buildingLayout(building).parts;
+        const shown = describeParts(parts, { plate });
+        return shown.map((p) => ({ ...p, print: sizes.find((s) => s.id === p.id).print }));
+      } finally {
+        for (const p of parts) p.solid.delete();
+      }
+    },
+    // A building as STL files, each part as it prints.
+    buildingKit: ({ building }) => {
+      const parts = buildGarage(wasm, building);
+      try {
+        return parts.map((part) => {
+          const printed = printPose(part);
+          try {
+            return { id: part.id, name: part.name, bytes: encodeSTL(printed, 'SlotForge Foundry building | ' + part.name + ' | millimetres') };
+          } finally {
+            printed.delete();
+          }
+        });
+      } finally {
+        for (const p of parts) p.solid.delete();
+      }
+    },
     validateLibraryTrack: (track) => validateLibraryTrack(wasm, track),
     sketchPlacements: () => [...(state?.placements ?? [])],
     preview: (project) => build(project, false),

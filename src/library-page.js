@@ -94,14 +94,35 @@ function partCard(part, parts, packs) {
 </article>`;
 }
 
-export function renderLibraryPage({ shelf, packs, layouts, parts, error }) {
-  const counts = { packs: packs.length, layouts: layouts.length, parts: parts.length };
+function buildingCard(saved) {
+  const b = saved.building;
+  return `<article class="lp-card">
+  <div class="lp-pic lp-icon">${icon('building')}</div>
+  <div class="lp-body">
+    <div class="sf-eyebrow">One-car garage</div>
+    <h3>${esc(saved.name)}</h3>
+    <div class="lp-chips"><span>${esc(fmt(b.width) + ' × ' + fmt(b.depth) + ' × ' + fmt(b.height) + ' mm')}</span><span>${esc(when(saved.updated))}</span></div>
+  </div>
+  <div class="lp-foot">
+    <button type="button" class="sf-btn sm soft" data-lp="open-building" data-id="${esc(saved.id)}">${icon('open')}Open</button>
+    <span class="lp-sp"></span>
+    ${tool('rename-building', saved.id, 'Rename', 'pencil')}
+    ${tool('delete-building', saved.id, 'Delete', 'close', true)}
+  </div>
+</article>`;
+}
+
+export function renderLibraryPage({ shelf, packs, layouts, parts, buildings = [], error }) {
+  const counts = { packs: packs.length, layouts: layouts.length, parts: parts.length, buildings: buildings.length };
   const tab = (id, label) =>
     `<button type="button" data-lp-shelf="${id}" aria-pressed="${shelf === id}">${label} <b>${counts[id]}</b></button>`;
   const body =
     shelf === 'layouts'
       ? layouts.map((l) => layoutCard(l, packs)).join('') ||
         '<p class="lp-empty">No layouts yet. In the Track Planner, choose Save to Library.</p>'
+      : shelf === 'buildings'
+        ? buildings.map(buildingCard).join('') ||
+          '<p class="lp-empty">No buildings yet. On the Buildings page, choose Save to Library.</p>'
       : shelf === 'parts'
         ? parts.map((p) => partCard(p, parts, packs)).join('') ||
           '<p class="lp-empty">No STL parts yet. In STL Edit, choose Save to Library.</p>'
@@ -111,7 +132,7 @@ export function renderLibraryPage({ shelf, packs, layouts, parts, error }) {
   <div class="lp-head">
     <div><div class="sf-eyebrow">On this device</div><h1>Library</h1></div>
     <span class="lp-sp"></span>
-    <div class="lp-shelves" role="group" aria-label="Shelf">${tab('packs', 'Track packs')}${tab('layouts', 'Layouts')}${tab('parts', 'STL parts')}</div>
+    <div class="lp-shelves" role="group" aria-label="Shelf">${tab('packs', 'Track packs')}${tab('layouts', 'Layouts')}${tab('parts', 'STL parts')}${tab('buildings', 'Buildings')}</div>
     <button type="button" class="sf-btn soft" data-action="packs-dialog">${icon('save')}Backup and restore…</button>
   </div>
   ${error ? '<p class="lp-error">' + esc(error) + '</p>' : ''}
@@ -184,13 +205,13 @@ export function askUser({ eyebrow, title, text, value, confirm, danger }) {
 
 export function createLibraryPage({ host, store, handlers, onError }) {
   let shelf = 'packs';
-  let data = { packs: [], layouts: [], parts: [] };
+  let data = { packs: [], layouts: [], parts: [], buildings: [] };
   async function show(next) {
     if (next) shelf = next;
     try {
       const s = await store();
-      const [packs, layouts, parts] = await Promise.all([s.list(), s.layouts(), s.stlParts()]);
-      data = { packs, layouts, parts };
+      const [packs, layouts, parts, buildings] = await Promise.all([s.list(), s.layouts(), s.stlParts(), s.buildings()]);
+      data = { packs, layouts, parts, buildings };
       host.innerHTML = renderLibraryPage({ shelf, ...data });
     } catch (err) {
       host.innerHTML = renderLibraryPage({ shelf, packs: [], layouts: [], parts: [], error: 'The Library could not be opened: ' + err.message });

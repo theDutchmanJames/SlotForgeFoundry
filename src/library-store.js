@@ -32,6 +32,11 @@ import {
   setCollectionMarkings,
   setCollectionTexture,
   setCollectionBorders,
+  readBuildings,
+  readBuilding,
+  saveBuilding,
+  renameBuilding,
+  deleteBuilding,
 } from './library-database.js';
 
 const key = 'track-library';
@@ -220,6 +225,11 @@ export async function openTrackLibrary() {
     saveStlPart: (part) => write((db) => saveStlPart(db, part)),
     renameStlPart: (id, name) => write((db) => renameStlPart(db, id, name)),
     deleteStlPart: (id) => write((db) => deleteStlPart(db, id)),
+    buildings: () => access(SQL, 'read', readBuildings),
+    building: (id) => access(SQL, 'read', (db) => readBuilding(db, id)),
+    saveBuilding: (building) => write((db) => saveBuilding(db, building)),
+    renameBuilding: (id, name) => write((db) => renameBuilding(db, id, name)),
+    deleteBuilding: (id) => write((db) => deleteBuilding(db, id)),
     exportBytes: () => access(SQL, 'read', (db) => db.export()),
     inspectBytes: (bytes) => inspectLibraryBytes(SQL, bytes),
     importBytes: async (bytes, { expectedCollections } = {}) => {

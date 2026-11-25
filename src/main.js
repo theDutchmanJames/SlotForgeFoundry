@@ -104,8 +104,10 @@ import './track-parts.css';
 import { openTrackLibrary } from './library-store.js';
 import { createHome } from './home.js';
 import { askUser, createLibraryPage } from './library-page.js';
+import { createBuildingsPage } from './buildings-page.js';
 import {
   loadSettings,
+  MATERIALS,
   saveSettings,
   renderSettings,
   syncSettingsRail,
@@ -1725,7 +1727,7 @@ actions['theme-dark'] = () => chooseTheme('dark');
 let planner, planning = false;
 let home, homeOpen = false;
 function markNav(key) {
-  for (const k of ['mode-home', 'mode-library', 'mode-settings', 'mode-track', 'mode-editor', 'mode-planner']) {
+  for (const k of ['mode-home', 'mode-library', 'mode-settings', 'mode-track', 'mode-editor', 'mode-planner', 'mode-buildings']) {
     const b = $('[data-action="' + k + '"]');
     b.classList.toggle('active', k === key);
     b.setAttribute('aria-pressed', String(k === key));
@@ -1799,6 +1801,7 @@ async function showLibraryPage() {
 }
 function leaveLibraryPage() {
   leaveSettingsPage();
+  leaveBuildingsPage();
   if (!libraryOpen) return;
   libraryOpen = false;
   $('#library-page').hidden = true;
@@ -1811,6 +1814,52 @@ function leaveLibraryPage() {
   render();
 }
 actions['mode-library'] = showLibraryPage;
+
+// Buildings covers the workspace like the Library does: a building is a kit
+// of its own, not a track piece. It is drawn once and kept while away.
+let buildingsPage,
+  buildingsOpen = false;
+async function showBuildingsPage(savedId) {
+  leavePlanner();
+  leaveHome();
+  leaveLibraryPage();
+  if (!buildingsOpen) {
+    buildingsOpen = true;
+    $('.workspace').hidden = true;
+    $('.statusbar').classList.add('brand-only');
+    $('#buildings-page').hidden = false;
+    document.body.classList.add('at-home');
+  }
+  markNav('mode-buildings');
+  buildingsPage ??= createBuildingsPage({
+    host: $('#buildings-page'),
+    call,
+    store: openTrackLibrary,
+    download,
+    notice,
+    plate: () => loadSettings().plate,
+    // Grams per cm³ as printed: the filament's density at the fill set under Settings → Shopping list.
+    density: () => {
+      const s = loadSettings();
+      return ((MATERIALS.find((m) => m.id === s.material)?.density ?? 1.24) * s.infill) / 100;
+    },
+  });
+  if (typeof savedId === 'string') await buildingsPage.open(savedId);
+  else await buildingsPage.show();
+}
+function leaveBuildingsPage() {
+  if (!buildingsOpen) return;
+  buildingsOpen = false;
+  $('#buildings-page').hidden = true;
+  $('.workspace').hidden = false;
+  $('.statusbar').classList.remove('brand-only');
+  document.body.classList.remove('at-home');
+  const nav = $('[data-action="mode-buildings"]');
+  nav.classList.remove('active');
+  nav.setAttribute('aria-pressed', 'false');
+  render();
+}
+actions['mode-buildings'] = () => showBuildingsPage();
 
 // Settings covers the workspace too. Changes save as they are made.
 function showSettingsPage() {
@@ -2194,6 +2243,27 @@ const libraryHandlers = {
     });
     if (!ok) return false;
     await (await openTrackLibrary()).deleteStlPart(id);
+    return true;
+  },
+  'open-building': (id) => showBuildingsPage(id),
+  async 'rename-building'(id, { buildings }) {
+    const building = buildings.find((b) => b.id === id);
+    const name = await askUser({ eyebrow: 'Rename building', title: building.name, value: building.name, confirm: 'Rename' });
+    if (!name) return false;
+    await (await openTrackLibrary()).renameBuilding(id, name);
+    return true;
+  },
+  async 'delete-building'(id, { buildings }) {
+    const building = buildings.find((b) => b.id === id);
+    const ok = await askUser({
+      eyebrow: 'Delete building',
+      title: building.name,
+      text: 'Kits you exported stay where they are. This cannot be undone.',
+      confirm: 'Delete building',
+      danger: true,
+    });
+    if (!ok) return false;
+    await (await openTrackLibrary()).deleteBuilding(id);
     return true;
   },
 };
