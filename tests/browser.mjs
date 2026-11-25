@@ -1575,9 +1575,17 @@ try {
     console.log(
       '✓ SVG addition and angled, offset tilt wedge export as independent STLs',
     );
-    // Split is one of the two ways of the Cut tool.
-    await tab('trim-top').click();
-    await tab('split').click();
+    // Split & rebuild has its own entry in the left column, and is still
+    // one of the two ways of the Cut tool.
+    const splitEntry = page.locator('nav[aria-label="Part tools"] [data-tab="split"]');
+    const splitMode = page.locator('.cut-modes [data-tab="split"]');
+    await splitEntry.click();
+    assert.equal(await splitMode.getAttribute('aria-pressed'), 'true');
+    assert.equal(await splitEntry.getAttribute('aria-current'), 'page');
+    await page.locator('nav[aria-label="Part tools"] [data-tab="trim-top"]').click();
+    assert.equal(await splitEntry.getAttribute('aria-current'), null);
+    await splitMode.click();
+    assert.equal(await splitEntry.getAttribute('aria-current'), 'page');
     await action('iso').click();
     await live();
     await countParts(2);

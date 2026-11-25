@@ -595,12 +595,14 @@ export function editorNavigation({
   hasParts = true,
   hasSketches = false,
 }) {
-  const nav = (id, label, glyph) =>
+  // Split & rebuild has its own entry and is also a mode of Cut; the entry
+  // for the open mode is the one that lights up.
+  const nav = (id, label, glyph, description) =>
     command(id, label, glyph, {
+      description,
       active:
         !measuring &&
         (id === tab ||
-          (id === 'trim-top' && tab === 'split') ||
           (id === 'select' && isFaceTool(tab) && tab !== 'trim-top')),
     });
   const create =
@@ -625,6 +627,7 @@ export function editorNavigation({
       nav('select', 'Face tools', 'select') +
       nav('transform', 'Move, rotate & size', 'move') +
       nav('trim-top', 'Cut', 'split') +
+      nav('split', 'Split & rebuild', 'split', 'Split the part and copy its end details onto both pieces') +
       nav('stretch-section', 'Stretch', 'move') +
       nav('feature-pattern', 'Mirror & repeat', 'pattern') +
       command('duplicate', 'Duplicate part', 'plus', { action: true }) +
