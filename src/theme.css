@@ -275,6 +275,22 @@ option {
 .sf-btn.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.sf-btn.soft {
+  min-height: 32px;
+  padding: 0 12px;
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent-text);
+  font: 600 13px/1.2 var(--font-ui);
+}
+.sf-btn.soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
+}
+.sf-btn.soft.sm {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
 .sf-btn.sm {
   min-height: 28px;
   padding: 0 10px;

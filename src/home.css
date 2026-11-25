@@ -19,9 +19,10 @@
   font-size: 30px;
   line-height: 1;
 }
-.home h2 {
-  margin: 0 0 10px;
-  font-size: 18px;
+.home h2.sf-eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  text-transform: uppercase;
 }
 .home h3 {
   margin: 2px 0 0;
@@ -63,6 +64,11 @@
   border-radius: 14px;
   background: var(--panel);
   overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.home-pack:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: inset 0 3px var(--accent);
 }
 .home-pack-pic {
   display: grid;
@@ -113,50 +119,66 @@
 }
 .home-tile {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
   border: 1px dashed color-mix(in srgb, var(--ink) 22%, var(--line));
   border-radius: 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.home-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.home-tile > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 .home-tile b {
   font-size: 14px;
 }
-.home-tile > span:not(.home-tile-ico) {
+.home-tile span:not(.home-tile-ico) {
   color: var(--muted);
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 .home-tile-ico {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 4px;
+  flex: none;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 14%, var(--panel));
   color: var(--accent-text);
+  transition: background 0.15s, color 0.15s;
+}
+.home-tile:hover .home-tile-ico {
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 .home-tile-ico .i {
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
 }
 .home-tile-opts {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: auto;
   padding-top: 6px;
 }
 .home-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: var(--panel);
+  gap: 11px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.home-card h2 + .home-row {
+  border-top: 0;
+  padding-top: 2px;
 }
 .home-row > div {
   flex: 1;
@@ -176,8 +198,8 @@
 .home-row-ico {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   flex: none;
   border-radius: 9px;
   background: var(--inset);
@@ -193,18 +215,37 @@
 .home-pair {
   display: flex;
   gap: 8px;
+  margin-top: 8px;
 }
 .home-pair .sf-btn {
   flex: 1;
 }
-.home-card {
-  margin-top: 10px;
-  padding: 12px 14px;
+.home-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.home-card,
+.home-tip {
+  padding: 13px 15px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
 }
-.home-card p {
+/* First time?: a soft red tip that stands out without shouting. */
+.home-tip {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+.home-tip h2.sf-eyebrow {
+  color: var(--accent-text);
+}
+.home-tip p {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.home-card p:not(.home-empty) {
   margin: 6px 0 8px;
   font-size: 12.5px;
   color: color-mix(in srgb, var(--ink) 85%, var(--muted));
@@ -212,12 +253,62 @@
 .home-plate {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 16px;
+}
+.home-plate > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.home-plate b {
+  font-size: 15px;
 }
 .home-plate span {
   color: var(--muted);
   font-size: 12px;
+}
+.home-plate .sf-btn {
+  margin-top: 4px;
+}
+/* The drawn print plate. */
+.home-plate-art {
+  flex: none;
+  width: 150px;
+  height: auto;
+}
+.home-plate-art .plate-bed {
+  fill: color-mix(in srgb, var(--ink) 7%, var(--panel));
+  stroke: color-mix(in srgb, var(--ink) 35%, var(--line));
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.home-plate-art .plate-edge {
+  fill: color-mix(in srgb, var(--ink) 14%, var(--panel));
+  stroke: color-mix(in srgb, var(--ink) 35%, var(--line));
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.home-plate-art .plate-side {
+  fill: color-mix(in srgb, var(--ink) 20%, var(--panel));
+}
+.home-plate-art .plate-grid polyline {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink) 20%, transparent);
+  stroke-width: 0.6;
+}
+.home-plate-art .plate-screws circle {
+  fill: color-mix(in srgb, var(--ink) 45%, var(--panel));
+}
+.home-plate-art .plate-margin {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.home-plate-art text {
+  fill: var(--muted);
+  font: 600 8.5px var(--font-mono);
 }
 @media (max-width: 1000px) {
   .home {

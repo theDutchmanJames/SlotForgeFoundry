@@ -349,6 +349,19 @@ try {
     await page.locator('#home .home-pack').first().waitFor();
     assert.equal(await page.locator('#home').isVisible(), true);
     assert.ok((await page.locator('#home .home-pack').count()) >= 2);
+    // Starting a pack comes first; Plan a layout is the muted red button; the
+    // print plate is drawn to its proportions with its margin.
+    assert.ok(
+      await page.evaluate(() => {
+        const start = document.querySelector('#home .home-new');
+        const packs = document.querySelector('#home .home-packs');
+        return Boolean(start.compareDocumentPosition(packs) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }),
+    );
+    assert.ok(await page.locator('#home [data-home="plan"]').first().evaluate((b) => b.classList.contains('soft')));
+    assert.equal(await page.locator('#home [data-home="plan"].primary').count(), 0);
+    await page.locator('#home .home-plate-art .plate-bed').waitFor();
+    assert.match(await page.locator('#home .home-plate-art').getAttribute('aria-label'), /^Print plate \d+ by \d+ mm$/);
     assert.equal(await page.locator('[data-action="export-menu"]').isVisible(), false);
     // The rest of the suite starts in Track Set, as before Home existed.
     await page.goto(artifact.href + '?ui-test#track');
