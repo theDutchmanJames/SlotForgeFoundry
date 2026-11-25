@@ -15,11 +15,12 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.match(await host.locator('[data-bd-fit]').textContent(), /^Fits a \d+ × \d+ plate$/);
   assert.equal(await host.locator('.bd-parts [data-bd-part]').count(), 7);
   await snap('buildings');
-  // Wider than the plate: the base and the roof say so.
+  // Wider than the plate: the base, the roof and the long walls are cut into pieces that fit.
   await setting('width').fill('230');
   await setting('width').press('Tab');
-  await page.waitForFunction(() => /larger than the plate/.test(document.querySelector('[data-bd-fit]').textContent));
-  assert.ok(await host.locator('[data-bd-part="base"]').evaluate((b) => b.classList.contains('big')));
+  await host.locator('[data-bd-part="base-1"]').waitFor();
+  assert.match(await host.locator('[data-bd-fit]').textContent(), /^Fits a \d+ × \d+ plate$/);
+  assert.ok(await host.locator('[data-bd-fitting]').isVisible());
   // A door wider than the wall is refused, with the most it can be.
   await setting('width').fill('80');
   await setting('width').press('Tab');
@@ -71,6 +72,27 @@ export async function checkBuildings({ page, action, download, snap }) {
   );
   assert.ok(await setting('pitch').isVisible());
   assert.ok(await setting('ridge').isVisible());
+  // Bricks on the walls and tiles on the roof: the parts stay the same, cut.
+  const built = () => page.waitForFunction(() => document.querySelector('.bd-message').hidden);
+  assert.ok(await host.locator('[data-bd-texture-size]').isHidden());
+  await host.locator('[data-bd-wall-texture="brick"]').click();
+  await built();
+  await host.locator('[data-bd-roof-texture="tile"]').click();
+  await built();
+  assert.equal(await host.locator('[data-bd-wall-texture="brick"]').getAttribute('aria-pressed'), 'true');
+  assert.ok(await host.locator('[data-bd-texture-size]').isVisible());
+  await partCount(8);
+  await setting('textureDepth').fill('2');
+  await setting('textureDepth').press('Tab');
+  await host.locator('.bd-error').waitFor();
+  assert.match(await host.locator('.bd-error').textContent(), /Joint depth must be between 0.3 and 1 mm/);
+  await setting('textureDepth').fill('0.5');
+  await setting('textureDepth').press('Tab');
+  await host.locator('.bd-error').waitFor({ state: 'hidden' });
+  await host.locator('[data-bd-wall-texture="plain"]').click();
+  await built();
+  await host.locator('[data-bd-roof-texture="plain"]').click();
+  await built();
   // A window in the left wall: a hole, and with a frame a part of its own.
   await host.locator('[data-bd-wall="left"]').click();
   await host.locator('[data-bd-add="window"]').click();
@@ -93,7 +115,34 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-roof="flat"]').click();
   await partCount(7);
   assert.ok(await setting('pitch').isHidden());
+  // A 200 × 200 garage on a 150 × 150 plate: the parts are cut into pieces
+  // that fit, and each cut can be moved within its range.
+  await page.evaluate(() => localStorage.setItem('foundry.settings', JSON.stringify({ plate: { width: 150, depth: 150, margin: 0 } })));
+  await setting('width').fill('200');
+  await setting('depth').fill('200');
+  await setting('depth').press('Tab');
+  await host.locator('[data-bd-fitting]').waitFor();
+  await page.waitForFunction(() => /^1[5-9] parts|^2\d parts/.test(document.querySelector('[data-bd-chips]').textContent));
+  assert.match(await host.locator('[data-bd-fit]').textContent(), /^Fits a 150 × 150 plate$/);
+  assert.match(await host.locator('[data-bd-part="front-1"]').textContent(), /Front wall 1 of 2/);
+  const frontCut = host.locator('[name="cut-front-0"]');
+  assert.equal(await frontCut.inputValue(), '100');
+  await frontCut.fill('20');
+  await frontCut.press('Tab');
+  await host.locator('.bd-error').waitFor();
+  assert.match(await host.locator('.bd-error').textContent(), /Front wall: cut 1 at 20 mm leaves a piece that does not fit the plate/);
+  await frontCut.fill('80');
+  await frontCut.press('Tab');
+  await host.locator('.bd-error').waitFor({ state: 'hidden' });
+  await host.locator('[data-bd-even="front"]').click();
+  await page.waitForFunction(() => document.querySelector('[name="cut-front-0"]').value === '100');
+  // Back to the default garage on the plate from Settings.
+  await page.evaluate(() => localStorage.removeItem('foundry.settings'));
+  await setting('width').fill('120');
+  await setting('depth').fill('180');
+  await setting('depth').press('Tab');
+  await host.locator('[data-bd-fitting]').waitFor({ state: 'hidden' });
   // Close the last notice, as the next checks expect none.
   if (await page.locator('#notice').isVisible()) await page.locator('#notice').click();
-  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof and a framed window change its parts');
+  console.log('✓ Buildings: a garage kit is built, checked, exported as STLs with notes, saved and opened from the Library; a two-sided roof, a framed window and textures change its parts; on a small plate the parts are cut into pieces that fit');
 }

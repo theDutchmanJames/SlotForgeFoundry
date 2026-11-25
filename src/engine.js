@@ -884,7 +884,7 @@ export function createEngine(wasm) {
     // A building: its parts where they stand, for the 3D view, with their
     // print sizes and how much filament the kit takes.
     buildingParts: ({ building, plate }) => {
-      const parts = buildGarage(wasm, building);
+      const parts = buildGarage(wasm, building, plate);
       try {
         const shown = describeParts(parts, { plate });
         return shown.map((p, i) => ({ ...p, print: printSize(parts[i]) }));
@@ -893,8 +893,8 @@ export function createEngine(wasm) {
       }
     },
     // A building as STL files, each part as it prints.
-    buildingKit: ({ building }) => {
-      const parts = buildGarage(wasm, building);
+    buildingKit: ({ building, plate }) => {
+      const parts = buildGarage(wasm, building, plate);
       try {
         return parts.map((part) => {
           const printed = printPose(part);

@@ -16,16 +16,35 @@ import {
   ROOFS,
   WALLS,
   WALL_NAMES,
+  buildingCuts,
   buildingLayout,
   fitsPlate,
   validateBuilding,
   wallLength,
 } from './geometry/building.js';
+import { ROOF_TEXTURES, WALL_TEXTURES } from './geometry/building-texture.js';
+import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
 
 const KEY = 'foundry.building';
 const PART_ICONS = { base: 'plate', front: 'box', back: 'box', left: 'box', right: 'box', door: 'layers' };
 const field = (name, label, value, [min, max], unit = 'mm', extra = '') =>
   `<label class="bd-row"${extra}><span>${esc(label)}</span><span class="bd-input"><input type="number" name="${name}" value="${esc(String(value))}" min="${min}" max="${max}" step="1"><small>${unit}</small></span></label>`;
+// A small picture of each texture for its swatch.
+const SWATCH_LINES = {
+  plain: '',
+  brick: 'M0 7H60M0 14H60M0 21H60M8 0V7M24 0V7M40 0V7M56 0V7M16 7V14M32 7V14M48 7V14M8 14V21M24 14V21M40 14V21M56 14V21M16 21V28M32 21V28M48 21V28',
+  block: 'M0 10H60M0 20H60M15 0V10M45 0V10M30 10V20M15 20V28M45 20V28',
+  crack: 'M6 4l5 5 2 7 6 3M34 3l-3 6 4 5-2 7 5 3M46 16l5 3 1 7',
+  metal: 'M3 0V28M9 0V28M15 0V28M21 0V28M27 0V28M33 0V28M39 0V28M45 0V28M51 0V28M57 0V28',
+  tile: 'M0 7H60M0 14H60M0 21H60M5 0V7M15 0V7M25 0V7M35 0V7M45 0V7M55 0V7M10 7V14M20 7V14M30 7V14M40 7V14M50 7V14M5 14V21M15 14V21M25 14V21M35 14V21M45 14V21M55 14V21',
+};
+const swatches = (list, attr) =>
+  `<div class="bd-swatches">${list
+    .map(
+      ([id, label]) =>
+        `<button type="button" ${attr}="${id}"><svg viewBox="0 0 60 28" aria-hidden="true"><rect width="60" height="28" rx="3"/><path d="${SWATCH_LINES[id]}"/></svg><span>${esc(label)}</span></button>`,
+    )
+    .join('')}</div>`;
 const SIDES = [
   ['overhangFront', 'Front'],
   ['overhangBack', 'Back'],
@@ -95,7 +114,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <div class="bd-group">Your buildings</div>
   <div class="bd-saved"></div>
   <div class="bd-group">Coming later</div>
-  <p class="bd-later">Brick and concrete walls, storeys, and clipping to the track.</p>
+  <p class="bd-later">Storeys, and clipping to the track.</p>
 </aside>
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>
@@ -124,6 +143,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it; a flat roof has a lip under it that holds the walls square.</p></section>
+    <section class="bd-box"><h3>Surface</h3>
+      <div class="bd-sub">Walls</div>
+      ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
+      <div data-bd-roof-texture-box><div class="bd-sub">Roof</div>
+      ${swatches(ROOF_TEXTURES, 'data-bd-roof-texture')}</div>
+      <div data-bd-texture-size>
+      ${field('textureScale', 'Size', building.textureScale, BUILDING_LIMITS.textureScale, '%')}
+      <label class="bd-row"><span>Joint width</span><span class="bd-input"><input type="number" name="textureJoint" value="${building.textureJoint}" min="${BUILDING_LIMITS.textureJoint[0]}" max="${BUILDING_LIMITS.textureJoint[1]}" step="0.05"><small>mm</small></span></label>
+      <label class="bd-row"><span>Joint depth</span><span class="bd-input"><input type="number" name="textureDepth" value="${building.textureDepth}" min="${BUILDING_LIMITS.textureDepth[0]}" max="${BUILDING_LIMITS.textureDepth[1]}" step="0.05"><small>mm</small></span></label>
+      </div>
+      <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain.</p></section>
     <section class="bd-box"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
@@ -134,6 +164,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-openings"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add="window">${icon('plus')}Window</button><button type="button" class="bd-add" data-bd-add="door">${icon('plus')}Door</button></div>
       <p class="bd-hint">Each is a hole in the wall. Place is the middle of the opening, measured from the left end of the wall as you look at it from outside. A frame is a part of its own, glued on around the opening.</p></section>
+    <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
+      <div class="bd-cuts"></div>
+      <p class="bd-hint">A part longer than your plate is cut into pieces that join like a puzzle: dovetail tabs, or along the joints of a brick or block wall so the seam is one more joint. Move a cut anywhere in its range: both pieces still fit the plate, with the tab. A cut may run through a window or a door, not along its side.</p></section>
     <section class="bd-box"><h3>Base</h3>
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
@@ -193,10 +226,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       overhangBack: num(e.overhangBack),
       overhangLeft: num(e.overhangLeft),
       overhangRight: num(e.overhangRight),
+      textureScale: num(e.textureScale),
+      textureJoint: num(e.textureJoint),
+      textureDepth: num(e.textureDepth),
       door: e.door.value,
       ridge: e.ridge.value,
       rises: e.rises.value,
       openings,
+      cuts: readCuts(building),
     };
   }
   function message(text) {
@@ -214,34 +251,40 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
     for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
     for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
+    for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === building.wallTexture));
+    for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
+    $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
+    $('[data-bd-texture-size]').hidden = building.wallTexture === 'plain' && (building.roof === 'flat' || building.roofTexture === 'plain');
     $('.bd-model').hidden = view !== 'model';
     $('.bd-plates').hidden = view !== 'plate';
-    const layout = buildingLayout(building);
+    // The parts as built (a part cut to fit the plate is in pieces), or as
+    // planned while the first build is under way.
+    const list = parts.length ? parts.map(({ id, name, role }) => ({ id, name, role })) : buildingLayout(building).parts;
     const bed = plate();
     const fits = (p) => !sizes[p.id] || fitsPlate(sizes[p.id], bed);
-    const big = layout.parts.filter((p) => !fits(p));
+    const big = list.filter((p) => !fits(p));
     const pill = $('[data-bd-fit]');
     pill.textContent = big.length
       ? big.length + (big.length === 1 ? ' part is' : ' parts are') + ' larger than the plate'
       : 'Fits a ' + fmt(bed.width) + ' × ' + fmt(bed.depth) + ' plate';
     pill.classList.toggle('warn', big.length > 0);
-    $('.bd-parts').innerHTML = layout.parts
+    $('.bd-parts').innerHTML = list
       .map(
         (p) =>
-          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id] ?? (p.role === 'roof' ? 'building' : p.role === 'frame' ? 'view' : 'box'))}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
+          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id.split('-')[0]] ?? (p.role === 'roof' ? 'building' : p.role === 'frame' ? 'view' : 'box'))}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
       )
       .join('');
     const grams = (parts.reduce((sum, p) => sum + p.volume, 0) / 1000) * density();
     $('[data-bd-chips]').innerHTML =
-      '<span>' + layout.parts.length + ' parts</span>' +
+      '<span>' + list.length + ' parts</span>' +
       (parts.length ? '<span>≈ ' + Math.round(grams) + ' g filament</span>' : '') +
       '<span>No supports</span>';
-    drawPlates(layout, bed);
+    drawPlates(list, bed);
   }
   // Every part on a plate of its own, as it lies when printed.
-  function drawPlates(layout, bed) {
+  function drawPlates(list, bed) {
     const s = 0.9;
-    $('.bd-plates').innerHTML = layout.parts
+    $('.bd-plates').innerHTML = list
       .filter((p) => sizes[p.id])
       .map((p) => {
         const size = sizes[p.id];
@@ -257,6 +300,65 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       })
       .join('');
   }
+  // The cuts that fit the parts to the plate, each with its range.
+  function drawCuts() {
+    let plan;
+    try {
+      plan = buildingCuts(building, plate());
+    } catch (err) {
+      return err;
+    }
+    const rows = CUT_KEYS.filter((k) => plan[k]?.cuts.length).map((k) => {
+      const part = plan[k];
+      return `<div class="bd-cut" data-cut-key="${k}"><div class="bd-op-head"><b>${esc(cutLabel(k))}</b><small>${part.cuts.length + 1} pieces</small><span class="bd-grow"></span>${
+        building.cuts?.[k] ? `<button type="button" class="bd-link" data-bd-even="${k}">Spread evenly</button>` : ''
+      }</div>${part.cuts
+        .map(
+          (c, i) =>
+            `<label class="bd-row"><span>Cut ${i + 1}<small> ${part.ranges[i][0]}–${part.ranges[i][1]} mm</small></span><span class="bd-input"><input type="number" name="cut-${k}-${i}" value="${Math.round(c * 10) / 10}" min="${part.ranges[i][0]}" max="${part.ranges[i][1]}" step="0.5"><small>mm</small></span></label>`,
+        )
+        .join('')}</div>`;
+    });
+    $('[data-bd-fitting]').hidden = !rows.length;
+    // The same parts with the same number of cuts: set the fields in place,
+    // so the one being typed in keeps its cursor.
+    const shape = CUT_KEYS.filter((k) => plan[k]?.cuts.length).map((k) => k + plan[k].cuts.length).join();
+    const box = $('.bd-cuts');
+    if (box.dataset.shape !== shape) {
+      box.dataset.shape = shape;
+      box.innerHTML = rows.join('');
+      return null;
+    }
+    for (const k of CUT_KEYS)
+      plan[k]?.cuts.forEach((c, i) => {
+        const el = box.querySelector('[name="cut-' + k + '-' + i + '"]');
+        const value = String(Math.round(c * 10) / 10);
+        el.defaultValue = value;
+        if (document.activeElement !== el) el.value = value;
+        el.min = plan[k].ranges[i][0];
+        el.max = plan[k].ranges[i][1];
+        el.closest('label').querySelector('span small').textContent = ' ' + plan[k].ranges[i][0] + '–' + plan[k].ranges[i][1] + ' mm';
+      });
+    for (const k of CUT_KEYS) {
+      const head = box.querySelector('[data-cut-key="' + k + '"] .bd-op-head');
+      if (!head) continue;
+      const even = head.querySelector('[data-bd-even]');
+      if (building.cuts?.[k] && !even) head.insertAdjacentHTML('beforeend', `<button type="button" class="bd-link" data-bd-even="${k}">Spread evenly</button>`);
+      if (!building.cuts?.[k] && even) even.remove();
+    }
+    return null;
+  }
+  // The cuts as the form has them: only the parts whose cuts were moved are kept.
+  function readCuts(next) {
+    const cuts = { ...(next.cuts ?? {}) };
+    for (const box of form.querySelectorAll('[data-cut-key]')) {
+      const key = box.dataset.cutKey;
+      const values = [...box.querySelectorAll('input')].map((el) => (el.value === '' ? NaN : Number(el.value)));
+      const moved = values.some((v, i) => Math.abs(v - Number(box.querySelectorAll('input')[i].defaultValue)) > 1e-9);
+      if (moved || cuts[key]) cuts[key] = values;
+    }
+    return cuts;
+  }
   // Takes a building as the page now has it, and builds it.
   async function rebuild(next = readForm()) {
     const mine = ++serial;
@@ -266,8 +368,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       showError(err.message);
       return;
     }
-    showError('');
+    const before = building;
     building = next;
+    const problem = drawCuts();
+    if (problem) {
+      building = before;
+      showError(problem.message);
+      return;
+    }
+    showError('');
     remember();
     sync();
     message('Building the parts…');
@@ -311,16 +420,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
   }
   function fill(b) {
-    for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight'])
+    for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises']) form.elements[k].value = b[k];
     $('[name="buildingName"]').value = name;
     drawOpenings();
   }
   async function exportKit() {
-    const files = await call('buildingKit', { building });
-    const layout = buildingLayout(building);
-    const zip = { 'README.txt': strToU8(kitNotes(name, layout, sizes)) };
+    const files = await call('buildingKit', { building, plate: plate() });
+    const zip = { 'README.txt': strToU8(kitNotes(name, building, files, sizes)) };
     files.forEach((f, i) => (zip[String(i + 1).padStart(2, '0') + ' ' + f.name + '.stl'] = f.bytes));
     download((name || 'Building').replace(/[\\/:*?"<>|]+/g, '-') + ' kit.zip', zipSync(zip, { level: 6 }), 'application/zip');
     notice('Kit downloaded: ' + files.length + ' STL files and the notes for printing and putting it together.');
@@ -377,7 +485,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const next = { ...readForm(), roof: b.dataset.bdRoof };
         fitted = false;
         await rebuild(next);
-      } else if (b.dataset.bdWall) {
+      } else if (b.dataset.bdEven) {
+        const cuts = { ...building.cuts };
+        delete cuts[b.dataset.bdEven];
+        await rebuild({ ...readForm(), cuts });
+      } else if (b.dataset.bdWallTexture) await rebuild({ ...readForm(), wallTexture: b.dataset.bdWallTexture });
+      else if (b.dataset.bdRoofTexture) await rebuild({ ...readForm(), roofTexture: b.dataset.bdRoofTexture });
+      else if (b.dataset.bdWall) {
         const next = readForm();
         wall = b.dataset.bdWall;
         try {

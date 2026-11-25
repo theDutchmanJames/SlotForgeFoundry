@@ -4,16 +4,20 @@ import { fmt } from './ui.js';
 
 /**
  * How the parts of a kit are printed and put together, for the kit's notes.
+ * parts: the parts as exported (a part cut to fit the plate is in pieces);
  * sizes: each part's size as it lies on the plate, by its id.
  */
-export function kitNotes(name, layout, sizes) {
-  const b = layout.building;
-  const list = layout.parts
+export function kitNotes(name, b, parts, sizes) {
+  const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
+  const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
     .join('\n');
   const sloped = b.roof !== 'flat';
   const framed = b.openings.some((o) => o.frame);
   const steps = [
+    ...(cut
+      ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
+      : []),
     'Stand the four walls in the groove of the base. The front wall has the garage door opening.',
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(b.door === 'roller' ? ['Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.'] : []),

@@ -5,6 +5,9 @@
 // 1:32 by default: a one-car garage is about 120 × 180 mm and 75 mm high and
 // takes practically any slot car.
 
+import { DRAWN, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, WALL_TEXTURES, roofJoints, wallJoints } from './building-texture.js';
+import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
+
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
 export const ROOFS = Object.freeze([
@@ -30,6 +33,8 @@ export const BUILDING_DEFAULTS = Object.freeze({
   overhangLeft: 3,
   overhangRight: 3,
   openings: Object.freeze([]),
+  ...TEXTURE_DEFAULTS,
+  cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
   width: [60, 400],
@@ -43,6 +48,7 @@ export const BUILDING_LIMITS = Object.freeze({
   overhangBack: [0, 30],
   overhangLeft: [0, 30],
   overhangRight: [0, 30],
+  ...TEXTURE_LIMITS,
 });
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
@@ -82,8 +88,11 @@ const LABELS = {
   overhangBack: 'Overhang at the back',
   overhangLeft: 'Overhang on the left',
   overhangRight: 'Overhang on the right',
+  textureScale: 'Texture size',
+  textureJoint: 'Joint width',
+  textureDepth: 'Joint depth',
 };
-const UNITS = { pitch: '°' };
+const UNITS = { pitch: '°', textureScale: ' %' };
 const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame'];
 
 /** The length of a wall along its outside face. */
@@ -128,6 +137,8 @@ export function validateBuilding(input) {
   if (!ROOFS.some(([id]) => id === b.roof)) throw Error('Choose a roof from the list.');
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
+  if (!WALL_TEXTURES.some(([id]) => id === b.wallTexture)) throw Error('Choose a wall texture from the list.');
+  if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
   for (const [key, [min, max]] of Object.entries(BUILDING_LIMITS))
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max)
       throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (UNITS[key] ?? ' mm') + '.');
@@ -161,7 +172,7 @@ export function validateBuilding(input) {
       if (gap < KIT.frame)
         throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
     }
-  return { ...b, openings };
+  return { ...b, openings, cuts: validateCuts(b.cuts) };
 }
 
 /** How the roof stands: the slope of each panel, and how high it rises. */
@@ -218,7 +229,55 @@ export function fitsPlate([x, y], plate) {
 
 // The building stands with its front (the garage door) at y = 0, from x = 0
 // to its width and y = 0 to its depth; the table is z = 0.
-export function buildGarage(wasm, input) {
+// The places along each wall where it may not be cut: its openings and their frames.
+function wallKeepOut(b, door) {
+  const out = { front: [[door.x, door.x + door.width]], back: [], left: [], right: [] };
+  for (const o of b.openings) {
+    const extra = o.frame ? KIT.trim : 0;
+    out[o.wall].push([o.at - o.width / 2 - extra, o.at + o.width / 2 + extra]);
+  }
+  return out;
+}
+
+/**
+ * Where a building is cut to fit a plate: for each part that is too long,
+ * its cuts and the range each may move in. Without a plate, nothing is cut.
+ */
+export function buildingCuts(input, plate) {
+  const { building: b, door } = buildingLayout(input);
+  const shape = roofShape(b);
+  const rise = shape.rise;
+  // A wall prints as tall as it stands, its foot in the groove included.
+  const wallHeight = {};
+  for (const w of WALLS) {
+    let high = b.height;
+    if (b.roof === 'gable') high += (b.ridge === 'depth') === (w === 'front' || w === 'back') ? rise : 0;
+    if (b.roof === 'slope') high += w === b.rises ? rise : (w === 'front' || w === 'back') === (b.rises === 'front' || b.rises === 'back') ? 0 : rise;
+    wallHeight[w] = high + KIT.groove + KIT.wall;
+  }
+  // A brick or block wall is cut along its joints: the seam steps half a brick either way.
+  const step = ['brick', 'block'].includes(b.wallTexture) ? (DRAWN[b.wallTexture].length * b.textureScale) / 200 : 0;
+  // A cut may run through an opening, not along its side.
+  const aside = JOINT.aside + step;
+  const keepOut = Object.fromEntries(
+    Object.entries(wallKeepOut(b, door)).map(([w, list]) => [w, list.flatMap(([a, c]) => [[a - aside, a + aside], [c - aside, c + aside]])]),
+  );
+  const ov = [b.overhangLeft + b.overhangRight, b.overhangFront + b.overhangBack];
+  const slope = Math.hypot(1, shape.t);
+  // A two-sided roof is cut along its ridge only; a slope prints longer than its plan.
+  const roofExtent = [b.width + ov[0], b.depth + ov[1]];
+  let scale = [1, 1];
+  if (b.roof === 'slope') scale = b.rises === 'left' || b.rises === 'right' ? [slope, 1] : [1, slope];
+  if (b.roof === 'gable') roofExtent[b.ridge === 'depth' ? 0 : 1] = 0;
+  return planCuts(b, plate, {
+    wallHeight,
+    keepOut,
+    base: [b.width + 2 * KIT.ledge, b.depth + 2 * KIT.ledge],
+    roof: { extent: roofExtent, scale },
+  });
+}
+
+export function buildGarage(wasm, input, plate = null) {
   const { Manifold } = wasm;
   const { building: b, door } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
@@ -279,6 +338,27 @@ export function buildGarage(wasm, input) {
     for (const o of b.openings)
       holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
     for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
+    // A wall texture: joints in the outside face, clear of every opening
+    // and of the frame around it, and of the wall's foot in the groove.
+    if (b.wallTexture !== 'plain') {
+      const keepOut = { front: [[door.x, top, door.x + door.width, top + door.height]], back: [], left: [], right: [] };
+      for (const o of b.openings) {
+        const extra = o.frame ? KIT.trim : 0;
+        keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
+      }
+      for (const w of WALLS) {
+        const joints = wallJoints(
+          wasm,
+          own,
+          w,
+          { W, D, length: w === 'front' || w === 'back' ? W : D, bottom: top, top: zTop },
+          keepOut[w],
+          b,
+          b.wallTexture,
+        );
+        if (joints) walls[w] = own(walls[w].subtract(joints));
+      }
+    }
 
     // Roof.
     const ov = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight };
@@ -303,6 +383,24 @@ export function buildGarage(wasm, input) {
         s = trim(s, [-shape.t * dx, -shape.t * dy, 1], (z1 - shape.t * p.s0) / len);
         s = trim(s, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0 + rt / cosA) / len);
         if (p.keep) s = trim(s, p.keep[0], p.keep[1]);
+        // Tiles or corrugations in its top, starting at the eave.
+        if (b.roofTexture !== 'plain') {
+          const joints = roofJoints(
+            wasm,
+            own,
+            s,
+            {
+              dir: p.dir,
+              t: shape.t,
+              eave: [dx < 0 ? W : 0, dy < 0 ? D : 0],
+              topAt: (x, y) => z1 + shape.t * (dx * x + dy * y - p.s0) + rt / cosA,
+              bounds: s.boundingBox(),
+            },
+            b,
+            b.roofTexture,
+          );
+          if (joints) s = own(s.subtract(joints));
+        }
         const deg = (Math.atan(shape.t) * 180) / Math.PI;
         roofParts.push({ id: p.id, name: p.name, role: 'roof', solid: s, lie: [-deg * dy, deg * dx, 0] });
       }
@@ -352,6 +450,100 @@ export function buildGarage(wasm, input) {
       }
       parts.push({ id: 'frame-' + (i + 1), name: openingName(o, i, b.openings) + ' frame', role: 'frame', solid: frame, outward: OUTWARD[o.wall] });
     });
+    // Cut to fit the plate.
+    if (plate) {
+      const plan = buildingCuts(b, plate);
+      const cs = (polys) => own(new wasm.CrossSection(polys, 'NonZero'));
+      const far = 1e4;
+      // The pieces between the seams of one part, in its own 2D frame (u along
+      // it, v across): each the region left of its seam, less the region
+      // left of the seam before it, grown by the play.
+      const wallStrips = (cuts, tabsOf) => {
+        const lefts = cuts.map((c) => cs(seamRegion(c, [z0, zTop], tabsOf(c))));
+        return [...lefts, cs([[[-far, z0 - far], [far, z0 - far], [far, zTop + far], [-far, zTop + far]]])].map((region, k) =>
+          k ? own(region.subtract(own(lefts[k - 1].offset(JOINT.play, 'Miter', 2)))) : region,
+        );
+      };
+      const strips = (cuts, [v0, v1], across, origin, steps) => {
+        const lefts = cuts.map((c) => cs(seamRegion(c - origin, [v0, v1], tabPlaces([v0, v1], across), steps ? steps(c) : null)));
+        return [...lefts, cs([[[-far, v0 - far], [far, v0 - far], [far, v1 + far], [-far, v1 + far]]])].map((region, k) =>
+          k ? own(region.subtract(own(lefts[k - 1].offset(JOINT.play, 'Miter', 2)))) : region,
+        );
+      };
+      const split = (part, pieces) => {
+        const made = pieces.map(({ solid }, k) => ({ ...part, id: part.id + '-' + (k + 1), name: part.name + ' ' + (k + 1) + ' of ' + pieces.length, solid }));
+        return made;
+      };
+      const out = [];
+      const wallFrame = {
+        // u along the wall, from 2 mm outside it through to 2 mm inside.
+        front: (u0) => [[1, 0, 0], [0, 1, 0], [u0, -2, 0]],
+        back: (u0) => [[-1, 0, 0], [0, -1, 0], [W - u0, D + 2, 0]],
+        left: (u0) => [[0, -1, 0], [1, 0, 0], [-2, D - u0, 0]],
+        right: (u0) => [[0, 1, 0], [-1, 0, 0], [W + 2, u0, 0]],
+      };
+      // A brick or block wall: in each course the seam takes the joint nearest the cut.
+      const brickSteps = (c) => {
+        const k = b.textureScale / 100,
+          { course, length } = DRAWN[b.wallTexture];
+        const rowH = course * k,
+          len = length * k;
+        const rows = [];
+        for (let r = -1; top + r * rowH < zTop + rowH; r++) {
+          const shift = ((((r % 2) + 2) % 2) * len) / 2;
+          const at = Math.round((c - shift) / len) * len + shift;
+          rows.push({ v: top + r * rowH, top: top + (r + 1) * rowH, at: at - c });
+        }
+        rows[0].v = z0 - 1;
+        return rows;
+      };
+      for (const part of parts) {
+        const wallPlan = plan[part.id];
+        if (part.role === 'wall' && wallPlan?.cuts.length) {
+          const stepped = ['brick', 'block'].includes(b.wallTexture);
+          const openingsOf = (c) => [
+            ...(part.id === 'front' && c > door.x && c < door.x + door.width ? [[top, top + door.height]] : []),
+            ...b.openings.filter((o) => o.wall === part.id && Math.abs(c - o.at) < o.width / 2).map((o) => [top + o.sill, top + o.sill + o.height]),
+          ];
+          const regions = stepped
+            ? strips(wallPlan.cuts, [z0, zTop], [], 0, (c) => brickSteps(c).map((row) => ({ ...row, at: row.at + c })))
+            : wallStrips(wallPlan.cuts, (c) => tabPlaces([z0, zTop], [top, z1], openingsOf(c), 3));
+          const [U, N, O] = wallFrame[part.id](0);
+          const pieces = regions
+            .map((region) => own(own(region.extrude(t + 4)).transform([...U, 0, 0, 0, 1, 0, ...N, 0, ...O, 1])))
+            .map((prism) => ({ solid: own(part.solid.intersect(prism)) }))
+            .filter((p) => !p.solid.isEmpty() && p.solid.volume() > 1);
+          out.push(...split(part, pieces));
+          continue;
+        }
+        const grid = part.role === 'buildingBase' ? ['baseX', 'baseY', -KIT.ledge, -KIT.ledge] : part.role === 'roof' ? ['roofX', 'roofY', -b.overhangLeft, -b.overhangFront] : null;
+        if (grid && (plan[grid[0]].cuts.length || plan[grid[1]].cuts.length)) {
+          const [kx, ky, x0, y0] = grid;
+          const xCuts = plan[kx].cuts.map((c) => c + x0),
+            yCuts = plan[ky].cuts.map((c) => c + y0);
+          const { min, max } = part.solid.boundingBox();
+          // Seams across x run along y, with their tabs between the y seams; and the other way.
+          const xs = strips(xCuts, [min[1], max[1]], yCuts, 0, null);
+          const ysLocal = strips(yCuts, [min[0], max[0]], xCuts, 0, null);
+          // A y seam is drawn with u along y: turn it to the plan.
+          const ys = ysLocal.map((region) => own(region.transform([0, 1, 0, 1, 0, 0, 0, 0, 1])));
+          const pieces = [];
+          for (const xr of xs)
+            for (const yr of ys) {
+              const cell = own(xr.intersect(yr));
+              if (cell.isEmpty()) continue;
+              const prism = own(own(cell.extrude(max[2] - min[2] + 4)).translate([0, 0, min[2] - 2]));
+              const solid = own(part.solid.intersect(prism));
+              if (!solid.isEmpty() && solid.volume() > 1) pieces.push({ solid });
+            }
+          out.push(...(pieces.length > 1 ? split(part, pieces) : [part]));
+          continue;
+        }
+        out.push(part);
+      }
+      parts.length = 0;
+      parts.push(...out);
+    }
     // Keep the parts; free everything else.
     const keep = new Set(parts.map((p) => p.solid));
     for (const s of temp) if (!keep.has(s)) s.delete();

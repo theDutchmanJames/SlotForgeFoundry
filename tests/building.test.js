@@ -5,6 +5,7 @@ import test from 'node:test';
 import Module from 'manifold-3d';
 import {
   BUILDING_DEFAULTS,
+  buildingCuts,
   KIT,
   buildGarage,
   buildingLayout,
@@ -19,8 +20,8 @@ const wasm = await Module();
 wasm.setup();
 const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
 const freeAll = (parts) => parts.forEach((p) => p.solid.delete());
-const withParts = (settings, check) => {
-  const parts = buildGarage(wasm, settings);
+const withParts = (settings, check, plate = null) => {
+  const parts = buildGarage(wasm, settings, plate);
   try {
     return check(parts, (id) => parts.find((p) => p.id === id));
   } finally {
@@ -211,15 +212,186 @@ test('walls print flat outside face up, roof panels on their underside, base and
 test('the kit notes list every part as it prints and how the kit goes together', async () => {
   const { kitNotes } = await import('../src/building-kit.js');
   const sizes = { base: [126, 186, 10], door: [96, 58, 3] };
-  const withDoor = kitNotes('Pit garage', buildingLayout({}), sizes);
+  const plainLayout = buildingLayout({});
+  const withDoor = kitNotes('Pit garage', plainLayout.building, plainLayout.parts, sizes);
   assert.match(withDoor, /^Pit garage · SlotForge Foundry building kit/);
   assert.match(withDoor, /- Base plate: 126 × 186 × 10 mm/);
   assert.match(withDoor, /- Roller door: 96 × 58 × 3 mm/);
   assert.match(withDoor, /3\. Glue the roller door behind its opening/);
   assert.match(withDoor, /4\. Drop the roof on/);
-  const gable = kitNotes('Shed', buildingLayout({ door: 'open', roof: 'gable', openings: [window('left', 90, { frame: true })] }), {});
+  const shed = buildingLayout({ door: 'open', roof: 'gable', openings: [window('left', 90, { frame: true })] });
+  const gable = kitNotes('Shed', shed.building, shed.parts, {});
   assert.doesNotMatch(gable, /Roller door/);
   assert.match(gable, /3\. Glue each frame around its window or door/);
   assert.match(gable, /4\. Lay the two roof panels on the walls so they meet at the ridge/);
   assert.match(gable, /each roof panel lies on its underside/);
+});
+
+test('wall and roof textures keep every part one body, with no two parts in the same space', () => {
+  for (const wallTexture of ['brick', 'block', 'crack', 'metal'])
+    for (const [roof, roofTexture] of [['flat', 'plain'], ['gable', 'tile'], ['slope', 'metal']])
+      withParts(
+        { wallTexture, roof, roofTexture, openings: [window('left', 60, { frame: true }), door('right', 120)] },
+        (parts) => {
+          const label = wallTexture + ' / ' + roof + ' ' + roofTexture;
+          for (const p of parts) {
+            assert.equal(p.solid.status(), 'NoError', p.name + ' ' + label);
+            assert.equal(p.solid.decompose().length, 1, p.name + ' is one body: ' + label);
+          }
+          for (let i = 0; i < parts.length; i++)
+            for (let j = i + 1; j < parts.length; j++) {
+              const both = parts[i].solid.intersect(parts[j].solid);
+              assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap: ' + label);
+              both.delete();
+            }
+        },
+      );
+});
+
+test('joints are cut into the outside face only, as deep as set, and keep clear of openings and frames', () => {
+  const settings = { roof: 'gable', roofTexture: 'tile', openings: [window('left', 60, { frame: true }), door('right', 120)] };
+  const volumes = (extra) =>
+    withParts({ ...settings, ...extra }, (parts) => Object.fromEntries(parts.map((p) => [p.id, p.solid.volume()])));
+  const plain = volumes({ roofTexture: 'plain' }),
+    bricks = volumes({ wallTexture: 'brick' });
+  for (const w of ['front', 'back', 'left', 'right']) assert.ok(bricks[w] < plain[w] - 50, w + ' wall has joints');
+  assert.ok(bricks['roof-left'] < plain['roof-left'] - 50, 'the roof has tiles');
+  withParts({ ...settings, wallTexture: 'brick', textureDepth: 0.8 }, (_, part) => {
+    // The inside of the left wall, from 1 mm in, is whole.
+    const wall = part('left').solid;
+    const inside = wall.trimByPlane([1, 0, 0], 1);
+    withParts({ ...settings, roofTexture: 'plain' }, (__, plainPart) => {
+      const whole = plainPart('left').solid.trimByPlane([1, 0, 0], 1);
+      assert.ok(near(inside.volume(), whole.volume(), 0.01), 'inside of the wall untouched');
+      whole.delete();
+    });
+    inside.delete();
+    // Nothing is cut deeper than the joint depth.
+    const deep = wall.trimByPlane([1, 0, 0], 0.8 + 0.01);
+    withParts({ ...settings, roofTexture: 'plain' }, (__, plainPart) => {
+      const whole = plainPart('left').solid.trimByPlane([1, 0, 0], 0.8 + 0.01);
+      assert.ok(near(deep.volume(), whole.volume(), 0.01));
+      whole.delete();
+    });
+    deep.delete();
+    // Around the framed window the face is plain: under the frame and 1 mm beyond.
+    const u0 = 60 - 20 - KIT.trim - 1,
+      u1 = 60 + 20 + KIT.trim + 1;
+    const around = wasm.Manifold.cube([0.8, u1 - u0, 30 + 2 * KIT.trim + 2]).translate([0, 180 - u1, 10 + 25 - KIT.trim - 1]);
+    const left = wall.intersect(around);
+    withParts({ ...settings, roofTexture: 'plain' }, (__, plainPart) => {
+      const whole = plainPart('left').solid.intersect(around);
+      assert.ok(near(left.volume(), whole.volume(), 0.01), 'no joints around the window');
+      whole.delete();
+    });
+    left.delete();
+    around.delete();
+    // The underside of a tiled roof panel is whole.
+    const panel = part('roof-left');
+    const printed = printPose(panel);
+    const under = printed.trimByPlane([0, 0, -1], -(KIT.roof - 0.8 - 0.05));
+    withParts({ ...settings, roofTexture: 'plain' }, (__, plainPart) => {
+      const plainPrinted = printPose(plainPart('roof-left'));
+      const whole = plainPrinted.trimByPlane([0, 0, -1], -(KIT.roof - 0.8 - 0.05));
+      assert.ok(near(under.volume(), whole.volume(), 0.5), 'roof underside untouched: ' + under.volume() + ' vs ' + whole.volume());
+      whole.delete();
+      plainPrinted.delete();
+    });
+    under.delete();
+    printed.delete();
+  });
+});
+
+test('cracks come out the same every time; texture settings are checked', () => {
+  const tris = () => withParts({ wallTexture: 'crack' }, (_, part) => part('left').solid.numTri());
+  assert.equal(tris(), tris());
+  assert.throws(() => validateBuilding({ wallTexture: 'marble' }), /Choose a wall texture/);
+  assert.throws(() => validateBuilding({ roofTexture: 'thatch' }), /Choose a roof texture/);
+  assert.throws(() => validateBuilding({ textureScale: 20 }), /Texture size must be between 50 and 200 %/);
+  assert.throws(() => validateBuilding({ textureDepth: 2 }), /Joint depth must be between 0.3 and 1 mm/);
+  assert.throws(() => validateBuilding({ textureJoint: 0.1 }), /Joint width must be between 0.4 and 1.5 mm/);
+});
+
+const SMALL = { width: 150, depth: 150, margin: 0 };
+test('a building that fits the plate is not cut; a 200 mm garage on a 150 mm plate is', () => {
+  const none = buildingCuts({}, { width: 200, depth: 200 });
+  assert.ok(Object.values(none).every((p) => p.cuts.length === 0));
+  const big = buildingCuts({ width: 200, depth: 200 }, SMALL);
+  for (const key of ['front', 'back', 'left', 'right', 'baseX', 'baseY', 'roofX', 'roofY']) assert.equal(big[key].cuts.length, 1, key);
+  // A two-sided roof is only cut along its ridge: each panel is narrow.
+  const gable = buildingCuts({ width: 200, depth: 200, roof: 'gable', ridge: 'depth' }, SMALL);
+  assert.deepEqual([gable.roofX.cuts.length, gable.roofY.cuts.length], [0, 1]);
+  // The front wall may be cut through the garage door, not along its sides.
+  const [lo, hi] = big.front.ranges[0];
+  assert.ok(lo <= 100 && hi >= 100);
+  assert.ok(big.front.forbidden.some(([a, b]) => a < 55 && b > 55), 'the side of the door is kept clear');
+});
+
+test('every piece fits the plate, is one body, and no two pieces take the same space', () => {
+  for (const settings of [
+    { width: 200, depth: 200 },
+    { width: 200, depth: 200, roof: 'gable', wallTexture: 'brick', roofTexture: 'tile' },
+    { width: 210, depth: 330, wallTexture: 'block', openings: [window('left', 100, { frame: true }), door('right', 165)] },
+  ]) {
+    const parts = buildGarage(wasm, settings, SMALL);
+    try {
+      const label = JSON.stringify(settings);
+      for (const p of parts) {
+        assert.ok(fitsPlate(printSize(p), SMALL), p.name + ' fits: ' + printSize(p) + ' ' + label);
+        assert.equal(p.solid.decompose().length, 1, p.name + ' is one body ' + label);
+      }
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap ' + label);
+          both.delete();
+        }
+      // Cutting loses only the play around the tabs.
+      const whole = buildGarage(wasm, settings);
+      const volume = (list, role) => list.filter((p) => p.role === role).reduce((v, p) => v + p.solid.volume(), 0);
+      for (const role of ['wall', 'buildingBase', 'roof']) {
+        const lost = volume(whole, role) - volume(parts, role);
+        assert.ok(lost >= 0 && lost < volume(whole, role) * 0.01, role + ' lost ' + lost + ' ' + label);
+      }
+      freeAll(whole);
+    } finally {
+      freeAll(parts);
+    }
+  }
+});
+
+test('pieces join with dovetail tabs, or step along the bricks; a cut can be moved within its range', () => {
+  withParts({ width: 200, depth: 200, cuts: { front: [100] } }, (_, part) => {
+    // The front wall is cut through its door: the left piece reaches over the
+    // cut with its tab in the lintel above the door.
+    const left = part('front-1').solid.boundingBox(),
+      right = part('front-2').solid.boundingBox();
+    assert.ok(left.max[0] > 100 + 4 && left.max[0] < 100 + 5.2, 'tab reaches 5 mm: ' + left.max[0]);
+    // The other piece starts at the cut, plus the play around the tab.
+    assert.ok(near(right.min[0], 100.15, 0.02), 'second piece starts at ' + right.min[0]);
+  }, SMALL);
+  // Bricks: the seam steps along the joints, half a brick either way.
+  withParts({ width: 200, depth: 200, wallTexture: 'brick', cuts: { left: [100] } }, (_, part) => {
+    const a = part('left-1').solid.boundingBox(),
+      b = part('left-2').solid.boundingBox();
+    // Along the left wall u runs from the back: piece 1 lies at the back (high
+    // y). The joints nearest a cut at 100 mm are at 100 and 104 mm in turn, so
+    // the seam steps half a brick (4 mm) from course to course.
+    assert.ok(near(a.min[1], 200 - 104, 0.05), 'piece 1 reaches the joint at 104 mm: ' + a.min[1]);
+    assert.ok(near(b.max[1], 200 - 100 - 0.15, 0.05), 'piece 2 stops at the joint at 100 mm: ' + b.max[1]);
+  }, SMALL);
+  assert.throws(() => buildingCuts({ width: 200, depth: 200, cuts: { back: [20] } }, SMALL), /Back wall: cut 1 at 20 mm leaves a piece that does not fit the plate. Put it between 5\d(\.\d)? and 1\d\d(\.\d)? mm/);
+  assert.throws(() => buildingCuts({ width: 200, depth: 200, cuts: { front: [55] } }, SMALL), /Front wall: cut 1 at 55 mm runs along the side of a window, a door or a frame/);
+  assert.throws(() => validateBuilding({ cuts: { chimney: [3] } }), /cut for an unknown part: chimney/);
+  // A moved cut is kept; one for a different number of pieces is spread evenly again.
+  assert.deepEqual(buildingCuts({ width: 200, depth: 200, cuts: { back: [80] } }, SMALL).back.cuts, [80]);
+  assert.deepEqual(buildingCuts({ width: 200, depth: 200, cuts: { back: [60, 120] } }, SMALL).back.cuts, [100]);
+});
+
+test('the kit notes tell to join the pieces of a cut part first', async () => {
+  const { kitNotes } = await import('../src/building-kit.js');
+  const b = validateBuilding({ width: 200, depth: 200 });
+  const notes = kitNotes('Big garage', b, [{ id: 'front-1', name: 'Front wall 1 of 2' }, { id: 'front-2', name: 'Front wall 2 of 2' }], {});
+  assert.match(notes, /1\. Join the pieces of each cut part first/);
+  assert.doesNotMatch(kitNotes('Garage', b, [{ id: 'front', name: 'Front wall' }], {}), /Join the pieces/);
 });
