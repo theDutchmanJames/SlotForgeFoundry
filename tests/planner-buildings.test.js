@@ -59,7 +59,8 @@ test('a building stands by the middle of its base, turned by its pose', () => {
   assert.ok(near(Math.max(...xs) - Math.min(...xs), 180 + 2 * KIT.ledge), 'turned, its depth runs across');
   const shapes = planShapes({ ...entry, building: { ...entry.building, upper: [{ width: 80, depth: 100, x: 20, y: 40 }] } });
   assert.equal(shapes.storeys.length, 2);
-  assert.equal(shapes.door.length, 2);
+  assert.equal(shapes.doors.length, 1);
+  assert.equal(shapes.doors[0].length, 2);
   // The 3D parts move with it, z kept.
   const [placed] = placeParts([{ id: 'front', positions: new Float32Array([0, 0, 5, 60, 90, 7]), indices: [] }], entry);
   assert.equal(placed.id, 'b-1/front');

@@ -67,13 +67,15 @@ function placedMesh(part, node, def) {
 // A building on the plan: its base, the outline of each storey, and a bar
 // along the garage door so its front shows.
 function buildingMarkup(entry, chosen) {
-  const { base, storeys, door } = planShapes(entry);
+  const { base, storeys, dividers, doors } = planShapes(entry);
   return (
     '<g data-building="' + entry.id + '" class="pm-building' + (entry.id === chosen ? ' selected' : '') + '"><title>' + esc(entry.name) +
     ' · drag to move it; dropped near the track it stands along the border</title>' +
     '<path class="pm-building-base" d="' + pathD([base]) + '"/>' +
     storeys.map((loop) => '<path class="pm-building-storey" d="' + pathD([loop]) + '"/>').join('') +
-    '<polyline class="pm-building-door" points="' + points(door) + '"/></g>'
+    dividers.map((line) => '<polyline class="pm-building-divider" points="' + points(line) + '"/>').join('') +
+    doors.map((door) => '<polyline class="pm-building-door" points="' + points(door) + '"/>').join('') +
+    '</g>'
   );
 }
 export function createPlanView(host, onPick, onMoveBuilding = () => {}) {

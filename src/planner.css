@@ -748,3 +748,10 @@ dialog.pl-segment p {
 .pl-ladder-garage select {
   width: 100%;
 }
+
+/* A dividing wall in a building on the plan. */
+.pm-building-divider {
+  fill: none;
+  stroke: #3a3f46;
+  stroke-width: 1.5;
+}

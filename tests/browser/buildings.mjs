@@ -148,6 +148,24 @@ export async function checkBuildings({ page, action, download, snap }) {
   await setting('depth').fill('180');
   await setting('depth').press('Tab');
   await host.locator('[data-bd-fitting]').waitFor({ state: 'hidden' });
+  // Two rooms side by side: their sizes make the width, a dividing wall
+  // between them, and a garage door in each.
+  await host.locator('[data-bd-rooms="width"]').click();
+  await setting('room-0').waitFor();
+  assert.ok(await setting('width').isDisabled(), 'the rooms set the width');
+  await setting('room-0').fill('110');
+  await setting('room-1').fill('140');
+  await setting('room-1').press('Tab');
+  await page.waitForFunction(() => document.querySelector('form.bd-form [name="width"]').value === '250');
+  assert.match(await host.locator('.bd-rooms .bd-hint').textContent(), /110 \+ 140 = 250 mm wide/);
+  await host.locator('[data-bd-part="divide1"]').waitFor();
+  assert.match(await host.locator('[data-bd-part="door2"]').textContent(), /Roller door, room 2/);
+  await host.locator('[data-bd-rooms=""]').click();
+  await host.locator('[data-bd-part="divide1"]').waitFor({ state: 'detached' });
+  assert.ok(!(await setting('width').isDisabled()));
+  await setting('width').fill('120');
+  await setting('width').press('Tab');
+  await partCount(11);
   // A second storey: a floor and four walls of its own, which stay on the storey below.
   await host.locator('[data-bd-add-storey]').click();
   await partCount(20);

@@ -29,11 +29,14 @@ export const CUT_KEYS = Object.freeze([
   'floor3Y',
   'roofX',
   'roofY',
+  ...[1, 2, 3].flatMap((i) => ['divide' + i, 'divide' + i + 'Z']),
 ]);
 /** What a cut key is called on the page. */
 export function cutLabel(key) {
   const m = /^(front|back|left|right)(\d?)(Z?)$/.exec(key);
   if (m) return m[1][0].toUpperCase() + m[1].slice(1) + ' wall' + STOREY_NAMES[Number(m[2] || 1)] + (m[3] ? ', across its height' : '');
+  const d = /^divide(\d)(Z?)$/.exec(key);
+  if (d) return 'Dividing wall ' + d[1] + (d[2] ? ', across its height' : '');
   const f = /^(base|roof|floor)(\d?)([XY])$/.exec(key);
   if (!f) return key;
   const name = f[1] === 'floor' ? 'Floor of storey ' + f[2] : f[1] === 'base' ? 'Base' : 'Roof';

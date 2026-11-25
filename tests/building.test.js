@@ -658,3 +658,92 @@ test('a corner brace stands in each inside corner, against both walls, but not o
   // Every storey has its own.
   assert.equal(buildingLayout({ upper: [{}] }).parts.filter((p) => p.id.startsWith('brace2-')).length, 4);
 });
+
+/* ---------- Rooms ---------- */
+
+test('rooms make the building: their sizes add up to its outside, each to the middle of a dividing wall', async () => {
+  const { dividers, garageDoors } = await import('../src/geometry/building.js');
+  const b = validateBuilding({ width: 60, rooms: { along: 'width', sizes: [120, 150] } });
+  assert.equal(b.width, 270, 'the rooms set the width, outside to outside');
+  assert.deepEqual(dividers(b), [120]);
+  // A garage door in the middle of each room's inside.
+  const doors = garageDoors(b);
+  assert.deepEqual(doors.map((d) => [d.room, d.from, d.to]), [[1, 3, 118.5], [2, 121.5, 267]]);
+  for (const d of doors) assert.ok(near(d.x + d.width / 2, (d.from + d.to) / 2));
+  assert.equal(validateBuilding({ rooms: { along: 'depth', sizes: [100, 80, 60] } }).depth, 240);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120] } }), /2 to 4 sizes/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'up', sizes: [120, 120] } }), /2 to 4 sizes/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120, 20] } }), /Room 2 must be between 40 and 400 mm/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [300, 200] } }), /add up to 500 mm, more than the 400 mm/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [80, 200] } }), /door is too wide for room 1: at most 63.5 mm/);
+  assert.throws(() => validateBuilding({ rooms: { along: 'width', sizes: [120, 120] }, lane: { width: 80 }, door: 'open' }), /pit bay has one room/);
+  // A window keeps wall beside a dividing wall, where it meets the outside wall.
+  assert.throws(
+    () => validateBuilding({ rooms: { along: 'depth', sizes: [100, 100] }, openings: [window('right', 80)] }),
+    /right window is too close to the dividing wall/,
+  );
+  assert.doesNotThrow(() => validateBuilding({ rooms: { along: 'depth', sizes: [100, 100] }, openings: [window('right', 50)] }));
+  const { parts } = buildingLayout({ rooms: { along: 'width', sizes: [120, 120, 120] } });
+  assert.deepEqual(parts.filter((p) => p.role === 'divider').map((p) => p.name), ['Dividing wall 1', 'Dividing wall 2']);
+  assert.deepEqual(parts.filter((p) => p.role === 'door').map((p) => p.id), ['door1', 'door2', 'door3']);
+});
+
+test('a dividing wall stands in its groove in the base, up to the ceiling, its ends clear of the lip', () => {
+  for (const settings of [
+    { rooms: { along: 'width', sizes: [120, 150] } },
+    { rooms: { along: 'depth', sizes: [100, 80] }, roof: 'gable', ridge: 'width' },
+    { rooms: { along: 'width', sizes: [100, 100] }, doorWidth: 70, roof: 'slope', rises: 'left', wallTexture: 'brick', upper: [{ width: 150, x: 20, height: 50 }] },
+    { rooms: { along: 'width', sizes: [100, 110] }, doorWidth: 70, roof: 'gable', ridge: 'depth', upper: [{}] },
+  ])
+    withParts(settings, (parts, part) => {
+      const label = JSON.stringify(settings).slice(0, 70);
+      for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body ' + label);
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap by ' + both.volume() + ' ' + label);
+          both.delete();
+        }
+      const divider = part('divide1').solid.boundingBox();
+      assert.ok(near(divider.min[2], 10 - KIT.groove), 'stands in the groove: ' + divider.min[2]);
+      // The base under it has the groove: nothing of the base where its foot stands.
+      const foot = part('divide1').solid.trimByPlane([0, 0, -1], -10);
+      const under = foot.intersect(part('base').solid);
+      assert.ok(under.volume() < 0.01, 'the base leaves room for its foot ' + label);
+      foot.delete();
+      under.delete();
+    });
+  // Under a flat roof it reaches the ceiling in the middle, and is notched at its ends for the lip.
+  withParts({ rooms: { along: 'width', sizes: [120, 150] } }, (_, part) => {
+    const d = part('divide1').solid;
+    const box = d.boundingBox();
+    assert.ok(near(box.max[2], 85), 'up to the roof: ' + box.max[2]);
+    assert.ok(near(box.min[0], 120 - KIT.wall / 2) && near(box.max[0], 120 + KIT.wall / 2), 'centred on 120 mm');
+    const end = wasm.Manifold.cube([10, KIT.lip, KIT.lipDepth]).translate([115, KIT.wall + KIT.play, 85 - KIT.lipDepth]);
+    const at = d.intersect(end);
+    assert.ok(at.volume() < 0.01, 'notched at its end under the lip');
+    at.delete();
+    end.delete();
+    // Each room has its roller door, behind its own opening.
+    assert.ok(part('door1').solid.boundingBox().max[0] < 120 && part('door2').solid.boundingBox().min[0] > 120);
+  });
+});
+
+test('a dividing wall is cut to fit the plate like the walls, and the notes stand it in its groove', async () => {
+  const settings = { rooms: { along: 'width', sizes: [110, 110] }, depth: 260 };
+  const plan = buildingCuts(settings, SMALL);
+  assert.equal(plan.divide1.cuts.length, 1);
+  withParts(settings, (parts) => {
+    const pieces = parts.filter((p) => p.role === 'divider');
+    assert.equal(pieces.length, 2);
+    for (const p of pieces) assert.ok(fitsPlate(printSize(p), SMALL), p.name + ' fits: ' + printSize(p));
+  }, SMALL);
+  const { cutLabel } = await import('../src/geometry/building-cuts.js');
+  assert.equal(cutLabel('divide2Z'), 'Dividing wall 2, across its height');
+  const { kitNotes } = await import('../src/building-kit.js');
+  const b = validateBuilding({ rooms: { along: 'width', sizes: [120, 150] } });
+  const notes = kitNotes('Two bays', b, buildingLayout(b).parts, {});
+  assert.match(notes, /2 rooms side by side: 120 \+ 150 mm, outside to outside/);
+  assert.match(notes, /Stand each dividing wall in its groove in the base/);
+  assert.match(notes, /Glue each roller door behind its opening/);
+});

@@ -18,6 +18,8 @@ export function kitNotes(name, b, parts, sizes) {
   const sloped = b.roof !== 'flat';
   const framed = [b, ...upper].some((s) => s.openings.some((o) => o.frame));
   const braced = parts.some((p) => /^brace/.test(p.id));
+  const divided = parts.some((p) => /^divide/.test(p.id));
+  const doors = parts.filter((p) => /^door\d*$/.test(p.id)).length;
   const steps = [
     ...(cut
       ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
@@ -27,10 +29,15 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base. The front wall has the garage door opening.',
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
+    ...(divided
+      ? ['Stand each dividing wall in its groove in the base, between the walls, and glue its ends to them. Its notched top corners let the lip of the roof or the floor above pass over it.']
+      : []),
     ...(braced
       ? ['Glue a corner brace into each inside corner, standing on the floor with a leg against each wall: it holds the corner square while the glue sets.']
       : []),
-    ...(b.door === 'roller' ? ['Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.'] : []),
+    ...(b.door === 'roller'
+      ? [doors > 1 ? 'Glue each roller door behind its opening, its ribs facing out, standing on the floor of its room.' : 'Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.']
+      : []),
     ...upper.map(
       (_, i) =>
         'Lay the floor of storey ' + (i + 2) + ' on the walls below: its lip drops inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top of it, and glue them as you did below.',
@@ -48,7 +55,8 @@ export function kitNotes(name, b, parts, sizes) {
   return [
     name + ' · SlotForge Foundry building kit',
     '',
-    'Outside ' + fmt(b.width) + ' × ' + fmt(b.depth) + ' mm, walls ' + fmt(b.height) + ' mm high to the eaves on a base ' + fmt(b.baseHeight) + ' mm high.' + storeys,
+    'Outside ' + fmt(b.width) + ' × ' + fmt(b.depth) + ' mm, walls ' + fmt(b.height) + ' mm high to the eaves on a base ' + fmt(b.baseHeight) + ' mm high.' + storeys +
+      (b.rooms ? ' ' + b.rooms.sizes.length + ' rooms ' + (b.rooms.along === 'width' ? 'side by side' : 'front to back') + ': ' + b.rooms.sizes.map((v) => fmt(v)).join(' + ') + ' mm, outside to outside.' : ''),
     '',
     'Parts, as they lie on the plate:',
     list,

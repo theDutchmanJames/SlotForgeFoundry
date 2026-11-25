@@ -556,3 +556,16 @@
   width: 120px;
   accent-color: var(--accent);
 }
+
+/* A room size, with its remove button. */
+.bd-room {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bd-room .bd-row {
+  flex: 1;
+}
+.bd-input input:disabled {
+  opacity: 0.6;
+}

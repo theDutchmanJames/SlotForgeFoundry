@@ -12,7 +12,9 @@ import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
   KIT,
+  MAX_ROOMS,
   MAX_UPPER,
+  MIN_ROOM,
   OPENING_DEFAULTS,
   UPPER_DEFAULTS,
   ROOFS,
@@ -148,7 +150,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('width', 'Width', building.width, BUILDING_LIMITS.width)}
       ${field('depth', 'Depth', building.depth, BUILDING_LIMITS.depth)}
       ${field('height', 'Wall height', building.height, BUILDING_LIMITS.height)}
-      <p class="bd-hint">The ground floor, outside the walls, up to the eaves. A one-car garage of 120 × 180 mm and 75 mm high takes practically any 1:32 slot car.</p></section>
+      <div class="bd-sub">Rooms</div>
+      <div class="bd-seg bd-wide" role="group" aria-label="Rooms"><button type="button" data-bd-rooms="">One room</button><button type="button" data-bd-rooms="width">Side by side</button><button type="button" data-bd-rooms="depth">Front to back</button></div>
+      <div class="bd-rooms"></div>
+      <p class="bd-hint">The ground floor, outside the walls, up to the eaves. A one-car garage of 120 × 180 mm and 75 mm high takes practically any 1:32 slot car. Rooms are measured outside to outside, each to the middle of a dividing wall, so they add up to the width or the depth: two rooms of 200 and 150 make a building 350 mm wide. Side by side, each room has its own garage door.</p></section>
     <section class="bd-box"><h3>Storeys</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-storeys></div>
       <div class="bd-storey"></div>
@@ -198,6 +203,37 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 
   const form = $('.bd-form');
 
+  // The rooms: their sizes, and the width or depth they make.
+  function drawRooms() {
+    const r = building.rooms;
+    for (const b of host.querySelectorAll('[data-bd-rooms]')) b.setAttribute('aria-pressed', String(b.dataset.bdRooms === (r?.along ?? '')));
+    for (const k of ['width', 'depth']) {
+      const el = form.elements[k];
+      el.disabled = r?.along === k;
+      el.title = r?.along === k ? 'Set by the rooms' : '';
+    }
+    $('.bd-rooms').innerHTML = r
+      ? r.sizes
+          .map(
+            (v, i) =>
+              `<div class="bd-room">${field('room-' + i, 'Room ' + (i + 1), v, [MIN_ROOM, 400])}${r.sizes.length > 2 ? `<button type="button" class="bd-remove" data-bd-remove-room="${i}" title="Remove" aria-label="Remove room ${i + 1}">${icon('close')}</button>` : ''}</div>`,
+          )
+          .join('') +
+        (r.sizes.length < MAX_ROOMS ? `<div class="bd-adds"><button type="button" class="bd-add" data-bd-add-room>${icon('plus')}Room</button></div>` : '') +
+        `<p class="bd-hint">${r.sizes.map((v) => fmt(v)).join(' + ')} = ${fmt(building[r.along])} mm ${r.along === 'width' ? 'wide' : 'deep'}.</p>`
+      : '';
+  }
+  // Rooms of these sizes, with the garage doors narrowed to fit if need be.
+  function withRooms(b, rooms) {
+    const next = { ...b, rooms };
+    if (rooms?.along === 'width') {
+      const t = KIT.wall,
+        n = rooms.sizes.length;
+      const inside = Math.min(...rooms.sizes.map((v, i) => v - (i === 0 || i === n - 1 ? t + t / 2 : t)));
+      next.doorWidth = Math.max(BUILDING_LIMITS.doorWidth[0], Math.min(b.doorWidth, Math.floor(inside - 2 * KIT.frame)));
+    }
+    return next;
+  }
   // The storeys, and the size and place of the one chosen.
   function drawStoreys() {
     const count = building.upper.length + 1;
@@ -260,8 +296,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const upper = storey
       ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), openings }
       : { openings };
+    const rooms = building.rooms && { along: building.rooms.along, sizes: building.rooms.sizes.map((_, i) => num(e['room-' + i])) };
     return {
       ...withStorey(building, storey, upper),
+      rooms,
       width: num(e.width),
       depth: num(e.depth),
       height: num(e.height),
@@ -428,6 +466,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       return;
     }
     showError('');
+    // The width or depth the rooms make, without redrawing the room fields.
+    if (building.rooms) {
+      const along = building.rooms.along;
+      form.elements[along].value = building[along];
+      const sum = $('.bd-rooms .bd-hint');
+      if (sum) sum.textContent = building.rooms.sizes.map((v) => fmt(v)).join(' + ') + ' = ' + fmt(building[along]) + ' mm ' + (along === 'width' ? 'wide' : 'deep') + '.';
+    }
     remember();
     sync();
     message('Building the parts…');
@@ -477,6 +522,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const k of ['door', 'ridge', 'rises']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
     $('[name="buildingName"]').value = name;
+    drawRooms();
     drawStoreys();
     drawOpenings();
   }
@@ -563,6 +609,29 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdRooms !== undefined) {
+        // One room, or two of half the width or depth each.
+        const base = readForm();
+        const along = b.dataset.bdRooms;
+        const half = along && Math.round(base[along] / 2);
+        const next = withRooms(base, along ? { along, sizes: base.rooms?.along === along ? base.rooms.sizes : [half, base[along] - half] } : null);
+        fitted = false;
+        await rebuild(next);
+        drawRooms();
+        form.elements.doorWidth.value = building.doorWidth;
+      } else if (b.dataset.bdAddRoom !== undefined) {
+        const base = readForm();
+        const sizes = [...base.rooms.sizes, base.rooms.sizes.at(-1)];
+        fitted = false;
+        await rebuild(withRooms(base, { ...base.rooms, sizes }));
+        drawRooms();
+        form.elements.doorWidth.value = building.doorWidth;
+      } else if (b.dataset.bdRemoveRoom !== undefined) {
+        const base = readForm();
+        const sizes = base.rooms.sizes.filter((_, i) => i !== Number(b.dataset.bdRemoveRoom));
+        fitted = false;
+        await rebuild({ ...base, rooms: { ...base.rooms, sizes } });
+        drawRooms();
       } else if (b.dataset.bdAddStorey !== undefined) {
         const base = validateBuilding(readForm());
         const top = storeyOf(base, base.upper.length);

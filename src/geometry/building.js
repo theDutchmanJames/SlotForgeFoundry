@@ -39,6 +39,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   braces: true, // a corner brace in each inside corner, holding the walls square
+  // Rooms side by side ('width') or front to back ('depth'), each its size
+  // outside to outside, to the middle of the dividing wall: they add up to
+  // the width or the depth of the building.
+  rooms: null, // { along, sizes: [mm, ...] }
   cuts: Object.freeze({}), // where the parts are cut to fit the plate; left out, they are set evenly
 });
 export const BUILDING_LIMITS = Object.freeze({
@@ -65,6 +69,26 @@ export const OPENING_DEFAULTS = Object.freeze({
   door: Object.freeze({ type: 'door', width: 28, height: 48, sill: 0, frame: false }),
 });
 export const MAX_OPENINGS = 16;
+export const MAX_ROOMS = 4;
+export const MIN_ROOM = 40;
+/** Where the dividing walls stand: their middles, from the left or the front wall, outside. */
+export const dividers = (b) =>
+  b.rooms ? b.rooms.sizes.slice(0, -1).map((_, i) => b.rooms.sizes.slice(0, i + 1).reduce((a, v) => a + v, 0)) : [];
+/**
+ * The garage doors in the front wall: one in the middle, or with rooms side
+ * by side one in the middle of each room. from, to: the room's inside, along the front wall.
+ */
+export function garageDoors(b) {
+  const t = KIT.wall;
+  if (b.rooms?.along !== 'width') return [{ x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight, from: t, to: b.width - t, room: 1 }];
+  const walls = dividers(b),
+    edges = [0, ...walls, b.width];
+  return b.rooms.sizes.map((_, i) => {
+    const from = i ? edges[i] + t / 2 : t,
+      to = i < walls.length ? edges[i + 1] - t / 2 : b.width - t;
+    return { x: (from + to) / 2 - b.doorWidth / 2, width: b.doorWidth, height: b.doorHeight, from, to, room: i + 1 };
+  });
+}
 // Fixed sizes of the kit, in mm. Nothing thinner than 2 mm.
 export const KIT = Object.freeze({
   wall: 3, // wall thickness
@@ -151,7 +175,7 @@ function checkOpening(o, i, dims, where) {
 
 // The windows and doors of one storey: each keeps wall beside it, at the
 // corners, above it, and between it and the next one, the garage door included.
-function checkOpenings(list, dims, garage, where) {
+function checkOpenings(list, dims, blocks, where) {
   if (!Array.isArray(list)) throw Error('The windows and doors' + where + ' are not a list.');
   if (list.length > MAX_OPENINGS) throw Error('A storey has at most ' + MAX_OPENINGS + ' windows and doors.');
   const openings = list.map((o, i) => checkOpening(o, i, dims, where));
@@ -165,7 +189,7 @@ function checkOpenings(list, dims, garage, where) {
       throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (dims.height - KIT.frame) + ' mm above the floor.');
   }
   for (const [i, a] of named.entries())
-    for (const c of [...named.slice(i + 1), ...(garage ? [garage] : [])]) {
+    for (const c of [...named.slice(i + 1), ...blocks]) {
       if (a.wall !== c.wall) continue;
       if (Math.abs(a.at - c.at) - (a.width + c.width) / 2 < KIT.frame)
         throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
@@ -187,17 +211,39 @@ export function validateBuilding(input) {
   if (!WALL_TEXTURES.some(([id]) => id === b.wallTexture)) throw Error('Choose a wall texture from the list.');
   if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
   if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
+  // Rooms: their sizes make the width or the depth of the building.
+  if (b.rooms !== null) {
+    const r = b.rooms;
+    if (
+      !r || typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some((k) => !['along', 'sizes'].includes(k)) ||
+      !['width', 'depth'].includes(r.along) || !Array.isArray(r.sizes) || r.sizes.length < 2 || r.sizes.length > MAX_ROOMS
+    )
+      throw Error('Rooms are 2 to ' + MAX_ROOMS + ' sizes, side by side or front to back.');
+    r.sizes.forEach((v, i) => {
+      if (!Number.isFinite(v) || v < MIN_ROOM || v > 400) throw Error('Room ' + (i + 1) + ' must be between ' + MIN_ROOM + ' and 400 mm.');
+    });
+    const sum = Math.round(r.sizes.reduce((a, v) => a + v, 0) * 10) / 10;
+    if (sum > BUILDING_LIMITS[r.along][1]) throw Error('The rooms add up to ' + fmtMm(sum) + ' mm, more than the ' + BUILDING_LIMITS[r.along][1] + ' mm a building can be.');
+    b[r.along] = sum;
+    b.rooms = { along: r.along, sizes: [...r.sizes] };
+  }
   for (const [key, [min, max]] of Object.entries(BUILDING_LIMITS))
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max)
       throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (UNITS[key] ?? ' mm') + '.');
-  const room = b.width - 2 * KIT.wall - 2 * KIT.frame;
-  if (b.doorWidth > room)
-    throw Error('The door is too wide for this building: at most ' + room + ' mm at ' + b.width + ' mm wide.');
+  const doors = garageDoors(b);
+  for (const d of doors)
+    if (d.width > d.to - d.from - 2 * KIT.frame + 1e-9)
+      throw Error(
+        doors.length > 1
+          ? 'The door is too wide for room ' + d.room + ': at most ' + fmtMm(d.to - d.from - 2 * KIT.frame) + ' mm.'
+          : 'The door is too wide for this building: at most ' + fmtMm(d.to - d.from - 2 * KIT.frame) + ' mm at ' + b.width + ' mm wide.',
+      );
   const tall = b.height - KIT.frame;
   if (b.doorHeight > tall)
     throw Error('The door is too high for these walls: at most ' + tall + ' mm at ' + b.height + ' mm high.');
   // A garage over a pit bay: the track runs in through an open door, as wide as the track and more.
   if (b.lane !== null) {
+    if (b.rooms) throw Error('A garage over a pit bay has one room.');
     if (!b.lane || typeof b.lane !== 'object' || Array.isArray(b.lane) || Object.keys(b.lane).some((k) => k !== 'width') || !Number.isFinite(b.lane.width) || b.lane.width < 20 || b.lane.width > 380)
       throw Error('The track through the garage must be 20 to 380 mm wide.');
     if (b.door !== 'open') throw Error('A garage over a track has an open door: a roller door would have no floor to stand on behind it.');
@@ -206,8 +252,18 @@ export function validateBuilding(input) {
   }
   if (!Array.isArray(b.upper) || b.upper.length > MAX_UPPER) throw Error('A building has at most ' + MAX_UPPER + ' storeys above the ground floor.');
   const several = b.upper.length > 0;
-  const garage = { wall: 'front', at: b.width / 2, width: b.doorWidth, name: 'garage door' };
-  const openings = checkOpenings(b.openings, b, garage, several ? STOREY_SUFFIX[1] : '');
+  // Windows and doors keep wall beside the garage doors, and beside each
+  // dividing wall where it meets an outside wall.
+  const blocks = [
+    ...doors.map((d) => ({ wall: 'front', at: d.x + d.width / 2, width: d.width, name: doors.length > 1 ? 'garage door of room ' + d.room : 'garage door' })),
+    ...dividers(b).flatMap((at) =>
+      (b.rooms.along === 'width'
+        ? [{ wall: 'front', at }, { wall: 'back', at: b.width - at }]
+        : [{ wall: 'right', at }, { wall: 'left', at: b.depth - at }]
+      ).map((j) => ({ ...j, width: KIT.wall, name: 'dividing wall' })),
+    ),
+  ];
+  const openings = checkOpenings(b.openings, b, blocks, several ? STOREY_SUFFIX[1] : '');
   // Each storey above stands on the one below, inside its walls.
   let below = { width: b.width, depth: b.depth };
   const upper = b.upper.map((u, i) => {
@@ -230,7 +286,7 @@ export function validateBuilding(input) {
     if (s.x + s.width > below.width + 1e-9 || s.y + s.depth > below.depth + 1e-9)
       throw Error('Storey ' + n + ' reaches past the storey below: it is ' + fmtMm(s.width) + ' × ' + fmtMm(s.depth) + ' mm at ' + fmtMm(s.x) + ', ' + fmtMm(s.y) + ' mm on a storey of ' + fmtMm(below.width) + ' × ' + fmtMm(below.depth) + ' mm.');
     if (!WALL_TEXTURES.some(([id]) => id === s.wallTexture)) throw Error('Choose a wall texture from the list for storey ' + n + '.');
-    s.openings = checkOpenings(s.openings, s, null, where);
+    s.openings = checkOpenings(s.openings, s, [], where);
     below = s;
     return s;
   });
@@ -310,7 +366,7 @@ export function roofShape(b) {
  * the floor above, at most braceHeight. Not where the track runs through a garage, nor where a
  * roller door stands behind its opening. x, y: where each leg reaches.
  */
-export function braceCorners(b, s, door) {
+export function braceCorners(b, s, doors) {
   if (!b.braces || s.height - KIT.lipDepth - 1 < 10) return [];
   const lo = KIT.wall + KIT.play,
     leg = KIT.braceLeg,
@@ -327,9 +383,19 @@ export function braceCorners(b, s, door) {
       const half = b.lane.width / 2 + KIT.lanePlay;
       if (q.x[1] > W / 2 - half && q.x[0] < W / 2 + half) return false;
     }
-    if (s.garage && b.door === 'roller' && q.sy > 0 && q.x[1] > door.x - KIT.margin && q.x[0] < door.x + door.width + KIT.margin) return false;
+    if (s.garage && b.door === 'roller' && q.sy > 0 && doors.some((door) => q.x[1] > door.x - KIT.margin && q.x[0] < door.x + door.width + KIT.margin)) return false;
     return true;
   });
+}
+
+const doorPart = (d, doors) =>
+  doors.length > 1 ? { id: 'door' + d.room, name: 'Roller door, room ' + d.room, role: 'door' } : { id: 'door', name: 'Roller door', role: 'door' };
+const dividerParts = (b) =>
+  dividers(b).map((_, i, all) => ({ id: 'divide' + (i + 1), name: 'Dividing wall' + (all.length > 1 ? ' ' + (i + 1) : ''), role: 'divider' }));
+/** How high the ceiling is over a point of a storey: the floor above or the roof, under a sloped roof its underside. */
+function ceilingAt(b, s, shape, x, y) {
+  if (!s.top || b.roof === 'flat') return s.eave;
+  return Math.min(...shape.panels.map((p) => s.eave + shape.t * (p.dir[0] * x + p.dir[1] * y - p.s0)));
 }
 
 /** The parts of the kit, without geometry: their ids, names and roles. */
@@ -337,21 +403,22 @@ export function buildingLayout(input) {
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
-  const door = { x: (b.width - b.doorWidth) / 2, width: b.doorWidth, height: b.doorHeight };
+  const doors = garageDoors(b);
   for (const s of storeys) {
     if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' });
     for (const w of ['front', 'back', 'left', 'right']) parts.push({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall' });
+    if (s.garage) parts.push(...dividerParts(b));
   }
   if (b.roof === 'flat') parts.push({ id: 'roof', name: 'Flat roof', role: 'roof' });
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
-  if (b.door === 'roller') parts.push({ id: 'door', name: 'Roller door', role: 'door' });
+  if (b.door === 'roller') parts.push(...doors.map((d) => doorPart(d, doors)));
   for (const s of storeys)
-    for (const q of braceCorners(b, s, door)) parts.push({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace' });
+    for (const q of braceCorners(b, s, doors)) parts.push({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace' });
   for (const s of storeys)
     s.openings.forEach((o, i) => {
       if (o.frame) parts.push({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame' });
     });
-  return { building: b, storeys, parts, door };
+  return { building: b, storeys, parts, doors };
 }
 
 /** Whether a part of this print size fits the plate, turned if need be. */
@@ -363,13 +430,14 @@ export function fitsPlate([x, y], plate) {
 
 // The openings of a storey along each wall, as [from, to], frames included;
 // and across the height of the wall, measured from its foot in the groove.
-function wallOpenings(s, door) {
+function wallOpenings(s, doors) {
   const along = { front: [], back: [], left: [], right: [] },
     up = { front: [], back: [], left: [], right: [] };
-  if (s.garage) {
-    along.front.push([door.x, door.x + door.width]);
-    up.front.push([KIT.groove, KIT.groove + door.height]);
-  }
+  if (s.garage)
+    for (const door of doors) {
+      along.front.push([door.x, door.x + door.width]);
+      up.front.push([KIT.groove, KIT.groove + door.height]);
+    }
   for (const o of s.openings) {
     const extra = o.frame ? KIT.trim : 0;
     along[o.wall].push([o.at - o.width / 2 - extra, o.at + o.width / 2 + extra]);
@@ -383,17 +451,29 @@ function wallOpenings(s, door) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
-  const { building: b, storeys, door } = buildingLayout(input);
+  const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
   const walls = [];
+  // A dividing wall: as long as the building is across it, as tall as the ceiling over it.
+  const ground = storeys[0];
+  dividers(b).forEach((at, i) => {
+    const across = b.rooms.along === 'width',
+      L = across ? b.depth : b.width;
+    let high = 0;
+    for (let k = 0; k <= 40; k++) {
+      const u = (k / 40) * L;
+      high = Math.max(high, ceilingAt(b, ground, shape, across ? at : u, across ? u : at) - ground.floor);
+    }
+    walls.push({ key: 'divide' + (i + 1), length: L, height: high + KIT.groove, keepOut: [], keepOutUp: [[-1, KIT.groove + JOINT.edge]] });
+  });
   for (const s of storeys) {
     // A brick or block wall is cut along its joints: the seam steps half a brick either way.
     const step = ['brick', 'block'].includes(s.wallTexture) ? (DRAWN[s.wallTexture].length * b.textureScale) / 200 : 0;
     const aside = JOINT.aside + step;
     // Across the height a brick seam moves onto the nearest course line: up to half a course.
     const asideUp = JOINT.aside + (step ? (DRAWN[s.wallTexture].course * b.textureScale) / 200 : 0);
-    const { along, up } = wallOpenings(s, door);
+    const { along, up } = wallOpenings(s, doors);
     for (const w of ['front', 'back', 'left', 'right']) {
       // A wall prints as tall as it stands, its foot in the groove included.
       let high = s.height;
@@ -431,7 +511,7 @@ export function buildingCuts(input, plate) {
 
 export function buildGarage(wasm, input, plate = null) {
   const { Manifold } = wasm;
-  const { building: b, storeys, door } = buildingLayout(input);
+  const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
   const temp = [];
   const own = (s) => (temp.push(s), s);
@@ -455,6 +535,9 @@ export function buildGarage(wasm, input, plate = null) {
       // Over a pit bay the base is open from the front to the back wall for
       // the track, and closed along the track by a shell of its own.
       const cuts = [hollow, groove];
+      // A groove for each dividing wall too, joining the one round the walls.
+      for (const at of dividers(b))
+        cuts.push(b.rooms.along === 'width' ? box(at - t / 2 - c, t, top - g, at + t / 2 + c, D - t, top + 1) : box(t, at - t / 2 - c, top - g, W - t, at + t / 2 + c, top + 1));
       if (b.lane) {
         const half = b.lane.width / 2 + KIT.lanePlay,
           end = D - t - c;
@@ -508,14 +591,14 @@ export function buildGarage(wasm, input, plate = null) {
       for (const w of WALLS) walls[w] = underRoof(walls[w]);
       // The garage door on the ground floor: open from the top of the base, so the doorstep is level.
       // Over a pit bay the door reaches down through the foot of the wall, so nothing crosses the track.
-      const holes = { front: s.garage ? [box(door.x, -1, b.lane ? z0 - 1 : top, door.x + door.width, t + 1, top + door.height)] : [], back: [], left: [], right: [] };
+      const holes = { front: s.garage ? doors.map((door) => box(door.x, -1, b.lane ? z0 - 1 : top, door.x + door.width, t + 1, top + door.height)) : [], back: [], left: [], right: [] };
       for (const o of s.openings)
         holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
       for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
       // A wall texture: joints in the outside face, clear of every opening
       // and of the frame around it, and of the wall's foot in the groove.
       if (s.wallTexture !== 'plain') {
-        const keepOut = { front: s.garage ? [[door.x, top, door.x + door.width, top + door.height]] : [], back: [], left: [], right: [] };
+        const keepOut = { front: s.garage ? doors.map((door) => [door.x, top, door.x + door.width, top + door.height]) : [], back: [], left: [], right: [] };
         for (const o of s.openings) {
           const extra = o.frame ? KIT.trim : 0;
           keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
@@ -527,6 +610,42 @@ export function buildGarage(wasm, input, plate = null) {
       }
       for (const w of ['front', 'back', 'left', 'right'])
         local(...cutWall({ id: w + s.suffix, name: WALL_NAMES[w] + ' wall' + s.label, role: 'wall', solid: walls[w], outward: OUTWARD[w], apart: wallApart(w) }, w, s, { W, D, z0, zTop, top, z1 }));
+      // Dividing walls on the ground floor: each from its groove in the base up
+      // to the ceiling, between the walls, notched at its ends where the lip
+      // of the roof or the floor above passes over them.
+      if (s.garage)
+        dividers(b).forEach((at, i) => {
+          const across = b.rooms.along === 'width',
+            lo = t + c,
+            reach = lo + KIT.lip + c,
+            far = (across ? D : W) - reach;
+          let wall = underRoof(across ? box(at - t / 2, lo, z0, at + t / 2, D - lo, zTop) : box(lo, at - t / 2, z0, W - lo, at + t / 2, zTop));
+          // The ceiling over a point along the wall, on either face of it: under a
+          // roof that slopes across the wall, the lip on its low face is lower.
+          const ceiling = (u, v) => ceilingAt(b, s, shape, across ? v : u, across ? u : v);
+          const notch = (u0, u1) => {
+            const faces = [at - t / 2 - 1, at + t / 2 + 1];
+            const z = Math.min(...[u0, u1].flatMap((u) => faces.map((v) => ceiling(u, v)))) - KIT.lipDepth - c;
+            return across ? box(at - t / 2 - 1, u0, z, at + t / 2 + 1, u1, zTop + 1) : box(u0, at - t / 2 - 1, z, u1, at + t / 2 + 1, zTop + 1);
+          };
+          wall = minus(wall, notch(lo - 1, reach), notch(far, (across ? D : W) - lo + 1));
+          const part = dividerParts(b)[i];
+          local(
+            ...cutWall(
+              {
+                ...part,
+                solid: wall,
+                outward: across ? [1, 0, 0] : [0, 1, 0],
+                apart: [0, 0, lift + APART.up],
+                length: across ? D : W,
+                cutFrame: across ? [[0, 1, 0], [1, 0, 0], [at - t / 2 - 2, 0, 0]] : [[1, 0, 0], [0, 1, 0], [0, at - t / 2 - 2, 0]],
+              },
+              'divide',
+              { ...s, wallTexture: 'plain', openings: [], garage: false },
+              { W, D, z0, zTop, top, z1 },
+            ),
+          );
+        });
       const roofApart = [0, 0, lift + APART.up + APART.roof];
 
       // The roof, on the top storey.
@@ -618,7 +737,7 @@ export function buildGarage(wasm, input, plate = null) {
 
       // Corner braces: an L in each inside corner, on the floor against both
       // walls. Each prints lying on the leg along the front or back wall.
-      for (const q of braceCorners(b, s, door)) {
+      for (const q of braceCorners(b, s, doors)) {
         const k = KIT.brace,
           lo = t + c;
         const alongX = q.sy > 0 ? [lo, lo + k] : [D - lo - k, D - lo],
@@ -628,18 +747,19 @@ export function buildGarage(wasm, input, plate = null) {
         local({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace', solid: brace, lie: [q.sy > 0 ? 90 : -90, 0, 0], apart: [0, 0, lift + APART.up] });
       }
 
-      if (s.garage && b.door === 'roller') {
-        // A plate behind the opening, standing on the floor inside, with ribs
-        // facing out through the opening like the slats of a roller door.
-        const x0 = door.x - KIT.margin,
-          x1 = door.x + door.width + KIT.margin;
-        let insert = box(x0, t, top, x1, t + KIT.insert, top + door.height + KIT.margin);
-        const ribs = [];
-        for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
-          ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
-        if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
-        local({ id: 'door', name: 'Roller door', role: 'door', solid: insert, outward: [0, -1, 0], apart: [0, APART.door, 0] });
-      }
+      if (s.garage && b.door === 'roller')
+        for (const door of doors) {
+          // A plate behind the opening, standing on the floor inside, with ribs
+          // facing out through the opening like the slats of a roller door.
+          const x0 = door.x - KIT.margin,
+            x1 = door.x + door.width + KIT.margin;
+          let insert = box(x0, t, top, x1, t + KIT.insert, top + door.height + KIT.margin);
+          const ribs = [];
+          for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
+            ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
+          if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
+          local({ ...doorPart(door, doors), solid: insert, outward: [0, -1, 0], apart: [0, APART.door, 0] });
+        }
       // Frames: a band around the opening on the outside of the wall, open at
       // the bottom for a door; a window gets a cross in it.
       const { trim: k, trimDepth: fd, bar } = KIT;
@@ -746,11 +866,11 @@ export function buildGarage(wasm, input, plate = null) {
     const k = b.textureScale / 100;
     const rowH = stepped ? DRAWN[s.wallTexture].course * k : 0,
       brick = stepped ? DRAWN[s.wallTexture].length * k : 0;
-    const L = wallLength(s, wall);
+    const L = part.length ?? wallLength(s, wall);
     // Across the height: measured from the foot of the wall, on a course line for bricks.
     const ups = up.map((v) => (stepped ? top + Math.round((z0 + v - top) / rowH) * rowH : z0 + v));
     const openingsAt = (u) => [
-      ...(s.garage && wall === 'front' && u > door.x && u < door.x + door.width ? [[top, top + door.height]] : []),
+      ...(s.garage && wall === 'front' ? doors.filter((door) => u > door.x && u < door.x + door.width).map((door) => [top, top + door.height]) : []),
       ...s.openings.filter((o) => o.wall === wall && Math.abs(u - o.at) < o.width / 2).map((o) => [top + o.sill, top + o.sill + o.height]),
     ];
     const brickSteps = (at) => {
@@ -765,11 +885,11 @@ export function buildGarage(wasm, input, plate = null) {
     const lengthWise = strips(along, [z0, zTop], (at) => (stepped ? [] : tabPlaces([z0, zTop], [top, z1, ...ups], openingsAt(at), 3)), stepped ? brickSteps : null);
     // Openings the seam across the height runs through, along the wall.
     const gapsAt = (v) => [
-      ...(s.garage && wall === 'front' && v > top && v < top + door.height ? [[door.x, door.x + door.width]] : []),
+      ...(s.garage && wall === 'front' ? doors.filter((door) => v > top && v < top + door.height).map((door) => [door.x, door.x + door.width]) : []),
       ...s.openings.filter((o) => o.wall === wall && v > top + o.sill && v < top + o.sill + o.height).map((o) => [o.at - o.width / 2, o.at + o.width / 2]),
     ];
     const heightWise = turned(strips(ups, [-1, L + 1], (v) => (stepped ? [] : tabPlaces([0, L], along, gapsAt(v), 3))));
-    const frame = {
+    const frame = part.cutFrame ?? {
       // u along the wall, from 2 mm outside it through to 2 mm inside.
       front: [[1, 0, 0], [0, 1, 0], [0, -2, 0]],
       back: [[-1, 0, 0], [0, -1, 0], [W, D + 2, 0]],

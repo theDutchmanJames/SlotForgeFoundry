@@ -5,7 +5,7 @@
 // Dropped near the track it snaps with its front along the outside of the
 // border, so the doorstep meets the road.
 import polygonClipping from 'polygon-clipping';
-import { KIT, storeyStack, validateBuilding } from './geometry/building.js';
+import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 
 export const MAX_BUILDINGS = 100;
 export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
@@ -65,14 +65,16 @@ export function footprint(entry) {
     b = entry.building;
   return rect(-m, -m, b.width + m, b.depth + m).map((p) => toPlan(entry, p));
 }
-/** What the plan draws: the base, each storey, and the garage door in the front wall. */
+/** What the plan draws: the base, each storey, its dividing walls, and the garage doors in the front wall. */
 export function planShapes(entry) {
   const b = validateBuilding(entry.building);
-  const door = (b.width - b.doorWidth) / 2;
   return {
     base: footprint(entry),
     storeys: storeyStack(b).map((s) => rect(s.ox, s.oy, s.ox + s.width, s.oy + s.depth).map((p) => toPlan(entry, p))),
-    door: [toPlan(entry, [door, 0]), toPlan(entry, [door + b.doorWidth, 0])],
+    dividers: dividers(b).map((at) =>
+      (b.rooms.along === 'width' ? [[at, 0], [at, b.depth]] : [[0, at], [b.width, at]]).map((p) => toPlan(entry, p)),
+    ),
+    doors: garageDoors(b).map((d) => [toPlan(entry, [d.x, 0]), toPlan(entry, [d.x + d.width, 0])]),
   };
 }
 
@@ -249,6 +251,7 @@ export function pitGarage(building, width, roadHeight, most = Infinity) {
   return validateBuilding({
     ...b,
     lane,
+    rooms: null,
     door: 'open',
     doorWidth,
     width: Math.min(Math.max(b.width, least), Math.floor(most)),
