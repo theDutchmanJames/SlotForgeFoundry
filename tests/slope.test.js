@@ -21,6 +21,7 @@ import { syncSlopeControls } from '../src/slope-controls.js';
 import { canRamp, crossings, endsOf, newLayout, pitch, placeSource, setElevation, surfaces } from '../src/planner-model.js';
 import { newProject } from '../src/project.js';
 import { buildTestJoint, buildTrack, defaultTrack, trackParameters, validateTrack } from '../src/track.js';
+import { starterPack, trackWithProfile } from '../src/library-profile.js';
 
 const wasm = await Module();
 wasm.setup();
@@ -619,6 +620,34 @@ test('a sloped end has an upright end face on the joint line, so a tilted straig
         // The level end is as it was.
         const other = atEnd ? -p.length / 2 + 0.2 : -p.length / 2 + profile.run - 0.2;
         near(topAt(road, other, y) - underAt(road, other, y), p.height, 1e-6);
+      });
+    }
+});
+
+test('on the pack straight, with its dovetail keys and hollow underside, every form is one clean body', () => {
+  // The earlier tests used clips and a solid road; the cut at a sloped end
+  // then left a paper-thin sheet of the leaning face, and loose bodies.
+  const pack = starterPack(1);
+  const { track } = pack.pieces.find((item) => item.track.params.kind === 'straight');
+  for (const slopeForm of ['up', 'down', 'over', 'out'])
+    for (const slopeFill of [true, false]) {
+      const made = structuredClone(trackWithProfile(track, pack.profile));
+      Object.assign(made.params, { slopeForm, slopeFill });
+      const p = trackParameters(made.params),
+        profile = slopeProfile(p);
+      const label = slopeForm + (slopeFill ? ' on its base' : ' bare');
+      built(p, (parts) => {
+        const road = roadOf(parts).solid;
+        assert.equal(road.status(), 'NoError', label);
+        assert.equal(road.genus(), 0, label + ': no loose sheets or bodies');
+        const pieces = road.decompose();
+        assert.equal(pieces.length, 1, label);
+        pieces.forEach((piece) => piece.delete());
+        const box = road.boundingBox();
+        // The foot of a climb or a descent stands on the table; a hilltop form is always lifted.
+        if (['up', 'out'].includes(slopeForm)) near(box.min[2], 0, 1e-9);
+        near(box.min[0], -p.length / 2, 1e-6);
+        near(box.max[0], -p.length / 2 + profile.run, 1e-6);
       });
     }
 });

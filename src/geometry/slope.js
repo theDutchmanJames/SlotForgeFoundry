@@ -197,23 +197,6 @@ export function bendToSlope(work, solid, p, profile = slopeProfile(p)) {
   );
 }
 
-// A shape drawn from the side, in [x, z], pulled across the road from y = from to y = to.
-function pulledAcross(work, loop, from, to) {
-  let area = 0;
-  loop.forEach((a, i) => {
-    const b = loop[(i + 1) % loop.length];
-    area += a[0] * b[1] - b[0] * a[1];
-  });
-  const side = work.own(new work.wasm.CrossSection([area < 0 ? loop.slice().reverse() : loop], 'Positive'));
-  return work.own(
-    work.own(side.extrude(to - from)).warp((v) => {
-      const across = to - v[2];
-      v[2] = v[1];
-      v[1] = across;
-    }),
-  );
-}
-
 /**
  * Give the sloped end of a bent road or border an upright end face.
  *
@@ -236,11 +219,10 @@ export function uprightEnds(work, flat, bent, p, profile = slopeProfile(p)) {
       top = height + z,
       outward = end ? 1 : -1;
     if (outward * Math.sin(angle) > 0) {
-      // Between the upright plane and the leaning face, below the top edge.
-      const reach = 4 * height;
-      const foot = [plane + reach * Math.sin(angle), top - reach * Math.cos(angle)];
-      const wedge = pulledAcross(work, [[plane, top], foot, [plane, foot[1]]], -1e4, 1e4);
-      solid = work.own(solid.subtract(wedge));
+      // Nothing of the road lies beyond the upright plane. Cut by the plane
+      // itself: a wedge along the leaning face would share that face, and
+      // leave a paper-thin sheet of it standing.
+      solid = work.own(solid.trimByPlane([-outward, 0, 0], -outward * plane));
       continue;
     }
     // The outline of the end face, run on beyond the end and bent with the road.
@@ -254,6 +236,9 @@ export function uprightEnds(work, flat, bent, p, profile = slopeProfile(p)) {
     const added = work.own(bendToSlope(work, run, p, profile).trimByPlane([-outward, 0, 0], -outward * plane));
     if (!added.isEmpty()) solid = work.own(solid.add(added));
   }
+  // A sloped end made longer underneath may reach a hair below its own table
+  // level. Only the two hilltop forms do that, and they are always lifted:
+  // there it meets the foot of the tilted straight, so it is not trimmed.
   return solid;
 }
 
