@@ -22,6 +22,7 @@ import { buildPicnic, picnicLayout, validatePicnic } from './picnic.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
 import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
+import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
@@ -36,6 +37,7 @@ export const ROOFS = Object.freeze([
 ]);
 export const BUILDING_DEFAULTS = Object.freeze({
   kind: 'garage',
+  container: 'none', // none, frame, left or right: shipping-container shell and cargo-door end
   width: 120, // outside of the walls, across the door
   depth: 180, // outside of the walls, front to back
   height: 75, // walls, from the top of the base to the eaves
@@ -592,6 +594,7 @@ export function validateBuilding(input) {
     if ((i ? s.openings : openings).some((o) => o.counter || o.flap)) throw Error('Walls that lean out' + where + ' have no counters or flaps.');
     if (s.height * Math.tan((s.lean * Math.PI) / 180) > LEAN.reach) throw Error('The walls' + where + ' lean out too far: at most ' + LEAN.reach + ' mm at the top.');
   });
+  checkContainer(b, openings);
   return { ...b, openings, upper, cuts: validateCuts(b.cuts) };
 }
 
@@ -1102,6 +1105,7 @@ export function buildingCuts(input, plate) {
       walls.push({
         key: w + s.suffix,
         length: wallLength(s, w),
+        padding: b.container === 'none' ? 0 : 4, // corner posts extend 2 mm beyond each end
         height: high + KIT.groove,
         // A cut may run through an opening, not along its side; across the
         // height, not along its top or bottom, nor through the foot of the wall.
@@ -1443,7 +1447,7 @@ export function buildGarage(wasm, input, plate = null) {
       // counter and its flap. Each piece reaches past the ends of its wall and
       // is mitred like it, so a band runs on round a corner without a seam.
       const R = s.relief;
-      if (R.plinth || R.cornice || R.pilasters || R.panels) {
+      if (R.plinth || R.cornice || R.pilasters || R.panels || b.container !== 'none') {
         const d = RELIEF.depth,
           P = RELIEF.pilaster;
         // From the bottom of the texture's joints, so the relief fills them under it.
@@ -1488,6 +1492,12 @@ export function buildGarage(wasm, input, plate = null) {
           if (raised.length) {
             let relief = mitre(w, own(Manifold.union(raised)));
             if (clear.length) relief = minus(relief, ...clear.map(([a0, c0, a1, c1]) => onWall(w, a0, a1, -1, d + 1, c0, c1)));
+            walls[w] = own(walls[w].add(relief));
+          }
+          if (b.container !== 'none') {
+            const detail = containerWall({ wall: w, length: L, bottom: top, top: z1, cargo: b.container === w, sink }, { onWall, own, Manifold, minus });
+            let relief = mitre(w, detail);
+            if (clear.length) relief = minus(relief, ...clear.map(([a0, c0, a1, c1]) => onWall(w, a0, a1, -2, 3, c0, c1)));
             walls[w] = own(walls[w].add(relief));
           }
           // Panels: sunk between the pilasters (or the ends), above the plinth and under the cornice.
@@ -1554,6 +1564,7 @@ export function buildGarage(wasm, input, plate = null) {
           // walls and keeps them square; its tabs go into pockets in the
           // underside of the roof, so nothing shows on top.
           let roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
+          if (b.container !== 'none') roofPlate = own(roofPlate.add(containerRoof(W, D, z1 + rt, b.sign, { box, own, Manifold })));
           // Arched: the top a circular arc across it, the crown along the ridge, as thick as a flat roof at its edges.
           if (b.arch) {
             const along = b.ridge === 'depth';

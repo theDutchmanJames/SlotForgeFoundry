@@ -142,7 +142,7 @@ export function planCuts(b, plate, { walls, flats }) {
     const tall = w.height > room.long;
     // Cut across its height, its bands lie across the plate and its length along it.
     const maxPiece = tall || w.height <= room.short ? room.long : room.short;
-    plan[w.key] = planPart(w.key, w.length, maxPiece, w.keepOut, cuts[w.key]);
+    plan[w.key] = planPart(w.key, w.length, maxPiece - (w.padding ?? 0), w.keepOut, cuts[w.key]);
     plan[w.key + 'Z'] = planPart(w.key + 'Z', w.height, tall ? room.short : Infinity, w.keepOutUp ?? [], cuts[w.key + 'Z']);
   }
   // The base, a floor and the roof are cut one way or both ways. Their long

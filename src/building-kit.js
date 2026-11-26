@@ -136,6 +136,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
+    ...(b.container && b.container !== 'none' ? ['Container details: the corner posts, rails, cargo-door hardware and roof ribs are integrated into their panels. Cargo doors and corner-casting recesses are decorative, not working hinges or stacking connectors. Keep the roof loose for interior access. Add clear sheet behind the windows and your own graphics to the sign.'] : []),
     'Paint the parts before you glue them, or print them in different colours.',
   ].join('\n');
 }

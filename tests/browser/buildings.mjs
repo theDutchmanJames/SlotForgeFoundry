@@ -330,9 +330,14 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-part="roof-right"]').waitFor();
   // A food stall: serving hatches with a counter and a flap, a sign.
   await host.locator('[data-bd-preset="stall-container"]').click();
-  await host.locator('[data-bd-part="flap-2"]').waitFor();
+  await host.locator('[data-bd-part="counter-2"]').waitFor();
+  await host.locator('[data-bd-part="flap-1"]').waitFor();
   assert.ok((await setting('sign').inputValue()) === 'billboard' && (await host.locator('[data-bd-sign-size]').isVisible()));
   assert.match(await host.locator('[data-bd-part="sign"]').textContent(), /Billboard/);
+  // Return to an ordinary shell and leave room above the taller framed café hatch.
+  await setting('container').selectOption('none');
+  await setting('height').fill('100'); await setting('height').press('Tab');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('foundry.building'))?.height === 100);
   await setting('sign').selectOption('fascia');
   await page.waitForFunction(() => /^Sign/.test(document.querySelector('[data-bd-part="sign"] b')?.textContent ?? ''));
   await setting('sign').selectOption('none');

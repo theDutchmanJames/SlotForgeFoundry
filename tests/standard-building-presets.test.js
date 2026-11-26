@@ -43,10 +43,17 @@ const overAir = (part) => {
   printed.delete();
   return over;
 };
-test('the seven detailed presets: no overlap beyond a speck, and nothing but the base, floors and roofs over air', () => {
+// The seven, the container café, and the container shells on each end and frame only.
+const office = BUILDING_PRESETS.find((p) => p.id === 'container').building;
+const STRICT = [
+  ...['race-hq', 'vip', 'marshal', 'timing', 'classic', 'container', 'stall-kiosk', 'stall-container'].map((id) => [id, BUILDING_PRESETS.find((p) => p.id === id).building]),
+  ['office, cargo doors on the right', { ...office, container: 'right', openings: office.openings.filter((o) => o.wall !== 'right') }],
+  ['office, frame only', { ...office, container: 'frame' }],
+];
+test('the detailed presets and container shells: no overlap beyond a speck, and nothing but the base, floors and roofs over air', () => {
   const plate = { width: 200, depth: 200, margin: 0 };
-  for (const id of ['race-hq', 'vip', 'marshal', 'timing', 'classic', 'container', 'stall-kiosk']) {
-    const parts = buildGarage(wasm, BUILDING_PRESETS.find((p) => p.id === id).building, plate);
+  for (const [id, building] of STRICT) {
+    const parts = buildGarage(wasm, building, plate);
     try {
       for (const p of parts.filter((q) => !/^(base|roof|floor)/.test(q.id))) assert.ok(overAir(p) <= 0.5, id + ': ' + p.name + ' prints ' + overAir(p).toFixed(1) + ' mm² over air');
       for (let i = 0; i < parts.length; i++)

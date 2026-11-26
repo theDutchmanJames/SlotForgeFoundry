@@ -465,6 +465,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="base"><h3>Base</h3>
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
+    <section class="bd-box" data-bd-card="container"><h3>Container shell</h3>
+      <label class="bd-row"><span>Details</span><select name="container"><option value="none">None</option><option value="frame">Frame and ribbed roof</option><option value="left">Cargo doors on left</option><option value="right">Cargo doors on right</option></select></label>
+      <p class="bd-hint">Corner posts and rails for a single-storey, flat-roof container. Cargo doors are closed relief; keep that end free of openings. Start with Container café or Container office.</p>
+    </section>
     <section class="bd-box" data-bd-card="walls"><h3>Walls</h3>
       <label class="bd-check"><input type="checkbox" name="braces"><span>Corner braces</span></label>
       <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. Under the roof and every floor a frame drops inside the walls and holds their tops.</p></section>
@@ -1040,6 +1044,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       textureJoint: num(e.textureJoint),
       textureDepth: num(e.textureDepth),
       door: e.door.value,
+      container: e.container.value,
       ridge: e.ridge.value,
       rises: e.rises.value,
       braces: e.braces.checked,
@@ -1421,7 +1426,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'pitbays') return fillBays(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
-    for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
+    for (const k of ['door', 'ridge', 'rises', 'roofLip', 'container']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
     form.elements.roofRailing.checked = b.roofRailing;
     form.elements.numbers.checked = b.numbers;
