@@ -193,11 +193,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <form class="bd-form" autocomplete="off">
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
-      <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option></select></label>
+      <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="custom" disabled>Drawn outline</option></select></label>
       ${[['width','Width',100,1200],['depth','Depth',100,1200],['wing','Wing width',40,500],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max])).join('')}
       <div data-bd-fp-finish></div>
       ${textureSize('fp-', FOOTPRINT_DEFAULTS)}
-      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. Shaped buildings have one storey and a flat roof; the walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise.</p>
+      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. Shaped buildings have one storey and a flat roof; the walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise. In Draw → Footprint, drag any wall in or out, pull out a bay, push in a recess or cut a corner at 45°: the shape becomes a drawn outline, its width and depth set by its walls. Choose a shape here to start again from it.</p>
     </section>
     <section class="bd-box" data-bd-card="pits" data-bd-pits hidden><h3>Pit building</h3>
       ${field('pBays', 'Bays', 3, PIT_MODULE_LIMITS.bays, '')}
@@ -1120,6 +1120,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       // Its walls follow its shape: a new shape, their fields drawn afresh.
       const walls = fpWalls(building);
       if (form.querySelectorAll('[name^="ff-wall-"]').length !== walls.length) $('[data-bd-fp-finish]').innerHTML = finishFields('ff', building, walls, { main: true });
+      for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = building.shape === 'custom';
+      form.elements.fpShape.value = building.shape;
+      if (building.shape === 'custom') for (const key of ['width', 'depth']) form.elements['fp-' + key].value = building[key];
     }
     else if (isStand()) drawStand();
     else if (isGantry()) drawGantry();
@@ -1430,6 +1433,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'footprint') {
       form.elements.fpShape.value = b.shape;
       for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) form.elements['fp-' + key].value = b[key];
+      // A drawn outline sets its own width and depth, and has no wing: its walls are drawn in Draw.
+      for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = b.shape === 'custom';
       // Its walls change with its shape: their fields are drawn afresh.
       $('[data-bd-fp-finish]').innerHTML = finishFields('ff', b, fpWalls(b), { main: true });
       return;

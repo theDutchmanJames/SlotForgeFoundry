@@ -58,3 +58,68 @@ export function createBuildingHistory(initial, limit = 60) {
     reset(value) { states = [structuredClone(value)]; position = 0; },
   };
 }
+
+// Several windows and doors of one wall at once: indices into the storey's openings.
+function chosenOn(b, level, indices) {
+  const s = editStorey(b, level), list = [...new Set(indices)].map((i) => [i, s.openings[i]]);
+  if (!list.length || list.some(([, o]) => !o)) throw Error('Select one or more windows or doors first.');
+  const wall = list[0][1].wall;
+  if (list.some(([, o]) => o.wall !== wall)) throw Error('Select windows and doors of one wall.');
+  const length = editWalls(b, level).find((w) => w.id === wall).length;
+  return { s, list, wall, length };
+}
+const round = (n) => Math.round(n * 1e6) / 1e6;
+/** A copy of each, mirrored about the middle of the wall; one already there, or in the middle, is not copied. */
+export function mirrorOpenings(b, level, indices) {
+  const { s, list, length } = chosenOn(b, level, indices);
+  const copies = [];
+  for (const [, o] of list) {
+    const at = round(length - o.at);
+    const there = (p) => p.wall === o.wall && p.type === o.type && Math.abs(p.at - at) < 1 && Math.abs(p.sill - o.sill) < 1;
+    if (Math.abs(at - o.at) < 1 || s.openings.some(there) || copies.some(there)) continue;
+    copies.push({ ...o, at });
+  }
+  if (!copies.length) throw Error('They are mirrored already.');
+  return validateBuilding(patchStorey(b, level, { openings: [...s.openings, ...copies] }));
+}
+/** Spread along the wall in their order, the gaps between them and at the two ends all the same. */
+export function spaceOpenings(b, level, indices) {
+  const { s, list, length } = chosenOn(b, level, indices);
+  const sorted = [...list].sort((p, q) => p[1].at - q[1].at);
+  const gap = (length - sorted.reduce((sum, [, o]) => sum + o.width, 0)) / (sorted.length + 1);
+  if (gap <= 0) throw Error('They are wider together than the wall.');
+  const at = new Map();
+  let u = 0;
+  for (const [i, o] of sorted) {
+    u += gap;
+    at.set(i, round(u + o.width / 2));
+    u += o.width;
+  }
+  return validateBuilding(patchStorey(b, level, { openings: s.openings.map((o, i) => (at.has(i) ? { ...o, at: at.get(i) } : o)) }));
+}
+/** Moved together so they stand in the middle of the wall. */
+export function centreOpenings(b, level, indices) {
+  const { s, list, length } = chosenOn(b, level, indices);
+  const lo = Math.min(...list.map(([, o]) => o.at - o.width / 2)), hi = Math.max(...list.map(([, o]) => o.at + o.width / 2));
+  const by = length / 2 - (lo + hi) / 2, chosen = new Set(list.map(([i]) => i));
+  return validateBuilding(patchStorey(b, level, { openings: s.openings.map((o, i) => (chosen.has(i) ? { ...o, at: round(o.at + by) } : o)) }));
+}
+/** Moved together, along the wall and up it. */
+export function moveOpenings(b, level, indices, along, up = 0) {
+  const { s, list } = chosenOn(b, level, indices), chosen = new Set(list.map(([i]) => i));
+  return validateBuilding(patchStorey(b, level, { openings: s.openings.map((o, i) => (chosen.has(i) ? { ...o, at: round(o.at + along), ...(o.type === 'window' && { sill: round(o.sill + up) }) } : o)) }));
+}
+/** A copy of each on another wall, as far from its middle as they are from the middle of theirs. */
+export function copyOpenings(b, level, indices, to) {
+  const { s, list, wall, length } = chosenOn(b, level, indices);
+  const target = editWalls(b, level).find((w) => w.id === to);
+  if (!target) throw Error('Choose the wall to copy them to.');
+  if (to === wall) throw Error('Choose another wall to copy them to.');
+  const copies = list.map(([, o]) => ({ ...o, wall: to, at: round(o.at - length / 2 + target.length / 2) }));
+  return validateBuilding(patchStorey(b, level, { openings: [...s.openings, ...copies] }));
+}
+/** All of them gone. */
+export function removeOpenings(b, level, indices) {
+  const { s, list } = chosenOn(b, level, indices), chosen = new Set(list.map(([i]) => i));
+  return validateBuilding(patchStorey(b, level, { openings: s.openings.filter((_, i) => !chosen.has(i)) }));
+}
