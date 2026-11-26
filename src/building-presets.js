@@ -391,6 +391,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'billboard', style: 'hoarding', length: 400, height: 18, clearance: 3 },
   },
   {
+    id: 'stairs-switchback',
+    name: 'Switchback stairs',
+    note: 'Two flights against the back of a building, a landing on posts between them, mesh railings',
+    building: { kind: 'switchback' },
+  },
+  {
     id: 'flag-post',
     name: "Flag waver's post",
     note: 'Steps up to a landing, handrails each side, a board on the front rail',

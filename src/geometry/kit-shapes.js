@@ -74,7 +74,8 @@ export function kitShapes(wasm, own) {
         for (let j = 0; j < nv; j++) holes.push(B(R.post + su + i * pitch, v0 + sv + j * pitch, -1, R.post + su + i * pitch + hole, v0 + sv + j * pitch + hole, R.thick + 1));
       bits.push(own(B(R.post - 0.01, v0 - 0.01, 0, len - R.post + 0.01, v1 + 0.01, R.thick).subtract(own(Manifold.union(holes)))));
     }
-    const at = [0.2 * len, 0.8 * len];
+    // Its two tabs, a fifth of the way in from each end, wholly under the panel.
+    const at = [Math.max(3, 0.2 * len), Math.min(len - 3, 0.8 * len)];
     for (const u of at) bits.push(B(u - 3, -R.tab, 0, u + 3, 0.01, R.thick));
     // u along the edge, v up, w in from it.
     const frame = [dir[0], dir[1], 0, 0, 0, 0, 1, 0, inward[0], inward[1], 0, 0, from[0] + inward[0] * inset, from[1] + inward[1] * inset, z, 1];

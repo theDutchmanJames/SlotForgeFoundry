@@ -11,6 +11,7 @@ import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { flagFootprint } from './geometry/flag-post.js';
 import { billboardFootprint } from './geometry/billboard.js';
+import { switchbackFootprint } from './geometry/switchback.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS, walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
@@ -94,6 +95,11 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = platformFootprint(b);
     outline = rect(x0, y0, x1, y1);
     front = { p: [b.width / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'switchback') {
+    // The flights side by side, the wall it stands against at the back.
+    const [x0, y0, x1, y1] = switchbackFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
   } else if (b.kind === 'billboard') {
     // The board along its front, its struts behind it.
     const [x0, y0, x1, y1] = billboardFootprint(b);
@@ -188,7 +194,7 @@ export function planShapes(entry) {
     // The deck over its frames.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
-  if (b.kind === 'flagpost' || b.kind === 'billboard') return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
+  if (['flagpost', 'billboard', 'switchback'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };

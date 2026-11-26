@@ -18,6 +18,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
   if (b.kind === 'flagpost') return flagNotes(name, b, parts, sizes);
   if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
+  if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -229,6 +230,28 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of switchback stairs: two flights, two landings, their railings.
+function switchbackNotes(name, s, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  return [
+    name + ' · SlotForge Foundry switchback stairs kit',
+    '',
+    'Two flights up to a landing ' + fmt(s.height) + ' mm above the table, ' + fmt(s.width) + ' mm wide, a landing on posts between them; railings of ' + s.railingStyle + ' ' + fmt(s.railHeight) + ' mm high.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- Each flight prints on its side; the landings print upside down, their posts up; the railings lie flat.',
+    '',
+    'Putting it together',
+    '1. Push the railings into the slots of the landings, their tabs down, with a drop of glue: on each, one across its free end and one along its open side.',
+    '2. Stand the lower flight against the back of the building, its railing wall away from it, and the middle landing on its posts at its top, the end of the flight against the landing.',
+    '3. Glue the upper flight against the building, its foot against the middle landing, and the top landing on its posts at its top, against the building at the door.',
+  ].join('\n');
+}
+
 // The notes of a billboard or a hoarding: its board pieces and the struts behind its posts.
 function billboardNotes(name, b, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');

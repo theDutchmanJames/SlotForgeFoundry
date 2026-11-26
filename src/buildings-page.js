@@ -15,6 +15,7 @@ import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
 import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
 import { BILLBOARD_LIMITS, billboardPieces, billboardPosts } from './geometry/billboard.js';
+import { SWITCHBACK_LIMITS, switchbackPlan } from './geometry/switchback.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -270,6 +271,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
       <p class="bd-hint" data-bd-flag-size></p></section>
+    <section class="bd-box" data-bd-card="switchback" data-bd-switchback hidden><h3>Switchback stairs</h3>
+      ${field('sHeight', 'Height of the top landing', 70, SWITCHBACK_LIMITS.height)}
+      ${field('sWidth', 'Flight width', 24, SWITCHBACK_LIMITS.width)}
+      ${field('sRail', 'Railing height', 14, SWITCHBACK_LIMITS.railHeight)}
+      <label class="bd-row"><span>Railings</span><select name="sStyle"><option value="mesh">Mesh</option><option value="bars">Bars</option></select></label>
+      <p class="bd-hint" data-bd-switchback-size></p></section>
     <section class="bd-box" data-bd-card="billboard" data-bd-billboard hidden><h3>Billboard</h3>
       <label class="bd-row"><span>Kind</span><select name="kStyle"><option value="board">A billboard on two posts</option><option value="hoarding">A hoarding along the track</option></select></label>
       ${field('kLength', 'Length', 120, BILLBOARD_LIMITS.length)}
@@ -432,16 +439,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isMarshal = () => building.kind === 'marshalpost';
   const isFlag = () => building.kind === 'flagpost';
   const isBillboard = () => building.kind === 'billboard';
+  const isSwitchback = () => building.kind === 'switchback';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isPlatform() && !isWalkway() && !isBays();
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isSwitchback() && !isPlatform() && !isWalkway() && !isBays();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -450,7 +458,29 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isMarshal()) drawMarshal();
     if (isFlag()) drawFlag();
     if (isBillboard()) drawBillboard();
+    if (isSwitchback()) drawSwitchback();
     if (isPlatform()) drawPlatform();
+  }
+  const SWITCHBACK_FIELDS = [['sHeight', 'height'], ['sWidth', 'width'], ['sRail', 'railHeight']];
+  function fillSwitchback(k) {
+    const e = form.elements;
+    for (const [n, key] of SWITCHBACK_FIELDS) e[n].value = k[key];
+    e.sStyle.value = k.railingStyle;
+    drawSwitchback();
+  }
+  function drawSwitchback() {
+    const k = building,
+      p = switchbackPlan(k);
+    $('[data-bd-switchback-size]').textContent =
+      p.n + ' steps of ' + fmt(Math.round(p.r * 10) / 10) + ' mm: ' + (p.n1 - 1) + ' up to the landing in the middle, ' + fmt(Math.round(p.h1 * 10) / 10) + ' mm up, ' + (p.n2 - 1) + ' more back above them to the top. ' +
+      'It stands against the back of a building, ' + fmt(2 * k.width) + ' mm out from it. Each flight prints on its side, the landings upside down, the railings flat.';
+  }
+  function readSwitchback() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const k = { kind: 'switchback', railingStyle: e.sStyle.value };
+    for (const [n, key] of SWITCHBACK_FIELDS) k[key] = num(e[n]);
+    return k;
   }
   const BILLBOARD_FIELDS = [['kLength', 'length'], ['kHeight', 'height'], ['kClearance', 'clearance']];
   function fillBillboard(k) {
@@ -838,6 +868,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isMarshal()) return readMarshal();
     if (isFlag()) return readFlag();
     if (isBillboard()) return readBillboard();
+    if (isSwitchback()) return readSwitchback();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
@@ -923,6 +954,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isMarshal()) drawMarshal();
     else if (isFlag()) drawFlag();
     else if (isBillboard()) drawBillboard();
+    else if (isSwitchback()) drawSwitchback();
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
     else if (isBays()) drawBays();
@@ -1119,6 +1151,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
     else if (isFlag()) card = 'flag';
     else if (isBillboard()) card = 'billboard';
+    else if (isSwitchback()) card = 'switchback';
     else if (isWalkway()) card = 'walkway';
     else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
@@ -1192,6 +1225,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'marshalpost') return fillMarshal(b);
     if (b.kind === 'flagpost') return fillFlag(b);
     if (b.kind === 'billboard') return fillBillboard(b);
+    if (b.kind === 'switchback') return fillSwitchback(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
