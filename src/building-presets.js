@@ -391,6 +391,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'billboard', style: 'hoarding', length: 400, height: 18, clearance: 3 },
   },
   {
+    id: 'tyre-bridge',
+    name: 'Tyre bridge',
+    note: 'A footbridge like half a tyre over the track, stairs up its arch',
+    building: { kind: 'tyrebridge' },
+  },
+  {
     id: 'benches',
     name: 'Benches',
     note: 'A row of three spectator benches with backs',

@@ -3,6 +3,7 @@
 import { fmt } from './ui.js';
 import { marshalLevels } from './geometry/marshal-post.js';
 import { BILLBOARD } from './geometry/billboard.js';
+import { tyreOpening } from './geometry/tyre-bridge.js';
 
 /**
  * How the parts of a kit are printed and put together, for the kit's notes.
@@ -20,6 +21,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
+  if (b.kind === 'tyrebridge') return tyreNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -231,6 +233,33 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of a tyre bridge: two sidewalls and the stairs, each in halves, and the stair walls.
+function tyreNotes(name, t, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const o = tyreOpening(t);
+  const walls = parts.some((p) => /^wall-/.test(p.id));
+  return [
+    name + ' · SlotForge Foundry tyre bridge kit',
+    '',
+    'A bridge like half a tyre, ' + fmt(t.span) + ' mm across and ' + fmt(t.height) + ' mm high, ' + fmt(t.width) + ' mm wide along the track; under it ' + fmt(Math.round(o.width)) + ' mm clear at the table and ' + fmt(Math.round(o.height)) + ' mm high in the middle.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The sidewalls print flat, their tread and band up; the stairs on their side' + (walls ? '; the stair walls flat.' : '.'),
+    '',
+    'Putting it together',
+    '1. Join the two halves of each sidewall and of the stairs at the middle: push the dovetail into its slot, with a drop of glue, flat on the table.',
+    '2. Glue the stairs to the inside of one sidewall, its steps level with the table at both ends, then the other sidewall to them.',
+    ...(walls ? ['3. Glue a stair wall each side of the lowest steps at each end, outside the tyre.'] : []),
+    (walls ? '4' : '3') + '. Stand it over the track, the road running under the arch.',
+    '',
+    'Paint the tyre black, the band in a colour of your own.',
+  ].join('\n');
+}
+
 // The notes of benches: a seat and two end frames each.
 function benchNotes(name, b, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');

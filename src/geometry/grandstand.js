@@ -111,6 +111,7 @@ export function sizeLine(b) {
   if (b.kind === 'pitbays') return b.types.length + (b.types.length === 1 ? ' bay' : ' bays') + ' · ' + Math.round(b.types.length * b.bayWidth + 5) + ' × ' + Math.round(b.depth) + ' mm';
   if (b.kind === 'walkway') return 'Walkway · ' + Math.round(b.length) + ' mm, ' + Math.round(b.clearance) + ' mm up';
   if (b.kind === 'platform') return 'Viewing platform · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
+  if (b.kind === 'tyrebridge') return 'Tyre bridge · ' + Math.round(b.span) + ' × ' + Math.round(b.height) + ' mm';
   if (b.kind === 'bench') return (b.count === 1 ? 'Bench' : b.count + ' benches') + ' · ' + Math.round(b.length) + ' mm each';
   if (b.kind === 'switchback') return 'Switchback stairs · ' + Math.round(b.height) + ' mm up';
   if (b.kind === 'billboard') return (b.style === 'board' ? 'Billboard' : 'Hoarding') + ' · ' + Math.round(b.length) + ' × ' + Math.round(b.height) + ' mm';

@@ -351,6 +351,7 @@ export async function checkBuildings({ page, action, download, snap }) {
     ['billboard', 'board-1', 'billboard'],
     ['hoarding', 'board-3', 'billboard'],
     ['benches', 'seat-3', 'bench'],
+    ['tyre-bridge', 'deck-2', 'tyre'],
     ['stairs-switchback', 'landing-top', 'switchback'],
     ['gantry-timber', 'board', 'gantry'],
     ['stand-raised', 'frame-1', 'standFrame'],
