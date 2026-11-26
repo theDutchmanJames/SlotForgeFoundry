@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Module from 'manifold-3d';
-import { BENCH, benchFootprint, benchStarts, validateBench } from '../src/geometry/bench.js';
+import { BENCH, benchFootprint, benchStarts, planksAcross, validateBench } from '../src/geometry/bench.js';
 import { buildGarage, buildingLayout, fitsPlate, printPose, printSize } from '../src/geometry/building.js';
 import { kitNotes } from '../src/building-kit.js';
 import { shapeOf } from '../src/planner-buildings.js';
@@ -35,11 +35,14 @@ test('benches are checked and laid out in a row', () => {
   assert.deepEqual(benchStarts(b), [0, 72, 144]);
   assert.deepEqual(benchFootprint(b), [0, 0, 204, BENCH.depth]);
   assert.ok(near(shapeOf(b).front.f[1], -1));
-  assert.match(kitNotes('Benches', b, buildingLayout(b).parts, {}), /Glue an end frame against each end of a seat/);
+  assert.match(kitNotes('Benches', b, buildingLayout(b).parts, {}), /lay a seat on their bearers, its cleats down just inside them/);
+  const plain = validateBench({ style: 'plain' });
+  assert.match(kitNotes('Benches', plain, buildingLayout(plain).parts, {}), /Glue an end frame against each end of a seat/);
+  assert.throws(() => validateBench({ style: 'stone' }), /planked or plain/);
 });
 
 test('every part one body, without supports, fitting the plate, nothing in another; the seat at its height between its ends', () => {
-  for (const settings of [{ kind: 'bench' }, { kind: 'bench', backrest: false, count: 1 }, { kind: 'bench', length: 150, seatHeight: 20, count: 8 }])
+  for (const settings of [{ kind: 'bench' }, { kind: 'bench', backrest: false, count: 1 }, { kind: 'bench', length: 150, seatHeight: 20, count: 8 }, { kind: 'bench', style: 'plain' }, { kind: 'bench', style: 'plain', backrest: false }, { kind: 'bench', length: 30, seatHeight: 8 }])
     {
       const label = JSON.stringify(settings);
       const parts = buildGarage(wasm, settings);
@@ -47,7 +50,12 @@ test('every part one body, without supports, fitting the plate, nothing in anoth
         assert.deepEqual(parts.map((p) => p.id), buildingLayout(settings).parts.map((p) => p.id), label);
         for (const p of parts) {
           assert.equal(p.solid.decompose().length, 1, p.name + ' ' + label);
-          assert.ok(overAir(p) < 0.5, p.name + ' prints without supports ' + label);
+          // Planked: only the cleats over the gaps between the planks, short bridges of the gap's width.
+          const b0 = validateBench(settings);
+          const cleats = b0.length > 80 ? 3 : 2;
+          const gaps = /^seat/.test(p.id) ? planksAcross(b0.backrest ? BENCH.depth - BENCH.leg : BENCH.depth).length - 1 : /^back/.test(p.id) ? planksAcross(BENCH.back[1]).length - 1 : 0;
+          const bridges = b0.style === 'planks' ? gaps * cleats * BENCH.plank[1] * BENCH.cleat[0] : 0;
+          assert.ok(overAir(p) < bridges + 0.5, p.name + ' prints without supports ' + label + ': ' + overAir(p));
           assert.ok(fitsPlate(printSize(p), PLATE), p.name + ' fits ' + label);
         }
         for (let i = 0; i < parts.length; i++)
@@ -59,8 +67,20 @@ test('every part one body, without supports, fitting the plate, nothing in anoth
         const b = validateBench(settings);
         const seat = parts.find((p) => p.id === 'seat-1').solid.boundingBox(),
           end = parts.find((p) => p.id === 'end-1-left').solid.boundingBox();
-        assert.ok(near(seat.max[2], b.backrest ? b.seatHeight + BENCH.back[1] : b.seatHeight), 'the seat at its height');
-        assert.ok(near(seat.min[0], end.max[0]) && near(end.min[2], 0), 'between its end frames, their legs on the table');
+        if (b.style === 'plain') {
+          assert.ok(near(seat.max[2], b.backrest ? b.seatHeight + BENCH.back[1] : b.seatHeight), 'the seat at its height');
+          assert.ok(near(seat.min[0], end.max[0]) && near(end.min[2], 0), 'between its end frames, their legs on the table');
+        } else {
+          // Planks the whole length, on the end frames set in from the ends.
+          assert.ok(near(seat.max[2], b.seatHeight) && near(seat.min[0], 0) && near(end.min[0], BENCH.inset) && near(end.min[2], 0));
+          // Gaps between the planks, right through the seat away from its cleats.
+          const [, first] = planksAcross(b.backrest ? BENCH.depth - BENCH.leg : BENCH.depth)[0];
+          const probe = wasm.Manifold.cube([1, BENCH.plank[1] - 0.2, 10]).translate([b.length / 2 - 0.5 + (b.length > 80 ? 10 : 0), first + 0.1, b.seatHeight - 5]);
+          const hit = parts.find((p) => p.id === 'seat-1').solid.intersect(probe);
+          assert.ok(hit.volume() < 0.01, 'a gap between two planks');
+          [probe, hit].forEach((x) => x.delete());
+          if (b.backrest) assert.ok(near(parts.find((p) => p.id === 'back-1').solid.boundingBox().min[2], b.seatHeight), 'the back on the seat');
+        }
       } finally {
         parts.forEach((p) => p.solid.delete());
       }

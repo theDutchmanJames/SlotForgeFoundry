@@ -244,11 +244,18 @@ function benchNotes(name, b, parts, sizes) {
     '',
     'Printing',
     '- Every part prints without supports.',
-    '- ' + (b.backrest ? 'Each seat and back prints lying on the back, the seat standing up' : 'Each seat prints flat') + '; the end frames lie flat.',
+    ...(b.style === 'planks'
+      ? ['- Each seat prints upside down, its planks on the plate and the cleats up' + (b.backrest ? '; each back face down, its cleats up' : '') + '; the end frames lie flat.']
+      : ['- ' + (b.backrest ? 'Each seat and back prints lying on the back, the seat standing up' : 'Each seat prints flat') + '; the end frames lie flat.']),
     '',
     'Putting it together',
-    '1. Glue an end frame against each end of a seat, its legs down, the seat on its bearer' + (b.backrest ? ' and the back against the back leg.' : '.'),
-    '2. Stand the benches in a row beside the track, ' + fmt(b.gap) + ' mm apart, the seats facing the road.',
+    ...(b.style === 'planks'
+      ? [
+          '1. Stand two end frames up and lay a seat on their bearers, its cleats down just inside them, the planks reaching past them at both ends.',
+          ...(b.backrest ? ['2. Stand the back on the seat against the back legs, its cleats behind, and glue it.'] : []),
+        ]
+      : ['1. Glue an end frame against each end of a seat, its legs down, the seat on its bearer' + (b.backrest ? ' and the back against the back leg.' : '.')]),
+    (b.style === 'planks' && b.backrest ? '3' : '2') + '. Stand the benches in a row beside the track, ' + fmt(b.gap) + ' mm apart, the seats facing the road.',
   ].join('\n');
 }
 

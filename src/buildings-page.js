@@ -273,12 +273,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
       <p class="bd-hint" data-bd-flag-size></p></section>
     <section class="bd-box" data-bd-card="bench" data-bd-bench hidden><h3>Benches</h3>
+      <label class="bd-row"><span>Made of</span><select name="eStyle"><option value="planks">Planks, like wood</option><option value="plain">Plain</option></select></label>
       ${field('eCount', 'Benches in the row', 3, BENCH_LIMITS.count, '')}
       ${field('eLength', 'Length of each', 60, BENCH_LIMITS.length)}
       ${field('eGap', 'Gap between them', 12, BENCH_LIMITS.gap)}
       ${field('eSeat', 'Seat height', 14, BENCH_LIMITS.seatHeight)}
       <label class="bd-check"><input type="checkbox" name="eBack"><span>A back on each bench</span></label>
-      <p class="bd-hint">Each bench is a seat between two end frames, their legs joined by a stretcher, the back leg rising to carry the back. The seat and back print as one piece lying on the back; the end frames print flat and are glued to its ends.</p></section>
+      <p class="bd-hint">Planked, the seat and the back are planks with gaps between them, joined by cleats behind, on two end frames set in from the ends: their legs joined by a stretcher, the back leg rising to carry the back. The seat prints upside down, its planks on the plate; the back face down; the end frames flat. Plain, the seat and back are one piece between the end frames, lying on the back.</p></section>
     <section class="bd-box" data-bd-card="switchback" data-bd-switchback hidden><h3>Switchback stairs</h3>
       ${field('sHeight', 'Height of the top landing', 70, SWITCHBACK_LIMITS.height)}
       ${field('sWidth', 'Flight width', 24, SWITCHBACK_LIMITS.width)}
@@ -475,11 +476,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [n, key] of BENCH_FIELDS) e[n].value = k[key];
     e.eBack.checked = k.backrest;
+    e.eStyle.value = k.style;
   }
   function readBench() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const k = { kind: 'bench', backrest: e.eBack.checked };
+    const k = { kind: 'bench', style: e.eStyle.value, backrest: e.eBack.checked };
     for (const [n, key] of BENCH_FIELDS) k[key] = num(e[n]);
     return k;
   }
