@@ -47,7 +47,8 @@ export const PIT_BAYS_DEFAULTS = Object.freeze({
   roofRailing: true, // a truss railing round the back and the sides of each roof
   numbers: true,
   firstNumber: 1,
-  text: '', // a name board on the wall over the doors, its letters raised, in place of the numbers
+  text: '', // a name board on the wall over the doors, its letters raised or cut, in place of the numbers
+  textCut: false, // the name board's letters cut into it, not raised
 });
 export const PIT_BAYS_LIMITS = Object.freeze({
   bayWidth: [70, 200],
@@ -118,6 +119,7 @@ export function validatePitBays(input) {
   if (!['panel', 'roller'].includes(m.door)) throw Error('Choose an up-and-over or a roller door.');
   for (const key of ['pillars', 'balconyRailing', 'roofRailing', 'numbers']) if (typeof m[key] !== 'boolean') throw Error('Choose whether the pit building has ' + key + '.');
   m.text = checkText(m.text, 'The name board');
+  if (typeof m.textCut !== 'boolean') throw Error('Choose raised or cut letters for the name board.');
   if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the wall over the doors: choose one.');
   if (m.text && nameBoardText(m.text, m.types.length * m.bayWidth - 10, m.groundHeight - m.doorHeight - 2) < LETTERING.height[0]) throw Error('There is no room for “' + m.text + '” over the doors: make the ground floor higher, the doors lower, or the text shorter.');
   const room = m.bayWidth - 2 * (BAYS.column + m.recess + 1) - BAYS.side;
@@ -279,7 +281,7 @@ export function buildPitBays(wasm, input) {
     }
     // A name board on the front wall over the doors, in the middle of the row.
     if (m.text) {
-      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, n * W - 10, L.slab0 - L.door - 2));
+      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, n * W - 10, L.slab0 - L.door - 2), m.textCut);
       parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, (n * W + F) / 2, 0, (L.door + L.slab0) / 2 - height / 2, 1])), outward: [0, -1, 0], apart: [0, -12, 0] });
     }
     // Numbers: a plaque on the front wall over each door, its number raised in seven segments.

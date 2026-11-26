@@ -9,7 +9,7 @@
 
 import { JOINT, seamRegion, tabPlaces } from './building-cuts.js';
 import { kitShapes } from './kit-shapes.js';
-import { LETTERING, checkText, fitHeight, raisedText, textWidth } from './lettering.js';
+import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textWidth } from './lettering.js';
 
 export const GANTRY_TYPES = Object.freeze([
   ['start', 'Start gantry'],
@@ -23,7 +23,8 @@ export const GANTRY_DEFAULTS = Object.freeze({
   clearance: 70, // clear under the beam or the walkway
   lights: 5, // start lights in the beam
   board: true, // an advertising board on top of the beam
-  text: '', // lettered on the board, raised: START, FINISH
+  text: '', // lettered on the board: START, FINISH
+  textCut: false, // its letters cut into the board, not raised
   boardHeight: 20,
   reach: 140, // a half gantry: how far its beam reaches from its leg
   deckWidth: 30, // a footbridge: its walkway, outside its walls
@@ -95,6 +96,7 @@ export function validateGantry(input) {
   if (g.sign && g.type !== 'half') throw Error('A box sign is for a half gantry.');
   if (g.sign && g.boardHeight < 20) throw Error('A box sign is at least 20 mm high: set the board height.');
   g.text = checkText(g.text, 'The gantry text');
+  if (typeof g.textCut !== 'boolean') throw Error('Choose raised or cut letters for the gantry.');
   if (g.text) {
     if (g.type === 'bridge') throw Error('A footbridge has no board for text.');
     if (g.sign) throw Error('A box sign carries posters on its panels: text goes on the board of a beam.');
@@ -124,8 +126,9 @@ export function textRoom(g) {
   }
   return { wide: w - 6, high: h - 4, up: h / 2 };
 }
-// Raised text on a face that looks to the front (negative y), its plane at y, its middle at x, z.
-const frontText = (wasm, own, text, height, x, y, z) => own(raisedText(wasm, own, text, height, [0, 0]).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, x, y, z, 1]));
+// Text on a face that looks to the front (negative y), its plane at y, its middle at x, z: raised, or the letters to cut.
+const frontText = (wasm, own, text, height, x, y, z, cut) => own(raisedText(wasm, own, text, height, [0, 0], ...letterDepth(cut)).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, x, y, z, 1]));
+const lettered = (own, solid, letters, cut) => own(cut ? solid.subtract(letters) : solid.add(letters));
 
 /** How many steps a footbridge staircase has, and how far it runs out from the track. */
 export function stairOf(g) {
@@ -379,7 +382,7 @@ export function buildGantry(wasm, input, plate = null) {
         }
         if (g.text) {
           const { wide, high, up } = textRoom(g);
-          board = own(board.add(frontText(wasm, own, g.text, fitHeight(g.text, wide, high), mid, y1 - GANTRY.board, zc - h / 2 + up)));
+          board = lettered(own, board, frontText(wasm, own, g.text, fitHeight(g.text, wide, high), mid, y1 - GANTRY.board, zc - h / 2 + up, g.textCut), g.textCut);
         }
         parts.push({ id: 'board', name: 'Board', role: 'wall', solid: board, outward: [0, -1, 0], apart: [0, -15, 20] });
       }
@@ -417,7 +420,7 @@ export function buildGantry(wasm, input, plate = null) {
       // The text on the board, over the middle of the road.
       if (g.board && g.text) {
         const { wide, high, up } = textRoom(g);
-        beam = own(beam.add(frontText(wasm, own, g.text, fitHeight(g.text, wide, high), half ? o + L + g.reach / 2 : o + L + g.span / 2, by1 - GANTRY.board, zBeam + bh + up)));
+        beam = lettered(own, beam, frontText(wasm, own, g.text, fitHeight(g.text, wide, high), half ? o + L + g.reach / 2 : o + L + g.span / 2, by1 - GANTRY.board, zBeam + bh + up, g.textCut), g.textCut);
       }
       const sockets = legX.map((x) => house(x + L / 2, o + L / 2, pl, zBeam - 1, zBeam + pinH + 0.2));
       const lights = [];

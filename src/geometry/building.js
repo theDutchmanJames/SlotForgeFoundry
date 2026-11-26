@@ -79,6 +79,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // height, a billboard's above the roof.
   sign: 'none',
   signText: '', // lettered on the sign: raised on a fascia sign, cut into the face of a roof billboard
+  signCut: false, // a fascia sign's letters cut in, not raised (a roof billboard's are always carved)
   // Lettering on the walls of the ground floor: { wall, text, at (its middle along the wall), up (its middle above the floor), height, cut }.
   lettering: Object.freeze([]),
   signWidth: 80,
@@ -607,6 +608,7 @@ export function validateBuilding(input) {
   });
   checkContainer(b, openings);
   b.signText = checkText(b.signText, 'The sign text');
+  if (typeof b.signCut !== 'boolean') throw Error('Choose raised or cut letters for the sign.');
   if (b.signText && b.sign !== 'none') {
     // As high as the board leaves room for, 2 mm clear all round; on a roof billboard, of the part above the roof.
     const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4);
@@ -1935,8 +1937,11 @@ export function buildGarage(wasm, input, plate = null) {
         // Under a sloped roof that reaches down past the wall, the sign stops under its underside.
         const cap = Math.min(z1, ...[sx0, sx1].flatMap((x) => [0, -HATCH.sign].map((y) => ceilingAt(b, s, shape, x, y)))) - 0.01;
         let sign = onWall('front', sx0, sx1, 0, HATCH.sign, cap - b.signHeight, cap);
-        // Its text raised on its face, which prints up.
-        if (b.signText) sign = own(sign.add(lettersOn('front', b.signText, fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4), W / 2, cap - b.signHeight / 2, HATCH.sign - 0.01, HATCH.sign + LETTERING.depth)));
+        // Its text raised on its face, or cut into it: the face prints up.
+        if (b.signText) {
+          const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4), z = cap - b.signHeight / 2;
+          sign = own(b.signCut ? sign.subtract(lettersOn('front', b.signText, h, W / 2, z, HATCH.sign - LETTERING.depth, HATCH.sign + 1)) : sign.add(lettersOn('front', b.signText, h, W / 2, z, HATCH.sign - 0.01, HATCH.sign + LETTERING.depth)));
+        }
         local({ id: 'sign', name: 'Sign', role: 'wall', solid: sign, outward: [0, -1, 0], apart: add3(wallApart('front'), [0, -APART.frame, 0]) });
       }
       // Walls that lean out: everything of this storey widens with the height

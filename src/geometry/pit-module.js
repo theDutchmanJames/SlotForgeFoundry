@@ -33,7 +33,8 @@ export const PIT_MODULE_DEFAULTS = Object.freeze({
   roofRailing: true, // front and back of the roof
   numbers: true,
   firstNumber: 1,
-  text: '', // a name board along the fascia, its letters raised, in place of the numbers
+  text: '', // a name board along the fascia, its letters raised or cut, in place of the numbers
+  textCut: false, // the name board's letters cut into it, not raised
 });
 // The fascia, measured up its slope: the name board's room.
 const FASCIA_UP = Math.hypot(6, 8);
@@ -94,6 +95,7 @@ export function validatePitModule(input) {
   if (!['panel', 'roller'].includes(m.door)) throw Error('Choose an up-and-over or a roller door.');
   for (const key of ['railing', 'roofRailing', 'numbers']) if (typeof m[key] !== 'boolean') throw Error('Choose whether the pit building has ' + key + '.');
   m.text = checkText(m.text, 'The name board');
+  if (typeof m.textCut !== 'boolean') throw Error('Choose raised or cut letters for the name board.');
   if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the fascia: choose one.');
   if (m.text && nameBoardText(m.text, m.bays * m.bayWidth - 10, FASCIA_UP - 1) < LETTERING.height[0]) throw Error('The fascia is too short for “' + m.text + '”: add bays, or make the text shorter.');
   const room = m.bayWidth - 2 * (PIT.column + m.recess + 1);
@@ -260,7 +262,7 @@ export function buildPitModule(wasm, input) {
         ul = Math.hypot(up[1], up[2]);
       const v = [0, up[1] / ul, up[2] / ul],
         n = [0, -v[2], v[1]];
-      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, m.bays * W - 10, ul - 1));
+      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, m.bays * W - 10, ul - 1), m.textCut);
       const placed = own(solid.transform([1, 0, 0, 0, ...v, 0, ...n, 0, (m.bays * W) / 2, y0 + v[1] * ((ul - height) / 2), z0 + v[2] * ((ul - height) / 2), 1]));
       parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: placed, lie: [(Math.atan2(n[1], n[2]) * 180) / Math.PI, 0, 0], apart: [0, -12, 0] });
     }

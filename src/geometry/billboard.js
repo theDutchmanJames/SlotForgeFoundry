@@ -6,7 +6,7 @@
 // y from its face (the track at negative y) back, z up.
 
 import { kitShapes } from './kit-shapes.js';
-import { LETTERING, checkText, fitHeight, textShape, textWidth } from './lettering.js';
+import { LETTERING, checkText, fitHeight, letterDepth, textShape, textWidth } from './lettering.js';
 
 export const BILLBOARD_DEFAULTS = Object.freeze({
   kind: 'billboard',
@@ -15,7 +15,8 @@ export const BILLBOARD_DEFAULTS = Object.freeze({
   height: 40, // the board itself
   clearance: 45, // its bottom above the table
   border: true, // a raised border round the face
-  text: '', // lettered across the face, raised, as large as it fits
+  text: '', // lettered across the face, as large as it fits
+  textCut: false, // its letters cut into the face, not raised
 });
 export const BILLBOARD_LIMITS = Object.freeze({
   length: [30, 1500],
@@ -42,6 +43,7 @@ export function validateBillboard(input) {
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + ' mm.');
   if (typeof b.border !== 'boolean') throw Error('Choose whether the board has a border.');
   b.text = checkText(b.text, 'The billboard text');
+  if (typeof b.textCut !== 'boolean') throw Error('Choose raised or cut letters for the billboard.');
   if (b.text && Number.isFinite(b.length) && Number.isFinite(b.height) && textHeight(b) < LETTERING.height[0]) throw Error('The board is too small for “' + b.text + '”: make it longer or higher, or the text shorter.');
   if (b.style === 'board' && b.length > BILLBOARD.piece) throw Error('A billboard on two posts is at most ' + BILLBOARD.piece + ' mm long: a longer one is a hoarding.');
   if (b.clearance + b.height > 190) throw Error('The billboard stands at most 190 mm high, to print: ' + (b.clearance + b.height) + ' mm now.');
@@ -115,7 +117,8 @@ export function buildBillboard(wasm, input) {
     if (b.text) {
       const h = textHeight(b);
       const shape = own(textShape(wasm, own, b.text, h).translate([b.length / 2 - textWidth(b.text, h) / 2, (z0 + z1) / 2 - h / 2]));
-      letters = sweep(shape, [1, 0, 0], [0, 0, 1], [0, 0, 0], [0, 1, 0], -LETTERING.depth, 0.01);
+      const [w0, w1] = letterDepth(b.textCut);
+      letters = sweep(shape, [1, 0, 0], [0, 0, 1], [0, 0, 0], [0, 1, 0], -w1, -w0);
     }
     billboardPieces(b).forEach(([a, c], i, all) => {
       // The board between a and c, its posts from the table to its top.
@@ -132,11 +135,14 @@ export function buildBillboard(wasm, input) {
           if (!piece.isEmpty()) bits.push(piece);
         }
       }
-      if (letters) {
+      if (letters && !b.textCut) {
         const piece = own(letters.intersect(box(a, -LETTERING.depth - 1, z0 - 1, c, 0.02, z1 + 1)));
         if (!piece.isEmpty()) bits.push(piece);
       }
-      parts.push({ id: 'board-' + (i + 1), name: all.length > 1 ? 'Board ' + (i + 1) + ' of ' + all.length : 'Board', role: 'wall', solid: own(Manifold.union(bits)), outward: [0, -1, 0], apart: [i * 6, -10, 0] });
+      let solid = own(Manifold.union(bits));
+      // Cut letters: taken out of the face of this piece.
+      if (letters && b.textCut) solid = own(solid.subtract(letters));
+      parts.push({ id: 'board-' + (i + 1), name: all.length > 1 ? 'Board ' + (i + 1) + ' of ' + all.length : 'Board', role: 'wall', solid, outward: [0, -1, 0], apart: [i * 6, -10, 0] });
     });
     // A strut behind each post: a right triangle, its foot on the table, its upright against the post.
     const H = z0 + b.height * 0.6,

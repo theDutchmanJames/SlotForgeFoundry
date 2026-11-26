@@ -184,3 +184,33 @@ test('the lettered standard buildings all build and print clean', () => {
     }
   }
 });
+
+test('every text can be cut in instead of raised: less than the plain part, still whole and printable', () => {
+  const plate = { width: 200, depth: 200, margin: 0 };
+  const cases = [
+    [{ width: 160, depth: 120, height: 75, door: 'none', roof: 'flat', sign: 'fascia', signWidth: 100, signHeight: 14, signText: 'Pit lane' }, 'signCut', 'sign'],
+    [{ kind: 'billboard', length: 120, height: 40, text: 'Foundry oil' }, 'textCut', 'board'],
+    [{ kind: 'billboard', style: 'hoarding', length: 400, height: 30, clearance: 5, text: 'Grand prix' }, 'textCut', 'board'],
+    [{ kind: 'gantry', type: 'start', members: 'solid', span: 180, lights: 5, boardHeight: 24, text: 'Start' }, 'textCut', 'beam'],
+    [{ kind: 'gantry', type: 'start', members: 'timber', span: 180, lights: 5, boardHeight: 24, text: 'Start' }, 'textCut', 'board'],
+    [{ kind: 'flagpost', width: 40, text: '7' }, 'textCut', 'front'],
+    [{ kind: 'pitmodule', numbers: false, text: 'Pit lane' }, 'textCut', 'name'],
+    [{ kind: 'pitbays', numbers: false, text: 'Pit lane' }, 'textCut', 'name'],
+  ];
+  for (const [b, key, id] of cases) {
+    const volumes = {};
+    for (const [label, more] of [['plain', { [b.signText ? 'signText' : 'text']: '' }], ['raised', {}], ['cut', { [key]: true }]]) {
+      const parts = buildGarage(wasm, { ...b, ...more }, plate);
+      try {
+        checkKit(parts, plate, (b.kind ?? 'garage') + ' ' + label + ': ', (p) => (p.id.startsWith('bay') ? 100 : 0.5));
+        volumes[label] = parts.filter((p) => p.id === id || p.id.startsWith(id + '-')).reduce((v, p) => v + p.solid.volume(), 0);
+      } finally {
+        free(parts);
+      }
+    }
+    // The name board has no plain part: no text, no board.
+    if (id === 'name') assert.ok(volumes.cut < volumes.raised - 1, b.kind + ': cut is less than raised');
+    else assert.ok(volumes.cut < volumes.plain - 1 && volumes.raised > volumes.plain + 1, (b.kind ?? 'garage') + ': ' + JSON.stringify(volumes));
+  }
+  assert.throws(() => validateBuilding({ kind: 'gantry', textCut: 'yes' }), /raised or cut/);
+});

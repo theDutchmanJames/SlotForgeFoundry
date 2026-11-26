@@ -152,14 +152,18 @@ export function raisedText(wasm, own, text, height, [u, v], w0 = -0.01, w1 = LET
   const shape = own(textShape(wasm, own, text, height).translate([u - textWidth(text, height) / 2, v - height / 2]));
   return own(own(shape.extrude(w1 - w0)).translate([0, 0, w0]));
 }
+/** From where to where letters go, out of a face: raised from just inside it, or cut in from just outside it. */
+export const letterDepth = (cut) => (cut ? [-LETTERING.depth, 1] : [-0.01, LETTERING.depth]);
 /** A name board: a flat plate with the text raised on it, its letters this high. In its frame: u along it from its middle, v up it from its foot, w out of it from its back. */
 export const NAME_BOARD = Object.freeze({ pad: 2.5, thick: 1.5 });
-export function nameBoard(wasm, own, text, height) {
+export function nameBoard(wasm, own, text, height, cut = false) {
   const width = textWidth(text, height) + 2 * NAME_BOARD.pad,
     high = height + 2 * NAME_BOARD.pad;
   const plate = own(wasm.Manifold.cube([width, high, NAME_BOARD.thick]).translate([-width / 2, 0, 0]));
-  const letters = raisedText(wasm, own, text, height, [0, high / 2], NAME_BOARD.thick - 0.01, NAME_BOARD.thick + LETTERING.depth);
-  return { solid: own(plate.add(letters)), width, height: high };
+  // Raised on it, or cut into it: it prints face up either way.
+  const [w0, w1] = letterDepth(cut);
+  const letters = raisedText(wasm, own, text, height, [0, high / 2], NAME_BOARD.thick + w0, NAME_BOARD.thick + w1);
+  return { solid: own(cut ? plate.subtract(letters) : plate.add(letters)), width, height: high };
 }
 /** The text height a name board takes to be at most `high` high and `wide` wide. */
 export const nameBoardText = (text, wide, high) => fitHeight(text, wide - 2 * NAME_BOARD.pad, high - 2 * NAME_BOARD.pad);

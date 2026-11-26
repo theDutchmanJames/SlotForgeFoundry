@@ -214,6 +214,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="pNumbers"><span>Bay numbers on the balcony</span></label>
       ${field('pFirst', 'First number', 1, PIT_MODULE_LIMITS.firstNumber, '')}
       <label class="bd-row"><span>Name board</span><input name="pText" maxlength="${LETTERING.longest}" placeholder="None: untick the bay numbers first"></label>
+      <label class="bd-check"><input type="checkbox" name="pTextCut"><span>Cut in, not raised</span></label>
       <p class="bd-hint">Each door stands back in a reveal between two columns, its sides at 45°: wider at the front than at the door, so the bays print standing without supports.</p></section>
     <section class="bd-box" data-bd-card="pitsUpper" data-bd-pits hidden><h3>Balcony and lounge</h3>
       ${field('pGround', 'Ground floor height', 65, PIT_MODULE_LIMITS.groundHeight)}
@@ -239,6 +240,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="bNumbers"><span>Bay numbers over the doors</span></label>
       ${field('bFirst', 'First number', 1, PIT_BAYS_LIMITS.firstNumber, '')}
       <label class="bd-row"><span>Name board</span><input name="bText" maxlength="${LETTERING.longest}" placeholder="None: untick the bay numbers first"></label>
+      <label class="bd-check"><input type="checkbox" name="bTextCut"><span>Cut in, not raised</span></label>
       </section>
     <section class="bd-box" data-bd-card="baysUpper" data-bd-bays hidden><h3>Boxes and podiums</h3>
       ${field('bGround', 'Ground floor height', 65, PIT_BAYS_LIMITS.groundHeight)}
@@ -302,6 +304,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
       <label class="bd-row"><span>Board text</span><input name="fText" maxlength="${LETTERING.longest}" placeholder="None, or its number"></label>
+      <label class="bd-check"><input type="checkbox" name="fTextCut"><span>Cut in, not raised</span></label>
       <p class="bd-hint" data-bd-flag-size></p></section>
     <section class="bd-box" data-bd-card="picnic" data-bd-picnic hidden><h3>Picnic tables</h3>
       ${field('qCount', 'Tables in the row', 1, PICNIC_LIMITS.count, '')}
@@ -336,6 +339,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('kClearance', 'Above the table', 45, BILLBOARD_LIMITS.clearance)}
       <label class="bd-check"><input type="checkbox" name="kBorder"><span>A raised border round the face</span></label>
       <label class="bd-row"><span>Text</span><input name="kText" maxlength="${LETTERING.longest}" placeholder="None"></label>
+      <label class="bd-check"><input type="checkbox" name="kTextCut"><span>Cut in, not raised</span></label>
       <p class="bd-hint" data-bd-billboard-size></p></section>
     <section class="bd-box" data-bd-card="marshalWalls" data-bd-marshal hidden><h3>Wall</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall"><button type="button" data-bd-marshal-walls="slats">Slats</button><button type="button" data-bd-marshal-walls="boards">Boards</button><button type="button" data-bd-marshal-walls="plain">Plain</button></div>
@@ -363,6 +367,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check" data-bd-half-extras><input type="checkbox" name="tSign"><span>A box sign on top of the leg instead of a beam</span></label>
       ${field('tBoardHeight', 'Board height', 20, GANTRY_LIMITS.boardHeight)}
       <label class="bd-row"><span>Board text</span><input name="tText" maxlength="${LETTERING.longest}" placeholder="None, or START, FINISH"></label>
+      <label class="bd-check"><input type="checkbox" name="tTextCut"><span>Cut in, not raised</span></label>
       <p class="bd-hint">The beam drops onto a pin on top of each leg. It prints on its back: the board flat on the plate, the start lights facing up. Legs stand on their foot plates to print. A half gantry can carry a box sign on top of its leg instead, as high as the board height, a panel sunk in each face for a poster; it prints standing.</p></section>
     <section class="bd-box" data-bd-card="gantryBridge" data-bd-gantry data-bd-bridge hidden><h3>Walkway</h3>
       ${field('tDeck', 'Width', 30, GANTRY_LIMITS.deckWidth)}
@@ -458,6 +463,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('signWidth', 'Sign width', 80, BUILDING_LIMITS.signWidth)}
       ${field('signHeight', 'Sign height', 14, BUILDING_LIMITS.signHeight)}
       <label class="bd-row"><span>Sign text</span><input name="signText" maxlength="${LETTERING.longest}" placeholder="None"></label>
+      <label class="bd-check" data-bd-sign-cut><input type="checkbox" name="signCut"><span>Cut in, not raised</span></label>
       </div>
       <p class="bd-hint">Each is a hole in the wall. Place is the middle of the opening, measured from the left end of the wall as you look at it from outside. A frame is a part of its own, glued on around the opening. A window makes a serving hatch with a counter under it and a flap propped open over it: each prints flat, and two small fins on it set its angle against the wall. A sign is a board for the name of a stall, in the middle of the front: along the top of the front wall under the eaves, or a billboard standing up on the roof at its front edge, its height above the roof, held by two fins behind it.</p></section>
     <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
@@ -627,6 +633,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.kStyle.value = k.style;
     e.kBorder.checked = k.border;
     e.kText.value = k.text;
+    e.kTextCut.checked = k.textCut;
     drawBillboard();
   }
   function drawBillboard() {
@@ -640,7 +647,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readBillboard() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const k = { kind: 'billboard', style: e.kStyle.value, border: e.kBorder.checked, text: e.kText.value };
+    const k = { kind: 'billboard', style: e.kStyle.value, border: e.kBorder.checked, text: e.kText.value, textCut: e.kTextCut.checked };
     for (const [n, key] of BILLBOARD_FIELDS) k[key] = num(e[n]);
     return k;
   }
@@ -650,6 +657,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [k, key] of FLAG_FIELDS) e[k].value = f[key];
     e.fBoard.checked = f.board;
     e.fText.value = f.text;
+    e.fTextCut.checked = f.textCut;
     drawFlag();
   }
   function drawFlag() {
@@ -661,7 +669,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readFlag() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const f = { kind: 'flagpost', board: e.fBoard.checked, text: e.fText.value };
+    const f = { kind: 'flagpost', board: e.fBoard.checked, text: e.fText.value, textCut: e.fTextCut.checked };
     for (const [k, key] of FLAG_FIELDS) f[key] = num(e[k]);
     return f;
   }
@@ -673,6 +681,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [k, key] of BAYS_CHECKS) e[k].checked = m[key];
     e.bDoor.value = m.door;
     e.bText.value = m.text;
+    e.bTextCut.checked = m.textCut;
     drawBays();
   }
   // Each bay a row: its type, and a button to take it out.
@@ -690,7 +699,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readBays() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const m = { kind: 'pitbays', types: building.types.map((t, i) => e['bType-' + i]?.value ?? t), door: e.bDoor.value, text: e.bText.value };
+    const m = { kind: 'pitbays', types: building.types.map((t, i) => e['bType-' + i]?.value ?? t), door: e.bDoor.value, text: e.bText.value, textCut: e.bTextCut.checked };
     for (const [k, key] of BAYS_FIELDS) m[key] = num(e[k]);
     for (const [k, key] of BAYS_CHECKS) m[key] = e[k].checked;
     return m;
@@ -776,6 +785,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [k, key] of PIT_FIELDS) e[k].value = m[key];
     for (const [k, key] of PIT_CHECKS) e[k].checked = m[key];
     e.pText.value = m.text;
+    e.pTextCut.checked = m.textCut;
     drawPits();
   }
   function drawPits() {
@@ -789,7 +799,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readPits() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const m = { kind: 'pitmodule', door: building.door, text: e.pText.value };
+    const m = { kind: 'pitmodule', door: building.door, text: e.pText.value, textCut: e.pTextCut.checked };
     for (const [k, key] of PIT_FIELDS) m[key] = num(e[k]);
     for (const [k, key] of PIT_CHECKS) m[key] = e[k].checked;
     return m;
@@ -801,6 +811,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.tSign.checked = g.sign;
     e.tMembers.value = g.members;
     e.tText.value = g.text;
+    e.tTextCut.checked = g.textCut;
     drawGantry();
   }
   function drawGantry() {
@@ -835,6 +846,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       deckWidth: num(e.tDeck),
       wallHeight: num(e.tWalls),
       text: e.tText.value,
+      textCut: e.tTextCut.checked,
     };
   }
   function fillStand(g) {
@@ -1125,6 +1137,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       signWidth: num(e.signWidth),
       signHeight: num(e.signHeight),
       signText: e.signText.value,
+      signCut: e.signCut.checked,
       cuts: readCuts(building),
     };
   }
@@ -1186,6 +1199,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
+      // A roof billboard prints face down: its letters are always carved in.
+      $('[data-bd-sign-cut]').hidden = building.sign !== 'fascia';
       $('[data-bd-stand-size]').hidden = building.standType === 'none';
       $('[data-bd-column]').hidden = building.standType !== 'column';
       $('[data-bd-legs]').hidden = building.standType !== 'legs';
@@ -1510,6 +1525,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
     form.elements.signText.value = b.signText;
+    form.elements.signCut.checked = b.signCut;
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();

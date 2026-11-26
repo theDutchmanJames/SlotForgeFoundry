@@ -5,7 +5,7 @@
 // front print flat. x across, y from the front (the track at negative y) to
 // the back, z up.
 
-import { LETTERING, checkText, fitHeight, raisedText } from './lettering.js';
+import { LETTERING, checkText, fitHeight, letterDepth, raisedText } from './lettering.js';
 import { kitShapes } from './kit-shapes.js';
 
 export const FLAG_POST_DEFAULTS = Object.freeze({
@@ -18,7 +18,8 @@ export const FLAG_POST_DEFAULTS = Object.freeze({
   railHeight: 18, // the handrails above the steps and the landing
   board: true, // a board on the front rail
   boardHeight: 9,
-  text: '', // lettered on the board, raised: the post's number
+  text: '', // lettered on the board: the post's number
+  textCut: false, // its letters cut into the board, not raised
 });
 export const FLAG_POST_LIMITS = Object.freeze({
   width: [25, 80],
@@ -51,6 +52,7 @@ export function validateFlagPost(input) {
   if (f.height / f.steps > 12) throw Error('Steps of ' + Math.round((f.height / f.steps) * 10) / 10 + ' mm are too high: at most 12 mm, so at least ' + Math.ceil(f.height / 12) + ' steps.');
   if (f.board && f.boardHeight > f.railHeight - FLAG_POST.post - 3) throw Error('The board must leave room under the rail: at most ' + (f.railHeight - FLAG_POST.post - 3) + ' mm high.');
   f.text = checkText(f.text, 'The board text');
+  if (typeof f.textCut !== 'boolean') throw Error('Choose raised or cut letters for the board.');
   if (f.text && !f.board) throw Error('Text goes on the board: give the front rail its board.');
   if (f.text && flagTextHeight(f) < LETTERING.height[0]) throw Error('The board is too small for “' + f.text + '”: make it wider or higher, or the text shorter.');
   return f;
@@ -142,8 +144,11 @@ export function buildFlagPost(wasm, input) {
     if (f.board) bits.push(poly([[P - 0.01, H + R - P - f.boardHeight], [W - P + 0.01, H + R - P - f.boardHeight], [W - P + 0.01, H + R - P + 0.01], [P - 0.01, H + R - P + 0.01]]));
     const front = own(wasm.CrossSection.union(bits));
     let frontRail = sweep(front, [1, 0, 0], [0, 0, 1], [0, -c, 0], [0, 1, 0], 0, c);
-    // The text raised on the board's face, which prints up.
-    if (f.text) frontRail = own(frontRail.add(own(raisedText(wasm, own, f.text, flagTextHeight(f), [0, 0]).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, W / 2, -c, H + R - P - f.boardHeight / 2, 1]))));
+    // The text raised on the board's face, or cut into it: the face prints up.
+    if (f.text) {
+      const letters = own(raisedText(wasm, own, f.text, flagTextHeight(f), [0, 0], ...letterDepth(f.textCut)).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, W / 2, -c, H + R - P - f.boardHeight / 2, 1]));
+      frontRail = own(f.textCut ? frontRail.subtract(letters) : frontRail.add(letters));
+    }
     parts.push({ id: 'front', name: f.board ? 'Front rail and board' : 'Front rail', role: 'frame', solid: frontRail, outward: [0, -1, 0], apart: [0, -10, 0] });
     const keep = new Set(parts.map((p) => p.solid));
     for (const s of temp) if (!keep.has(s)) s.delete();

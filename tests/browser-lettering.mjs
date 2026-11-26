@@ -43,6 +43,12 @@ try {
   await fill(setting('signWidth'), 100);
   await fill(setting('signText'), 'Pit lane');
   assert.equal((await saved()).signText, 'PIT LANE');
+  // Cut in instead: the choice is there for a sign along the wall.
+  await setting('signCut').check();
+  await idle();
+  assert.equal((await saved()).signCut, true);
+  await setting('signCut').uncheck();
+  await idle();
   await host.locator('[data-bd-wall="left"]').click();
   await host.locator('[data-bd-add-letters]').click();
   await idle();
@@ -84,6 +90,8 @@ try {
   // The container café's roof billboard, its name carved in.
   await host.locator('[data-bd-preset="stall-container"]').click();
   await idle();
+  // A roof billboard is always carved: no choice shown.
+  assert.equal(await host.locator('[data-bd-sign-cut]').isVisible(), false);
   await fill(setting('signText'), 'Pit stop cafe');
   assert.equal((await saved()).signText, 'PIT STOP CAFE');
   await noError('roof billboard');
@@ -102,6 +110,10 @@ try {
   assert.equal(await setting('tText').inputValue(), 'START');
   await fill(setting('tText'), 'Start finish');
   assert.equal((await saved()).text, 'START FINISH');
+  await setting('tTextCut').check();
+  await idle();
+  assert.equal((await saved()).textCut, true);
+  await noError('gantry text cut in');
   // A footbridge has no board: made one, the text goes, and nothing is refused.
   await host.locator('[data-bd-gantry-type="bridge"]').click();
   await idle();

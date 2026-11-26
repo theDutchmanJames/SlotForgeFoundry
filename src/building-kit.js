@@ -21,7 +21,7 @@ function letteringNote(b) {
   const lines = [...(b.lettering ?? []), ...(b.upper ?? []).flatMap((u) => u.lettering ?? [])];
   if (!lines.length && !(b.signText && b.sign !== 'none')) return [];
   const out = [];
-  if (b.signText && b.sign === 'fascia') out.push('“' + b.signText + '” stands 0.6 mm proud on the face of the sign.');
+  if (b.signText && b.sign === 'fascia') out.push('“' + b.signText + '” ' + (b.signCut ? 'is cut 0.6 mm into' : 'stands 0.6 mm proud on') + ' the face of the sign.');
   if (b.signText && b.sign === 'billboard') out.push('“' + b.signText + '” is carved into the face of the billboard in V-grooves, so it prints face down without supports.');
   if (lines.some((l) => !l.cut)) out.push('Raised lettering on the walls: ' + lines.filter((l) => !l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
   if (lines.some((l) => l.cut)) out.push('Cut lettering on the walls: ' + lines.filter((l) => l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
@@ -416,8 +416,8 @@ function billboardNotes(name, b, parts, sizes) {
     '',
     'Printing',
     '- Every part prints without supports.',
-    '- Each board prints on its back, the face up' + (b.border ? ', its border raised round it' : '') + (b.text ? ', “' + b.text + '” raised on it' + (pieces > 1 ? ' across the pieces' : '') : '') + '; the struts lie flat.',
-    ...(b.text ? ['- Paint the board, then the raised letters with a fine brush, or roll a little paint over them on a flat card.'] : []),
+    '- Each board prints on its back, the face up' + (b.border ? ', its border raised round it' : '') + (b.text ? ', “' + b.text + '” ' + (b.textCut ? 'cut into' : 'raised on') + ' it' + (pieces > 1 ? ' across the pieces' : '') : '') + '; the struts lie flat.',
+    ...(b.text ? [b.textCut ? '- Paint the board, then fill the cut letters with paint and wipe the face clean while it is wet.' : '- Paint the board, then the raised letters with a fine brush, or roll a little paint over them on a flat card.'] : []),
     '',
     'Putting it together',
     ...[
