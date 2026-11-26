@@ -62,7 +62,7 @@ test('a way up is checked', () => {
   assert.throws(() => validateBuilding({ ...BOX, access: 'stairs', accessWall: 'front', accessAt: 40 }), /The staircase, 114 mm long, does not fit/);
   assert.throws(() => validateBuilding({ ...BOX, height: 150, access: 'stairs', accessWall: 'front', accessAt: -100 }), /too long to print in one piece: take a ladder/);
   assert.deepEqual(buildingLayout(CASES[0]).parts.filter((p) => p.id === 'access').map((p) => p.name), ['Ladder']);
-  assert.ok(ACCESS.levels.length === 4);
+  assert.ok(ACCESS.levels.length === 5);
 });
 
 test('every way up: one body, flat to print, fitting the plate, reaching its level, clear of every other part', () => {

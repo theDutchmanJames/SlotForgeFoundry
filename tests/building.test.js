@@ -438,7 +438,7 @@ test('a storey above has its own size, place, height, walls and openings, and st
   assert.equal(parts.find((p) => p.id === 'frame2-1').name, 'Front window frame, storey 2');
   assert.throws(() => validateBuilding({ upper: [{ width: 100, x: 30 }] }), /Storey 2 reaches past the storey below/);
   assert.throws(() => validateBuilding({ upper: [{ width: 100 }, { width: 110 }] }), /Storey 3: Width must be between 60 and 100 mm/);
-  assert.throws(() => validateBuilding({ upper: [{}, {}, {}] }), /at most 2 storeys above/);
+  assert.throws(() => validateBuilding({ upper: [{}, {}, {}, {}] }), /at most 3 storeys above/);
   assert.throws(() => validateBuilding({ upper: [{ chimney: 1 }] }), /Storey 2 has an unknown setting: chimney/);
   assert.throws(() => validateBuilding({ upper: [{ wallTexture: 'marble' }] }), /wall texture from the list for storey 2/);
   // Openings are checked against their own storey: its height, its walls.
@@ -826,7 +826,7 @@ test('wood: planks and shingles step from row to row, the lower edge of each pro
 test('the standard buildings are good buildings: each builds, one body a part, and fits the plate once cut', async () => {
   const { BUILDING_PRESETS, pitRow } = await import('../src/building-presets.js');
   const plate = { width: 200, depth: 200, margin: 0 };
-  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'tower', 'vip', 'marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'stand-raised', 'stand-mini', 'gantry-start', 'gantry-lattice', 'gantry-half', 'footbridge', 'platform', 'platform-both', 'platform-plain', 'walkway', 'walkway-towers', 'stand-curved']);
+  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'tower', 'race-control', 'vip', 'marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'stand-raised', 'stand-mini', 'gantry-start', 'gantry-lattice', 'gantry-half', 'footbridge', 'platform', 'platform-both', 'platform-plain', 'walkway', 'crosswalk-tower', 'walkway-towers', 'crosswalk', 'stand-curved']);
   for (const preset of [...BUILDING_PRESETS, { id: 'nine bays', building: pitRow(9) }])
     withParts(
       preset.building,

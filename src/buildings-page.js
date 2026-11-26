@@ -230,7 +230,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('wTowerDepth', 'Tower depth', 60, WALKWAY_LIMITS.towerDepth)}
       ${field('wTowerHeight', 'Tower height', 110, WALKWAY_LIMITS.towerHeight)}
       <label class="bd-row"><span>Tower roof</span><select name="wTowerRoof"><option value="hip">Pyramid</option><option value="flat">Flat</option></select></label>
-      <label class="bd-check"><input type="checkbox" name="wTowerWindows"><span>A window in each tower's front and back</span></label>
+      <label class="bd-check"><input type="checkbox" name="wTowerWindows"><span>Windows up each tower's front and back</span></label>
+      <label class="bd-row"><span>Control cab on top</span><select name="wTowerCab"><option value="none">None</option><option value="left">On the left tower</option><option value="right">On the right tower</option><option value="both">On both towers</option></select></label>
       </div>
       <p class="bd-hint">A covered walkway between two buildings, open at its ends where it meets them. Set its length to the gap between them and the deck as high as the floors it joins: the top of a base on a stand, or a storey's floor. Each side stands in a groove along the deck, a band of windows in panes; the roof's rails hold them apart. Without legs it rests on the buildings, glued to them. With a tower at each end it is a whole piece: each tower a building of its own, a doorway in its wall where the walkway joins it at the height of its deck.</p></section>
     <section class="bd-box" data-bd-card="platform" data-bd-platform hidden><h3>Viewing platform</h3>
@@ -337,7 +338,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
-      <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option></select></label>
+      <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option></select></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
@@ -462,13 +463,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.wTowers.checked = w.towers;
     e.wTowerWindows.checked = w.towerWindows;
     e.wTowerRoof.value = w.towerRoof;
+    e.wTowerCab.value = w.towerCab;
     $('[data-bd-towers]').hidden = !w.towers;
     $('[data-bd-walkway-legs]').hidden = w.towers;
   }
   function readWalkway() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const w = { kind: 'walkway', legs: e.wLegs.checked, towers: e.wTowers.checked, towerWindows: e.wTowerWindows.checked, towerRoof: e.wTowerRoof.value };
+    const w = { kind: 'walkway', legs: e.wLegs.checked, towers: e.wTowers.checked, towerWindows: e.wTowerWindows.checked, towerRoof: e.wTowerRoof.value, towerCab: e.wTowers.checked ? e.wTowerCab.value : 'none' };
     for (const [k, key] of WALKWAY_FIELDS) w[key] = num(e[k]);
     return w;
   }
@@ -693,6 +695,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('upY', 'From the front', s.y, [0, below.depth])}
   ${field('upHeight', 'Wall height', s.height, BUILDING_LIMITS.height)}
   ${field('upBalcony', 'Balcony in front', s.balcony, [0, 40])}
+  <label class="bd-check"><input type="checkbox" name="upBalconyAll"${s.balconyAll ? ' checked' : ''}><span>The balcony runs all round</span></label>
   <label class="bd-check"><input type="checkbox" name="upRailing"${s.railing ? ' checked' : ''}><span>A railing round its floor</span></label>
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
@@ -703,7 +706,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('stCornice', 'Cornice', s.cornice, RELIEF.band)}
   ${field('stPilasters', 'Pilasters apart', s.pilasters, [0, RELIEF.spacing[1]])}
   <label class="bd-check"><input type="checkbox" name="stPanels"${s.panels ? ' checked' : ''}><span>Recessed panels</span></label>
-  <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside. A balcony is its floor reaching out in front, over the garage doors and the pit lane. The railing runs along the open edges of its floor: the balcony, and a terrace where it is set back.</p></div>`
+  <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside. A balcony is its floor reaching out in front, over the garage doors and the pit lane, or all round it. The railing runs along the open edges of its floor: the balcony, and a terrace where it is set back.</p></div>`
       : `<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
@@ -781,7 +784,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       };
     });
     const upper = storey
-      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), railing: e.upRailing.checked, openings, ...openOf() }
+      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), balconyAll: e.upBalconyAll.checked, railing: e.upRailing.checked, openings, ...openOf() }
       : { openings, ...openOf() };
     const rooms = building.rooms && { along: building.rooms.along, sizes: building.rooms.sizes.map((_, i) => num(e['room-' + i])) };
     return {

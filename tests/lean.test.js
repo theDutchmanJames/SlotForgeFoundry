@@ -39,11 +39,17 @@ const LEANING = [
   { door: 'none', width: 80, depth: 70, height: 40, lean: 15, open: true, waist: 15, panes: 3 },
   { door: 'none', width: 100, depth: 100, height: 60, upper: [{ width: 80, depth: 80, x: 10, y: 10, height: 40, lean: 20, wallTexture: 'brick', openings: [{ wall: 'front', type: 'window', at: 40, width: 40, height: 20, sill: 10, frame: true }] }] },
   BUILDING_PRESETS.find((p) => p.id === 'tower').building,
+  // A storey over walls that lean out: its floor as wide as their tops.
+  BUILDING_PRESETS.find((p) => p.id === 'crosswalk-tower').building,
 ];
 
 test('leaning walls and panes are checked', () => {
   assert.throws(() => validateBuilding({ door: 'none', lean: 40 }), new RegExp('lean out 0 to ' + LEAN.most + '°'));
-  assert.throws(() => validateBuilding({ door: 'none', lean: 10, upper: [{}] }), /Only the top storey can have walls that lean out: not the ground floor/);
+  // A storey can stand over walls that lean out, on a floor as wide as their tops: no balcony on it, no way up past them.
+  assert.equal(validateBuilding({ door: 'none', lean: 10, upper: [{}] }).lean, 10);
+  assert.throws(() => validateBuilding({ door: 'none', lean: 10, upper: [{ balcony: 10 }] }), /Over walls that lean out, ground floor, the floor has no balcony or railing/);
+  assert.equal(validateBuilding({ door: 'none', lean: 10, upper: [{}], roof: 'gable' }).roof, 'gable', 'a sloped roof over the storey above');
+  assert.throws(() => validateBuilding({ door: 'none', lean: 10, upper: [{}], access: 'ladder', accessWall: 'right', accessAt: 40, accessTo: 'roof' }), /cannot climb past walls that lean out/);
   assert.throws(() => validateBuilding({ door: 'none', lean: 10, roof: 'gable' }), /carry a flat roof/);
   assert.throws(() => validateBuilding({ lean: 10 }), /no garage door and one room/);
   assert.throws(() => validateBuilding({ door: 'none', height: 120, lean: 25 }), /lean out too far: at most 25 mm/);

@@ -129,3 +129,35 @@ test('towers at the ends: each a building, a doorway where the walkway joins it,
   assert.match(notes, /Stand the two towers 150 mm apart, their doorways facing each other/);
   assert.deepEqual(shapeOf(w).outline[0], [-63, -17]);
 });
+
+test('a control cab on a tower: glazing leaning out under an open terrace; windows up the towers, one above the other', () => {
+  assert.throws(() => validateWalkway({ towerCab: 'top' }), /which tower has a control cab/);
+  assert.throws(() => validateWalkway({ towerCab: 'left' }), /choose towers too/);
+  const settings = { towers: true, towerRoof: 'flat', towerHeight: 170, clearance: 120, towerCab: 'right' };
+  const ids = walkwayLayout(settings).parts.map((p) => p.id);
+  assert.ok(ids.includes('tower2-front3') && !ids.includes('tower1-front2'), 'storeys on the right tower only');
+  withParts(settings, (parts, part) => {
+    for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
+    for (let i = 0; i < parts.length; i++)
+      for (let j = i + 1; j < parts.length; j++) {
+        const both = parts[i].solid.intersect(parts[j].solid);
+        assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap');
+        both.delete();
+      }
+    // The cab's walls lean out: wider at the top than the tower; the terrace over them stands on a floor as wide.
+    const tower = part('tower2-front').solid.boundingBox(),
+      cab = part('tower2-front2').solid.boundingBox(),
+      floor = part('tower2-floor3').solid.boundingBox(),
+      terrace = part('tower2-front3').solid.boundingBox();
+    assert.ok(cab.max[0] - cab.min[0] > tower.max[0] - tower.min[0] + 10, 'the cab leans out');
+    const over = floor.max[0] - floor.min[0] - (cab.max[0] - cab.min[0]);
+    assert.ok(over > -0.01 && over < 3, 'the floor over it as wide as its tops, leaning on with them: ' + over);
+    assert.ok(near(terrace.max[0] - terrace.min[0], tower.max[0] - tower.min[0], 0.01), 'the terrace as wide as the tower');
+    // Walls and frames print flat, over no air.
+    for (const p of parts.filter((q) => /^tower2-(front|back|left|right|floor)/.test(q.id))) assert.ok(overAir(p) <= 0.5 || /floor\d$/.test(p.id), p.name + ' prints over air');
+  });
+  // Windows up the front and back: one above the other.
+  const front = validateBuilding({ width: 60, depth: 60, height: 170, door: 'none', openings: [{ wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 20 }, { wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 60 }] });
+  assert.equal(front.openings.length, 2, 'one above the other on a wall');
+  assert.throws(() => validateBuilding({ width: 60, depth: 60, height: 170, door: 'none', openings: [{ wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 20 }, { wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 44 }] }), /too close/);
+});

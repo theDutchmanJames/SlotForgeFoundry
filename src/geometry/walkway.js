@@ -28,7 +28,10 @@ export const WALKWAY_DEFAULTS = Object.freeze({
   towerDepth: 60,
   towerHeight: 110,
   towerRoof: 'hip',
-  towerWindows: true,
+  towerWindows: true, // windows up the front and back of each tower, one above the other
+  // A control cab on top of a tower: a band of glazing leaning out, an open
+  // terrace over it under the roof. 'none', 'left', 'right' or 'both'.
+  towerCab: 'none',
 });
 export const WALKWAY_LIMITS = Object.freeze({
   length: [40, 180],
@@ -56,6 +59,8 @@ export const WALKWAY = Object.freeze({
   foot: [3, 2],
   pair: 36, // at least this wide for two legs at each end
   pin: [4, 1.5],
+  cab: { height: 30, waist: 8, panes: 3, lean: 20, terrace: 34, parapet: 14, overhang: 8 }, // a control cab on a tower
+  window: { width: 16, height: 22, pitch: 40, top: 40 }, // the windows up a tower: one every pitch, the highest top below its top
 });
 const LABELS = { length: 'Length', width: 'Width', height: 'Wall height', clearance: 'Height above the table', waist: 'Wall under the windows', panes: 'Panes', towerWidth: 'Tower width', towerDepth: 'Tower depth', towerHeight: 'Tower height' };
 
@@ -69,6 +74,8 @@ export function validateWalkway(input) {
   if (typeof w.legs !== 'boolean') throw Error('Choose whether the walkway stands on legs.');
   for (const key of ['towers', 'towerWindows']) if (typeof w[key] !== 'boolean') throw Error('Choose whether the walkway has ' + (key === 'towers' ? 'towers' : 'tower windows') + '.');
   if (!['flat', 'hip'].includes(w.towerRoof)) throw Error('Choose a flat or a pyramid roof for the towers.');
+  if (!['none', 'left', 'right', 'both'].includes(w.towerCab)) throw Error('Choose which tower has a control cab on top.');
+  if (w.towerCab !== 'none' && !w.towers) throw Error('A control cab stands on a tower: choose towers too.');
   if (w.towers) {
     if (w.towerDepth < w.width + 10) throw Error('A tower must be at least ' + (w.width + 10) + ' mm deep: 5 mm wider than the walkway each side.');
     const need = w.clearance + w.height + 8;
@@ -114,8 +121,28 @@ export function walkwayFootprint(w) {
 export function towerBuildings(w) {
   const base = 4;
   const doorway = { type: 'window', at: w.towerDepth / 2, width: w.width - 2 * WALKWAY.wall - 2, height: w.height - 2, sill: w.clearance - base, frame: false };
-  const windows = w.towerWindows ? ['front', 'back'].map((wall) => ({ wall, type: 'window', at: w.towerWidth / 2, width: Math.min(24, w.towerWidth - 20), height: 20, sill: Math.max(10, w.towerHeight - 40), frame: true })) : [];
-  const tower = (inner) => ({
+  // Windows up the front and back, one above the other, the highest near the top.
+  const W = WALKWAY.window,
+    sills = [];
+  for (let z = w.towerHeight - W.top; z >= 15; z -= W.pitch) sills.unshift(z);
+  const windows = w.towerWindows ? ['front', 'back'].flatMap((wall) => sills.map((sill) => ({ wall, type: 'window', at: w.towerWidth / 2, width: W.width, height: W.height, sill, frame: false }))) : [];
+  // On a tower with a cab: the glazing leaning out, the terrace over it.
+  const C = WALKWAY.cab;
+  const cabbed = (key) => w.towerCab === 'both' || w.towerCab === key;
+  const cab = (key) =>
+    cabbed(key)
+      ? {
+          upper: [
+            { width: w.towerWidth, depth: w.towerDepth, x: 0, y: 0, height: C.height, open: true, waist: C.waist, panes: C.panes, lean: C.lean },
+            { width: w.towerWidth, depth: w.towerDepth, x: 0, y: 0, height: C.terrace, open: true, waist: C.parapet, panes: 1 },
+          ],
+          overhangFront: C.overhang,
+          overhangBack: C.overhang,
+          overhangLeft: C.overhang,
+          overhangRight: C.overhang,
+        }
+      : {};
+  const tower = (inner, key) => ({
     width: w.towerWidth,
     depth: w.towerDepth,
     height: w.towerHeight,
@@ -128,11 +155,12 @@ export function towerBuildings(w) {
     overhangLeft: 3,
     overhangRight: 3,
     openings: [{ ...doorway, wall: inner }, ...windows],
+    ...cab(key),
   });
   const y = (w.width - w.towerDepth) / 2;
   return [
-    { key: 'tower1', name: 'Left tower', at: [-w.towerWidth, y], building: tower('right'), apart: [-30, 0, 0] },
-    { key: 'tower2', name: 'Right tower', at: [w.length, y], building: tower('left'), apart: [30, 0, 0] },
+    { key: 'tower1', name: 'Left tower', at: [-w.towerWidth, y], building: tower('right', 'left'), apart: [-30, 0, 0] },
+    { key: 'tower2', name: 'Right tower', at: [w.length, y], building: tower('left', 'right'), apart: [30, 0, 0] },
   ];
 }
 // A tower's parts, named for the tower.

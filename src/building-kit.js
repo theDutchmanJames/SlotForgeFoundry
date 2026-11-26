@@ -43,8 +43,8 @@ export function kitNotes(name, b, parts, sizes) {
       ? ['Stand the base over the end of its pit bay: the track runs in through the open front, its end stop inside, with the base beside it as high as the road.']
       : []),
     ...(stand ? [stand] : []),
-    ...(b.access === 'ladder' ? ['Stand the ladder with its foot on the table and its top against ' + { base: 'the edge of the base', roof: 'the edge of the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3' }[b.accessTo] + ', on the ' + b.accessWall + ' wall, and glue it there.'] : []),
-    ...(b.access === 'stairs' ? ['Stand the staircase on the table against the ' + b.accessWall + ' wall, its landing level with ' + { base: 'the top of the base', roof: 'the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3' }[b.accessTo] + ', its own wall on the outside, and glue it.'] : []),
+    ...(b.access === 'ladder' ? ['Stand the ladder with its foot on the table and its top against ' + { base: 'the edge of the base', roof: 'the edge of the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', on the ' + b.accessWall + ' wall, and glue it there.'] : []),
+    ...(b.access === 'stairs' ? ['Stand the staircase on the table against the ' + b.accessWall + ' wall, its landing level with ' + { base: 'the top of the base', roof: 'the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', its own wall on the outside, and glue it.'] : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(divided

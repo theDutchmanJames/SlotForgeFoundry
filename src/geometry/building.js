@@ -86,11 +86,12 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // The walls of the ground floor as a steel frame: 'solid', 'braced' (an
   // X in each bay between posts) or 'lattice' (a diamond grid).
   wallStyle: 'solid',
-  // The railings: 'bars' (posts between a band and a rail) or 'mesh'.
+  // The railings: 'bars' (posts between a band and a rail), 'mesh' or
+  // 'lattice' (an X between each two posts).
   railingStyle: 'bars',
   // A way up the outside: 'none', 'ladder' or 'stairs', against a wall,
   // starting accessAt along it (from its left end as you look at it); up to
-  // 'base' (the top of the base, on a stand), '2' or '3' (a storey's
+  // 'base' (the top of the base, on a stand), '2', '3' or '4' (a storey's
   // floor) or 'roof' (a flat roof).
   access: 'none',
   accessWall: 'right',
@@ -123,9 +124,15 @@ export const BUILDING_LIMITS = Object.freeze({
 });
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
-// balcony: how far its floor reaches out in front of the storey below, over the garage front; railing: round the open edges of its floor.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
-export const MAX_UPPER = 2;
+// balcony: how far its floor reaches out in front of the storey below, over the garage front, or all round (balconyAll); railing: round the open edges of its floor.
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, balconyAll: false, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
+export const MAX_UPPER = 3;
+/** Walls that lean out: how far out at the top, and the factor everything of the storey widens by there. */
+export function leanGrow(s) {
+  if (!s.lean) return { k: 0, f: 0 };
+  const k = s.height * Math.tan((s.lean * Math.PI) / 180);
+  return { k, f: k / ((s.width / 2 + s.depth / 2) / 2) };
+}
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
   window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false, counter: false, flap: false, flapAngle: 15 }),
@@ -218,6 +225,7 @@ export const ACCESS = Object.freeze({
     ['base', 'The base, on a stand'],
     ['2', 'Storey 2'],
     ['3', 'Storey 3'],
+    ['4', 'Storey 4'],
     ['roof', 'The roof'],
   ]),
   ladder: { width: 16, rail: 4.5, rung: 3, pitch: 9, thick: 3, angle: 75, above: 8 },
@@ -263,6 +271,7 @@ export const KIT = Object.freeze({
   railBand: 4, // a solid band along its foot
   railPost: 3, // its posts and its top rail, square
   railPitch: 20, // posts at most this far apart
+  railBar: 2, // a lattice railing's bars, wide
   railInset: 1, // in from the edge of the deck
   railTab: 1.2, // its two tabs, down into pockets in the deck
   plaque: [18, 10, 1.5], // a bay number plaque: wide, high, thick
@@ -301,7 +310,7 @@ const LABELS = {
 const UNITS = { pitch: '°', textureScale: ' %', standTaper: ' %' };
 const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'counter', 'flap', 'flapAngle'];
 const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
-const STOREY_SUFFIX = ['', ', ground floor', ', storey 2', ', storey 3'];
+const STOREY_SUFFIX = ['', ', ground floor', ', storey 2', ', storey 3', ', storey 4'];
 
 /** The length of a wall along its outside face, on a storey of this size. */
 export const wallLength = (dims, wall) => (wall === 'front' || wall === 'back' ? dims.width : dims.depth);
@@ -360,6 +369,11 @@ function checkOpenings(list, dims, blocks, where) {
   for (const [i, a] of named.entries())
     for (const c of [...named.slice(i + 1), ...blocks]) {
       if (a.wall !== c.wall) continue;
+      // One above the other, with wall (and room for their frames) between them.
+      if (Number.isFinite(a.sill) && Number.isFinite(c.sill) && a.height && c.height) {
+        const [lo, hi] = a.sill < c.sill ? [a, c] : [c, a];
+        if (hi.sill - (lo.sill + lo.height) >= KIT.frame + (lo.frame ? KIT.trim : 0) + (hi.frame ? KIT.trim : 0)) continue;
+      }
       if (Math.abs(a.at - c.at) - (a.width + c.width) / 2 < KIT.frame)
         throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
     }
@@ -461,7 +475,7 @@ export function validateBuilding(input) {
       throw Error({ legs: 'A leg', column: 'The column', tower: 'The tower' }[b.standType] + ' must be ' + lo + ' to ' + fmtMm(hi) + ' mm' + (b.standType === 'legs' ? ' square.' : ' across, inside the base.'));
   }
   // A sign along the top of the front wall: everything in the front wall stays under it.
-  if (!['bars', 'mesh'].includes(b.railingStyle)) throw Error('Choose railings of bars or of mesh.');
+  if (!['bars', 'mesh', 'lattice'].includes(b.railingStyle)) throw Error('Choose railings of bars, of mesh or a lattice.');
   if (!SIGNS.some(([id]) => id === b.sign)) throw Error('Choose a sign from the list.');
   if (b.sign !== 'none' && b.signWidth > b.width) throw Error('The sign is wider than the building: at most ' + b.width + ' mm.');
   if (b.sign === 'billboard') {
@@ -508,6 +522,7 @@ export function validateBuilding(input) {
     checkOpen(s, s.openings, where, false);
     if (!Number.isFinite(s.balcony) || s.balcony < 0 || s.balcony > 40) throw Error('Storey ' + n + ': the balcony must reach out 0 to 40 mm.');
     if (typeof s.railing !== 'boolean') throw Error('Choose whether storey ' + n + ' has a railing.');
+    if (typeof s.balconyAll !== 'boolean') throw Error('Choose whether the balcony of storey ' + n + ' runs all round.');
     below = s;
     return s;
   });
@@ -517,8 +532,12 @@ export function validateBuilding(input) {
   all.forEach((s, i) => {
     if (!s.lean) return;
     const where = several ? STOREY_SUFFIX[i + 1] : '';
-    if (i < all.length - 1) throw Error('Only the top storey can have walls that lean out' + (where ? ': not the' + where.replace(',', '') : '') + '.');
-    if (b.roof !== 'flat') throw Error('Walls that lean out carry a flat roof.');
+    // Under a storey above: its floor as wide as the tops of the walls, no balcony on it.
+    const over = all[i + 1];
+    if (over && (over.balcony || over.railing)) throw Error('Over walls that lean out' + where + ', the floor has no balcony or railing.');
+    if (over && b.access !== 'none' && (b.accessTo === 'roof' || Number(b.accessTo) >= i + 2))
+      throw Error('A way up cannot climb past walls that lean out' + where + '.');
+    if (!over && b.roof !== 'flat') throw Error('Walls that lean out carry a flat roof.');
     if (!i && (b.door !== 'none' || b.rooms)) throw Error('A ground floor with walls that lean out has no garage door and one room.');
     if ((i ? s.openings : openings).some((o) => o.counter || o.flap)) throw Error('Walls that lean out' + where + ' have no counters or flaps.');
     if (s.height * Math.tan((s.lean * Math.PI) / 180) > LEAN.reach) throw Error('The walls' + where + ' lean out too far: at most ' + LEAN.reach + ' mm at the top.');
@@ -617,7 +636,13 @@ function checkAccess(b, all) {
   if (!ACCESS.levels.some(([id]) => id === b.accessTo)) throw Error('Choose where the way up goes.');
   if (b.accessTo === 'base' && b.standType === 'none') throw Error('The base is on the table: a way up to it needs a stand.');
   if (b.accessTo === 'roof' && b.roof !== 'flat') throw Error('A way up onto the roof needs a flat roof.');
-  if (['2', '3'].includes(b.accessTo) && Number(b.accessTo) > all.length) throw Error('There is no storey ' + b.accessTo + ' to go up to.');
+  if (['2', '3', '4'].includes(b.accessTo) && Number(b.accessTo) > all.length) throw Error('There is no storey ' + b.accessTo + ' to go up to.');
+  // It cannot climb through a balcony on its wall, under the level it goes to.
+  const level = b.accessTo === 'roof' ? all.length + 1 : Number(b.accessTo);
+  for (let k = 2; k < level; k++) {
+    const u = all[k - 1];
+    if (u.balcony && (b.accessWall === 'front' || u.balconyAll)) throw Error('The way up would climb through the balcony of storey ' + k + ' on the ' + b.accessWall + ' wall.');
+  }
   const { against, rise } = accessPlace(b, all);
   const L = wallLength(against, b.accessWall);
   const from = b.access === 'ladder' ? b.accessAt - ACCESS.ladder.width / 2 : b.accessAt,
@@ -641,7 +666,7 @@ function accessPlace(b, all) {
   }
   const k = Number(b.accessTo);
   const s = stack[k - 1];
-  const balcony = w === 'front' ? all[k - 1].balcony ?? 0 : 0;
+  const balcony = w === 'front' || all[k - 1].balconyAll ? all[k - 1].balcony ?? 0 : 0;
   return { against: stack[k - 2], rise: H + s.floor, out: balcony };
 }
 // A staircase up so far: its steps, each one's rise, its length along the wall.
@@ -821,9 +846,21 @@ export function railingRuns(b, storeys) {
         W = s.width,
         D = s.depth,
         z = s.eave + KIT.slab;
+      const label = ', storey ' + above.n;
+      // A balcony all round: a railing along each edge of the floor, the sides between the front and the back.
+      if (u.balconyAll) {
+        const x0 = -bal,
+          x1 = W + bal,
+          y0 = -bal,
+          y1 = D + bal;
+        runs.push({ id: 'railing' + above.n + '-front', name: 'Railing' + label + ', front', from: [x0, y0], d: [1, 0], out: [0, -1], length: x1 - x0, z, storey: s });
+        runs.push({ id: 'railing' + above.n + '-back', name: 'Railing' + label + ', back', from: [x0, y1], d: [1, 0], out: [0, 1], length: x1 - x0, z, storey: s });
+        runs.push({ id: 'railing' + above.n + '-left', name: 'Railing' + label + ', left', from: [x0, y0 + back], d: [0, 1], out: [-1, 0], length: y1 - y0 - 2 * back, z, storey: s });
+        runs.push({ id: 'railing' + above.n + '-right', name: 'Railing' + label + ', right', from: [x1, y0 + back], d: [0, 1], out: [1, 0], length: y1 - y0 - 2 * back, z, storey: s });
+        return;
+      }
       const ax = above.ox - s.ox,
         ay = above.oy - s.oy;
-      const label = ', storey ' + above.n;
       // Along the front of the floor, and back along each side to the storey above, or all the way where it stands in from that side.
       runs.push({ id: 'railing' + above.n + '-front', name: 'Railing' + label + ', front', from: [0, -bal], d: [1, 0], out: [0, -1], length: W, z, storey: s });
       const sideTo = (inFrom) => (inFrom > 3 ? D : ay);
@@ -1020,7 +1057,12 @@ export function buildingCuts(input, plate) {
     flats: [
       { name: 'base', extent: [b.width + 2 * KIT.ledge, b.depth + 2 * KIT.ledge], scale: [1, 1] },
       // A floor covers the storey below it.
-      ...storeys.slice(1).map((s, i) => ({ name: 'floor' + s.n, extent: [storeys[i].width, storeys[i].depth + b.upper[i].balcony], scale: [1, 1] })),
+      ...storeys.slice(1).map((s, i) => {
+        const u = b.upper[i],
+          side = u.balconyAll ? u.balcony : 0,
+          { f } = leanGrow(storeys[i]);
+        return { name: 'floor' + s.n, extent: [storeys[i].width * (1 + f) + 2 * side, storeys[i].depth * (1 + f) + u.balcony + side], scale: [1, 1] };
+      }),
       { name: 'roof', extent: roofExtent, scale },
     ],
   });
@@ -1034,7 +1076,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
-  const { Manifold } = wasm;
+  const { Manifold, CrossSection } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
   const temp = [];
@@ -1081,6 +1123,29 @@ export function buildGarage(wasm, input, plate = null) {
     }
     // Mesh: the field between the end posts filled, square holes through it.
     if (b.railingStyle === 'mesh') bits.push(meshField(B, len, post, band, h - post, th));
+    // Lattice: an X between each two posts, a little into them, the band and the rail.
+    if (b.railingStyle === 'lattice') {
+      const v0 = band,
+        v1 = h - post,
+        r = KIT.railBar / 2;
+      const bar = (a, e) => {
+        const d = [e[0] - a[0], e[1] - a[1]],
+          l = Math.hypot(...d),
+          n = [(-d[1] / l) * r, (d[0] / l) * r];
+        return new CrossSection([[[a[0] - n[0], a[1] - n[1]], [e[0] - n[0], e[1] - n[1]], [e[0] + n[0], e[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]], 'Positive');
+      };
+      for (let k = 0; k + 1 < posts; k++) {
+        const u0 = Math.min(len - post, Math.max(0, (k * (len - post)) / (posts - 1))) + post,
+          u1 = Math.min(len - post, Math.max(0, ((k + 1) * (len - post)) / (posts - 1)));
+        if (u1 - u0 < 2 * KIT.railBar) continue;
+        const bars = [bar([u0, v0], [u1, v1]), bar([u0, v1], [u1, v0])];
+        const field = new CrossSection([[[u0 - 0.3, v0 - 0.3], [u1 + 0.3, v0 - 0.3], [u1 + 0.3, v1 + 0.3], [u0 - 0.3, v1 + 0.3]]], 'Positive');
+        const both = CrossSection.union(bars);
+        const x = both.intersect(field);
+        bits.push(own(x.extrude(th)));
+        [...bars, field, both, x].forEach((q) => q.delete());
+      }
+    }
     const tabs = [0.2, 0.8].map((f) => len * f);
     for (const u of tabs) bits.push(B(u - 3, -tab, 0, u + 3, 0.01, th));
     const panel = place(own(Manifold.union(bits)));
@@ -1181,6 +1246,29 @@ export function buildGarage(wasm, input, plate = null) {
         top = s.floor,
         z1 = s.eave;
       const own2 = [];
+      // Walls that lean out: everything of this storey widens with the height
+      // above its floor, by one factor in x and y about its middle.
+      const { f: grow } = leanGrow(s);
+      const leanBy = (most) => (v) => {
+        const dz = Math.min(Math.max(v[2] - top, 0), most) / s.height;
+        v[0] = W / 2 + (v[0] - W / 2) * (1 + grow * dz);
+        v[1] = D / 2 + (v[1] - D / 2) * (1 + grow * dz);
+      };
+      // Up to the tops of the walls, and no further: a roof on them is as wide as they are.
+      const leanAt = leanBy(s.height);
+      // A part leaning with the walls: split at the floor, under which
+      // nothing moves; above it the walls lean from the floor up. The floor
+      // over them, its frame and the holes for the frame's tabs lean on,
+      // straight, past the tops of the walls, so the tabs meet their holes.
+      const warpWith = (fn) => (solid) => {
+        const lower = trim(solid, [0, 0, -1], -top),
+          upper = trim(solid, [0, 0, 1], top);
+        if (upper.isEmpty()) return solid;
+        const moved = own(upper.warp(fn));
+        return lower.isEmpty() ? moved : own(Manifold.union([lower, moved]));
+      };
+      const warped = warpWith(leanAt),
+        warpedOn = warpWith(leanBy(Infinity));
       // How far this storey lifts in the exploded view, and its walls with it.
       const lift = (s.n - 1) * APART.storey;
       const wallApart = (w) => add3(scale3(OUTWARD[w], APART.out), [0, 0, APART.up + lift]);
@@ -1455,9 +1543,11 @@ export function buildGarage(wasm, input, plate = null) {
       const above = storeys[s.n];
       if (above) {
         const slabTop = z1 + KIT.slab;
-        // A balcony: the floor reaches out in front, over the garage front.
-        const bal = b.upper[above.n - 2].balcony;
-        let slab = box(0, -bal, z1, W, D, slabTop);
+        // A balcony: the floor reaches out in front, over the garage front; or all round.
+        const bal = b.upper[above.n - 2].balcony,
+          side = b.upper[above.n - 2].balconyAll ? bal : 0;
+        let slab = box(-side, -bal, z1, W + side, D + side, slabTop);
+        if (grow) slab = warpedOn(slab);
         for (const { panel, pockets, piece } of railingsOf(s).filter((r) => r.piece.id.startsWith('railing'))) {
           slab = minus(slab, ...pockets);
           local({ id: piece.id, name: piece.name, role: 'frame', solid: panel, outward: [...piece.out, 0], apart: [piece.out[0] * 10, piece.out[1] * 10, lift + APART.storey + 10] });
@@ -1477,7 +1567,9 @@ export function buildGarage(wasm, input, plate = null) {
           const within = x0 >= inn[0] && x1 <= inn[2] && y0 >= inn[1] && y1 <= inn[3];
           return meets && !within;
         };
-        const { frame, holes } = lipFrame(W, D, { z1 }, { avoid: (q) => groovedAt(q) || clearOfDividers(s)(q), high: KIT.slab, through: true });
+        const lipped = lipFrame(W, D, { z1 }, { avoid: (q) => groovedAt(q) || clearOfDividers(s)(q), high: KIT.slab, through: true });
+        const frame = lipped.frame,
+          holes = grow ? lipped.holes.map(warpedOn) : lipped.holes;
         const groove = minus(
           box(ax - c, ay - c, slabTop - g, ax + above.width + c, ay + above.depth + c, slabTop + 1),
           box(ax + t + c, ay + t + c, slabTop - g - 1, ax + above.width - t - c, ay + above.depth - t - c, slabTop + 2),
@@ -1485,10 +1577,11 @@ export function buildGarage(wasm, input, plate = null) {
         // Exploded, it hangs between the walls below and the walls above.
         const floorApart = [0, 0, lift + APART.storey - APART.up];
         // It prints the right way up, the groove open on top, the slots straight through.
-        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(slab, groove, ...holes), lie: [0, 0, 0], apart: floorApart };
+        // Over walls that lean out it is made in its shape: it does not lean with them.
+        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(slab, groove, ...holes), lie: [0, 0, 0], apart: floorApart, ...(grow && { shaped: true }) };
         const floorPlan = plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']];
-        local(...cutFlat(floor, floorPlan, [0, -bal]));
-        local(...cutFlat({ id: 'floor' + above.n + '-frame', name: 'Floor frame, storey ' + above.n, role: 'lip', solid: frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.storey - APART.up - 10] }, floorPlan, [0, 0]));
+        local(...cutFlat(floor, floorPlan, [-side - (W / 2) * grow, -bal - (D / 2) * grow]));
+        local(...cutFlat({ id: 'floor' + above.n + '-frame', name: 'Floor frame, storey ' + above.n, role: 'lip', solid: grow ? warpedOn(frame) : frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.storey - APART.up - 10], ...(grow && { shaped: true }) }, floorPlan, [0, 0]));
       }
 
       // Corner braces: an L in each inside corner, on the floor against both
@@ -1632,24 +1725,10 @@ export function buildGarage(wasm, input, plate = null) {
       if (s.lean) {
         // Widening by one factor in x and y keeps every flat face flat, so the
         // parts still meet; a wall leans out as far as it is from the middle.
-        const k = s.height * Math.tan((s.lean * Math.PI) / 180);
         const cx = W / 2,
           cy = D / 2,
-          f = k / ((cx + cy) / 2);
-        const lean = (v) => {
-          const dz = Math.min(Math.max(v[2] - top, 0), s.height) / s.height;
-          v[0] = cx + (v[0] - cx) * (1 + f * dz);
-          v[1] = cy + (v[1] - cy) * (1 + f * dz);
-        };
-        // A part is split at the floor: under it nothing moves, above it the
-        // walls lean from the floor up.
-        const warped = (solid) => {
-          const lower = trim(solid, [0, 0, -1], -top),
-            upper = trim(solid, [0, 0, 1], top);
-          if (upper.isEmpty()) return solid;
-          const moved = own(upper.warp(lean));
-          return lower.isEmpty() ? moved : own(Manifold.union([lower, moved]));
-        };
+          f = grow,
+          lean = leanAt;
         // Its outside leans out by (its distance from the middle) × f over
         // the height, its inside a little less. A wall lies on its inside, a
         // frame or a sign on its back against the wall's outside.
@@ -1658,6 +1737,7 @@ export function buildGarage(wasm, input, plate = null) {
         const wallOf = (out) => WALLS.find((w) => OUTWARD[w].every((v, i) => v === out[i]));
         for (let i = 0; i < own2.length; i++) {
           const part = own2[i];
+          if (part.shaped) continue;
           const w = part.outward && !part.lie && !part.turn ? wallOf(part.outward) : null;
           own2[i] = { ...part, solid: warped(part.solid), ...(w && { lie: LIE[w](angle(w, part.role === 'wall' ? t : 0)) }) };
         }
