@@ -20,6 +20,9 @@ import {
   HATCH,
   KIT,
   SIGNS,
+  STAND,
+  OPEN,
+  LEAN,
   MAX_ROOMS,
   MAX_UPPER,
   MIN_ROOM,
@@ -272,7 +275,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
-      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable"')}
+      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip"')}
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
@@ -311,6 +314,16 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
       <div class="bd-cuts"></div>
       <p class="bd-hint">A part longer than your plate is cut into pieces that join like a puzzle: dovetail tabs, or along the joints of a brick or block wall so the seam is one more joint. Move a cut anywhere in its range: both pieces still fit the plate, with the tab. A cut may run through a window or a door, not along its side.</p></section>
+    <section class="bd-box" data-bd-card="support"><h3>Stand</h3>
+      <label class="bd-row"><span>Stands on</span><select name="standType">${STAND.types.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
+      <div data-bd-stand-size>
+      ${field('standHeight', 'Height', building.standHeight, BUILDING_LIMITS.standHeight)}
+      ${field('standSize', 'Size', building.standSize, BUILDING_LIMITS.standSize)}
+      <div data-bd-column>
+      <label class="bd-row"><span>Column</span><select name="standShape"><option value="square">Square</option><option value="round">Round</option></select></label>
+      ${field('standTaper', 'Wider at its foot', building.standTaper, BUILDING_LIMITS.standTaper, '%')}
+      </div></div>
+      <p class="bd-hint">Raise the building off the table: on four legs in the corners of its base, on one column in the middle (square or round, wider at its foot) or on a braced tower of four frames. Size is a leg's side, the column's top or the tower's side; the building may reach out past it all round. Each support has pins on top that push up into pockets under the base. Legs and the column print standing up; the tower's frames print flat and stand in its foot.</p></section>
     <section class="bd-box" data-bd-card="base"><h3>Base</h3>
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
@@ -549,8 +562,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('upHeight', 'Wall height', s.height, BUILDING_LIMITS.height)}
   ${field('upBalcony', 'Balcony in front', s.balcony, [0, 40])}
   <label class="bd-check"><input type="checkbox" name="upRailing"${s.railing ? ' checked' : ''}><span>A railing round its floor</span></label>
+  <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
+  ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
+  ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
   <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside. A balcony is its floor reaching out in front, over the garage doors and the pit lane. The railing runs along the open edges of its floor: the balcony, and a terrace where it is set back.</p></div>`
-      : '<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>';
+      : `<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>
+  <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
+  ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
+  ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
+  <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof.</p>`;
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
   function drawOpenings() {
@@ -576,6 +596,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('.bd-openings').innerHTML = rows.join('') || '<p class="bd-hint">No windows or doors in the ' + wall + ' wall' + where + '.</p>';
     for (const b of host.querySelectorAll('[data-bd-wall]')) b.setAttribute('aria-pressed', String(b.dataset.bdWall === wall));
   }
+  // Whether the chosen storey is open, and its waist wall.
+  function openOf() {
+    const e = form.elements;
+    const s = storeyOf(building, storey);
+    const num = (el, was) => (el ? (el.value === '' ? NaN : Number(el.value)) : was);
+    return { open: e.stOpen ? e.stOpen.checked : s.open, waist: num(e.stWaist, s.waist), panes: num(e.stPanes, s.panes), lean: num(e.stLean, s.lean) };
+  }
   function readForm() {
     if (isStand()) return readStand();
     if (isGantry()) return readGantry();
@@ -598,8 +625,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       };
     });
     const upper = storey
-      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), railing: e.upRailing.checked, openings }
-      : { openings };
+      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), railing: e.upRailing.checked, openings, ...openOf() }
+      : { openings, ...openOf() };
     const rooms = building.rooms && { along: building.rooms.along, sizes: building.rooms.sizes.map((_, i) => num(e['room-' + i])) };
     return {
       ...withStorey(building, storey, upper),
@@ -627,6 +654,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       numbers: e.numbers.checked,
       firstNumber: num(e.firstNumber),
       sign: e.sign.value,
+      standType: e.standType.value,
+      standHeight: num(e.standHeight),
+      standSize: num(e.standSize),
+      standShape: e.standShape.value,
+      standTaper: num(e.standTaper),
       signWidth: num(e.signWidth),
       signHeight: num(e.signHeight),
       cuts: readCuts(building),
@@ -653,6 +685,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
+      $('[data-bd-stand-size]').hidden = building.standType === 'none';
+      $('[data-bd-column]').hidden = building.standType !== 'column';
+      // Open or closed, the storey's panel shows its waist wall or not.
+      if (!!form.elements.stWaist !== !!storeyOf(building, storey)?.open) drawStoreys();
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
       const walls = storeyOf(building, storey);
       for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
@@ -853,6 +889,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       card = 'storeys';
     } else if (/^roof/.test(id)) card = 'roof';
     else if (/^base/.test(id)) card = 'base';
+    else if (/^(leg|column|tower)/.test(id)) card = 'support';
     else if (/^door/.test(id)) card = 'garage';
     else if (/^divide/.test(id)) card = 'size';
     else if (/^brace/.test(id)) {
@@ -910,6 +947,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.numbers.checked = b.numbers;
     form.elements.firstNumber.value = b.firstNumber;
     form.elements.sign.value = b.sign;
+    for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
+    for (const k of ['standHeight', 'standSize', 'standTaper']) form.elements[k].value = b[k];
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
     $('[name="buildingName"]').value = name;

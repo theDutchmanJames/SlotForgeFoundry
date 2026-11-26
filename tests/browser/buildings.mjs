@@ -270,6 +270,28 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
   await host.locator('[data-bd-part="board"]').click();
   await page.waitForFunction(() => document.querySelector('[data-bd-card="platformRail"]').classList.contains('bd-flash'));
+  // A building on a stand, open above its waist wall.
+  await host.locator('[data-bd-preset="booth-column"]').click();
+  await host.locator('[data-bd-part="column"]').waitFor();
+  assert.ok((await setting('stOpen').isChecked()) && (await setting('stWaist').isVisible()));
+  await setting('standType').selectOption('legs');
+  await setting('standSize').fill('12');
+  await setting('standSize').press('Tab');
+  await host.locator('[data-bd-part="leg-4"]').waitFor();
+  assert.ok(await host.locator('[data-bd-column]').isHidden());
+  await host.locator('[data-bd-part="leg-1"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="support"]').classList.contains('bd-flash'));
+  await setting('stOpen').uncheck();
+  await page.waitForFunction(() => !document.querySelector('.bd-form [name="stWaist"]'));
+  // A control tower: its top storey open in panes, its walls leaning out, under a hip-free flat roof.
+  await host.locator('[data-bd-preset="tower"]').click();
+  await host.locator('[data-bd-part="front3"]').waitFor();
+  await host.locator('[data-bd-storey="2"]').click();
+  assert.equal(await setting('stLean').inputValue(), '15');
+  assert.equal(await setting('stPanes').inputValue(), '3');
+  // A hip roof: its four panels.
+  await host.locator('[data-bd-preset="tower-pyramid"]').click();
+  await host.locator('[data-bd-part="roof-right"]').waitFor();
   // A food stall: serving hatches with a counter and a flap, a sign.
   await host.locator('[data-bd-preset="stall-container"]').click();
   await host.locator('[data-bd-part="flap-2"]').waitFor();

@@ -119,7 +119,7 @@ export function buildPlatform(wasm, input) {
   const p = validatePlatform(input);
   const temp = [];
   const own = (x) => (temp.push(x), x);
-  const { box, poly, sweep, railing } = kitShapes(wasm, own);
+  const { box, poly, sweep, railing, truss } = kitShapes(wasm, own);
   const union = (list) => own(Manifold.union(list));
   const W = p.width,
     D = p.depth,
@@ -131,34 +131,8 @@ export function buildPlatform(wasm, input) {
   const under = H - T;
   const parts = [];
   try {
-    // A frame in its own plane (u along it, v up), its tabs on top: legs at
-    // its ends and between its bays, a chord at the foot and at the top, an
-    // X of braces in each bay.
-    const frameShape = (len) => {
-      const bays = Math.max(1, Math.ceil((len - M) / PLATFORM.bay));
-      const legs = Array.from({ length: bays + 1 }, (_, k) => (k * (len - M)) / bays);
-      const bits = [poly([[0, 0], [len, 0], [len, M], [0, M]]), poly([[0, under - M], [len, under - M], [len, under], [0, under]])];
-      for (const u of legs) bits.push(poly([[u, 0], [u + M, 0], [u + M, under], [u, under]]));
-      const b = PLATFORM.brace / 2;
-      const bar = (a, c) => {
-        const d = [c[0] - a[0], c[1] - a[1]],
-          l = Math.hypot(...d),
-          n = [(-d[1] / l) * b, (d[0] / l) * b];
-        return poly([[a[0] - n[0], a[1] - n[1]], [c[0] - n[0], c[1] - n[1]], [c[0] + n[0], c[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]);
-      };
-      for (let k = 0; k < bays; k++) {
-        const u0 = legs[k] + M,
-          u1 = legs[k + 1],
-          v0 = M,
-          v1 = under - M;
-        const inside = poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
-        bits.push(own(own(CrossSection.union([bar([u0, v0], [u1, v1]), bar([u0, v1], [u1, v0])])).intersect(inside)));
-      }
-      const [tl, th] = PLATFORM.tab;
-      const tabs = [0.25 * len, 0.75 * len];
-      for (const u of tabs) bits.push(poly([[u - tl / 2, under - 0.01], [u + tl / 2, under - 0.01], [u + tl / 2, under + th], [u - tl / 2, under + th]]));
-      return { shape: own(CrossSection.union(bits)), tabs };
-    };
+    // A frame: braced, its tabs on top.
+    const frameShape = (len) => truss(len, under, { member: M, brace: PLATFORM.brace, bay: PLATFORM.bay, tab: PLATFORM.tab });
     // Each frame: where it starts, along which way, the way in, and how long.
     const frames = [
       { id: 'frame-front', from: [I, I], dir: [1, 0, 0], inward: [0, 1, 0], len: W - 2 * I },

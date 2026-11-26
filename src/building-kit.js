@@ -28,6 +28,11 @@ export function kitNotes(name, b, parts, sizes) {
   const framed2 = parts.some((p) => /^roof.*-frame/.test(p.id));
   const divided = parts.some((p) => /^divide/.test(p.id));
   const doors = parts.filter((p) => /^door\d*$/.test(p.id)).length;
+  const stand = {
+    legs: 'Stand the four legs on the table and lay the base on them, each pin up into its pocket under the base, with a drop of glue.',
+    column: 'Stand the column on the table and lay the base on it, its pin up into the pocket under the middle of the base, with a drop of glue.',
+    tower: 'Stand the four tower frames in the slots of the tower foot, the front and the back outside the ends, and glue the corners. Lay the base on top, the tabs of the frames up into the pockets under it.',
+  }[b.standType];
   const steps = [
     ...(cut
       ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
@@ -35,6 +40,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...(b.lane
       ? ['Stand the base over the end of its pit bay: the track runs in through the open front, its end stop inside, with the base beside it as high as the road.']
       : []),
+    ...(stand ? [stand] : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(divided
@@ -61,9 +67,11 @@ export function kitNotes(name, b, parts, sizes) {
     ...(parts.some((p) => /^(railing|roofrail)/.test(p.id))
       ? ['Push the two tabs of each railing into their pockets along the edge of its floor or roof, the posts on the outside, with a drop of glue in each. The pieces of a long railing meet end to end.']
       : []),
-    ...(framed2 ? ['Push the roof frame' + (sloped && b.roof === 'gable' ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
+    ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
-      ? b.roof === 'gable'
+      ? b.roof === 'hip'
+        ? 'Lay the four roof panels on the walls so they meet along the hips' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
+        : b.roof === 'gable'
         ? 'Lay the two roof panels on the walls so they meet at the ridge' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
         : 'Lay the roof panel on the walls, its high edge on the tallest wall' + (framed2 ? ', its frame inside the walls' : '') + '. Glue it along the tops of the walls.'
       : framed2

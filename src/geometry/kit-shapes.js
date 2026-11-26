@@ -45,5 +45,38 @@ export function kitShapes(wasm, own) {
     const pockets = at.map((u) => place(B(u - 3 - 0.2, -R.tab - 0.2, -0.2, u + 3 + 0.2, 0.5, R.thick + 0.2)));
     return { panel, pockets };
   };
-  return { box, poly, sweep, railing };
+  /**
+   * A braced frame in its own plane (u along it, v up), as an outline: legs
+   * at its ends and between its bays, a chord at the foot and at the top, an
+   * X of braces in each bay; tabs on top (and under it, if `foot`), a
+   * quarter of the way in from each end. Returns the outline and where the tabs are.
+   */
+  const truss = (len, high, { member: M, brace, bay, tab: [tl, th], foot = false }) => {
+    const bays = Math.max(1, Math.ceil((len - M) / bay));
+    const legs = Array.from({ length: bays + 1 }, (_, k) => (k * (len - M)) / bays);
+    const bits = [poly([[0, 0], [len, 0], [len, M], [0, M]]), poly([[0, high - M], [len, high - M], [len, high], [0, high]])];
+    for (const u of legs) bits.push(poly([[u, 0], [u + M, 0], [u + M, high], [u, high]]));
+    const b = brace / 2;
+    const bar = (a, c) => {
+      const d = [c[0] - a[0], c[1] - a[1]],
+        l = Math.hypot(...d),
+        n = [(-d[1] / l) * b, (d[0] / l) * b];
+      return poly([[a[0] - n[0], a[1] - n[1]], [c[0] - n[0], c[1] - n[1]], [c[0] + n[0], c[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]);
+    };
+    for (let k = 0; k < bays; k++) {
+      const u0 = legs[k] + M,
+        u1 = legs[k + 1],
+        v0 = M,
+        v1 = high - M;
+      const inside = poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+      bits.push(own(own(CrossSection.union([bar([u0, v0], [u1, v1]), bar([u0, v1], [u1, v0])])).intersect(inside)));
+    }
+    const tabs = [0.25 * len, 0.75 * len];
+    for (const u of tabs) {
+      bits.push(poly([[u - tl / 2, high - 0.01], [u + tl / 2, high - 0.01], [u + tl / 2, high + th], [u - tl / 2, high + th]]));
+      if (foot) bits.push(poly([[u - tl / 2, -th], [u + tl / 2, -th], [u + tl / 2, 0.01], [u - tl / 2, 0.01]]));
+    }
+    return { shape: own(CrossSection.union(bits)), tabs };
+  };
+  return { box, poly, sweep, railing, truss };
 }
