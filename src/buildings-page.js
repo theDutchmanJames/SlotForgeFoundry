@@ -561,7 +561,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[data-bd-gantry-size]').textContent =
       (g.type === 'half' ? 'Its beam reaches ' + fmt(g.reach) + ' mm out over the road' : 'Span is the clear width between the ' + (g.type === 'bridge' ? 'staircases' : 'legs') + ': the track with its borders') +
       ', ' + fmt(g.clearance) + ' mm clear underneath. On the table it takes ' + fmt(w) + ' × ' + fmt(d) + ' mm. In the Track Planner, a gantry over a straight takes the straight\'s width as its span.' +
-      (g.members === 'lattice' ? ' Lattice: the legs are square tubes and the beam a girder, opened with diamonds whose edges are all at 45°, so they print without supports.' : '');
+      (g.members === 'lattice' ? ' Lattice: each leg an open box of four corner posts with an X in every panel, printing standing; the beam two flat lattice girders glued across the legs and a lattice top over them, a board on the front for a sign, the start lights in it.' : '');
   }
   function readGantry() {
     const e = form.elements;

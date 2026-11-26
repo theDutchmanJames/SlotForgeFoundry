@@ -8,6 +8,7 @@
 // for 1:32: x across the track, y along it, z up.
 
 import { JOINT, seamRegion, tabPlaces } from './building-cuts.js';
+import { kitShapes } from './kit-shapes.js';
 
 export const GANTRY_TYPES = Object.freeze([
   ['start', 'Start gantry'],
@@ -50,9 +51,10 @@ export const GANTRY = Object.freeze({
   rise: 7, // a step of a staircase at most this high
   tread: 9, // and this deep
   landing: 18, // the top of a staircase, under the end of the walkway
-  // A lattice: a leg as a square tube (its side, its wall), the beam deeper
-  // and higher; the diamonds (the margin round them, the bar between two).
-  lattice: { leg: 20, wall: 2, beam: [12, 30], margin: 2, bar: 2, cap: 8 },
+  // A lattice: a leg as an open box (its side, its corner posts), its bars;
+  // the girders (high, thick) and the longest panel between their posts; the
+  // margin round the diamonds in a footbridge's walls.
+  lattice: { leg: 22, post: 3, bar: 2.4, girder: [26, 3], pitch: 26, margin: 2 },
 });
 /** A leg's side: wider as a lattice tube. */
 export const legOf = (g) => (g.members === 'lattice' ? GANTRY.lattice.leg : GANTRY.leg);
@@ -116,6 +118,12 @@ export function gantryLayout(input, plate = null) {
     half: [['leg-1', 'Leg', 'frame'], ['beam', 'Beam', 'roof']],
     bridge: [['stair-1', 'Staircase, left', 'wall'], ['stair-2', 'Staircase, right', 'wall'], ['deck', 'Walkway', 'floor']],
   }[g.type];
+  // A lattice gantry: open legs, two girders and a board instead of a beam.
+  if (g.members === 'lattice' && g.type !== 'bridge') {
+    const legs = names.filter(([id]) => id.startsWith('leg'));
+    const more = [['beam-front', 'Girder, front', 'roof'], ['beam-back', 'Girder, back', 'roof'], ['beam-top', 'Girder, top', 'roof'], ...(g.board ? [['board', 'Board', 'wall']] : [])];
+    return { building: g, parts: [...legs, ...more].map(([id, name, role]) => ({ id, name, role })) };
+  }
   return { building: g, parts: names.map(([id, name, role]) => ({ id, name, role })) };
 }
 
@@ -192,35 +200,135 @@ export function buildGantry(wasm, input, plate = null) {
       const walls = lattice ? diamonds(x0 + LT.margin, x1 - LT.margin, zTop + t, zTop + t + g.wallHeight, (cs) => own(own(cs.extrude(W + 2)).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, W + 1, 0, 1])), false) : [];
       const deck = minus(B(x0, 0, zTop, x1, W, zTop + t + g.wallHeight), B(x0 - 1, t, zTop + t, x1 + 1, W - t, zTop + t + g.wallHeight + 1), ...walls);
       parts.push(...cutLong({ id: 'deck', name: 'Walkway', role: 'floor', solid: deck, lie: [0, 0, 0], apart: [0, 0, 20] }, [x0, x1], 'xy'));
+    } else if (lattice) {
+      // Like a steel truss, as the kits are: each leg an open box of four
+      // corner posts with an X in each panel of each side, standing on its
+      // foot; the beam two flat girders, front and back, glued across the
+      // faces of the legs at the top; a board for a sign on the front, the
+      // start lights in it. The legs print standing (their braces steeper
+      // than 45°), the girders and the board lie flat.
+      const { sweep, poly } = kitShapes(wasm, own);
+      const half = g.type === 'half';
+      const f = footOf(g),
+        ft = half ? GANTRY.foot[1] + 1 : GANTRY.foot[1];
+      const o = (f - L) / 2;
+      const { post: P, bar, girder: [bh, gt], pitch } = LT;
+      const legX = half ? [o] : [o, o + L + g.span];
+      const zBeam = g.clearance,
+        zTop = zBeam + bh;
+      const rect = (u0, v0, u1, v1) => poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+      const line = (a, c) => {
+        const d = [c[0] - a[0], c[1] - a[1]],
+          l = Math.hypot(...d),
+          n = [(-d[1] / l) * (bar / 2), (d[0] / l) * (bar / 2)];
+        return poly([[a[0] - n[0], a[1] - n[1]], [c[0] - n[0], c[1] - n[1]], [c[0] + n[0], c[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]);
+      };
+      // An X between u0 and u1, v0 and v1, a little into what is round it so it is one with it.
+      const cross = (u0, v0, u1, v1) => own(own(CrossSection.union([line([u0, v0], [u1, v1]), line([u0, v1], [u1, v0])])).intersect(rect(u0 - 0.3, v0 - 0.3, u1 + 0.3, v1 + 0.3)));
+      // Legs: from the foot to the top of the beam.
+      legX.forEach((x, i) => {
+        const bits = [B(x - o, 0, 0, x - o + f, f, ft)];
+        for (const [px, py] of [[x, o], [x + L - P, o], [x, o + L - P], [x + L - P, o + L - P]]) bits.push(B(px, py, ft - 0.01, px + P, py + P, zTop));
+        // Square panels up each side, an X in each: steeper than 45°, so they print.
+        const panels = Math.max(1, Math.floor((zTop - ft) / ((L - P) * 1.25)));
+        const ph = (zTop - ft) / panels;
+        const xs = [];
+        for (let k = 0; k < panels; k++) xs.push(cross(P / 2, ft + k * ph, L - P / 2, ft + (k + 1) * ph));
+        const side = own(CrossSection.union(xs));
+        const sides = [
+          [[1, 0, 0], [x, o, 0], [0, 1, 0]],
+          [[1, 0, 0], [x, o + L - bar, 0], [0, 1, 0]],
+          [[0, 1, 0], [x, o, 0], [1, 0, 0]],
+          [[0, 1, 0], [x + L - bar, o, 0], [1, 0, 0]],
+        ];
+        for (const [a, origin, dir] of sides) bits.push(sweep(side, a, [0, 0, 1], origin, dir, 0, bar));
+        // Cut level at the top of the posts, where the girders end.
+        const solid = own(own(Manifold.union(bits)).trimByPlane([0, 0, -1], -zTop));
+        parts.push({ id: 'leg-' + (i + 1), name: half ? 'Leg' : i ? 'Leg, right' : 'Leg, left', role: 'frame', solid, lie: [0, 0, 0], apart: [i ? 12 : -12, 0, 0] });
+      });
+      // The girders: across the legs from the outside of one to the outside of
+      // the other, or out over the road from a half gantry's leg. Chords, a
+      // post at each end and over each leg's inside, and between them panels
+      // with an X; solid where they are cut to fit the plate.
+      const bx0 = o,
+        bx1 = half ? o + L + g.reach : o + 2 * L + g.span;
+      const posts = [bx0, bx1 - P];
+      const solidAt = [];
+      for (const x of legX) posts.push(x + L - P, x);
+      if (plate) {
+        const room = Math.max(plate.width, plate.depth) - 2 * (plate.margin ?? 0) - JOINT.length;
+        const pieces = Math.ceil((bx1 - bx0) / room - 1e-9);
+        for (let k = 1; k < pieces; k++) {
+          const at = bx0 + (k * (bx1 - bx0)) / pieces;
+          posts.push(at - JOINT.length - P, at + JOINT.length);
+          solidAt.push([at - JOINT.length - P, at + JOINT.length + P]);
+        }
+      }
+      // More posts between, no further apart than the pitch.
+      const sorted = [...new Set(posts.map((u) => Math.round(u * 100) / 100))].sort((a, c) => a - c);
+      const all = [];
+      for (let k = 0; k < sorted.length; k++) {
+        all.push(sorted[k]);
+        const next = sorted[k + 1];
+        if (next === undefined) break;
+        const gap = next - sorted[k] - P;
+        const extra = Math.max(0, Math.ceil(gap / pitch) - 1);
+        for (let j = 1; j <= extra; j++) all.push(sorted[k] + (j * (next - sorted[k])) / (extra + 1));
+      }
+      // A lattice between v0 and v1 across, along the beam: a chord along each
+      // edge, a bar at each post, an X in each panel between them.
+      const lattice2d = (v0, v1) => {
+        const web = [rect(bx0, v0, bx1, v0 + P), rect(bx0, v1 - P, bx1, v1)];
+        for (const u of all) web.push(rect(u, v0, u + P, v1));
+        for (const [a, c] of solidAt) web.push(rect(a, v0, c, v1));
+        for (let k = 0; k + 1 < all.length; k++) {
+          const u0 = all[k] + P,
+            u1 = all[k + 1];
+          if (u1 - u0 > 2 * bar) web.push(cross(u0, v0 + P, u1, v1 - P));
+        }
+        return own(CrossSection.union(web));
+      };
+      const girder = lattice2d(zBeam, zTop);
+      for (const [id, name, y0, out] of [['beam-front', 'Girder, front', o - gt, [0, -1, 0]], ['beam-back', 'Girder, back', o + L, [0, 1, 0]]]) {
+        const solid = sweep(girder, [1, 0, 0], [0, 0, 1], [0, y0, 0], [0, 1, 0], 0, gt);
+        parts.push(...cutLong({ id, name, role: 'roof', solid, outward: out, apart: [0, out[1] * 8, 20] }, [bx0, bx1], 'xz'));
+      }
+      // The top: a flat lattice over both girders and the tops of the legs, closing the beam like a roof.
+      const top = sweep(lattice2d(o - gt, o + L + gt), [1, 0, 0], [0, 1, 0], [0, 0, zTop], [0, 0, 1], 0, gt);
+      parts.push(...cutLong({ id: 'beam-top', name: 'Girder, top', role: 'roof', solid: top, lie: [0, 0, 0], apart: [0, 0, 30] }, [bx0, bx1], 'xy'));
+      const v0 = zBeam,
+        v1 = zTop;
+      // The board: on the front of the front girder, in the middle of the span (at the end of a half gantry's reach), the start lights in it.
+      if (g.board) {
+        const span = half ? g.reach : g.span;
+        const w = Math.min(span * 0.6, 160),
+          mid = half ? o + L + g.reach - w / 2 - P : o + L + g.span / 2;
+        const h = Math.max(g.boardHeight, bh - 4),
+          zc = (v0 + v1) / 2,
+          y1 = o - gt;
+        let board = B(mid - w / 2, y1 - GANTRY.board, zc - h / 2, mid + w / 2, y1, zc + h / 2);
+        if (g.type === 'start' && g.lights) {
+          const [r, depth] = GANTRY.light;
+          const lights = [];
+          for (let k = 0; k < g.lights; k++) {
+            const x = mid + (k - (g.lights - 1) / 2) * 8;
+            lights.push(own(own(Manifold.cylinder(depth + 1, r, r, 24)).rotate([-90, 0, 0]).translate([x, y1 - GANTRY.board - 1, zc])));
+          }
+          board = minus(board, ...lights);
+        }
+        parts.push({ id: 'board', name: 'Board', role: 'wall', solid: board, outward: [0, -1, 0], apart: [0, -15, 20] });
+      }
     } else {
       const half = g.type === 'half';
       const f = footOf(g),
         ft = half ? GANTRY.foot[1] + 1 : GANTRY.foot[1];
       const o = (f - L) / 2;
-      const [bd, bh] = lattice ? LT.beam : GANTRY.beam;
+      const [bd, bh] = GANTRY.beam;
       const legX = half ? [o] : [o, o + L + g.span];
       const zBeam = g.clearance;
       // Legs: a column on a foot plate, a pin on top that the beam drops onto.
       legX.forEach((x, i) => {
-        let leg = own(Manifold.union([B(x - o, 0, 0, x - o + f, f, ft), B(x, o, 0, x + L, o + L, zBeam), B(x + (L - pinW) / 2, o + (L - pinW) / 2, zBeam - 0.01, x + (L + pinW) / 2, o + (L + pinW) / 2, zBeam + pinH)]));
-        // A lattice leg: a square tube, its hollow closing under the top in a
-        // pyramid at 45°, diamonds through each pair of opposite sides.
-        if (lattice) {
-          const w = LT.wall,
-            inner = L - 2 * w,
-            zh = zBeam - LT.cap - inner / 2;
-          let hollow = B(x + w, o + w, ft, x + L - w, o + L - w, zh + inner / 2 + 1);
-          const r = Math.SQRT1_2,
-            cx = x + L / 2,
-            cy = o + L / 2;
-          for (const [nx, ny] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) hollow = own(hollow.trimByPlane([-nx * r, -ny * r, -r], -r * (nx * cx + ny * cy + zh + inner / 2)));
-          const z0 = ft + 4,
-            z1 = zh - 2;
-          // The diamonds run up the leg: u is z here, v across the face.
-          const holesY = diamonds(z0, z1, x, x + L, (cs) => own(own(cs.extrude(L + 2)).transform([0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, o - 1, 0, 1])));
-          const holesX = diamonds(z0, z1, o, o + L, (cs) => own(own(cs.extrude(L + 2)).transform([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, x - 1, 0, 0, 1])));
-          leg = minus(leg, hollow, ...holesY, ...holesX);
-        }
+        const leg = own(Manifold.union([B(x - o, 0, 0, x - o + f, f, ft), B(x, o, 0, x + L, o + L, zBeam), B(x + (L - pinW) / 2, o + (L - pinW) / 2, zBeam - 0.01, x + (L + pinW) / 2, o + (L + pinW) / 2, zBeam + pinH)]));
         parts.push({ id: 'leg-' + (i + 1), name: half ? 'Leg' : i ? 'Leg, right' : 'Leg, left', role: 'frame', solid: leg, lie: [0, 0, 0], apart: [i ? 12 : -12, 0, 0] });
       });
       // The beam: over the legs, a socket for each pin underneath, the lights in
@@ -242,39 +350,7 @@ export function buildGantry(wasm, input, plate = null) {
           lights.push(own(own(Manifold.cylinder(depth + 1, r, r, 24)).rotate([-90, 0, 0]).translate([x, by0 - 1, zBeam + bh / 2])));
         }
       }
-      // A lattice beam: diamonds through it from front to back, clear of its
-      // seats on the legs and of the start lights.
-      const holes = [];
-      if (lattice) {
-        const seat = (x) => [x - LT.margin, x + L + LT.margin];
-        const keep = legX.map(seat);
-        if (lights.length) {
-          const mid = (o + L + o + L + g.span) / 2,
-            half = (g.lights * 8) / 2 + 4;
-          keep.push([mid - half, mid + half]);
-        }
-        // Solid where the beam is cut to fit the plate, so no bar is left loose at the seam.
-        if (plate) {
-          const room = Math.max(plate.width, plate.depth) - 2 * (plate.margin ?? 0) - JOINT.length;
-          const pieces = Math.ceil((bx1 - bx0) / room - 1e-9);
-          for (let k = 1; k < pieces; k++) {
-            const at = bx0 + (k * (bx1 - bx0)) / pieces;
-            keep.push([at - JOINT.length, at + JOINT.length]);
-          }
-        }
-        keep.sort((a, b) => a[0] - b[0]);
-        // The stretches of beam between what it keeps solid.
-        const open = [];
-        let from = bx0;
-        for (const [a, b] of keep) {
-          if (a > from) open.push([from, a]);
-          from = Math.max(from, b);
-        }
-        if (bx1 > from) open.push([from, bx1]);
-        for (const [a, b] of open)
-          holes.push(...diamonds(a, b, zBeam, zBeam + bh, (cs) => own(own(cs.extrude(bd + 2)).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, by1 + 1, 0, 1]))));
-      }
-      beam = minus(beam, ...sockets, ...lights, ...holes);
+      beam = minus(beam, ...sockets, ...lights);
       // It prints on its back: the board flat on the plate, the lights up.
       parts.push(...cutLong({ id: 'beam', name: 'Beam', role: 'roof', solid: beam, lie: [-90, 0, 0], apart: [0, 0, 20] }, [bx0, bx1], 'xz'));
     }

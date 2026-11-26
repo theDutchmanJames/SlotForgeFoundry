@@ -149,4 +149,24 @@ test('lattice members: legs as tubes and the beam as a girder opened with diamon
     parts.forEach((p) => p.solid.delete());
   }
   assert.throws(() => validateGantry({ members: 'wood' }), /solid or lattice/);
+  // Laid out as open legs, two girders and a board; the girders glued to the faces of the legs.
+  assert.deepEqual(gantryLayout({ members: 'lattice' }).parts.map((p) => p.id), ['leg-1', 'leg-2', 'beam-front', 'beam-back', 'beam-top', 'board']);
+  assert.deepEqual(gantryLayout({ members: 'lattice', type: 'half', board: false }).parts.map((p) => p.id), ['leg-1', 'beam-front', 'beam-back', 'beam-top']);
+  const kit = buildGantry(wasm, { members: 'lattice' });
+  try {
+    const leg = kit.find((p) => p.id === 'leg-1').solid.boundingBox(),
+      front = kit.find((p) => p.id === 'beam-front').solid.boundingBox(),
+      back = kit.find((p) => p.id === 'beam-back').solid.boundingBox(),
+      board = kit.find((p) => p.id === 'board').solid.boundingBox();
+    const near = (a, b) => Math.abs(a - b) < 0.01;
+    assert.ok(near(front.max[1], leg.min[1] + (leg.max[1] - leg.min[1] - GANTRY.lattice.leg) / 2) || front.max[1] <= leg.max[1], 'the front girder against the legs');
+    assert.ok(back.min[1] > front.max[1] + GANTRY.lattice.leg - 0.01, 'the back girder behind them');
+    assert.ok(near(board.max[1], front.min[1]), 'the board on the front girder');
+    assert.ok(near(front.min[2], 70) && near(leg.max[2], 70 + GANTRY.lattice.girder[0]), 'the girders at the top of the legs');
+    // The top lies on both girders and the legs, closing the beam.
+    const top = kit.find((p) => p.id === 'beam-top').solid.boundingBox();
+    assert.ok(near(top.min[2], leg.max[2]) && near(top.min[1], front.min[1]) && near(top.max[1], back.max[1]), 'the top over both girders');
+  } finally {
+    kit.forEach((p) => p.solid.delete());
+  }
 });
