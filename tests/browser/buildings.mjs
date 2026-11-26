@@ -315,6 +315,16 @@ export async function checkBuildings({ page, action, download, snap }) {
   await setting('wTowers').check();
   await host.locator('[data-bd-part="tower2-roof-right"]').waitFor();
   assert.ok(await host.locator('[data-bd-walkway-legs]').isHidden());
+  // A modern pit lane: bays chosen one by one; a bay added, its type changed.
+  await host.locator('[data-bd-preset="pit-boxes"]').click();
+  await host.locator('[data-bd-part="roofright-3"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="bays"]').isVisible());
+  await host.locator('[data-bd-bay-add]').click();
+  await host.locator('[data-bd-part="bay-4"]').waitFor();
+  await setting('bType-3').selectOption('podium');
+  await page.waitForFunction(() => /podium/.test(document.querySelector('[data-bd-part="bay-4"]')?.textContent ?? ''));
+  await host.locator('[data-bd-bay-remove="0"]').click();
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="bay-4"]'));
   // A hip roof: its four panels.
   await host.locator('[data-bd-preset="tower-pyramid"]').click();
   await host.locator('[data-bd-part="roof-right"]').waitFor();

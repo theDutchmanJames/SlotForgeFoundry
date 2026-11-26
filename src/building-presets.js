@@ -87,6 +87,24 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'pitmodule', bays: 3, depth: 70 },
   },
   {
+    id: 'pit-row-modern',
+    name: 'Modern pit lane',
+    note: 'Bays of three kinds: single storey, corporate boxes, a podium',
+    building: { kind: 'pitbays', types: ['single', 'box', 'box', 'podium', 'box', 'single'] },
+  },
+  {
+    id: 'pit-boxes',
+    name: 'Pit garages with corporate boxes',
+    note: 'Glazing set deep in a frame, a balcony over the lane',
+    building: { kind: 'pitbays', types: ['box', 'box', 'box'] },
+  },
+  {
+    id: 'pit-boxes-low',
+    name: 'Pit garages with boxes, low relief',
+    note: 'The same front, 75 mm deep, to stand against a wall',
+    building: { kind: 'pitbays', types: ['box', 'box', 'box'], depth: 75, setBack: 10 },
+  },
+  {
     id: 'tower',
     name: 'Control tower',
     note: 'Three storeys, a glazed cab on top leaning out',

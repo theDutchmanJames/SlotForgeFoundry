@@ -15,6 +15,7 @@ import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module
 import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
 import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
+import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { kitShapes } from './kit-shapes.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
@@ -373,6 +374,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'marshalpost') return validateMarshalPost(input);
   if (input?.kind === 'platform') return validatePlatform(input);
   if (input?.kind === 'walkway') return validateWalkway(input);
+  if (input?.kind === 'pitbays') return validatePitBays(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -900,6 +902,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'pitbays') return { ...pitBaysLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }, ...standParts(b)];
@@ -962,7 +965,7 @@ function wallOpenings(s, doors) {
  */
 export function buildingCuts(input, plate) {
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform', 'walkway'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1030,6 +1033,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
+  if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;

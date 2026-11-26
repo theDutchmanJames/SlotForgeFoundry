@@ -36,6 +36,29 @@ export function kitShapes(wasm, own) {
       const u = (k * (len - R.post)) / (posts - 1);
       bits.push(B(u, R.band - 0.01, 0, u + R.post, R.height - R.post + 0.01, R.thick));
     }
+    // Crosses: an X between each two posts, its bars as wide as a post
+    // (spec.cross); or a truss, one diagonal between each two posts, the next
+    // the other way, so they make triangles (spec.truss).
+    if (R.cross || R.truss) {
+      const v0 = R.band,
+        v1 = R.height - R.post,
+        b = R.post / 2;
+      const bar = (a, c) => {
+        const d = [c[0] - a[0], c[1] - a[1]],
+          l = Math.hypot(...d),
+          nn = [(-d[1] / l) * b, (d[0] / l) * b];
+        return poly([[a[0] - nn[0], a[1] - nn[1]], [c[0] - nn[0], c[1] - nn[1]], [c[0] + nn[0], c[1] + nn[1]], [a[0] + nn[0], a[1] + nn[1]]]);
+      };
+      for (let k = 0; k + 1 < posts; k++) {
+        const u0 = (k * (len - R.post)) / (posts - 1) + R.post,
+          u1 = ((k + 1) * (len - R.post)) / (posts - 1);
+        // A little into the posts, the band and the rail round it, so the X is one with them.
+        const field = poly([[u0 - 0.3, v0 - 0.3], [u1 + 0.3, v0 - 0.3], [u1 + 0.3, v1 + 0.3], [u0 - 0.3, v1 + 0.3]]);
+        const bars = R.cross ? [bar([u0, v0], [u1, v1]), bar([u0, v1], [u1, v0])] : [k % 2 ? bar([u0, v1], [u1, v0]) : bar([u0, v0], [u1, v1])];
+        const x = own(own(CrossSection.union(bars)).intersect(field));
+        bits.push(own(x.extrude(R.thick)));
+      }
+    }
     // Mesh: the field between the end posts filled, square holes through it (spec.mesh: [hole, bar]).
     if (R.mesh) {
       const [hole, bar] = R.mesh,

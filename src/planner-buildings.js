@@ -11,6 +11,7 @@ import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
 import { walkwayFootprint } from './geometry/walkway.js';
+import { BAYS } from './geometry/pit-bays.js';
 import { PIT } from './geometry/pit-module.js';
 
 export const MAX_BUILDINGS = 100;
@@ -77,6 +78,10 @@ export function shapeOf(b) {
     // the visor reach out over the pit lane above the cars.
     outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
     front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'pitbays') {
+    // On the table it stands on its bays and the end panel; the frames and balconies reach out over the lane.
+    outline = rect(0, 0, b.types.length * b.bayWidth + BAYS.side, b.depth);
+    front = { p: [(b.types.length * b.bayWidth) / 2, 0], f: [0, -1] };
   } else if (b.kind === 'walkway') {
     // Between two buildings: it is placed by hand, its front side along x.
     const [x0, y0, x1, y1] = walkwayFootprint(b);
@@ -147,6 +152,15 @@ export function planShapes(entry) {
     const joins = Array.from({ length: b.bays - 1 }, (_, i) => [[(i + 1) * b.bayWidth, 0], [(i + 1) * b.bayWidth, b.depth]].map((p) => toPlan(entry, p)));
     const doors = Array.from({ length: b.bays }, (_, i) => {
       const cx = (i + 0.5) * b.bayWidth;
+      return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
+    });
+    return { base: footprint(entry), storeys: [], dividers: joins, doors };
+  }
+  if (b.kind === 'pitbays') {
+    // Its bays, a line between each two, and the doors.
+    const joins = Array.from({ length: b.types.length - 1 }, (_, i) => [[(i + 1) * b.bayWidth, 0], [(i + 1) * b.bayWidth, b.depth]].map((p) => toPlan(entry, p)));
+    const doors = b.types.map((_, i) => {
+      const cx = i * b.bayWidth + (b.bayWidth + BAYS.side) / 2;
       return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
     });
     return { base: footprint(entry), storeys: [], dividers: joins, doors };

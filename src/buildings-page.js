@@ -15,6 +15,7 @@ import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
+import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -189,6 +190,32 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="pRailing"><span>Railing along the balcony</span></label>
       <label class="bd-check"><input type="checkbox" name="pRoofRailing"><span>Railing round the roof</span></label>
       <p class="bd-hint">The balcony reaches out over the pit lane, its front an angled fascia. Above it the lounge's glazing leans out towards the roof, and the roof's visor reaches out beyond it.</p></section>
+    <section class="bd-box" data-bd-card="bays" data-bd-bays hidden><h3>Pit building</h3>
+      <div class="bd-bay-list"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-bay-add>${icon('plus')}Bay</button></div>
+      ${field('bBayWidth', 'Bay width', 110, PIT_BAYS_LIMITS.bayWidth)}
+      ${field('bDepth', 'Depth', 150, PIT_BAYS_LIMITS.depth)}
+      ${field('bBase', 'Base height', 10, PIT_BAYS_LIMITS.baseHeight)}
+      <p class="bd-hint" data-bd-bays-size></p></section>
+    <section class="bd-box" data-bd-card="baysDoors" data-bd-bays hidden><h3>Garage doors</h3>
+      <label class="bd-row"><span>Door</span><select name="bDoor"><option value="panel">Up-and-over</option><option value="roller">Roller</option></select></label>
+      ${field('bDoorWidth', 'Door width', 82, PIT_BAYS_LIMITS.doorWidth)}
+      ${field('bDoorHeight', 'Door height', 52, PIT_BAYS_LIMITS.doorHeight)}
+      ${field('bRecess', 'Set back', 4, PIT_BAYS_LIMITS.recess)}
+      <label class="bd-check"><input type="checkbox" name="bNumbers"><span>Bay numbers over the doors</span></label>
+      ${field('bFirst', 'First number', 1, PIT_BAYS_LIMITS.firstNumber, '')}
+      </section>
+    <section class="bd-box" data-bd-card="baysUpper" data-bd-bays hidden><h3>Boxes and podiums</h3>
+      ${field('bGround', 'Ground floor height', 65, PIT_BAYS_LIMITS.groundHeight)}
+      ${field('bUpper', 'Upper storey height', 50, PIT_BAYS_LIMITS.upperHeight)}
+      ${field('bJut', 'Roof reaches out', 24, PIT_BAYS_LIMITS.jut)}
+      ${field('bSetBack', 'Glazing set back', 16, PIT_BAYS_LIMITS.setBack)}
+      ${field('bLean', 'Glazing leans out', 12, PIT_BAYS_LIMITS.lean, '°')}
+      ${field('bBalcony', 'Balcony reaches out', 24, PIT_BAYS_LIMITS.balcony)}
+      <label class="bd-check"><input type="checkbox" name="bBalconyRailing"><span>A railing along each balcony</span></label>
+      <label class="bd-check"><input type="checkbox" name="bRoofRailing"><span>A truss railing round each roof</span></label>
+      <label class="bd-check"><input type="checkbox" name="bPillars"><span>Pillars between the garages</span></label>
+      <p class="bd-hint">A corporate box stands over its garage: its glazing leaning out at the top, set back between tapering fins under a roof that reaches out over the lane, a balcony slab in front with a railing of bars. A podium is a box whose balcony reaches out further as a platform with angled sides, the podium on it. Every roof has a solid upstand along its front and a truss railing round the rest. Each bay prints standing on its end; the closed side at its start is the wall between two garages, its pillar and the fin of a frame.</p></section>
     <section class="bd-box" data-bd-card="walkway" data-bd-walkway hidden><h3>Walkway</h3>
       ${field('wLength', 'Length', 150, WALKWAY_LIMITS.length)}
       ${field('wWidth', 'Width', 32, WALKWAY_LIMITS.width)}
@@ -373,13 +400,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isMarshal = () => building.kind === 'marshalpost';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform() && !isWalkway();
+  const isBays = () => building.kind === 'pitbays';
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform() && !isWalkway() && !isBays();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform', 'walkway'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -387,6 +415,35 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPits()) drawPits();
     if (isMarshal()) drawMarshal();
     if (isPlatform()) drawPlatform();
+  }
+  const BAYS_FIELDS = [['bBayWidth', 'bayWidth'], ['bDepth', 'depth'], ['bBase', 'baseHeight'], ['bDoorWidth', 'doorWidth'], ['bDoorHeight', 'doorHeight'], ['bRecess', 'recess'], ['bFirst', 'firstNumber'], ['bGround', 'groundHeight'], ['bUpper', 'upperHeight'], ['bJut', 'jut'], ['bSetBack', 'setBack'], ['bLean', 'lean'], ['bBalcony', 'balcony']];
+  const BAYS_CHECKS = [['bNumbers', 'numbers'], ['bBalconyRailing', 'balconyRailing'], ['bRoofRailing', 'roofRailing'], ['bPillars', 'pillars']];
+  function fillBays(m) {
+    const e = form.elements;
+    for (const [k, key] of BAYS_FIELDS) e[k].value = m[key];
+    for (const [k, key] of BAYS_CHECKS) e[k].checked = m[key];
+    e.bDoor.value = m.door;
+    drawBays();
+  }
+  // Each bay a row: its type, and a button to take it out.
+  function drawBays() {
+    const m = building;
+    $('.bd-bay-list').innerHTML = m.types
+      .map(
+        (t, i) =>
+          `<label class="bd-row"><span>Bay ${i + 1}</span><select name="bType-${i}">${BAY_TYPES.map(([id, label]) => `<option value="${id}"${id === t ? ' selected' : ''}>${label}</option>`).join('')}</select>${m.types.length > 1 ? `<button type="button" class="bd-remove" data-bd-bay-remove="${i}" title="Remove" aria-label="Remove bay ${i + 1}">${icon('close')}</button>` : ''}</label>`,
+      )
+      .join('');
+    form.elements.bFirst.closest('label').hidden = !m.numbers;
+    $('[data-bd-bays-size]').textContent = m.types.length + (m.types.length === 1 ? ' bay, ' : ' bays, ') + fmt(m.types.length * m.bayWidth + BAY_KIT.side) + ' mm long and ' + fmt(m.depth) + ' mm deep on the table. Each bay prints standing on its end and joins the next with tabs in the back wall.';
+  }
+  function readBays() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const m = { kind: 'pitbays', types: building.types.map((t, i) => e['bType-' + i]?.value ?? t), door: e.bDoor.value };
+    for (const [k, key] of BAYS_FIELDS) m[key] = num(e[k]);
+    for (const [k, key] of BAYS_CHECKS) m[key] = e[k].checked;
+    return m;
   }
   const WALKWAY_FIELDS = [['wLength', 'length'], ['wWidth', 'width'], ['wHeight', 'height'], ['wClearance', 'clearance'], ['wWaist', 'waist'], ['wPanes', 'panes'], ['wTowerWidth', 'towerWidth'], ['wTowerDepth', 'towerDepth'], ['wTowerHeight', 'towerHeight']];
   function fillWalkway(w) {
@@ -683,6 +740,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isMarshal()) return readMarshal();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
+    if (isBays()) return readBays();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -762,6 +820,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isMarshal()) drawMarshal();
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
+    else if (isBays()) drawBays();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
@@ -952,6 +1011,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
     else if (isWalkway()) card = 'walkway';
+    else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
@@ -1023,6 +1083,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'marshalpost') return fillMarshal(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
+    if (b.kind === 'pitbays') return fillBays(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -1125,6 +1186,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdBayAdd !== undefined) {
+        const m = readBays();
+        await rebuild({ ...m, types: [...m.types, m.types.at(-1)] });
+        drawBays();
+      } else if (b.dataset.bdBayRemove !== undefined) {
+        const m = readBays();
+        await rebuild({ ...m, types: m.types.filter((_, i) => i !== Number(b.dataset.bdBayRemove)) });
+        drawBays();
       } else if (b.dataset.bdPlatformStair) {
         await rebuild({ ...readPlatform(), stair: b.dataset.bdPlatformStair });
         drawPlatform();

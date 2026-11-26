@@ -1678,7 +1678,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   function homePanel(entry) {
     const b = entry.building,
       stand = ['grandstand', 'gantry', 'marshalpost', 'platform', 'walkway'].includes(b.kind),
-      pits = b.kind === 'pitmodule',
+      pits = b.kind === 'pitmodule' || b.kind === 'pitbays',
       storeys = stand || pits ? 0 : b.upper.length + 1;
     if (entry.over)
       return (

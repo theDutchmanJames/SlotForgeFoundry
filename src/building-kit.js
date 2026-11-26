@@ -17,6 +17,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
+  if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -299,6 +300,38 @@ function walkwayNotes(name, w, parts, sizes) {
     'Printing',
     '- Every part prints without supports.',
     '- The deck prints the right way up, its grooves on top; the roof upside down, its rails up; the sides flat, outside up; the legs stand on their feet.',
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+  ].join('\n');
+}
+
+// The notes of a pit building of mixed bays.
+function pitBaysNotes(name, m, parts, sizes) {
+  const list = parts.map((q) => '- ' + q.name + (sizes[q.id] ? ': ' + sizes[q.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const kinds = { single: 'single storey', box: 'corporate box', podium: 'podium' };
+  const door = m.door === 'panel' ? 'up-and-over door' : 'roller door';
+  const steps = [
+    ...(m.types.length > 1 ? ['Join the bays end to end in their order, bay 1 first: push the tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table. The closed side at the start of each bay is the wall between two garages, and the fin of a frame.'] : []),
+    'Glue the end panel on the open end of the last bay.',
+    'Glue ' + (m.door === 'panel' ? 'an ' : 'a ') + door + ' into each doorway, against the back of its reveal, standing on the floor.',
+    ...(m.numbers ? ['Glue the bay numbers on the front wall over the doors, ' + m.firstNumber + ' at bay 1.'] : []),
+    ...(m.types.includes('podium') ? ['Glue each podium on its platform, the highest step in the middle.'] : []),
+    ...(m.balconyRailing || m.roofRailing ? ['Push the railings into their pockets along the balconies and round the roofs, their tabs down, and glue them.'] : []),
+    'Stand the building beside the pit lane, the doors towards it.',
+  ];
+  return [
+    name + ' · SlotForge Foundry pit building kit',
+    '',
+    m.types.length + (m.types.length === 1 ? ' bay, ' : ' bays, each ') + fmt(m.bayWidth) + ' mm wide, ' + fmt(m.depth) + ' mm deep: ' + m.types.map((t, i) => i + 1 + ' ' + kinds[t]).join(', ') + '.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- Each bay stands on its end, the side of the building on the plate: the fins, the roof reaching out and the balcony rise straight up.',
+    '- The end panel, the doors, the numbers and the railings lie flat; a podium stands on its foot.',
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),
