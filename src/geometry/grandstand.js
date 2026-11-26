@@ -258,27 +258,35 @@ export function aisleSpans(g) {
 }
 
 /**
- * The sections the stand is cut into, as [from, to] along the front: no
- * longer than sectionLength (along the back for a curve facing in, where
- * it is longest), the cuts kept out of the aisles.
+ * The sections the stand is cut into, as [from, to] along the front: a cut
+ * where each aisle begins, so every aisle starts a section and its half
+ * steps stand on the plate as it prints; between them as many more as keep
+ * a section no longer than sectionLength (along the back for a curve facing
+ * in, where it is longest), kept out of the aisles.
  */
 export function sectionSpans(g) {
   const longest = g.curve ? (g.curve.facing === 'in' ? (g.curve.radius + standDepth(g)) / g.curve.radius : 1) : 1;
   // Its tab reaches into the next section: that counts too.
   const most = g.sectionLength / longest - STAND.tab[2];
   const aisles = aisleSpans(g);
-  for (let n = Math.max(1, Math.ceil(g.length / most - 1e-9)); ; n++) {
-    const cuts = [];
-    for (let i = 1; i < n; i++) {
-      let at = (i * g.length) / n;
-      // Out of an aisle: to its nearer side, by a little.
-      for (const [a, b] of aisles) if (at > a - 1 && at < b + 1) at = at - a < b - at ? a - 1 : b + 1;
-      cuts.push(at);
+  const marks = [0, ...aisles.map(([a]) => a), g.length];
+  const spans = [];
+  for (let k = 0; k + 1 < marks.length; k++) {
+    const [p, q] = [marks[k], marks[k + 1]];
+    // A stretch beginning with an aisle: further cuts only after it.
+    const after = aisles.find(([a]) => a === p)?.[1] ?? p;
+    for (let n = Math.max(1, Math.ceil((q - p) / most - 1e-9)); ; n++) {
+      const edges = [p];
+      for (let i = 1; i < n; i++) edges.push(Math.max(after + 1, p + (i * (q - p)) / n));
+      edges.push(q);
+      const pieces = edges.slice(0, -1).map((v, i) => [v, edges[i + 1]]);
+      if ((pieces.every(([a, b]) => b - a <= most + 1e-9 && b - a > STAND.tab[2] + 1)) || n > 200) {
+        spans.push(...pieces);
+        break;
+      }
     }
-    const edges = [0, ...cuts, g.length];
-    const spans = edges.slice(0, -1).map((v, i) => [v, edges[i + 1]]);
-    if (spans.every(([a, b]) => b - a <= most + 1e-9) || n > 200) return spans;
   }
+  return spans;
 }
 
 /** The canopy in pieces no longer than a section. */
@@ -371,10 +379,9 @@ export function buildGrandstand(wasm, input) {
       sockets = tabProfile(pl);
     sections.forEach(([a, b], i) => {
       // An aisle: the bare rows, and on each a half step. A section prints
-      // standing on its start, so where an aisle begins its half steps would
-      // stand out over the row below them: each begins with a 45° slope.
-      // The same for benches with backs where they begin again after an
-      // aisle: they stand higher than its half steps.
+      // standing on its start, and every aisle begins a section, so its half
+      // steps stand on the plate. Benches with backs beginning again after an
+      // aisle would stand out over it: each begins with a 45° slope.
       const slopedRun = (tops) => (p, q, from = p) => {
         const pieces = [run(bare, p, q)];
         for (const [y0, z0, y1, z1] of tops) {
@@ -387,7 +394,7 @@ export function buildGrandstand(wasm, input) {
         }
         return own(Manifold.union(pieces));
       };
-      const aisleRun = slopedRun(halfSteps),
+      const aisleRun = (p, q) => own(Manifold.union([run(bare, p, q), ...halfSteps.map(([y0, z0, y1, z1]) => run(cs([[y0, z0, y1, z1]]), p, q))])),
         benchRun = slopedRun(profile(g, false).top);
       // Each stretch overlaps the next a hair, so on a curve two never meet face to face.
       const eps = 0.02;
@@ -395,7 +402,7 @@ export function buildGrandstand(wasm, input) {
         Manifold.union(stretches([a, b]).map(([p, q, aisle]) => {
           const p0 = p > a ? p - eps : p,
             q0 = q < b ? q + eps : q;
-          if (aisle) return aisleRun(p0, q0, p);
+          if (aisle) return aisleRun(p0, q0);
           // After an aisle (a stretch that does not begin the section), backs would stand out over it.
           return g.backrests && p > a ? benchRun(p0, q0, p) : run(plain, p0, q0);
         })),

@@ -241,3 +241,26 @@ test('the mini stand prints as one section and its end panel', () => {
   const mini = BUILDING_PRESETS.find((p) => p.id === 'stand-mini').building;
   assert.deepEqual(grandstandLayout(mini).parts.map((p) => p.id), ['stand-1', 'end']);
 });
+
+test('every aisle begins a section, so its half steps are square, standing on the plate as it prints', () => {
+  for (const settings of [{ length: 300, aisles: 2, sectionLength: 110 }, { aisles: 1 }, { length: 600, aisles: 1, sectionLength: 120 }, { rows: 5, aisles: 2, curve: { radius: 450, angle: 45, facing: 'in' } }]) {
+    const g = validateGrandstand(settings);
+    const spans = sectionSpans(g);
+    for (const [p] of aisleSpans(g)) assert.ok(spans.some(([a]) => near(a, p)), 'a section starts at the aisle at ' + p);
+    const most = g.sectionLength - STAND.tab[2];
+    if (!g.curve) for (const [a, b] of spans) assert.ok(b - a <= most + 1e-9, 'no longer than set');
+  }
+  // The half step of the first row, right where the aisle begins: filled, not ramped.
+  const g = validateGrandstand({ aisles: 1 });
+  const [p] = aisleSpans(g)[0];
+  withParts({ aisles: 1 }, (parts) => {
+    const section = parts.find((q) => q.id !== 'end' && near(q.solid.boundingBox().min[0], p, 0.05));
+    assert.ok(section, 'the section at the aisle');
+    const y = STAND.shell + g.rowDepth * 0.75,
+      z = g.frontHeight + g.rowRise / 2 - 0.5;
+    const probe = wasm.Manifold.cube([0.5, 0.5, 0.5]).translate([p + 0.3, y, z - 0.5]);
+    const hit = section.solid.intersect(probe);
+    assert.ok(hit.volume() > 0.1, 'square at its start');
+    [probe, hit].forEach((s) => s.delete());
+  });
+});

@@ -330,7 +330,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">The canopy rests on the back wall and on posts in front of the parapet. It and its posts print flat.</p></section>
     <section class="bd-box" data-bd-card="standPrint" data-bd-stand hidden><h3>Printing</h3>
       ${field('gSection', 'Longest section', 120, GRANDSTAND_LIMITS.sectionLength)}
-      <p class="bd-hint">The grandstand is a hollow stepped shell, 3 mm thick, in sections that each print standing on their end: the stepped side lies on the plate and the rows rise straight up, so nothing overhangs. Set the longest section to what your printer can print in height. The sections join end to end with two small tabs, in the back wall and in the parapet; no cut runs through an aisle.</p></section>
+      <p class="bd-hint">The grandstand is a hollow stepped shell, 3 mm thick, in sections that each print standing on their end: the stepped side lies on the plate and the rows rise straight up, so nothing overhangs. Set the longest section to what your printer can print in height. The sections join end to end with two small tabs, in the back wall and in the parapet; a cut is made where each aisle begins, so its half steps print standing on the plate, and none runs through one.</p></section>
     <section class="bd-box" data-bd-card="size"><h3>Size</h3>
       ${field('width', 'Width', building.width, BUILDING_LIMITS.width)}
       ${field('depth', 'Depth', building.depth, BUILDING_LIMITS.depth)}
