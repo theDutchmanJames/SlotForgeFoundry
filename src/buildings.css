@@ -29,7 +29,7 @@
 .bd {
   height: 100%;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  grid-template-columns: 284px minmax(0, 1fr) 300px;
   color: var(--ink);
 }
 .bd-col,
@@ -370,7 +370,7 @@
 }
 @media (max-width: 1050px) {
   .bd {
-    grid-template-columns: 200px minmax(0, 1fr) 240px;
+    grid-template-columns: 232px minmax(0, 1fr) 260px;
   }
 }
 @media (max-width: 780px) {
@@ -602,24 +602,6 @@
 .bd-flash {
   animation: bd-flash 1.2s ease-out;
 }
-/* Start from: the standard buildings. */
-.bd-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0 6px;
-}
-.bd-preset {
-  padding: 5px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
-}
-.bd-preset:hover {
-  border-color: var(--accent);
-}
 .bd-section-list, .bd-section-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .bd-section-list button[aria-pressed="true"] { border-color: var(--accent, #e0a451); color: var(--accent, #e0a451); }
 .bd-plan-section polygon { fill: #263442; stroke: #94a3b8; stroke-width: 1; cursor: pointer; }
@@ -635,3 +617,166 @@
 .bd-corner.selected { fill: var(--accent); }
 /* Lettering on a wall, as it reads in the elevation. */
 .bd-drawing .bd-drawing-letters { fill: var(--accent); font-weight: 700; opacity: 0.85; }
+
+/* The side list: folds, and the standard buildings as pictures. */
+.bd-fold {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.bd-fold[hidden] {
+  display: none;
+}
+.bd-fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 9px 2px 7px;
+  color: var(--muted);
+  font: 700 10px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.bd-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.bd-fold > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.bd-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+.bd-fold > summary:hover {
+  color: var(--ink);
+}
+.bd-fold > summary small {
+  margin-left: auto;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.bd-fold[data-bd-fold='parts'] .bd-parts {
+  max-height: 42vh;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.bd-find {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+}
+.bd-thumbs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.bd-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.bd-thumb[hidden] {
+  display: none;
+}
+.bd-thumb:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+}
+.bd-thumb[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--sel);
+}
+.bd-thumb img,
+.bd-thumb-none {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.bd-thumb-none {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.bd-thumb > span:last-child {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* The settings: each card folds from its title. */
+.bd-folds {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.bd-folds button {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--box);
+  color: var(--ink);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.bd-folds button:hover {
+  border-color: var(--accent);
+}
+.bd-box > h3.bd-fold-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.bd-box > h3.bd-fold-title::after {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 3px 0 auto;
+  border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.bd-box.bd-shut > h3.bd-fold-title {
+  margin-bottom: 0;
+}
+.bd-box.bd-shut > h3.bd-fold-title::after {
+  transform: rotate(-45deg);
+}
+.bd-box.bd-shut > :not(h3.bd-fold-title) {
+  display: none !important;
+}
+.bd-box > h3.bd-fold-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

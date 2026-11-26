@@ -1750,12 +1750,13 @@ async function showHome() {
     host: $('#home'),
     load: async () => {
       const store = await openTrackLibrary();
-      const [packs, layouts, stlParts] = await Promise.all([
+      const [packs, layouts, stlParts, buildings] = await Promise.all([
         store.list(),
         store.layouts(),
         store.stlParts(),
+        store.buildings(),
       ]);
-      return { packs, layouts, stlParts, plate: project.plate };
+      return { packs, layouts, stlParts, buildings, plate: project.plate };
     },
     handlers: homeHandlers,
     onError: (err) => notice(err.message),
@@ -1819,7 +1820,7 @@ actions['mode-library'] = showLibraryPage;
 // of its own, not a track piece. It is drawn once and kept while away.
 let buildingsPage,
   buildingsOpen = false;
-async function showBuildingsPage(savedId) {
+async function showBuildingsPage(savedId, presetId) {
   leavePlanner();
   leaveHome();
   leaveLibraryPage();
@@ -1845,6 +1846,7 @@ async function showBuildingsPage(savedId) {
     },
   });
   if (typeof savedId === 'string') await buildingsPage.open(savedId);
+  else if (typeof presetId === 'string') await buildingsPage.start(presetId);
   else await buildingsPage.show();
 }
 function leaveBuildingsPage() {
@@ -2268,6 +2270,16 @@ const libraryHandlers = {
   },
 };
 const homeHandlers = {
+  // A new building from a standard one, all of them, or one saved in the Library.
+  async building({ preset }) {
+    await showBuildingsPage(undefined, preset);
+  },
+  async buildings() {
+    await showBuildingsPage();
+  },
+  async 'open-building'({ id }) {
+    await showBuildingsPage(id);
+  },
   async edit({ pack }) {
     const store = await openTrackLibrary();
     const collection = (await store.list()).find((c) => c.id === pack);

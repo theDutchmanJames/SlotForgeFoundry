@@ -326,3 +326,41 @@ body.at-home .app-actions > :not(.tone-switch) {
   color: var(--warn-text);
   font-family: var(--font-ui);
 }
+/* Start a new building: a few standard ones as pictures. */
+.home-builds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+.home-build {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+.home-build:hover {
+  border-color: var(--accent);
+}
+.home-build img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.home-tile .home-build span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

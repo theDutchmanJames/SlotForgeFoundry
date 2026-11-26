@@ -14,7 +14,8 @@ import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
 import { glazingSheets, glazingSvg } from './building-glazing.js';
-import { BUILDING_PRESETS } from './building-presets.js';
+import { BUILDING_PRESETS, PRESET_GROUPS } from './building-presets.js';
+import { presetThumb } from './preset-thumbs.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
@@ -61,6 +62,27 @@ import { finishFields, fillFinish, readFinish, showBands } from './building-fini
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
 
 const KEY = 'foundry.building';
+// Which folds of the page are shut, remembered in this browser: the side list's groups and the settings' cards.
+const FOLDS = 'foundry.buildings.folds';
+const shutFolds = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(FOLDS) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+};
+const keepFolds = (shut) => {
+  try {
+    localStorage.setItem(FOLDS, JSON.stringify([...shut]));
+  } catch {
+    // Storage can be off: the folds are as they are until the page is left.
+  }
+};
+// A standard building in the Start from list: its picture and its name.
+const presetCard = (p) => {
+  const src = presetThumb(p.id);
+  return `<button type="button" class="bd-thumb" data-bd-preset="${p.id}" title="${esc(p.note)}">${src ? `<img src="${src}" alt="" loading="lazy" decoding="async">` : `<span class="bd-thumb-none">${icon('building')}</span>`}<span>${esc(p.name)}</span></button>`;
+};
 // The four walls of a storey, for the finish of each.
 const FOUR = WALLS.map((id) => ({ id, name: WALL_NAMES[id] }));
 const PART_ICONS = { base: 'plate', front: 'box', back: 'box', left: 'box', right: 'box', door: 'layers' };
@@ -163,16 +185,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
   }
   const $ = (s) => host.querySelector(s);
+  // The folds shut.
+  let shut = shutFolds();
 
   host.innerHTML = `<div class="bd">
 <aside class="bd-col" aria-label="The building and its parts">
   <div class="bd-card-head"><span class="bd-tile">${icon('building')}</span><span><b>Buildings</b><small>Toy proportions for 1:32</small></span></div>
+  <details class="bd-fold" data-bd-fold="parts" open><summary>Parts of the kit <small data-bd-part-count></small></summary><div class="bd-parts" role="list"></div></details>
+  <details class="bd-fold" data-bd-fold="saved" open><summary>Your buildings</summary><div class="bd-saved"></div></details>
   <div class="bd-group">Start from</div>
-  <div class="bd-presets">${BUILDING_PRESETS.map((p) => `<button type="button" class="bd-preset" data-bd-preset="${p.id}" title="${esc(p.note)}">${esc(p.name)}</button>`).join('')}</div>
-  <div class="bd-group">Parts of the kit</div>
-  <div class="bd-parts" role="list"></div>
-  <div class="bd-group">Your buildings</div>
-  <div class="bd-saved"></div>
+  <input type="search" class="bd-find" data-bd-find placeholder="Find a building" aria-label="Find a standard building">
+  ${PRESET_GROUPS.map(([title, ids]) => `<details class="bd-fold" data-bd-fold="${esc(title)}" open><summary>${esc(title)} <small>${ids.length}</small></summary><div class="bd-thumbs">${ids.map((id) => presetCard(BUILDING_PRESETS.find((p) => p.id === id))).join('')}</div></details>`).join('')}
+  <p class="bd-later" data-bd-none hidden>No standard building by that name.</p>
   <div class="bd-group">Design and assemble</div>
   <p class="bd-later">Use Draw to arrange windows or shape a footprint. Save buildings here to place them beside your track in the Track Planner.</p>
 </aside>
@@ -191,6 +215,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 </section>
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
+  <div class="bd-folds"><button type="button" data-bd-fold-all="shut">Fold all</button><button type="button" data-bd-fold-all="open">Open all</button></div>
   <form class="bd-form" autocomplete="off">
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
@@ -523,7 +548,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isBays = () => building.kind === 'pitbays';
   let section = 0;
   const isSections = () => building.kind === 'sections';
-  const fillSections = () => { section = Math.min(section, building.sections.length - 1); $('[data-bd-sections]').innerHTML = sectionFields(building, section); };
+  const fillSections = () => { section = Math.min(section, building.sections.length - 1); $('[data-bd-sections]').innerHTML = sectionFields(building, section); foldCards(); };
   const isFootprint = () => building.kind === 'footprint';
   const isGarage = () => building.kind === 'garage';
   const canvas = createBuildingCanvas($('.bd-canvas'), {
@@ -544,6 +569,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
+    foldCards();
     const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
@@ -1232,6 +1258,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ? big.length + (big.length === 1 ? ' part is' : ' parts are') + ' larger than the plate'
       : 'Fits a ' + fmt(bed.width) + ' × ' + fmt(bed.depth) + ' plate';
     pill.classList.toggle('warn', big.length > 0);
+    $('[data-bd-part-count]').textContent = String(list.length);
     $('.bd-parts').innerHTML = list
       .map(
         (p) =>
@@ -1614,6 +1641,73 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     remember();
     $('[data-bd-name]').textContent = name || 'Building';
   });
+  // Folds. A group of the side list is a <details>; a settings card folds from its title.
+  const cardTitle = (box) => box.querySelector(':scope > h3');
+  function foldCards() {
+    for (const box of form.querySelectorAll('section.bd-box[data-bd-card]')) {
+      const h = cardTitle(box);
+      if (!h) continue;
+      const closed = shut.has('card:' + box.dataset.bdCard);
+      box.classList.toggle('bd-shut', closed);
+      h.classList.add('bd-fold-title');
+      h.tabIndex = 0;
+      h.setAttribute('role', 'button');
+      h.setAttribute('aria-expanded', String(!closed));
+    }
+  }
+  function setCard(box, closed) {
+    const key = 'card:' + box.dataset.bdCard;
+    if (closed) shut.add(key);
+    else shut.delete(key);
+    keepFolds(shut);
+    foldCards();
+  }
+  for (const d of host.querySelectorAll('details[data-bd-fold]')) d.open = !shut.has('list:' + d.dataset.bdFold);
+  host.addEventListener('toggle', (e) => {
+    const d = e.target;
+    // While a search is on, it opens the groups: those are not the user's folds.
+    if (!(d instanceof HTMLDetailsElement) || !d.dataset.bdFold || $('[data-bd-find]').value.trim()) return;
+    if (d.open) shut.delete('list:' + d.dataset.bdFold);
+    else shut.add('list:' + d.dataset.bdFold);
+    keepFolds(shut);
+  }, true);
+  form.addEventListener('click', (e) => {
+    const h = e.target.closest('h3.bd-fold-title');
+    if (h) setCard(h.parentElement, !h.parentElement.classList.contains('bd-shut'));
+  });
+  form.addEventListener('keydown', (e) => {
+    const h = e.target.closest?.('h3.bd-fold-title');
+    if (!h || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    setCard(h.parentElement, !h.parentElement.classList.contains('bd-shut'));
+  });
+  host.querySelector('.bd-folds').addEventListener('click', (e) => {
+    const all = e.target.closest('[data-bd-fold-all]')?.dataset.bdFoldAll;
+    if (!all) return;
+    for (const box of form.querySelectorAll('section.bd-box[data-bd-card]')) if (cardTitle(box)) (all === 'shut' ? shut.add('card:' + box.dataset.bdCard) : shut.delete('card:' + box.dataset.bdCard));
+    keepFolds(shut);
+    foldCards();
+  });
+  // Find a building: the cards that match, in their groups, open while it is found.
+  $('[data-bd-find]').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    let any = false;
+    for (const d of host.querySelectorAll('details[data-bd-fold]')) {
+      const cards = [...d.querySelectorAll('[data-bd-preset]')];
+      if (!cards.length) continue;
+      let shown = 0;
+      for (const c of cards) {
+        const hit = !q || (c.textContent + ' ' + c.title).toLowerCase().includes(q);
+        c.hidden = !hit;
+        shown += hit;
+      }
+      d.hidden = q && !shown;
+      d.open = q ? shown > 0 : !shut.has('list:' + d.dataset.bdFold);
+      any ||= shown > 0;
+    }
+    $('[data-bd-none]').hidden = any;
+  });
+
   host.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -1762,22 +1856,26 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       else if (b.dataset.bdOpen) await open(b.dataset.bdOpen);
       else if (b.dataset.bd === 'export') await exportKit();
       else if (b.dataset.bd === 'save') await save();
-      else if (b.dataset.bd === 'new' || b.dataset.bdPreset) {
-        // A new building: the plain garage, or one of the standard buildings.
-        const preset = BUILDING_PRESETS.find((p) => p.id === b.dataset.bdPreset);
-        building = validateBuilding(preset?.building ?? {});
-        name = preset?.name ?? 'Garage';
-        savedId = null;
-        storey = 0;
-        fitted = false;
-        fill(building);
-        await rebuild(building);
-        await listSaved();
-      }
+      else if (b.dataset.bd === 'new' || b.dataset.bdPreset) await startFrom(b.dataset.bdPreset);
     } catch (err) {
       notice(err.message);
     }
   });
+  // A new building: the plain garage, or one of the standard buildings.
+  async function startFrom(id) {
+    const preset = BUILDING_PRESETS.find((p) => p.id === id);
+    for (const card of host.querySelectorAll('[data-bd-preset]')) card.setAttribute('aria-pressed', String(card.dataset.bdPreset === (preset?.id ?? 'garage')));
+    building = validateBuilding(preset?.building ?? {});
+    name = preset?.name ?? 'Garage';
+    savedId = null;
+    storey = 0;
+    fitted = false;
+    fill(building);
+    // Its parts are at the top of the list: back up to them.
+    host.querySelector('.bd-col').scrollTo({ top: 0, behavior: 'smooth' });
+    await rebuild(building);
+    await listSaved();
+  }
   async function open(id) {
     const saved = await (await store()).building(id);
     building = saved.building;
@@ -1802,6 +1900,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       await Promise.all([rebuild(building), listSaved()]);
     },
     open,
+    start: startFrom,
     resize: () => viewport?.resize(),
   };
   async function travel(direction) {

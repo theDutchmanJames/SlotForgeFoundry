@@ -5,6 +5,15 @@ import { esc, fmt, icon } from './ui.js';
 import { trackThumbnail } from './library-view.js';
 import { partStale } from './library-page.js';
 import { plateDrawing } from './plate-drawing.js';
+import { BUILDING_PRESETS } from './building-presets.js';
+import { presetThumb } from './preset-thumbs.js';
+
+// A standard building to start from, as its picture.
+function buildingPick([id, label]) {
+  const p = BUILDING_PRESETS.find((q) => q.id === id);
+  const src = presetThumb(id);
+  return `<button type="button" class="home-build" data-home="building" data-preset="${esc(id)}" title="${esc(p.name + ': ' + p.note)}">${src ? `<img src="${src}" alt="" loading="lazy">` : ''}<span>${esc(label)}</span></button>`;
+}
 
 const when = (ms) => {
   if (!ms) return '';
@@ -63,7 +72,14 @@ function packCard(pack, layouts) {
 </article>`;
 }
 
-export function renderHome({ packs, layouts, stlParts, plate, error }) {
+export function renderHome({ packs, layouts, stlParts, buildings = [], plate, error }) {
+  const buildingRows = buildings.slice(0, 4).map(
+    (b) => `<div class="home-row">
+  <span class="home-row-ico">${icon('building')}</span>
+  <div><b>${esc(b.name)}</b><small>${esc(when(b.updated))}</small></div>
+  <button type="button" class="sf-btn ghost sm" data-home="open-building" data-id="${esc(b.id)}">Open</button>
+</div>`,
+  );
   const packName = new Map(packs.map((p) => [p.id, p.name]));
   const layoutRows = layouts.slice(0, 4).map(
     (l) => `<div class="home-row">
@@ -93,6 +109,15 @@ export function renderHome({ packs, layouts, stlParts, plate, error }) {
     ${tile('import', 'From SlotForge Circuit', 'An SVG or DXF drawing, with its sizes and heights.',
       '<button type="button" class="sf-btn sm" data-home="circuit">Choose a Circuit file…</button>')}
   </div>
+  <div class="sf-eyebrow home-gap">Start a new building</div>
+  <div class="home-new">
+    ${tile('building', 'From a standard building', 'Ready to print, or to change: every setting stays open.',
+      '<div class="home-builds">' + [['garage', 'Pit garage'], ['race-control', 'Tower'], ['marshal', 'Marshal hut']].map(buildingPick).join('') + '</div><button type="button" class="sf-btn sm" data-home="buildings">All standard buildings…</button>')}
+    ${tile('plus', 'From scratch', 'A plain garage to build up, a shape to draw wall by wall, or halls and wings.',
+      '<button type="button" class="sf-btn sm" data-home="building" data-preset="garage">Plain garage</button><button type="button" class="sf-btn sm" data-home="building" data-preset="footprint-l">Draw a shape</button><button type="button" class="sf-btn sm" data-home="building" data-preset="connected">Halls and wings</button>')}
+    ${tile('trackside', 'Trackside', 'Stands, gantries over the track and boards beside it.',
+      '<div class="home-builds">' + [['stand', 'Grandstand'], ['gantry-lattice', 'Gantry'], ['billboard', 'Billboard']].map(buildingPick).join('') + '</div>')}
+  </div>
   <div class="home-head home-gap">
     <div><div class="sf-eyebrow">Your track packs</div><h1 id="home-packs">Pick a pack</h1></div>
     <span class="home-sp"></span>
@@ -111,6 +136,10 @@ export function renderHome({ packs, layouts, stlParts, plate, error }) {
     <h2 class="sf-eyebrow plain">STL parts</h2>
     ${partRows.length ? partRows.join('') : '<p class="home-empty">STL parts you save in STL Edit appear here.</p>'}
     <div class="home-pair"><button type="button" class="sf-btn" data-home="open-stl">${icon('open')}Open an STL…</button><button type="button" class="sf-btn ghost" data-home="new-design">${icon('plus')}Empty design</button></div>
+  </section>
+  <section class="home-card">
+    <h2 class="sf-eyebrow plain">Your buildings</h2>
+    ${buildingRows.length ? buildingRows.join('') : '<p class="home-empty">Buildings you save on the Buildings page appear here.</p>'}
   </section>
   <section class="home-card home-printer">
     <h2 class="sf-eyebrow plain">This printer</h2>
