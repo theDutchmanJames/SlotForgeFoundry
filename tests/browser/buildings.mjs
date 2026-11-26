@@ -357,6 +357,7 @@ export async function checkBuildings({ page, action, download, snap }) {
     ['gantry-sign', 'sign', 'gantry'],
     ['stand-raised', 'frame-1', 'standFrame'],
     ['race-control', 'railing3-back', 'size'],
+    ['pit-tower', 'access', 'access'],
     ['crosswalk', 'tower2-front3', 'walkway'],
     ['hut-frames', 'stand-foot', 'support'],
     ['hut-legs', 'access', 'access'],

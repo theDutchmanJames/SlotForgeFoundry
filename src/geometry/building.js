@@ -1325,7 +1325,8 @@ export function buildGarage(wasm, input, plate = null) {
       // over them, its frame and the holes for the frame's tabs lean on,
       // straight, past the tops of the walls, so the tabs meet their holes.
       const warpWith = (fn) => (solid) => {
-        const lower = trim(solid, [0, 0, -1], -top),
+        // The part under the floor reaches a hair over it, so the two fuse even where a texture only touches across the split.
+        const lower = trim(solid, [0, 0, -1], -(top + 0.02)),
           upper = trim(solid, [0, 0, 1], top);
         if (upper.isEmpty()) return solid;
         const moved = own(upper.warp(fn));

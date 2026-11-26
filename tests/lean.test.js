@@ -41,6 +41,8 @@ const LEANING = [
   BUILDING_PRESETS.find((p) => p.id === 'tower').building,
   // A storey over walls that lean out: its floor as wide as their tops.
   BUILDING_PRESETS.find((p) => p.id === 'crosswalk-tower').building,
+  // Planked walls leaning out: the texture where the warp begins still one wall.
+  BUILDING_PRESETS.find((p) => p.id === 'pit-tower').building,
 ];
 
 test('leaning walls and panes are checked', () => {
