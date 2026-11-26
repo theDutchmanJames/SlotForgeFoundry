@@ -161,3 +161,34 @@ test('a control cab on a tower: glazing leaning out under an open terrace; windo
   assert.equal(front.openings.length, 2, 'one above the other on a wall');
   assert.throws(() => validateBuilding({ width: 60, depth: 60, height: 170, door: 'none', openings: [{ wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 20 }, { wall: 'front', type: 'window', at: 30, width: 16, height: 22, sill: 44 }] }), /too close/);
 });
+
+test('a walkway joins two buildings of a layout: from wall to wall, its deck at their shared floor', async () => {
+  const { joinOptions, joinWalkway, toPlan } = await import('../src/planner-buildings.js');
+  const home = (upper) => validateBuilding({ width: 80, depth: 80, height: 40, door: 'none', upper });
+  const A = { id: 'a', name: 'Tower A', building: home([{ width: 80, depth: 80, height: 40 }]), pose: { x: 0, y: 0, a: 0 } };
+  const B = { id: 'b', name: 'Tower B', building: home([{ width: 60, depth: 60, x: 10, y: 10, height: 40 }]), pose: { x: 150, y: 40, a: 0.4 } };
+  const C = { id: 'c', name: 'Shed', building: home([]), pose: { x: 0, y: 300, a: 0 } };
+  const options = joinOptions([A, B, C]);
+  assert.deepEqual(options.map((o) => [o.a, o.b]), [['a', 'b']], 'only the two with a floor at the same height');
+  const walk = validateWalkway({});
+  const { building, pose } = joinWalkway(walk, A, B, options[0].z);
+  assert.equal(building.legs, false);
+  assert.ok(near(building.clearance, options[0].z), 'its deck at the floor');
+  const entry = { building, pose };
+  // Its ends on the line between the middles of the storeys, each on a wall.
+  const start = toPlan(entry, [0, building.width / 2]),
+    end = toPlan(entry, [building.length, building.width / 2]);
+  assert.ok(near(start[0], 40, 0.05), 'from the wall of A: ' + start);
+  const local = (e, p) => {
+    const c = Math.cos(e.pose.a),
+      s = Math.sin(e.pose.a);
+    const u = p[0] - e.pose.x,
+      v = p[1] - e.pose.y;
+    return [40 + c * u + s * v, 40 - s * u + c * v];
+  };
+  const inB = local(B, end);
+  const onWall = [Math.abs(inB[0] - 10), Math.abs(inB[0] - 70), Math.abs(inB[1] - 10), Math.abs(inB[1] - 70)];
+  assert.ok(Math.min(...onWall) < 0.05, 'to the wall of B: ' + inB);
+  // Too far apart: why.
+  assert.throws(() => joinWalkway(walk, A, { ...B, pose: { x: 500, y: 0, a: 0 } }, options[0].z), /walls are \d+ mm apart: a walkway spans 40 to 180 mm. Move them closer/);
+});

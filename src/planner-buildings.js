@@ -12,7 +12,7 @@ import { marshalFootprint } from './geometry/marshal-post.js';
 import { flagFootprint } from './geometry/flag-post.js';
 import { billboardFootprint } from './geometry/billboard.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
-import { walkwayFootprint } from './geometry/walkway.js';
+import { WALKWAY_LIMITS, walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
 import { PIT } from './geometry/pit-module.js';
 
@@ -482,4 +482,80 @@ export function overPose(building, { at, across }) {
   const u = mid - shape.centre[0];
   const a = Math.atan2(across[1], across[0]);
   return { x: at[0] - across[0] * u, y: at[1] - across[1] * u, a };
+}
+
+/* ---------- A walkway joining two buildings ---------- */
+
+/**
+ * The levels a walkway can join a building at: the top of its base on a
+ * stand, and the floor of each storey above the ground floor; each with the
+ * storey it enters (in the building's own coordinates) and its height above
+ * the table.
+ */
+export function joinLevels(b) {
+  if (b.kind !== 'garage') return [];
+  const stack = storeyStack(b);
+  const H = b.standType === 'none' ? 0 : b.standHeight;
+  const out = [];
+  if (H) out.push({ label: 'the base', z: H + b.baseHeight, storey: stack[0] });
+  for (const s of stack.slice(1)) out.push({ label: 'storey ' + s.n, z: H + s.floor, storey: s });
+  return out;
+}
+// Into the building's own coordinates from the plan: the inverse of toPlan.
+function fromPlan({ building: b, pose }, [x, y]) {
+  const [cx, cy] = b.kind !== 'garage' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
+  const u = x - pose.x,
+    v = y - pose.y,
+    c = Math.cos(pose.a),
+    s = Math.sin(pose.a);
+  return [cx + c * u + s * v, cy - s * u + c * v];
+}
+// Where a ray from p (inside the storey) along d leaves the storey's walls, on the plan.
+function leaves(entry, s, p, d) {
+  const q = fromPlan(entry, p),
+    e = fromPlan(entry, [p[0] + d[0], p[1] + d[1]]);
+  const dl = [e[0] - q[0], e[1] - q[1]];
+  let t = Infinity;
+  for (const [k, lo, hi] of [[0, s.ox, s.ox + s.width], [1, s.oy, s.oy + s.depth]]) {
+    if (Math.abs(dl[k]) < 1e-12) continue;
+    t = Math.min(t, ((dl[k] > 0 ? hi : lo) - q[k]) / dl[k]);
+  }
+  return [p[0] + d[0] * t, p[1] + d[1] * t];
+}
+/** Every way a walkway can join two buildings of the layout: two garages with a floor at the same height. */
+export function joinOptions(entries) {
+  const homes = entries.filter((e) => !e.over && !e.bay && e.building.kind === 'garage');
+  const out = [];
+  for (let i = 0; i < homes.length; i++)
+    for (let j = i + 1; j < homes.length; j++)
+      for (const la of joinLevels(homes[i].building))
+        for (const lb of joinLevels(homes[j].building))
+          if (Math.abs(la.z - lb.z) < 0.5) out.push({ a: homes[i].id, b: homes[j].id, z: la.z, label: homes[i].name + ' (' + la.label + ') and ' + homes[j].name + ' (' + lb.label + '), ' + Math.round(la.z * 10) / 10 + ' mm up' });
+  return out;
+}
+/**
+ * A walkway set to join two buildings at a level: along the line between
+ * the middles of the storeys it enters, from the wall of one to the wall of
+ * the other, its deck at that level, resting on them (no legs). Returns its
+ * building and its pose, or throws why it cannot.
+ */
+export function joinWalkway(walk, A, B, z) {
+  const at = (entry) => joinLevels(entry.building).find((l) => Math.abs(l.z - z) < 0.5);
+  const la = at(A),
+    lb = at(B);
+  if (!la || !lb) throw Error('Both buildings need a floor ' + Math.round(z * 10) / 10 + ' mm up to join.');
+  const mid = (entry, s) => toPlan(entry, [s.ox + s.width / 2, s.oy + s.depth / 2]);
+  const ca = mid(A, la.storey),
+    cb = mid(B, lb.storey);
+  const len = Math.hypot(cb[0] - ca[0], cb[1] - ca[1]);
+  if (len < 1) throw Error('The two buildings stand in the same place.');
+  const d = [(cb[0] - ca[0]) / len, (cb[1] - ca[1]) / len];
+  const pa = leaves(A, la.storey, ca, d),
+    pb = leaves(B, lb.storey, cb, [-d[0], -d[1]]);
+  const gap = (pb[0] - pa[0]) * d[0] + (pb[1] - pa[1]) * d[1];
+  const [lo, hi] = WALKWAY_LIMITS.length;
+  if (gap < lo || gap > hi) throw Error('Their walls are ' + Math.round(gap) + ' mm apart: a walkway spans ' + lo + ' to ' + hi + ' mm. Move them ' + (gap < lo ? 'apart' : 'closer') + '.');
+  const building = validateBuilding({ ...walk, length: Math.round(gap * 10) / 10, clearance: Math.round(z * 10) / 10, legs: false, towers: false, towerCab: 'none' });
+  // Its middle half way between the walls, along the line between them.
+  return { building, pose: { x: (pa[0] + pb[0]) / 2, y: (pa[1] + pb[1]) / 2, a: Math.atan2(d[1], d[0]) } };
 }

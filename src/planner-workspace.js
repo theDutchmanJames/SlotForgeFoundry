@@ -72,7 +72,7 @@ import {
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
-import { SNAP, bayEnd, bayPose, bayRoom, layoutBuilding, nearestRow, overGantry, overPose, overlap, pitGarage, placeParts, snapPose, straightAcross } from './planner-buildings.js';
+import { SNAP, bayEnd, bayPose, bayRoom, joinOptions, joinWalkway, layoutBuilding, nearestRow, overGantry, overPose, overlap, pitGarage, placeParts, snapPose, straightAcross } from './planner-buildings.js';
 import { buildingLayout, BUILDING_LIMITS, validateBuilding } from './geometry/building.js';
 import { sizeLine } from './geometry/grandstand.js';
 import { kitNotes } from './building-kit.js';
@@ -1712,6 +1712,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front' + (b.kind === 'marshalpost' ? ', the front of the cabin,' : b.kind === 'flagpost' ? ', the front rail,' : b.kind === 'billboard' ? ', the face of the board,' : b.kind === 'platform' ? ', the front of the deck,' : stand ? ', the parapet,' : ', the garage door,') + ' along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
       btn('b-place', 'Apply place', 'check') +
       '</div></details>' +
+      (b.kind === 'walkway' && !b.towers ? joinPanel() : '') +
       (stand ? '' :
       '<details class="pl-bridge pl-home-height"' + (level ? '' : ' open') + '><summary><span>Height</span><small' + (road === null || level ? '' : ' class="warn"') + '>Base ' + fmt(b.baseHeight) + ' mm</small></summary><div>' +
       '<p class="pl-note">' +
@@ -1724,6 +1725,21 @@ export function createPlanner({ host, call, download, current, promote }) {
       (road !== null && !level && road >= lo && road <= hi ? btn('b-level', 'Match the road', 'check') : '') +
       '<small>The base stands on the table: as high as the road beside it, the doorstep is level. This changes the building in this layout only, not the one in the Library.</small>' +
       '</div></details>')
+    );
+  }
+  // A walkway between two buildings of the layout: which two, at which floor.
+  function joinPanel() {
+    const options = joinOptions((layout.buildings ?? []).filter((e) => e.id !== choice.building));
+    return (
+      '<details class="pl-bridge pl-home-join" open><summary><span>Join two buildings</span><small>' + (options.length ? options.length + (options.length === 1 ? ' way' : ' ways') : 'None') + '</small></summary><div>' +
+      (options.length
+        ? '<label>Between<select data-pl-field="join">' + options.map((o) => '<option value="' + esc(o.a + '|' + o.b + '|' + o.z) + '">' + esc(o.label) + '</option>').join('') + '</select></label>' + btn('b-join', 'Join them', 'join')
+        : '') +
+      '<small>' +
+      (options.length
+        ? 'The walkway runs straight from the wall of one to the wall of the other, between the middles of the storeys it joins, its deck at their floor. It rests on them, without legs. Give each building a doorway there: a door in that wall on the Buildings page.'
+        : 'Place two buildings with a floor at the same height: a storey above the ground floor, or the top of a base on a stand.') +
+      '</small></div></details>'
     );
   }
   // The buildings saved in the Library, to place in the layout.
@@ -2098,6 +2114,15 @@ export function createPlanner({ host, call, download, current, promote }) {
       const pose = { x: field('homeX').valueAsNumber, y: field('homeY').valueAsNumber, a: (field('homeA').valueAsNumber * Math.PI) / 180 };
       if (![pose.x, pose.y, pose.a].every((v) => Number.isFinite(v) && Math.abs(v) < 1e7)) throw Error('Enter a place and a direction for the building.');
       return editHome((entry) => (entry.pose = pose));
+    }
+    if (key === 'b-join') {
+      const [a, b, z] = field('join').value.split('|');
+      const joined = joinWalkway(homeOf(choice.building).building, homeOf(a), homeOf(b), Number(z));
+      await editHome((entry) => {
+        entry.building = joined.building;
+        entry.pose = joined.pose;
+      });
+      return message('The walkway now joins ' + homeOf(a).name + ' and ' + homeOf(b).name + ', ' + joined.building.length + ' mm long.');
     }
     if (key === 'b-level') {
       const road = roadBeside(homeOf(choice.building));
