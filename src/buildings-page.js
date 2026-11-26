@@ -1225,8 +1225,6 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
-      // A roof billboard prints face down: its letters are always carved in.
-      $('[data-bd-sign-cut]').hidden = building.sign !== 'fascia';
       $('[data-bd-stand-size]').hidden = building.standType === 'none';
       $('[data-bd-column]').hidden = building.standType !== 'column';
       $('[data-bd-legs]').hidden = building.standType !== 'legs';

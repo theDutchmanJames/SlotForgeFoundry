@@ -2,9 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
-import { buildGarage, validateBuilding } from '../src/geometry/building.js';
+import { buildGarage, buildingLayout, validateBuilding } from '../src/geometry/building.js';
+const buildingLayoutIds = (b) => buildingLayout(b).parts.map((p) => p.id);
 import { BUILDING_PRESETS } from '../src/building-presets.js';
-import { LETTERS, LETTERING, checkText, fitHeight, textShape, textStrokes, textWidth, textCarve } from '../src/geometry/lettering.js';
+import { LETTERS, LETTERING, checkText, fitHeight, textShape, textStrokes, textWidth } from '../src/geometry/lettering.js';
 import { checkKit } from './print-checks.js';
 
 const wasm = await Module();
@@ -31,13 +32,10 @@ test('the letters: capitals and figures, as wide as they say, strokes thick enou
   assert.equal(textStrokes('A', 4).stroke, LETTERING.thinnest);
   assert.ok(Math.abs(textWidth('HQ', fitHeight('HQ', 30, 100)) - 30) < 1e-3, 'fits the width');
   assert.equal(fitHeight('HQ', 300, 12), 12, 'or the height');
-  // Carved: grooves no deeper than half again their width, inside the face.
-  const { solid, depth } = textCarve(wasm, own, 'HQ', 10);
-  assert.ok(depth > 0 && depth < 1.2 && Math.abs(solid.boundingBox().min[2] + depth) < 1e-6);
   temp.splice(0).forEach((s) => s.delete());
 });
 
-test('a fascia sign: its text raised on its face; a roof billboard: carved in', () => {
+test('a fascia sign and a roof billboard: their text raised on the face, or cut in', () => {
   const fascia = { ...plain, sign: 'fascia', signWidth: 100, signHeight: 14 };
   const bare = buildGarage(wasm, fascia), lettered = buildGarage(wasm, { ...fascia, signText: 'Pit stop' });
   try {
@@ -49,12 +47,17 @@ test('a fascia sign: its text raised on its face; a roof billboard: carved in', 
     free(lettered);
   }
   const board = { ...plain, sign: 'billboard', signWidth: 110, signHeight: 20 };
-  const plainBoard = buildGarage(wasm, board), carved = buildGarage(wasm, { ...board, signText: 'Race control' });
+  const plainBoard = buildGarage(wasm, board), raised = buildGarage(wasm, { ...board, signText: 'Race control' }), cut = buildGarage(wasm, { ...board, signText: 'Race control', signCut: true });
   try {
-    assert.ok(part(carved, 'sign').solid.volume() < part(plainBoard, 'sign').solid.volume() - 5, 'grooves cut');
+    const v = (ps) => part(ps, 'sign').solid.volume();
+    assert.ok(v(raised) > v(plainBoard) + 5 && v(cut) < v(plainBoard) - 5, 'raised or cut');
+    // Raised out of its face, which looks to the front and prints up.
+    assert.ok(Math.abs(part(raised, 'sign').solid.boundingBox().min[1] - (part(plainBoard, 'sign').solid.boundingBox().min[1] - LETTERING.depth)) < 1e-6);
+    assert.deepEqual(part(raised, 'sign').outward, [0, -1, 0]);
   } finally {
     free(plainBoard);
-    free(carved);
+    free(raised);
+    free(cut);
   }
   assert.throws(() => validateBuilding({ ...fascia, signWidth: 30, signText: 'Race control headquarters' }), /too small for/);
   assert.equal(validateBuilding({ ...fascia, signText: 'hq' }).signText, 'HQ');
@@ -110,7 +113,7 @@ test('lettering is checked: its wall, its letters, clear of ends, openings, door
   assert.equal(validateBuilding({ ...plain, upper: [{ height: 40, lettering: [line({ up: 20, text: 'hq' })] }] }).upper[0].lettering[0].text, 'HQ');
 });
 
-test('lettered kits print: whole pieces, nothing over air (carved billboard included), nothing in another part', () => {
+test('lettered kits print: whole pieces, nothing over air (roof billboard and its fins included), nothing in another part', () => {
   const plate = { width: 200, depth: 200, margin: 0 };
   for (const b of [
     { ...plain, wallTexture: 'brick', sign: 'fascia', signWidth: 110, signHeight: 14, signText: 'Pit lane', lettering: [line({ wall: 'left', at: 60 }), line({ wall: 'back', cut: true, text: 'No 7' })] },
@@ -213,4 +216,26 @@ test('every text can be cut in instead of raised: less than the plain part, stil
     else assert.ok(volumes.cut < volumes.plain - 1 && volumes.raised > volumes.plain + 1, (b.kind ?? 'garage') + ': ' + JSON.stringify(volumes));
   }
   assert.throws(() => validateBuilding({ kind: 'gantry', textCut: 'yes' }), /raised or cut/);
+});
+
+// The fins were part of the billboard, which then printed face down; now they are parts of
+// their own, so the board prints face up and its text can be raised.
+test('a roof billboard and its two fins: separate parts, each fin against the back of the board', () => {
+  const plate = { width: 200, depth: 200, margin: 0 };
+  for (const roof of [{ roof: 'flat' }, { roof: 'slope', rises: 'back', pitch: 15 }, { roof: 'gable', ridge: 'width', pitch: 20 }]) {
+    const b = { ...plain, ...roof, sign: 'billboard', signWidth: 110, signHeight: 20, signText: 'Timing' };
+    const parts = buildGarage(wasm, b, plate);
+    try {
+      const ids = parts.map((p) => p.id);
+      assert.ok(['sign', 'sign-fin-1', 'sign-fin-2'].every((id) => ids.includes(id)), roof.roof + ': ' + ids);
+      checkKit(parts, plate, roof.roof + ': ');
+      // Each fin stands against the back of the board, not in it.
+      const board = part(parts, 'sign').solid.boundingBox(), fin = part(parts, 'sign-fin-1').solid.boundingBox();
+      assert.ok(Math.abs(fin.min[1] - board.max[1]) < 1e-6, 'against the back');
+      assert.ok(fin.max[2] < board.max[2], 'no higher than the board');
+    } finally {
+      free(parts);
+    }
+  }
+  assert.deepEqual(validateBuilding({ ...plain, sign: 'billboard' }) && buildingLayoutIds({ ...plain, sign: 'billboard' }).filter((id) => id.startsWith('sign')), ['sign', 'sign-fin-1', 'sign-fin-2']);
 });

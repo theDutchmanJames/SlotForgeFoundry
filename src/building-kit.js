@@ -21,11 +21,10 @@ function letteringNote(b) {
   const lines = [...(b.lettering ?? []), ...(b.upper ?? []).flatMap((u) => u.lettering ?? [])];
   if (!lines.length && !(b.signText && b.sign !== 'none')) return [];
   const out = [];
-  if (b.signText && b.sign === 'fascia') out.push('“' + b.signText + '” ' + (b.signCut ? 'is cut 0.6 mm into' : 'stands 0.6 mm proud on') + ' the face of the sign.');
-  if (b.signText && b.sign === 'billboard') out.push('“' + b.signText + '” is carved into the face of the billboard in V-grooves, so it prints face down without supports.');
+  if (b.signText && b.sign !== 'none') out.push('“' + b.signText + '” ' + (b.signCut ? 'is cut 0.6 mm into' : 'stands 0.6 mm proud on') + ' the face of the ' + (b.sign === 'billboard' ? 'billboard' : 'sign') + '.');
   if (lines.some((l) => !l.cut)) out.push('Raised lettering on the walls: ' + lines.filter((l) => !l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
   if (lines.some((l) => l.cut)) out.push('Cut lettering on the walls: ' + lines.filter((l) => l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
-  return ['Lettering: ' + out.join(' ') + ' Paint raised letters with a fine brush, or roll a little paint over them on a flat card; fill cut or carved letters with paint and wipe the face clean while it is wet.'];
+  return ['Lettering: ' + out.join(' ') + ' Paint raised letters with a fine brush, or roll a little paint over them on a flat card; fill cut letters with paint and wipe the face clean while it is wet.'];
 }
 // The glazing template, when there are windows to glaze.
 const glazingNote = (b) => (glazingSheets(b).length ? ['Glazing: glazing.svg has the clear sheet for each window, full size. Print it at 100 %, cut the sheets from clear plastic 0.3 to 0.5 mm thick, and glue each behind its window on the inside of its wall before the walls go together.'] : []);
@@ -114,7 +113,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...(parts.some((p) => /^counter/.test(p.id)) ? ['Glue each counter under its window, level, its fins flat against the wall below it.'] : []),
     ...(parts.some((p) => /^flap/.test(p.id)) ? ['Glue each flap over its window, propped open: the back edge of its two fins against the wall' + (framed ? ' or the frame' : '') + ' sets its angle.'] : []),
     ...(b.sign === 'fascia' ? ['Glue the sign along the top of the front wall, under the eaves, for the name of the stall.'] : []),
-    ...(b.sign === 'billboard' ? ['Stand the billboard on the roof at its front edge, its foot following the roof and its two fins resting on the roof behind it, and glue it.'] : []),
+    ...(b.sign === 'billboard' ? ['Glue the two fins upright against the back of the billboard, 3 mm in from each end, their long side on the roof behind it. Stand the billboard on the roof at its front edge, its foot following the roof, and glue it and its fins down.'] : []),
     ...(parts.some((p) => /^number/.test(p.id))
       ? [(b.upper?.[0]?.balcony ? 'Glue each bay number under the front edge of the balcony, over its door.' : 'Glue each bay number on the wall above its door.') + ' Paint the raised number, or print the plaque in two colours.']
       : []),

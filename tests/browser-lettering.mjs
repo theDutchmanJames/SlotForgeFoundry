@@ -87,11 +87,11 @@ try {
   await idle();
   assert.equal((await saved()).lettering.length, 0);
 
-  // The container café's roof billboard, its name carved in.
+  // The container café's roof billboard, its name raised on it, its fins apart.
   await host.locator('[data-bd-preset="stall-container"]').click();
   await idle();
-  // A roof billboard is always carved: no choice shown.
-  assert.equal(await host.locator('[data-bd-sign-cut]').isVisible(), false);
+  // A roof billboard prints face up too: raised or cut, like any sign.
+  assert.equal(await host.locator('[data-bd-sign-cut]').isVisible(), true);
   await fill(setting('signText'), 'Pit stop cafe');
   assert.equal((await saved()).signText, 'PIT STOP CAFE');
   await noError('roof billboard');
@@ -128,7 +128,7 @@ try {
     await snap('presets/' + id);
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: sign text, wall lettering raised and cut (shown in Draw, named in the README), a carved roof billboard and a lettered billboard.');
+  console.log('PASS: sign text, wall lettering raised and cut (shown in Draw, named in the README), a roof billboard and a lettered billboard.');
 } finally {
   await browser.close();
 }

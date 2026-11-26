@@ -117,33 +117,6 @@ export function textShape(wasm, own, text, height) {
 }
 
 /**
- * The text carved in V-grooves, for a face that prints face down: each
- * stroke a groove whose sides are steeper than 45°, so no part of it prints
- * over air. In the text's own frame: x along, y up the face, z out of it:
- * from just outside the face down to -depth. The strokes keep their places, thinner.
- */
-export function textCarve(wasm, own, text, height) {
-  const { Manifold } = wasm;
-  const { lines } = textStrokes(text, height);
-  const w = Math.min(1.6, Math.max(LETTERING.thinnest, height * 0.1)),
-    r = w / 2,
-    deep = r * 1.1;
-  const ring = (x, y, z, rr) => Array.from({ length: 12 }, (_, k) => [x + rr * Math.cos((k * Math.PI) / 6), y + rr * Math.sin((k * Math.PI) / 6), z]);
-  const bits = [];
-  for (const line of lines) {
-    for (const [x, y] of line) bits.push(own(Manifold.hull([...ring(x, y, 0.05, r), ...ring(x, y, 0, r), [x, y, -deep]])));
-    for (let i = 1; i < line.length; i++) {
-      const [x0, y0] = line[i - 1], [x1, y1] = line[i], len = Math.hypot(x1 - x0, y1 - y0);
-      if (len < 1e-6) continue;
-      const nx = (-(y1 - y0) / len) * r, ny = ((x1 - x0) / len) * r;
-      const face = (z) => [[x0 + nx, y0 + ny, z], [x0 - nx, y0 - ny, z], [x1 - nx, y1 - ny, z], [x1 + nx, y1 + ny, z]];
-      bits.push(own(Manifold.hull([...face(0.05), ...face(0), [x0, y0, -deep], [x1, y1, -deep]])));
-    }
-  }
-  return { solid: own(Manifold.union(bits)), depth: deep };
-}
-
-/**
  * Raised text on a face, as a solid to add to it: in the face's frame, u
  * along it, v up it, w out of it. Its middle at (u, v); from w0 (a little into
  * the face) out to the face plus the letters' depth.

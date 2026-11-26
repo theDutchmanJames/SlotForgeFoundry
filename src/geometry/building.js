@@ -24,7 +24,7 @@ import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
-import { LETTERING, checkText, fitHeight, textCarve, textShape, textWidth } from './lettering.js';
+import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
 
@@ -78,8 +78,8 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // front edge. signWidth along the front, in the middle; signHeight its
   // height, a billboard's above the roof.
   sign: 'none',
-  signText: '', // lettered on the sign: raised on a fascia sign, cut into the face of a roof billboard
-  signCut: false, // a fascia sign's letters cut in, not raised (a roof billboard's are always carved)
+  signText: '', // lettered on the sign, raised
+  signCut: false, // the sign's letters cut in, not raised
   // Lettering on the walls of the ground floor: { wall, text, at (its middle along the wall), up (its middle above the floor), height, cut }.
   lettering: Object.freeze([]),
   signWidth: 80,
@@ -1112,6 +1112,7 @@ export function buildingLayout(input) {
       if (o.step) parts.push({ id: 'step-' + (i + 1), name: openingName(o, s.openings) + ' step', role: 'buildingBase' });
     });
   if (b.sign !== 'none') parts.push({ id: 'sign', name: b.sign === 'billboard' ? 'Billboard' : 'Sign', role: 'wall' });
+  if (b.sign === 'billboard') parts.push({ id: 'sign-fin-1', name: 'Billboard fin 1', role: 'frame' }, { id: 'sign-fin-2', name: 'Billboard fin 2', role: 'frame' });
   return { building: b, storeys, parts, doors };
 }
 
@@ -1972,8 +1973,10 @@ export function buildGarage(wasm, input, plate = null) {
     }
     // A billboard: a board standing on the roof just inside its front edge,
     // over the middle of the top storey, its foot following the roof; two
-    // fins behind it rest on the roof and hold it upright. It prints on its
-    // face, the fins up.
+    // fins behind it rest on the roof and hold it upright. The board prints on
+    // its back, its face up; the fins are parts of their own, lying on their
+    // side, each glued flat against the back of the board, 3 mm in from its end
+    // (a groove there would open onto the plate and print over air).
     if (b.sign === 'billboard') {
       const tops = storeys.at(-1);
       const roofs = own(Manifold.union(parts.filter((p) => p.role === 'roof').map((p) => p.solid)));
@@ -1998,19 +2001,24 @@ export function buildGarage(wasm, input, plate = null) {
       const k = (zc - zf) / (yb + fl - yf),
         n = Math.hypot(k, 1);
       const foot = Math.min(zf, zb, zc) - dip;
-      const board = box(x0, yf, foot, x1, yb, Math.max(zf, zb) + b.signHeight);
-      const fins = [x0 + 3, x1 - 3 - fw].map((fx) => sweep([[yb - 0.4, zb - dip], [yb - 0.4, zb + fh], [yb + fl, zc - dip]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], fx, fx + fw));
-      let whole = own(Manifold.union([board, ...fins]));
-      // Its text carved into its face: the billboard prints face down, so raised letters would hang
-      // over air; V-grooves steeper than 45° print clean. The text's frame: x along, y up, z out of the face.
+      const top = Math.max(zf, zb) + b.signHeight;
+      let board = box(x0, yf, foot, x1, yb, top);
+      // The fins: against the back of the board, no higher than it.
+      const finTop = Math.min(zb + fh, top - 1.5);
+      const finAt = [x0 + 3, x1 - 3 - fw];
+      // Its text, raised on its face or cut into it: the face prints up. The text's frame: x along, y up, z out of the face.
       if (b.signText) {
-        const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4), shown = Math.max(zf, zb);
-        const { solid: carve } = textCarve(wasm, own, b.signText, h);
-        const u = (x0 + x1) / 2 - textWidth(b.signText, h) / 2, v = shown + b.signHeight / 2 - h / 2;
-        whole = own(whole.subtract(own(carve.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, u, yf, v, 1]))));
+        const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4);
+        const letters = own(raisedText(wasm, own, b.signText, h, [0, 0], ...letterDepth(b.signCut)).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, (x0 + x1) / 2, yf, Math.max(zf, zb) + b.signHeight / 2, 1]));
+        board = own(b.signCut ? board.subtract(letters) : board.add(letters));
       }
-      const solid = trim(whole, [0, -k / n, 1 / n], (zf - k * yf) / n);
-      parts.push({ id: 'sign', name: 'Billboard', role: 'wall', solid, outward: [0, 1, 0], apart: [0, 0, APART.roof + 25] });
+      // The board and the fins stand on the roof's plane.
+      const onRoof = (solid) => trim(solid, [0, -k / n, 1 / n], (zf - k * yf) / n);
+      parts.push({ id: 'sign', name: 'Billboard', role: 'wall', solid: onRoof(board), outward: [0, -1, 0], apart: [0, 0, APART.roof + 25] });
+      finAt.forEach((fx, i) => {
+        const fin = sweep([[yb, zb - dip], [yb, finTop], [yb + fl, zc - dip]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], fx, fx + fw);
+        parts.push({ id: 'sign-fin-' + (i + 1), name: 'Billboard fin ' + (i + 1), role: 'frame', solid: onRoof(fin), outward: [1, 0, 0], apart: [i ? 8 : -8, 12, APART.roof + 25] });
+      });
     }
     if (b.standType !== 'none') {
       const H = b.standHeight;
