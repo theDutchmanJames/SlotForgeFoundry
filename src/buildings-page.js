@@ -23,6 +23,7 @@ import {
   STAND,
   OPEN,
   LEAN,
+  RELIEF,
   MAX_ROOMS,
   MAX_UPPER,
   MIN_ROOM,
@@ -565,12 +566,22 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
   ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
+  <div class="bd-sub">Relief</div>
+  ${field('stPlinth', 'Plinth', s.plinth, RELIEF.band)}
+  ${field('stCornice', 'Cornice', s.cornice, RELIEF.band)}
+  ${field('stPilasters', 'Pilasters apart', s.pilasters, [0, RELIEF.spacing[1]])}
+  <label class="bd-check"><input type="checkbox" name="stPanels"${s.panels ? ' checked' : ''}><span>Recessed panels</span></label>
   <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside. A balcony is its floor reaching out in front, over the garage doors and the pit lane. The railing runs along the open edges of its floor: the balcony, and a terrace where it is set back.</p></div>`
       : `<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
   ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
-  <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof.</p>`;
+  <div class="bd-sub">Relief</div>
+  ${field('stPlinth', 'Plinth', s.plinth, RELIEF.band)}
+  ${field('stCornice', 'Cornice', s.cornice, RELIEF.band)}
+  ${field('stPilasters', 'Pilasters apart', s.pilasters, [0, RELIEF.spacing[1]])}
+  <label class="bd-check"><input type="checkbox" name="stPanels"${s.panels ? ' checked' : ''}><span>Recessed panels</span></label>
+  <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof. Relief stands out of the walls: a plinth at the foot, a cornice under the eaves, pilasters at the corners and every so far along (0 for none), and panels sunk between them; it runs round the corners and keeps clear of every opening.</p>`;
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
   function drawOpenings() {
@@ -601,7 +612,16 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     const s = storeyOf(building, storey);
     const num = (el, was) => (el ? (el.value === '' ? NaN : Number(el.value)) : was);
-    return { open: e.stOpen ? e.stOpen.checked : s.open, waist: num(e.stWaist, s.waist), panes: num(e.stPanes, s.panes), lean: num(e.stLean, s.lean) };
+    return {
+      open: e.stOpen ? e.stOpen.checked : s.open,
+      waist: num(e.stWaist, s.waist),
+      panes: num(e.stPanes, s.panes),
+      lean: num(e.stLean, s.lean),
+      plinth: num(e.stPlinth, s.plinth),
+      cornice: num(e.stCornice, s.cornice),
+      pilasters: num(e.stPilasters, s.pilasters),
+      panels: e.stPanels ? e.stPanels.checked : s.panels,
+    };
   }
   function readForm() {
     if (isStand()) return readStand();

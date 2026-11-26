@@ -74,6 +74,13 @@ export const BUILDING_DEFAULTS = Object.freeze({
   panes: 1,
   // The walls of the top storey leaning out at the top, in degrees: a control-tower cab.
   lean: 0,
+  // Relief on the outside of the walls: a plinth at the foot and a cornice
+  // under the eaves (their heights, 0 for none), pilasters at the corners and
+  // every so far along (0 for none), recessed panels between them.
+  plinth: 0,
+  cornice: 0,
+  pilasters: 0,
+  panels: false,
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -102,7 +109,7 @@ export const BUILDING_LIMITS = Object.freeze({
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
 // balcony: how far its floor reaches out in front of the storey below, over the garage front; railing: round the open edges of its floor.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false, open: false, waist: 25, panes: 1, lean: 0 });
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false });
 export const MAX_UPPER = 2;
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
@@ -161,6 +168,8 @@ export const STAND = Object.freeze({
 export const HIP_ACROSS = 190;
 // An open storey: its corner posts along each wall, the beam over the open band.
 export const OPEN = Object.freeze({ post: 9, beam: 6, mullion: 3, panes: 8 });
+// Relief: how far it stands out, a pilaster's width, a panel's recess and its margin.
+export const RELIEF = Object.freeze({ depth: 1.5, pilaster: 6, recess: 0.8, margin: 3, band: [0, 20], spacing: [20, 300] });
 // Walls that lean out: at most this many degrees, and only so far out over the storey below.
 export const LEAN = Object.freeze({ most: 30, reach: 25 });
 export const SIGNS = Object.freeze([
@@ -405,6 +414,8 @@ export function validateBuilding(input) {
     if (!level) throw Error('A billboard stands on a roof that is level along the front: a flat or a hip roof, a single slope rising to the front or the back, or a two-sided roof with its ridge side to side.');
     if (b.roofRailing && b.roof === 'flat') throw Error('The billboard stands where the roof railing runs along the front: choose one.');
   }
+  if (b.sign === 'fascia' && b.cornice) throw Error('The sign and the cornice both run along the top of the front wall: choose one.');
+  if (b.numbers && (b.cornice || b.pilasters || b.panels)) throw Error('The bay numbers sit on the wall above the doors, where the relief would be: choose one.');
   if (b.sign === 'fascia') {
     const dip = b.upper.length === 0 && b.roof !== 'flat' ? HATCH.sign * Math.tan((b.pitch * Math.PI) / 180) : 0;
     const under = Math.floor((b.height - b.signHeight - dip) * 10) / 10;
@@ -462,6 +473,13 @@ export function validateBuilding(input) {
 function checkOpen(s, openings, where, door) {
   if (typeof s.open !== 'boolean') throw Error('Choose whether the storey' + where + ' is open above a waist wall.');
   if (!Number.isFinite(s.lean) || s.lean < 0 || s.lean > LEAN.most) throw Error('The walls' + where + ' lean out 0 to ' + LEAN.most + '°.');
+  const [b0, b1] = RELIEF.band,
+    [p0, p1] = RELIEF.spacing;
+  for (const [key, name] of [['plinth', 'The plinth'], ['cornice', 'The cornice']])
+    if (!Number.isFinite(s[key]) || s[key] < b0 || s[key] > b1) throw Error(name + where + ' must be ' + b0 + ' to ' + b1 + ' mm high.');
+  if (s.plinth + s.cornice > s.height - 10) throw Error('The plinth and the cornice' + where + ' leave too little wall: together at most ' + fmtMm(s.height - 10) + ' mm.');
+  if (!Number.isFinite(s.pilasters) || (s.pilasters !== 0 && (s.pilasters < p0 || s.pilasters > p1))) throw Error('Pilasters' + where + ' stand ' + p0 + ' to ' + p1 + ' mm apart, or 0 for none.');
+  if (typeof s.panels !== 'boolean') throw Error('Choose whether the walls' + where + ' have recessed panels.');
   if (!Number.isInteger(s.panes) || s.panes < 1 || s.panes > OPEN.panes) throw Error('An open storey' + where + ' has 1 to ' + OPEN.panes + ' panes along each wall.');
   if (!s.open) return;
   if (!Number.isFinite(s.waist) || s.waist < 8 || s.waist > s.height - 20) throw Error('The waist wall' + where + ' must be 8 to ' + fmtMm(s.height - 20) + ' mm high.');
@@ -548,7 +566,7 @@ export function storeyStack(b) {
   let z = b.baseHeight;
   let ox = 0,
     oy = 0;
-  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean }, ...b.upper];
+  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels }, ...b.upper];
   all.forEach((s, i) => {
     const n = i + 1;
     if (i) z += KIT.slab;
@@ -567,6 +585,7 @@ export function storeyStack(b) {
       openings: s.open ? openBand(s) : s.openings,
       open: !!s.open,
       lean: s.lean ?? 0,
+      relief: { plinth: s.plinth ?? 0, cornice: s.cornice ?? 0, pilasters: s.pilasters ?? 0, panels: !!s.panels },
       garage: i === 0,
       top: i === all.length - 1,
       suffix: n > 1 ? String(n) : '',
@@ -1099,6 +1118,74 @@ export function buildGarage(wasm, input, plate = null) {
         for (const w of WALLS) {
           const joints = wallJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s.wallTexture);
           if (joints) walls[w] = whole(own(walls[w].subtract(joints)));
+        }
+      }
+      // Relief: bands, pilasters and panels on the outside, after the texture,
+      // smooth like stone trim; clear of every opening, its frame, its
+      // counter and its flap. Each piece reaches past the ends of its wall and
+      // is mitred like it, so a band runs on round a corner without a seam.
+      const R = s.relief;
+      if (R.plinth || R.cornice || R.pilasters || R.panels) {
+        const d = RELIEF.depth,
+          P = RELIEF.pilaster;
+        // From the bottom of the texture's joints, so the relief fills them under it.
+        const sink = s.wallTexture === 'plain' ? 0.01 : b.textureDepth + 0.1;
+        const mitre = (w, solid) => {
+          const r2 = Math.SQRT1_2;
+          const planes = {
+            front: [[[1, -1, 0], 0], [[-1, -1, 0], -W * r2]],
+            back: [[[1, 1, 0], D * r2], [[-1, 1, 0], (D - W) * r2]],
+            left: [[[-1, 1, 0], 0], [[-1, -1, 0], -D * r2]],
+            right: [[[1, 1, 0], W * r2], [[1, -1, 0], (W - D) * r2]],
+          }[w];
+          for (const [n, off] of planes) solid = trim(solid, n, off);
+          return underRoof(solid);
+        };
+        const zWall = sloped ? zTop : z1;
+        for (const w of WALLS) {
+          const L = wallLength(s, w);
+          // Where the relief keeps off: openings with their frames, counters and flaps; the garage doors.
+          const clear = [];
+          for (const o of s.openings) {
+            if (o.wall !== w) continue;
+            const k = o.frame ? KIT.trim : 0;
+            clear.push([o.at - o.width / 2 - KIT.trim, top + o.sill - (o.type === 'window' ? k : 0) - (o.counter ? HATCH.counter[1] + HATCH.counter[0] : 0), o.at + o.width / 2 + KIT.trim, top + o.sill + o.height + k + (o.flap ? HATCH.flapClear : 0)]);
+          }
+          if (s.garage && w === 'front') for (const door of doors) clear.push([door.x - KIT.trim, top - 1, door.x + door.width + KIT.trim, top + door.height + KIT.trim]);
+          const meets = (u0, z0b, u1, z1b) => clear.some(([a0, c0, a1, c1]) => u0 < a1 && a0 < u1 && z0b < c1 && c0 < z1b);
+          const raised = [];
+          if (R.plinth) raised.push(onWall(w, -d, L + d, -sink, d, top, top + R.plinth));
+          if (R.cornice) raised.push(onWall(w, -d, L + d, -sink, d, z1 - R.cornice, z1));
+          // Pilasters: at the corners, and between them as near the spacing as fits.
+          const posts = [];
+          if (R.pilasters) {
+            posts.push([-d, P], [L - P, L + d]);
+            const n = Math.max(1, Math.round(L / R.pilasters));
+            for (let k = 1; k < n; k++) {
+              const u = (k * L) / n;
+              if (!meets(u - P / 2, top, u + P / 2, zWall)) posts.push([u - P / 2, u + P / 2]);
+            }
+            for (const [u0, u1] of posts) raised.push(onWall(w, u0, u1, -sink, d, top, zWall));
+          }
+          if (raised.length) {
+            let relief = mitre(w, own(Manifold.union(raised)));
+            if (clear.length) relief = minus(relief, ...clear.map(([a0, c0, a1, c1]) => onWall(w, a0, a1, -1, d + 1, c0, c1)));
+            walls[w] = own(walls[w].add(relief));
+          }
+          // Panels: sunk between the pilasters (or the ends), above the plinth and under the cornice.
+          if (R.panels) {
+            const m = RELIEF.margin;
+            const edges = [...(posts.length ? posts : [[-d, KIT.wall + KIT.frame - m], [L - KIT.wall - KIT.frame + m, L + d]])].sort((a, c) => a[0] - c[0]);
+            const zp0 = top + R.plinth + m,
+              zp1 = z1 - R.cornice - m;
+            const sunk = [];
+            for (let k = 0; k + 1 < edges.length; k++) {
+              const u0 = edges[k][1] + m,
+                u1 = edges[k + 1][0] - m;
+              if (u1 - u0 >= 8 && zp1 - zp0 >= 8 && !meets(u0, zp0, u1, zp1)) sunk.push(onWall(w, u0, u1, -RELIEF.recess, 0.5, zp0, zp1));
+            }
+            if (sunk.length) walls[w] = minus(walls[w], ...sunk);
+          }
         }
       }
       for (const w of ['front', 'back', 'left', 'right'])
