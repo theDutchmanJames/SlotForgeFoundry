@@ -9,6 +9,7 @@
 // railings round its sides and back, glued on. Toy proportions for 1:32.
 
 import { kitShapes } from './kit-shapes.js';
+import { BENCH, plankBench } from './bench.js';
 
 export const GRANDSTAND_DEFAULTS = Object.freeze({
   kind: 'grandstand',
@@ -19,6 +20,10 @@ export const GRANDSTAND_DEFAULTS = Object.freeze({
   frontHeight: 12, // the first row above the table
   seats: true, // a bench on each row
   backrests: false, // a back to each bench
+  // The benches: 'block', moulded into the rows; or 'wood', planked benches
+  // standing on rows of planks, a part of their own each (a straight stand).
+  benchStyle: 'block',
+  parapet: true, // a wall in front of the first row, above it; or the front open
   aisles: 1, // aisles with half steps, spread evenly
   backHeight: 15, // the back wall above the last row
   roof: 'none', // 'none' or 'canopy'
@@ -52,6 +57,7 @@ export const STAND = Object.freeze({
   roof: 3, // the canopy, thick
   reach: 6, // the canopy beyond the front row
   backrest: [2, 7, 5], // a bench's back: thick, above the bench at least, above the next row at least
+  wood: { depth: 9, seat: 8, back: 7, behind: 1.5, margin: 2, longest: 120, gap: 3, inset: 3, plank: [4, 0.8, 0.5] }, // a wooden bench on a row: deep, its seat above the row, its back; clear of the step up behind it and of the ends; at most this long, this far from the next; the rows' planks: wide, the groove between them wide and deep
   frame: { member: 4, brace: 3, bay: 40, play: 0.15 }, // the frames under a raised stand
   rail: { height: 14, bar: 2.5, glue: 10 }, // railings: above the walls, their bars, the back railing's band glued on
   stair: { width: 24, rise: 8, tread: [6, 10], slab: 5, post: 5, wall: [3, 12] }, // a staircase up an end
@@ -80,6 +86,13 @@ export function validateGrandstand(input) {
   if (typeof g.backrests !== 'boolean' || typeof g.railings !== 'boolean') throw Error('Choose whether the benches have backs and the stand railings.');
   if (g.backrests && !g.seats) throw Error('Backs are for benches: choose benches too.');
   if (g.backrests && g.rowDepth < 16) throw Error('Benches with backs need rows at least 16 mm deep.');
+  if (typeof g.parapet !== 'boolean') throw Error('Choose whether the first row has a parapet in front.');
+  if (!['block', 'wood'].includes(g.benchStyle)) throw Error('Choose benches moulded into the rows or of wood.');
+  if (g.benchStyle === 'wood') {
+    if (!g.seats) throw Error('Wooden benches are benches: choose benches too.');
+    if (g.curve !== null) throw Error('Wooden benches are for a straight grandstand.');
+    if (g.rowDepth < STAND.wood.depth + STAND.wood.behind + 3) throw Error('Wooden benches need rows at least ' + (STAND.wood.depth + STAND.wood.behind + 3) + ' mm deep.');
+  }
   if (g.raised > 0 && g.raised < 20) throw Error('Raised must be 0, on the table, or between 20 and 100 mm.');
   if (!['none', 'left', 'right', 'both'].includes(g.stairs)) throw Error('Choose a staircase for the grandstand from the list.');
   if (g.curve !== null && (g.raised > 0 || g.stairs !== 'none' || g.railings)) throw Error('A raised stand, a staircase and railings are for a straight grandstand.');
@@ -122,6 +135,8 @@ export function sizeLine(b) {
   return b.rows + ' rows · ' + Math.round(b.length) + ' mm' + (b.curve ? ' · curved' : '');
 }
 
+/** How high the front wall stands above the bottom of the shell: up to the first row, and the parapet above it. */
+const frontWall = (g) => g.frontHeight + (g.parapet ? STAND.parapet : 0);
 /** How deep the stand is, from the front of the parapet to the back of its back wall. */
 export const standDepth = (g) => STAND.shell + g.rows * g.rowDepth + STAND.shell;
 /** How high its back wall stands above the bottom of the shell: above the last row, or up to the canopy. */
@@ -162,7 +177,7 @@ export function profile(g, aisle = false) {
   const rects = [];
   const row = (i) => ({ y0: s + i * g.rowDepth, y1: s + (i + 1) * g.rowDepth, z: g.frontHeight + i * g.rowRise });
   // The solid under the rows, the parapet and the back wall; hollowed below.
-  const solid = [[0, 0, s, g.frontHeight + STAND.parapet]];
+  const solid = [[0, 0, s, frontWall(g)]];
   for (let i = 0; i < g.rows; i++) {
     const r = row(i);
     solid.push([r.y0, 0, r.y1, r.z]);
@@ -182,10 +197,16 @@ export function profile(g, aisle = false) {
       if (below > 0.5) hollow.push([r.y0 - 0.01, -1, r.y0 + s + 0.01, below]);
     }
   }
-  // The benches, or the half steps of an aisle.
+  // The benches, or the half steps of an aisle; with wooden benches, the rows of planks, a groove between each two.
+  const grooves = [];
   for (let i = 0; i < g.rows; i++) {
     const r = row(i);
+    if (g.benchStyle === 'wood') {
+      const [pw, gw, gd] = STAND.wood.plank;
+      for (let y = r.y0 + (i === 0 ? s : 0) + pw; y < r.y1 - 1; y += pw) grooves.push([[y - gw / 2, r.z + 0.01], [y, r.z - gd], [y + gw / 2, r.z + 0.01]]);
+    }
     if (aisle) rects.push([r.y0 + g.rowDepth / 2, r.z - 0.01, r.y1, r.z + g.rowRise / 2]);
+    else if (g.benchStyle === 'wood') continue;
     else if (g.seats && g.backrests) {
       // Its back stands against the step up behind it (the back wall, on the
       // last row), rising clear above the next row so it reads as a back.
@@ -194,8 +215,35 @@ export function profile(g, aisle = false) {
       rects.push([r.y1 - bt - STAND.bench[0], r.z - 0.01, r.y1 - bt + 0.01, r.z + STAND.bench[1]], [r.y1 - bt, r.z - 0.01, r.y1 + 0.01, top]);
     } else if (g.seats) rects.push([r.y1 - STAND.bench[0], r.z - 0.01, r.y1, r.z + STAND.bench[1]]);
   }
-  return { solid, hollow, top: rects };
+  return { solid, hollow, top: rects, grooves };
 }
+
+/**
+ * Where the wooden benches stand: on each row at its back, clear of the step
+ * up behind it, from end to end between the aisles, as many on a stretch as
+ * keep each no longer than STAND.wood.longest. Each { row, x0, x1, y0, z0 }.
+ */
+export function woodBenches(g) {
+  if (g.benchStyle !== 'wood') return [];
+  const W = STAND.wood,
+    s = STAND.shell;
+  const edges = [s, ...aisleSpans(g).flat(), g.length];
+  const stretches = [];
+  for (let k = 0; k < edges.length; k += 2) stretches.push([edges[k] + W.margin, edges[k + 1] - W.margin]);
+  const out = [];
+  for (let i = 0; i < g.rows; i++) {
+    const y1 = s + (i + 1) * g.rowDepth - W.behind;
+    const z0 = g.raised + g.frontHeight + i * g.rowRise;
+    for (const [a, c] of stretches) {
+      const n = Math.max(1, Math.ceil((c - a + W.gap) / (W.longest + W.gap) - 1e-9));
+      const len = (c - a - (n - 1) * W.gap) / n;
+      for (let k = 0; k < n; k++) out.push({ row: i + 1, x0: a + k * (len + W.gap), x1: a + k * (len + W.gap) + len, y0: y1 - W.depth, z0 });
+    }
+  }
+  return out;
+}
+const benchKeys = (g) => ['seat', ...(g.backrests ? ['back'] : []), 'end-left', 'end-right'];
+const benchName = (key, row, k) => ({ seat: 'Bench seat', back: 'Bench back', 'end-left': 'Bench end, left', 'end-right': 'Bench end, right' })[key] + ', row ' + row + ' ' + k;
 
 /**
  * A side railing, in the plane of an end of the stand (y, z), as outlines:
@@ -206,13 +254,13 @@ function sideRail(g) {
   const s = STAND.shell,
     D = standDepth(g),
     { height: RH, bar } = STAND.rail;
-  const zf = g.frontHeight + STAND.parapet + RH,
+  const zf = frontWall(g) + RH,
     zb = wallTop(g) + RH;
   const at = (y) => zf + ((zb - zf) * y) / D;
   const band = (drop) => [[0, zf - drop - bar], [D, zb - drop - bar], [D, zb - drop], [0, zf - drop]];
   const outlines = [band(0), band(RH / 2)];
   const post = (y0, z0) => outlines.push([[y0, z0 - 0.01], [y0 + s, z0 - 0.01], [y0 + s, at(y0 + s)], [y0, at(y0)]]);
-  post(0, g.frontHeight + STAND.parapet);
+  post(0, frontWall(g));
   for (let i = 1; i < g.rows; i++) post(s + i * g.rowDepth, g.frontHeight + i * g.rowRise);
   post(D - s, wallTop(g));
   return outlines;
@@ -248,6 +296,12 @@ export function grandstandLayout(input) {
   }
   for (const end of stairEnds(g)) parts.push({ id: 'stair-' + end, name: 'Staircase, ' + end, role: 'wall' });
   if (g.railings) sections.forEach((_, i) => parts.push({ id: 'rail-back-' + (i + 1), name: 'Back railing ' + (i + 1), role: 'wall' }));
+  // The wooden benches, row by row along it.
+  const counts = {};
+  for (const b of woodBenches(g)) {
+    const k = (counts[b.row] = (counts[b.row] ?? 0) + 1);
+    for (const key of benchKeys(g)) parts.push({ id: 'bench-' + b.row + '-' + k + '-' + key, name: benchName(key, b.row, k), role: key.startsWith('end') ? 'frame' : 'wall' });
+  }
   return { building: g, parts, sections };
 }
 
@@ -316,9 +370,12 @@ export function buildGrandstand(wasm, input) {
   const parts = [];
   try {
     // The shell with its benches; or, for an aisle, bare: its half steps are added each on its own.
+    // The grooves between the planks of the rows, cut from the top of each.
+    const grooved = (section, p) => (p.grooves.length ? own(section.subtract(own(new CrossSection(p.grooves.map((t) => [t[0], t[1], t[2]]), 'NonZero')))) : section);
     const shape = (aisle, withTop = true) => {
       const p = profile(g, aisle);
       let section = p.hollow.length ? own(cs(p.solid).subtract(cs(p.hollow))) : cs(p.solid);
+      section = grooved(section, p);
       if (withTop && p.top.length) section = own(section.add(cs(p.top)));
       return section;
     };
@@ -330,7 +387,8 @@ export function buildGrandstand(wasm, input) {
     const { poly, sweep, truss, railing } = kitShapes(wasm, own);
     const closedFor = (end) => {
       const p = profile(g, false);
-      let c = p.top.length ? own(cs(p.solid).add(cs(p.top))) : cs(p.solid);
+      let c = grooved(cs(p.solid), p);
+      if (p.top.length) c = own(c.add(cs(p.top)));
       if (g.railings && !stairEnds(g).includes(end)) c = own(c.add(own(CrossSection.union(sideRail(g).map(poly)))));
       return c;
     };
@@ -375,9 +433,12 @@ export function buildGrandstand(wasm, input) {
     // the parapet, reaching from the end of a section into the next.
     const [tt, th, tl] = STAND.tab,
       pl = STAND.tabPlay;
+    // A low front wall takes a shorter tab, or none.
+    const fw = frontWall(g),
+      fth = Math.min(th, fw - 3);
     const tabProfile = (grow) =>
       cs([
-        [STAND.shell / 2 - tt / 2 - grow, (g.frontHeight + STAND.parapet) / 2 - th / 2 - grow, STAND.shell / 2 + tt / 2 + grow, (g.frontHeight + STAND.parapet) / 2 + th / 2 + grow],
+        ...(fth >= 3 ? [[STAND.shell / 2 - tt / 2 - grow, fw / 2 - fth / 2 - grow, STAND.shell / 2 + tt / 2 + grow, fw / 2 + fth / 2 + grow]] : []),
         [D - STAND.shell / 2 - tt / 2 - grow, H / 2 - th / 2 - grow, D - STAND.shell / 2 + tt / 2 + grow, H / 2 + th / 2 + grow],
       ]);
     const tabs = tabProfile(0),
@@ -409,7 +470,7 @@ export function buildGrandstand(wasm, input) {
             q0 = q < b ? q + eps : q;
           if (aisle) return aisleRun(p0, q0);
           // After an aisle (a stretch that does not begin the section), backs would stand out over it.
-          return g.backrests && p > a ? benchRun(p0, q0, p) : run(plain, p0, q0);
+          return g.backrests && g.benchStyle === 'block' && p > a ? benchRun(p0, q0, p) : run(plain, p0, q0);
         })),
       );
       if (i < sections.length - 1) body = own(body.add(run(tabs, b - 0.01, b + tl)));
@@ -516,6 +577,16 @@ export function buildGrandstand(wasm, input) {
         const { panel } = railing({ from: [a, D], dir: [1, 0], len, inward: [0, 1], z: standHeight(g) - glue, inset: 0, spec });
         parts.push({ id: 'rail-back-' + (i + 1), name: 'Back railing ' + (i + 1), role: 'wall', solid: panel, outward: [0, 1, 0], apart: [0, 15, 10] });
       });
+    }
+    // The wooden benches: planked seat and back on two end frames each, standing on the rows.
+    {
+      const counts = {};
+      const W = STAND.wood;
+      for (const b of woodBenches(g)) {
+        const k = (counts[b.row] = (counts[b.row] ?? 0) + 1);
+        for (const q of plankBench(wasm, own, { x0: b.x0, x1: b.x1, y0: b.y0, z0: b.z0, depth: W.depth, seat: W.seat, back: g.backrests ? W.back : 0, inset: W.inset }))
+          parts.push({ id: 'bench-' + b.row + '-' + k + '-' + q.key, name: benchName(q.key, b.row, k), role: q.key.startsWith('end') ? 'frame' : 'wall', solid: q.solid, ...q.pose });
+      }
     }
     const keep = new Set(parts.map((p) => p.solid));
     for (const x of temp) if (!keep.has(x)) x.delete();

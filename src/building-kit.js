@@ -138,6 +138,9 @@ function standNotes(name, g, parts, sizes) {
       : ['Stand the grandstand on the table, its parapet towards the track.']),
     ...(parts.some((p) => /^stair/.test(p.id)) ? ['Glue each staircase against its end of the stand, its top step level with the last row, its wall on the outside.'] : []),
     ...(parts.some((p) => /^rail-back/.test(p.id)) ? ['Glue the back railings on the back of the back wall, their solid band down against it, one for each section, end to end.'] : []),
+    ...(parts.some((p) => /^bench-/.test(p.id))
+      ? ['Put each wooden bench together: stand its two ends up, lay the seat on them, its cleats down just inside the ends' + (parts.some((p) => /^bench-.*-back$/.test(p.id)) ? ', and stand the back on the seat against the back legs' : '') + '. Glue each on its row, at the back, clear of the step up behind it, as the parts list numbers them by row.']
+      : []),
     ...(canopy
       ? ['Glue the canopy' + (parts.filter((p) => /^canopy/.test(p.id)).length > 1 ? ' pieces' : '') + ' on top of the back wall, reaching out over the rows, and glue the posts under its front edge, in front of the parapet.']
       : []),

@@ -76,6 +76,47 @@ export function benchLayout(input) {
   return { building: b, parts };
 }
 
+/**
+ * A planked bench from x0 to x1, its front at y0, standing on z0: a seat of
+ * planks with gaps between them joined by cleats underneath, a back of
+ * planks (if back > 0) joined by cleats behind, on two end frames set in
+ * from its ends. depth front to back, seat the top of the seat above z0.
+ * Returns its pieces: { key: 'seat' | 'back' | 'end-left' | 'end-right',
+ * solid, pose: how it prints, and how it moves apart }.
+ */
+export function plankBench(wasm, own, { x0, x1, y0, z0, depth: D, seat: H, back: bh, inset: I }) {
+  const { box, poly, sweep } = kitShapes(wasm, own);
+  const { end: et, leg: lw } = BENCH;
+  const [sz, sh2] = BENCH.stretcher,
+    [, , pt] = BENCH.plank,
+    [cw, ct] = BENCH.cleat,
+    br = BENCH.bearer;
+  const rect = (a, z, c, w) => poly([[a, z], [c, z], [c, w], [a, w]]);
+  const L = x1 - x0,
+    under = H - pt;
+  // The seat's planks reach back to the back legs, which rise behind them to carry the back.
+  const SD = bh ? D - lw : D;
+  // An end frame in (y, z): a leg at the front and the back, a bearer under
+  // the seat's planks, a stretcher low between the legs.
+  const endCs = own(wasm.CrossSection.union([rect(0, 0, lw, under), rect(D - lw, 0, D, bh ? H + bh : under), rect(0, Math.min(sz, under - br - sh2), D, Math.min(sz, under - br - sh2) + sh2), rect(0, under - br, D, under)]));
+  // Cleats just inside each end frame, and in the middle of a long bench.
+  const xs = [x0 + I + et, x0 + L - I - et - cw];
+  if (L > 80) xs.push(x0 + L / 2 - cw / 2);
+  const at = (m) => own(m.translate([0, y0, z0]));
+  const seatBits = planksAcross(SD).map(([a, c]) => box(x0, a, under, x1, c, H));
+  for (const x of xs) seatBits.push(box(x, 0.4, under - ct, x + cw, SD - 0.4, under + 0.01));
+  const out = [{ key: 'seat', solid: at(own(wasm.Manifold.union(seatBits))), pose: { flip: true, apart: [0, 0, 10] } }];
+  if (bh) {
+    const backFront = SD - pt;
+    const backBits = planksAcross(bh).map(([a, c]) => box(x0, backFront, H + a, x1, backFront + pt, H + c));
+    for (const x of xs) backBits.push(box(x, backFront + pt - 0.01, H, x + cw, backFront + pt + ct, H + bh - 0.5));
+    out.push({ key: 'back', solid: at(own(wasm.Manifold.union(backBits))), pose: { outward: [0, 1, 0], apart: [0, 8, 12] } });
+  }
+  for (const [side, a, dir] of [['left', x0 + I, [-1, 0, 0]], ['right', x0 + L - I - et, [1, 0, 0]]])
+    out.push({ key: 'end-' + side, solid: at(sweep(endCs, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], a, a + et)), pose: { outward: dir, apart: [dir[0] * 6, 0, 0] } });
+  return out;
+}
+
 /** The benches, built. */
 export function buildBench(wasm, input) {
   const b = validateBench(input);
@@ -102,35 +143,13 @@ export function buildBench(wasm, input) {
           parts.push({ id: 'end-' + (k + 1) + '-' + side, name: 'End frame' + n + ', ' + side, role: 'frame', solid: across(a, c, endCs), outward: out, apart: [out[0] * 6, 0, 0] });
       });
     } else {
-      const [, , pt] = BENCH.plank,
-        [cw, ct] = BENCH.cleat,
-        I = BENCH.inset,
-        br = BENCH.bearer;
-      // The seat: planks along the row, their tops at H, cleats under them
-      // just inside each end frame and in the middle of a long bench.
-      const seatTop = H,
-        under = H - pt;
-      // The seat's planks reach back to the back legs, which rise behind them to carry the back.
-      const SD = b.backrest ? D - lw : D;
-      // An end frame in (y, z): a leg at the front and the back, a bearer
-      // under the seat's planks, a stretcher low between the legs.
-      const endCs = own(wasm.CrossSection.union([rect(0, 0, lw, under), rect(D - lw, 0, D, b.backrest ? seatTop + bh : under), rect(0, sz, D, sz + sh2), rect(0, under - br, D, under)]));
-      // The back: planks along the row on the seat, against the back legs, cleats behind them beside the legs.
-      const backFront = SD - pt;
       benchStarts(b).forEach((x0, k) => {
         const n = b.count > 1 ? ' ' + (k + 1) : '';
-        const xs = [x0 + I + et, x0 + b.length - I - et - cw];
-        if (b.length > 80) xs.push(x0 + b.length / 2 - cw / 2);
-        const seatBits = planksAcross(SD).map(([y0, y1]) => box(x0, y0, under, x0 + b.length, y1, seatTop));
-        for (const x of xs) seatBits.push(box(x, 0.4, under - ct, x + cw, SD - 0.4, under + 0.01));
-        parts.push({ id: 'seat-' + (k + 1), name: 'Seat' + n, role: 'wall', solid: own(wasm.Manifold.union(seatBits)), flip: true, apart: [0, 0, 10] });
-        if (b.backrest) {
-          const backBits = planksAcross(bh).map(([z0, z1]) => box(x0, backFront, seatTop + z0, x0 + b.length, backFront + pt, seatTop + z1));
-          for (const x of xs) backBits.push(box(x, backFront + pt - 0.01, seatTop, x + cw, backFront + pt + ct, seatTop + bh - 0.5));
-          parts.push({ id: 'back-' + (k + 1), name: 'Back' + n, role: 'wall', solid: own(wasm.Manifold.union(backBits)), outward: [0, 1, 0], apart: [0, 8, 12] });
+        for (const q of plankBench(wasm, own, { x0, x1: x0 + b.length, y0: 0, z0: 0, depth: D, seat: H, back: b.backrest ? bh : 0, inset: BENCH.inset })) {
+          const name = { seat: 'Seat', back: 'Back', 'end-left': 'End frame', 'end-right': 'End frame' }[q.key] + n + (q.key.startsWith('end') ? ', ' + q.key.slice(4) : '');
+          const id = q.key.startsWith('end') ? 'end-' + (k + 1) + '-' + q.key.slice(4) : q.key + '-' + (k + 1);
+          parts.push({ id, name, role: q.key.startsWith('end') ? 'frame' : 'wall', solid: q.solid, ...q.pose });
         }
-        for (const [side, a, out] of [['left', x0 + I, [-1, 0, 0]], ['right', x0 + b.length - I - et, [1, 0, 0]]])
-          parts.push({ id: 'end-' + (k + 1) + '-' + side, name: 'End frame' + n + ', ' + side, role: 'frame', solid: across(a, a + et, endCs), outward: out, apart: [out[0] * 6, 0, 0] });
       });
     }
     const keep = new Set(parts.map((p) => p.solid));

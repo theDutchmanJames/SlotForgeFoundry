@@ -675,13 +675,13 @@ export const BUILDING_PRESETS = Object.freeze([
     id: 'stand-raised',
     name: "Spectators' stand",
     note: 'Five rows raised on braced frames, a staircase up the side, railings round it',
-    building: { kind: 'grandstand', length: 200, rows: 5, aisles: 0, rowDepth: 18, rowRise: 9, frontHeight: 10, backHeight: 12, raised: 35, stairs: 'left', railings: true },
+    building: { kind: 'grandstand', length: 200, rows: 5, aisles: 0, rowDepth: 18, rowRise: 9, frontHeight: 10, backHeight: 12, raised: 35, stairs: 'left', railings: true, benchStyle: 'wood', backrests: true },
   },
   {
     id: 'stand-mini',
     name: 'Mini stand',
-    note: 'Two rows of benches with backs, on the table',
-    building: { kind: 'grandstand', length: 120, rows: 2, aisles: 0, rowDepth: 18, rowRise: 10, frontHeight: 8, backHeight: 12, backrests: true, sectionLength: 130 },
+    note: 'Two rows of wooden benches with backs, the front open, the back row raised',
+    building: { kind: 'grandstand', length: 120, rows: 2, aisles: 0, rowDepth: 20, rowRise: 14, frontHeight: 6, backHeight: 10, backrests: true, sectionLength: 130, benchStyle: 'wood', parapet: false },
   },
   {
     id: 'gantry-start',

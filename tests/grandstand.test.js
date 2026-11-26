@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Module from 'manifold-3d';
-import { STAND, aisleSpans, buildGrandstand, grandstandLayout, sectionSpans, standDepth, standExtent, standHeight, standStair, validateGrandstand } from '../src/geometry/grandstand.js';
+import { STAND, aisleSpans, buildGrandstand, grandstandLayout, profile, sectionSpans, standDepth, standExtent, standHeight, standStair, validateGrandstand } from '../src/geometry/grandstand.js';
 import { buildGarage, fitsPlate, printPose, printSize, validateBuilding } from '../src/geometry/building.js';
 import { shapeOf, snapPose, overlap } from '../src/planner-buildings.js';
 import { BUILDING_PRESETS } from '../src/building-presets.js';
@@ -237,9 +237,12 @@ test('in a layout a grandstand faces the track with its parapet; a curved one st
   }
 });
 
-test('the mini stand prints as one section and its end panel', () => {
+test('the mini stand prints as one section and its end panel, a wooden bench with a back on each row, open in front', () => {
   const mini = BUILDING_PRESETS.find((p) => p.id === 'stand-mini').building;
-  assert.deepEqual(grandstandLayout(mini).parts.map((p) => p.id), ['stand-1', 'end']);
+  const ids = grandstandLayout(mini).parts.map((p) => p.id);
+  assert.deepEqual(ids.filter((id) => !/^bench-/.test(id)), ['stand-1', 'end']);
+  for (const row of [1, 2]) for (const key of ['seat', 'back', 'end-left', 'end-right']) assert.ok(ids.includes('bench-' + row + '-1-' + key), 'row ' + row + ' ' + key);
+  assert.equal(validateGrandstand(mini).parapet, false);
 });
 
 test('every aisle begins a section, so its half steps are square, standing on the plate as it prints', () => {
@@ -263,4 +266,49 @@ test('every aisle begins a section, so its half steps are square, standing on th
     assert.ok(hit.volume() > 0.1, 'square at its start');
     [probe, hit].forEach((s) => s.delete());
   });
+});
+
+test('wooden benches: planked benches standing on rows of planks, clear of each other and of the shell', async () => {
+  const { woodBenches } = await import('../src/geometry/grandstand.js');
+  const { BENCH, planksAcross } = await import('../src/geometry/bench.js');
+  assert.throws(() => validateGrandstand({ benchStyle: 'stone' }), /moulded into the rows or of wood/);
+  assert.throws(() => validateGrandstand({ benchStyle: 'wood', seats: false }), /choose benches too/);
+  assert.throws(() => validateGrandstand({ benchStyle: 'wood', curve: { radius: 450, angle: 45, facing: 'in' } }), /straight grandstand/);
+  assert.throws(() => validateGrandstand({ benchStyle: 'wood', rowDepth: 12 }), /rows at least 13.5 mm deep/);
+  assert.throws(() => validateGrandstand({ parapet: 'no' }), /parapet/);
+  for (const settings of [{ kind: 'grandstand', benchStyle: 'wood', aisles: 1 }, { kind: 'grandstand', benchStyle: 'wood', backrests: true, rows: 3, length: 300, aisles: 0, parapet: false, frontHeight: 6 }, { kind: 'grandstand', rows: 5, length: 200, aisles: 0, raised: 35, stairs: 'left', railings: true, benchStyle: 'wood', backrests: true }])
+    withParts(settings, (parts) => {
+      const g = validateGrandstand(settings);
+      const label = JSON.stringify(settings).slice(0, 80);
+      const spots = woodBenches(g);
+      assert.ok(spots.every((b) => b.x1 - b.x0 <= STAND.wood.longest + 1e-9), 'each bench short enough to print');
+      // Clear of the aisles.
+      for (const b of spots) for (const [p, q] of aisleSpans(g)) assert.ok(b.x1 <= p || b.x0 >= q, 'no bench in an aisle');
+      assert.equal(parts.filter((p) => /^bench-.*-seat$/.test(p.id)).length, spots.length);
+      for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' ' + label);
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap ' + label);
+          both.delete();
+        }
+      // The benches print as the bench kit's do: only the cleats over the gaps between the planks over air.
+      // Two cleats, three on a bench longer than 80 mm.
+      const bridges = (w, len) => (planksAcross(w).length - 1) * (len > 80 ? 3 : 2) * BENCH.plank[1] * BENCH.cleat[0];
+      for (const p of parts.filter((q) => /^bench-/.test(q.id))) {
+        const { min, max } = p.solid.boundingBox(),
+          len = max[0] - min[0];
+        const allow = /seat$/.test(p.id) ? bridges(g.backrests ? STAND.wood.depth - BENCH.leg : STAND.wood.depth, len) : /back$/.test(p.id) ? bridges(STAND.wood.back, len) : 0;
+        assert.ok(overAir(p) < allow + 0.5, p.name + ' prints ' + overAir(p));
+      }
+      // Each bench's feet on its row.
+      const first = parts.find((p) => p.id === 'bench-1-1-end-left').solid.boundingBox();
+      assert.ok(near(first.min[2], g.raised + g.frontHeight), 'on the first row');
+    });
+  // The rows of planks: grooves along them in the tread.
+  const plain = profile(validateGrandstand({})),
+    planked = profile(validateGrandstand({ benchStyle: 'wood' }));
+  assert.equal(plain.grooves.length, 0);
+  assert.ok(planked.grooves.length >= 6 * 3, 'grooves between the planks of each row');
+  assert.ok(!planked.top.length, 'no benches moulded into the rows');
 });
