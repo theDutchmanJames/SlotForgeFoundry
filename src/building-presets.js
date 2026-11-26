@@ -431,6 +431,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'bench' },
   },
   {
+    id: 'picnic',
+    name: 'Picnic table',
+    note: 'A top and two seats of planks on A-frame ends',
+    building: { kind: 'picnic' },
+  },
+  {
     id: 'stairs-switchback',
     name: 'Switchback stairs',
     note: 'Two flights against the back of a building, a landing on posts between them, mesh railings',

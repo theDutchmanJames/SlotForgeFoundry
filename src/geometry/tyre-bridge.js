@@ -4,8 +4,10 @@
 // top, set down inside the tyre so its sidewalls are the parapets. Where the
 // lowest steps run out past the tyre, a low wall each side. The sidewalls
 // and the deck are cut in two at the middle, with a dovetail, to fit the
-// plate; the sidewalls and the walls print flat, the deck on its side. The
-// track runs under it along y; x across the arch, z up.
+// plate; the sidewalls and the walls print flat, the deck on its side. Over
+// the top, a lattice frame: a side on each sidewall's rim, a flat lattice
+// roof across them, each printing flat. The track runs under it along y; x
+// across the arch, z up.
 
 import { kitShapes } from './kit-shapes.js';
 import { JOINT, seamRegion, tabPlaces } from './building-cuts.js';
@@ -16,6 +18,7 @@ export const TYRE_BRIDGE_DEFAULTS = Object.freeze({
   height: 130, // the top of the tyre
   width: 53, // along the track, outside the sidewalls
   tread: true, // tread round the rim
+  canopy: true, // a lattice frame over the top
 });
 export const TYRE_BRIDGE_LIMITS = Object.freeze({
   span: [240, 400],
@@ -32,6 +35,7 @@ export const TYRE = Object.freeze({
   block: [3, 5, 11], // tread: a notch deep, wide, this far apart round the rim
   groove: [5, 0.6], // the recessed band on the outside: in from the edges, deep
   play: 0.2, // round the deck between the sidewalls
+  canopy: { reach: [0.2, 40, 90], high: 18, bar: 2.5, pitch: 22, roof: 2.5 }, // over the top: each side of the middle (share of the span, within these), above the rim, its bars, its posts at most so far apart, the roof thick
 });
 const LABELS = { span: 'Span', height: 'Height', width: 'Width' };
 
@@ -72,13 +76,21 @@ export function validateTyreBridge(input) {
   for (const key of Object.keys(t)) if (!Object.hasOwn(TYRE_BRIDGE_DEFAULTS, key)) throw Error('The tyre bridge has an unknown setting: ' + key + '.');
   for (const [key, [min, max]] of Object.entries(TYRE_BRIDGE_LIMITS))
     if (!Number.isFinite(t[key]) || t[key] < min || t[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + ' mm.');
-  if (typeof t.tread !== 'boolean') throw Error('Choose whether the tyre has tread.');
+  if (typeof t.tread !== 'boolean' || typeof t.canopy !== 'boolean') throw Error('Choose whether the tyre has tread and a lattice frame over its top.');
   if (t.height > t.span / 2) throw Error('The arch is at most a half circle: at most ' + t.span / 2 + ' mm high for a span of ' + t.span + ' mm.');
   const o = tyreOpening(t);
   if (o.height < 50) throw Error('The opening under the arch is only ' + Math.round(o.height) + ' mm high: make it higher or wider.');
   // Each half of the deck lies on the plate as it prints.
   if (tyreSteps(t).X[1] > 190) throw Error('The stairs reach ' + Math.round(tyreSteps(t).X[1]) + ' mm from the middle: too long for a half to print. Make it lower or narrower.');
   return t;
+}
+/** The lattice frame over the top: how far it reaches each side of the middle, its top, its posts along x. */
+export function tyreCanopy(t) {
+  const { reach: [share, lo, hi], high, bar, pitch } = TYRE.canopy;
+  const xc = Math.min(hi, Math.max(lo, t.span * share));
+  const n = Math.max(2, Math.ceil((2 * xc - bar) / pitch));
+  const posts = Array.from({ length: n + 1 }, (_, k) => -xc + (k * (2 * xc - bar)) / n);
+  return { xc, top: t.height + high, posts };
 }
 /** Its outline on the table, [x0, y0, x1, y1]: the stairs' feet at the ends, the sidewalls' outsides. */
 export function tyreFootprint(t) {
@@ -93,6 +105,7 @@ export function tyreBridgeLayout(input) {
   for (const [side, name] of [['front', 'front'], ['back', 'back']]) for (const k of [1, 2]) parts.push({ id: 'side-' + side + '-' + k, name: 'Sidewall, ' + name + ' ' + k + ' of 2', role: 'wall' });
   for (const k of [1, 2]) parts.push({ id: 'deck-' + k, name: 'Stairs ' + k + ' of 2', role: 'floor' });
   if (runsOut(t)) for (const end of ['left', 'right']) for (const side of ['front', 'back']) parts.push({ id: 'wall-' + end + '-' + side, name: 'Stair wall, ' + end + ', ' + side, role: 'frame' });
+  if (t.canopy) parts.push({ id: 'canopy-front', name: 'Lattice frame, front', role: 'frame' }, { id: 'canopy-back', name: 'Lattice frame, back', role: 'frame' }, { id: 'canopy-roof', name: 'Lattice roof', role: 'roof' });
   return { building: t, parts };
 }
 // Whether the lowest steps run out past the tyre, needing walls of their own.
@@ -185,7 +198,51 @@ export function buildTyreBridge(wasm, input) {
         }
       }
     }
-    // In the layout's order: sidewalls, stairs, walls.
+    // Over the top, a lattice frame: each side standing on a sidewall's rim,
+    // from the rim up to a level top, posts with an X between each two; a
+    // flat lattice roof across them, cross bars over the posts.
+    if (t.canopy) {
+      const { bar, roof: rt } = TYRE.canopy;
+      const { xc, top, posts } = tyreCanopy(t);
+      const rect = (x0, z0, x1, z1) => poly([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]);
+      const line = (a, c) => {
+        const d = [c[0] - a[0], c[1] - a[1]],
+          l = Math.hypot(...d),
+          n = [(-d[1] / l) * (bar / 2), (d[0] / l) * (bar / 2)];
+        return poly([[a[0] - n[0], a[1] - n[1]], [c[0] - n[0], c[1] - n[1]], [c[0] + n[0], c[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]);
+      };
+      const rimAt = (x) => zc + Math.sqrt(R * R - x * x);
+      // A side: everything between the rim and the top, less a panel between each two posts, an X across each panel.
+      let side = own(rect(-xc, 0, xc, top).subtract(circle(R)));
+      const holes = [],
+        crosses = [];
+      for (let k = 0; k + 1 < posts.length; k++) {
+        const xa = posts[k] + bar,
+          xb = posts[k + 1];
+        const zLow = Math.max(rimAt(xa), rimAt(xb)) + bar;
+        if (top - bar - zLow < 4) continue;
+        const hole = own(rect(xa, 0, xb, top - bar).subtract(circle(R + bar)));
+        holes.push(hole);
+        const za = rimAt(xa) + bar,
+          zb = rimAt(xb) + bar;
+        crosses.push(own(own(CrossSection.union([line([xa, za], [xb, top - bar]), line([xa, top - bar], [xb, zb])])).intersect(own(hole.offset(0.3, 'Miter', 2)))));
+      }
+      if (holes.length) side = own(own(side.subtract(own(CrossSection.union(holes)))).add(own(CrossSection.union(crosses))));
+      for (const [s0, y0, out] of [['front', 0, [0, -1, 0]], ['back', W - P, [0, 1, 0]]])
+        parts.push({ id: 'canopy-' + s0, name: 'Lattice frame, ' + s0, role: 'frame', solid: sweep(side, [1, 0, 0], [0, 0, 1], [0, y0, 0], [0, 1, 0], 0, P), outward: out, apart: [0, out[1] * 10, 12] });
+      // The roof in (x, y): a chord over each side, a cross bar over each post, an X between each two.
+      const web = [rect(-xc, 0, xc, P), rect(-xc, W - P, xc, W)];
+      for (const x of posts) web.push(rect(x, 0, x + bar, W));
+      for (let k = 0; k + 1 < posts.length; k++) {
+        const xa = posts[k] + bar,
+          xb = posts[k + 1];
+        const field = rect(xa - 0.3, P - 0.3, xb + 0.3, W - P + 0.3);
+        web.push(own(own(CrossSection.union([line([xa, P], [xb, W - P]), line([xa, W - P], [xb, P])])).intersect(field)));
+      }
+      const roofCs = own(CrossSection.union(web));
+      parts.push({ id: 'canopy-roof', name: 'Lattice roof', role: 'roof', solid: own(own(roofCs.extrude(rt)).translate([0, 0, top])), lie: [0, 0, 0], apart: [0, 0, 20] });
+    }
+    // In the layout's order: sidewalls, stairs, walls, the frame over the top.
     const order = tyreBridgeLayout(t).parts.map((p) => p.id);
     parts.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     const keep = new Set(parts.map((p) => p.solid));

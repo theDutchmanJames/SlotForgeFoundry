@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Module from 'manifold-3d';
-import { TYRE, tyreArch, tyreFootprint, tyreOpening, tyreSteps, validateTyreBridge } from '../src/geometry/tyre-bridge.js';
+import { TYRE, tyreArch, tyreCanopy, tyreFootprint, tyreOpening, tyreSteps, validateTyreBridge } from '../src/geometry/tyre-bridge.js';
 import { buildGarage, buildingLayout, fitsPlate, printPose, printSize } from '../src/geometry/building.js';
 import { kitNotes } from '../src/building-kit.js';
 import { shapeOf } from '../src/planner-buildings.js';
@@ -48,6 +48,8 @@ test('a tyre bridge is checked; its arch, its opening and its steps', () => {
   assert.ok(near(x1, X[1]) && near(x0, -X[1]), 'the stairs reach out past the tyre at its feet');
   assert.ok(near(shapeOf(t).front.f[1], -1));
   assert.match(kitNotes('Bridge', t, buildingLayout(t).parts, {}), /Join the two halves of each sidewall and of the stairs at the middle/);
+  assert.match(kitNotes('Bridge', t, buildingLayout(t).parts, {}), /\d\. Glue a lattice frame on the rim of each sidewall/);
+  assert.ok(!buildingLayout({ ...t, canopy: false }).parts.some((p) => /^canopy/.test(p.id)), 'no frame when not wanted');
 });
 
 test('every part one body, without supports, fitting the plate, nothing in another; the halves meet at the middle', () => {
@@ -75,6 +77,13 @@ test('every part one body, without supports, fitting the plate, nothing in anoth
       // The stairs between the sidewalls, their top below the rim, their feet on the table.
       assert.ok(box('deck-1').min[1] > TYRE.wall && box('deck-1').max[1] < t.width - TYRE.wall);
       assert.ok(Math.max(box('deck-1').max[2], box('deck-2').max[2]) <= t.height - TYRE.sunk + 0.01 && near(box('deck-1').min[2], 0));
+      // The lattice frame on the rims, its roof on top of it.
+      if (t.canopy) {
+        const { top } = tyreCanopy(t);
+        assert.ok(near(box('canopy-front').max[2], top) && near(box('canopy-roof').min[2], top), 'the roof on the frames');
+        assert.ok(near(box('canopy-front').min[1], 0) && near(box('canopy-back').max[1], t.width), 'over the sidewalls');
+        assert.ok(box('canopy-front').min[2] > t.height - 40 && box('canopy-front').min[2] < t.height, 'standing on the rim');
+      }
     } finally {
       parts.forEach((p) => p.solid.delete());
     }

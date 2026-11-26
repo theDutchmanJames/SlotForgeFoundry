@@ -14,6 +14,7 @@ import { billboardFootprint } from './geometry/billboard.js';
 import { switchbackFootprint } from './geometry/switchback.js';
 import { benchFootprint } from './geometry/bench.js';
 import { tyreFootprint } from './geometry/tyre-bridge.js';
+import { picnicFootprint } from './geometry/picnic.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS, walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
@@ -97,6 +98,11 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = platformFootprint(b);
     outline = rect(x0, y0, x1, y1);
     front = { p: [b.width / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'picnic') {
+    // The row along the track, a seat towards it.
+    const [x0, y0, x1, y1] = picnicFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
   } else if (b.kind === 'tyrebridge') {
     // Across the track: its arch along x, the track running under it along y.
     const [x0, y0, x1, y1] = tyreFootprint(b);
@@ -206,7 +212,7 @@ export function planShapes(entry) {
     // The deck over its frames.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
-  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
+  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };

@@ -22,6 +22,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
   if (b.kind === 'tyrebridge') return tyreNotes(name, b, parts, sizes);
+  if (b.kind === 'picnic') return picnicNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -237,11 +238,40 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of picnic tables: a top, two seats and two ends each.
+function picnicNotes(name, p, parts, sizes) {
+  const list = parts.map((q) => '- ' + q.name + (sizes[q.id] ? ': ' + sizes[q.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  return [
+    name + ' · SlotForge Foundry picnic table kit',
+    '',
+    (p.count === 1 ? 'A picnic table ' : p.count + ' picnic tables, each ') + fmt(p.length) + ' mm long: a top and a seat each side of planks, on two A-frame ends.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The top and the seats print upside down, their planks on the plate and the cleats up; the ends lie flat.',
+    '',
+    'Putting it together',
+    '1. Stand the two ends up and lay the seats on the low bearers, their cleats down just inside the ends, the planks reaching past them.',
+    '2. Lay the top on the high bearers the same way and glue it all.',
+    '3. Stand it beside the track.',
+  ].join('\n');
+}
+
 // The notes of a tyre bridge: two sidewalls and the stairs, each in halves, and the stair walls.
 function tyreNotes(name, t, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
   const o = tyreOpening(t);
   const walls = parts.some((p) => /^wall-/.test(p.id));
+  const steps = [
+    'Join the two halves of each sidewall and of the stairs at the middle: push the dovetail into its slot, with a drop of glue, flat on the table.',
+    'Glue the stairs to the inside of one sidewall, its steps level with the table at both ends, then the other sidewall to them.',
+    ...(walls ? ['Glue a stair wall each side of the lowest steps at each end, outside the tyre.'] : []),
+    ...(t.canopy ? ['Glue a lattice frame on the rim of each sidewall over the top, and the lattice roof across them.'] : []),
+    'Stand it over the track, the road running under the arch.',
+  ];
   return [
     name + ' · SlotForge Foundry tyre bridge kit',
     '',
@@ -252,13 +282,10 @@ function tyreNotes(name, t, parts, sizes) {
     '',
     'Printing',
     '- Every part prints without supports.',
-    '- The sidewalls print flat, their tread and band up; the stairs on their side' + (walls ? '; the stair walls flat.' : '.'),
+    '- The sidewalls print flat, their tread and band up; the stairs on their side' + (walls ? '; the stair walls flat' : '') + (t.canopy ? '; the lattice frames and roof flat.' : '.'),
     '',
     'Putting it together',
-    '1. Join the two halves of each sidewall and of the stairs at the middle: push the dovetail into its slot, with a drop of glue, flat on the table.',
-    '2. Glue the stairs to the inside of one sidewall, its steps level with the table at both ends, then the other sidewall to them.',
-    ...(walls ? ['3. Glue a stair wall each side of the lowest steps at each end, outside the tyre.'] : []),
-    (walls ? '4' : '3') + '. Stand it over the track, the road running under the arch.',
+    ...steps.map((x, i) => i + 1 + '. ' + x),
     '',
     'Paint the tyre black, the band in a colour of your own.',
   ].join('\n');
