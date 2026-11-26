@@ -126,7 +126,20 @@ function standNotes(name, g, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
   const sections = parts.filter((p) => /^stand/.test(p.id)).length;
   const canopy = parts.some((p) => /^canopy/.test(p.id));
-  const steps = [
+  const framed = g.build === 'frames';
+  const benches = parts.some((p) => /^bench-/.test(p.id))
+    ? ['Put each wooden bench together: stand its two ends up, lay the seat on them, its cleats down just inside the ends' + (parts.some((p) => /^bench-.*-back$/.test(p.id)) ? ', and stand the back on the seat against the back legs' : '') + '. Glue each on its row, at the back, clear of the step up behind it, as the parts list numbers them by row.']
+    : [];
+  const steps = framed
+    ? [
+        ...(parts.filter((p) => /^base-/.test(p.id)).length > 1 ? ['Glue the pieces of the base board end to end on a flat table, and the pieces of each deck and frame the same way.'] : []),
+        'Stand the frames of each row on the base board: one along its front and one along its back, one across each end between them; the first row at the front, each next row behind it.',
+        'Lay each deck on its frames, its planks along the row.',
+        ...(parts.some((p) => /^steps-/.test(p.id)) ? ['Glue the steps on each deck at an aisle, against the front of the deck above.'] : []),
+        ...benches,
+        'Stand it beside the track, its first row towards it.',
+      ]
+    : [
     ...(sections > 1
       ? ['Join the sections end to end in their order, 1 of ' + sections + ' first: push the two tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table.']
       : []),
@@ -138,9 +151,7 @@ function standNotes(name, g, parts, sizes) {
       : ['Stand the grandstand on the table, its parapet towards the track.']),
     ...(parts.some((p) => /^stair/.test(p.id)) ? ['Glue each staircase against its end of the stand, its top step level with the last row, its wall on the outside.'] : []),
     ...(parts.some((p) => /^rail-back/.test(p.id)) ? ['Glue the back railings on the back of the back wall, their solid band down against it, one for each section, end to end.'] : []),
-    ...(parts.some((p) => /^bench-/.test(p.id))
-      ? ['Put each wooden bench together: stand its two ends up, lay the seat on them, its cleats down just inside the ends' + (parts.some((p) => /^bench-.*-back$/.test(p.id)) ? ', and stand the back on the seat against the back legs' : '') + '. Glue each on its row, at the back, clear of the step up behind it, as the parts list numbers them by row.']
-      : []),
+    ...benches,
     ...(canopy
       ? ['Glue the canopy' + (parts.filter((p) => /^canopy/.test(p.id)).length > 1 ? ' pieces' : '') + ' on top of the back wall, reaching out over the rows, and glue the posts under its front edge, in front of the parapet.']
       : []),
@@ -155,7 +166,10 @@ function standNotes(name, g, parts, sizes) {
     '',
     'Printing',
     '- Every part prints without supports.',
-    '- Each section stands on its end: the stepped side lies on the plate and the rows rise straight up. It is a hollow shell, 3 mm thick.',
+    framed
+      ? '- The base board and the decks lie flat, their planks up; the frames lie flat; the steps on their side.'
+      : '- Each section stands on its end: the stepped side lies on the plate and the rows rise straight up. It is a hollow shell, 3 mm thick.',
+    ...(parts.some((p) => /^bench-/.test(p.id)) ? ['- Each bench seat prints upside down, its planks on the plate; each back face down; the bench ends flat.'] : []),
     ...(canopy ? ['- The canopy lies flat; each post lies on its side.'] : []),
     '',
     'Putting it together',

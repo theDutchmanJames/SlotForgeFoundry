@@ -348,6 +348,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="gSeats"><span>A bench on each row</span></label>
       <label class="bd-check"><input type="checkbox" name="gBackrests"><span>Benches with backs</span></label>
       <label class="bd-check"><input type="checkbox" name="gParapet"><span>A parapet in front of the first row</span></label>
+      <label class="bd-row" data-bd-stand-build><span>Built of</span><select name="gBuild"><option value="shell">A stepped shell</option><option value="frames">Decks on braced frames</option></select></label>
       <label class="bd-row" data-bd-stand-straight-benches><span>Benches</span><select name="gBenchStyle"><option value="block">Moulded into the rows</option><option value="wood">Wooden, of planks</option></select></label>
       <p class="bd-hint" data-bd-stand-size></p></section>
     <section class="bd-box" data-bd-card="standFrame" data-bd-stand hidden><h3>Frame, stairs and railings</h3>
@@ -776,6 +777,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.gBackrests.checked = g.backrests;
     e.gBenchStyle.value = g.benchStyle;
     e.gParapet.checked = g.parapet;
+    e.gBuild.value = g.build;
     e.gRaised.value = g.raised;
     e.gStairs.value = g.stairs;
     e.gRailings.checked = g.railings;
@@ -796,6 +798,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     host.querySelector('[data-bd-canopy]').hidden = g.roof !== 'canopy';
     $('[data-bd-stand-straight]').hidden = !!g.curve;
     $('[data-bd-stand-straight-benches]').hidden = !!g.curve;
+    $('[data-bd-stand-build]').hidden = !!g.curve;
     $('[data-bd-stand-frame-hint]').textContent = g.curve
       ? 'Frames, a staircase and railings are for a straight grandstand.'
       : 'Raised, the stand stands on braced frames: one along the front and one along the back under each section, and one across at each end and each joint, its top pushed up into the hollow of the shell, which holds it square. They print flat. A staircase climbs an end from the table to the last row and prints on its side. The side railings are part of the end panels; the back railing is glued on the back of the back wall, a panel for each section, printing flat.';
@@ -818,6 +821,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       backrests: e.gSeats.checked && e.gBackrests.checked,
       benchStyle: building.curve || !e.gSeats.checked ? 'block' : e.gBenchStyle.value,
       parapet: e.gParapet.checked,
+      build: building.curve ? 'shell' : e.gBuild.value,
       raised: building.curve ? 0 : num(e.gRaised),
       stairs: building.curve ? 'none' : e.gStairs.value,
       railings: !building.curve && e.gRailings.checked,
@@ -1464,7 +1468,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const next = readStand();
         next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;
         // Curved: no frames, staircases or railings.
-        if (next.curve) Object.assign(next, { raised: 0, stairs: 'none', railings: false, benchStyle: 'block' });
+        if (next.curve) Object.assign(next, { raised: 0, stairs: 'none', railings: false, benchStyle: 'block', build: 'shell' });
         fitted = false;
         await rebuild(next);
         drawStand();

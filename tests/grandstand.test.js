@@ -7,6 +7,7 @@ import { STAND, aisleSpans, buildGrandstand, grandstandLayout, profile, sectionS
 import { buildGarage, fitsPlate, printPose, printSize, validateBuilding } from '../src/geometry/building.js';
 import { shapeOf, snapPose, overlap } from '../src/planner-buildings.js';
 import { BUILDING_PRESETS } from '../src/building-presets.js';
+import { kitNotes } from '../src/building-kit.js';
 
 const wasm = await Module();
 wasm.setup();
@@ -237,14 +238,51 @@ test('in a layout a grandstand faces the track with its parapet; a curved one st
   }
 });
 
-test('the mini stand prints as one section and its end panel, a wooden bench with a back on each row, open in front', () => {
+test('the mini stand: two planked decks on frames on a base board, the back one raised and braced, steps between them, wooden benches each side', () => {
   const mini = BUILDING_PRESETS.find((p) => p.id === 'stand-mini').building;
+  const g = validateGrandstand(mini);
   const ids = grandstandLayout(mini).parts.map((p) => p.id);
-  assert.deepEqual(ids.filter((id) => !/^bench-/.test(id)), ['stand-1', 'end']);
-  for (const row of [1, 2]) for (const key of ['seat', 'back', 'end-left', 'end-right']) assert.ok(ids.includes('bench-' + row + '-1-' + key), 'row ' + row + ' ' + key);
-  assert.equal(validateGrandstand(mini).parapet, false);
+  assert.equal(g.build, 'frames');
+  for (const id of ['base-1', 'deck-1-1', 'deck-2-1', 'frame-2-front-1', 'frame-2-left', 'steps-1-1']) assert.ok(ids.includes(id), id);
+  for (const row of [1, 2]) for (const n of [1, 2]) for (const key of ['seat', 'back', 'end-left', 'end-right']) assert.ok(ids.includes('bench-' + row + '-' + n + '-' + key), 'row ' + row + ' bench ' + n + ' ' + key);
 });
 
+test('a stand of frames: decks on frames standing on the base board, braced where high enough; steps from deck to deck at an aisle', () => {
+  assert.throws(() => validateGrandstand({ build: 'frames', roof: 'canopy' }), /stand of frames is straight and open to the sky/);
+  assert.throws(() => validateGrandstand({ build: 'frames' }), /wooden benches, or none/);
+  assert.throws(() => validateGrandstand({ build: 'brick' }), /shell or of frames/);
+  for (const settings of [{ kind: 'grandstand', build: 'frames', rows: 2, length: 120, aisles: 1, rowDepth: 20, rowRise: 14, frontHeight: 8, backrests: true, benchStyle: 'wood' }, { kind: 'grandstand', build: 'frames', rows: 4, length: 300, aisles: 2, benchStyle: 'wood' }, { kind: 'grandstand', build: 'frames', rows: 3, seats: false, aisles: 0 }])
+    withParts(settings, (parts, part) => {
+      const g = validateGrandstand(settings);
+      const label = JSON.stringify(settings).slice(0, 80);
+      assert.deepEqual(parts.map((p) => p.id), grandstandLayout(settings).parts.map((p) => p.id), label);
+      for (const p of parts) {
+        assert.equal(p.solid.decompose().length, 1, p.name + ' ' + label);
+        assert.ok(fitsPlate(printSize(p), { width: 200, depth: 200, margin: 0 }), p.name + ' fits');
+        if (!/^bench/.test(p.id)) assert.ok(overAir(p) < 0.5, p.name + ' prints flat ' + label);
+      }
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap ' + label);
+          both.delete();
+        }
+      // Each deck at its row's height on its frames, the frames on the base board.
+      for (let r = 1; r <= g.rows; r++) {
+        const deck = part('deck-' + r + '-1').solid.boundingBox(),
+          frame = part('frame-' + r + '-front-1').solid.boundingBox();
+        assert.ok(near(deck.max[2], g.frontHeight + (r - 1) * g.rowRise), 'row ' + r + ' at its height');
+        assert.ok(near(frame.max[2], deck.min[2]) && near(frame.min[2], STAND.framed.base), 'its frame from the base board to under it');
+      }
+      // A high frame is braced: less than solid.
+      const back = part('frame-' + g.rows + '-front-1').solid,
+        bb = back.boundingBox();
+      if (bb.max[2] - bb.min[2] >= STAND.framed.truss) assert.ok(back.volume() < 0.8 * (bb.max[0] - bb.min[0]) * (bb.max[1] - bb.min[1]) * (bb.max[2] - bb.min[2]), 'braced, open between its members');
+      assert.equal(parts.filter((p) => /^steps-/.test(p.id)).length, g.aisles * (g.rows - 1), 'steps at each aisle between each two rows');
+    });
+  const mini = validateGrandstand(BUILDING_PRESETS.find((p) => p.id === 'stand-mini').building);
+  assert.match(kitNotes('Mini', mini, grandstandLayout(mini).parts, {}), /Stand the frames of each row on the base board/);
+});
 test('every aisle begins a section, so its half steps are square, standing on the plate as it prints', () => {
   for (const settings of [{ length: 300, aisles: 2, sectionLength: 110 }, { aisles: 1 }, { length: 600, aisles: 1, sectionLength: 120 }, { rows: 5, aisles: 2, curve: { radius: 450, angle: 45, facing: 'in' } }]) {
     const g = validateGrandstand(settings);

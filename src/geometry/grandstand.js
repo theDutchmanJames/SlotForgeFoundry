@@ -24,6 +24,10 @@ export const GRANDSTAND_DEFAULTS = Object.freeze({
   // standing on rows of planks, a part of their own each (a straight stand).
   benchStyle: 'block',
   parapet: true, // a wall in front of the first row, above it; or the front open
+  // How it is built: 'shell', a hollow stepped shell; or 'frames', each row
+  // a planked deck on X-braced frames on a base board, open underneath, an
+  // aisle a few steps from one deck up to the next (a straight stand).
+  build: 'shell',
   aisles: 1, // aisles with half steps, spread evenly
   backHeight: 15, // the back wall above the last row
   roof: 'none', // 'none' or 'canopy'
@@ -57,6 +61,7 @@ export const STAND = Object.freeze({
   roof: 3, // the canopy, thick
   reach: 6, // the canopy beyond the front row
   backrest: [2, 7, 5], // a bench's back: thick, above the bench at least, above the next row at least
+  framed: { longest: 180, base: 2, deck: 3, frame: 2.5, member: 3, brace: 2.5, bay: 30, truss: 10, step: [7, 5] }, // a stand of frames: its pieces at most this long, the base board and the decks thick, the frames thick, their members, braces and bays, braced from this high; its steps at most this high, this deep
   wood: { depth: 9, seat: 8, back: 7, behind: 1.5, margin: 2, longest: 120, gap: 3, inset: 3, plank: [4, 0.8, 0.5] }, // a wooden bench on a row: deep, its seat above the row, its back; clear of the step up behind it and of the ends; at most this long, this far from the next; the rows' planks: wide, the groove between them wide and deep
   frame: { member: 4, brace: 3, bay: 40, play: 0.15 }, // the frames under a raised stand
   rail: { height: 14, bar: 2.5, glue: 10 }, // railings: above the walls, their bars, the back railing's band glued on
@@ -87,6 +92,11 @@ export function validateGrandstand(input) {
   if (g.backrests && !g.seats) throw Error('Backs are for benches: choose benches too.');
   if (g.backrests && g.rowDepth < 16) throw Error('Benches with backs need rows at least 16 mm deep.');
   if (typeof g.parapet !== 'boolean') throw Error('Choose whether the first row has a parapet in front.');
+  if (!['shell', 'frames'].includes(g.build)) throw Error('Choose a stand built as a shell or of frames.');
+  if (g.build === 'frames') {
+    if (g.curve !== null || g.roof !== 'none' || g.raised || g.stairs !== 'none' || g.railings) throw Error('A stand of frames is straight and open to the sky, on the table, without staircases or railings.');
+    if (g.seats && g.benchStyle !== 'wood') throw Error('A stand of frames has wooden benches, or none.');
+  }
   if (!['block', 'wood'].includes(g.benchStyle)) throw Error('Choose benches moulded into the rows or of wood.');
   if (g.benchStyle === 'wood') {
     if (!g.seats) throw Error('Wooden benches are benches: choose benches too.');
@@ -282,6 +292,7 @@ function frameSpans(g) {
 /** The parts of a grandstand, without geometry: its sections, and the canopy and its posts. */
 export function grandstandLayout(input) {
   const g = validateGrandstand(input);
+  if (g.build === 'frames') return framedLayout(g);
   const sections = sectionSpans(g);
   const parts = sections.map((_, i) => ({ id: 'stand-' + (i + 1), name: 'Grandstand section ' + (i + 1) + ' of ' + sections.length, role: 'wall' }));
   parts.push({ id: 'end', name: 'End panel', role: 'wall' });
@@ -361,9 +372,125 @@ export function postPlaces(g) {
  * its left end (for a curve, the arc unrolled onto the curve), y from the
  * front back, z up. Parts as the building kit has them.
  */
+/**
+ * A stand of frames: the rows as decks, each from its front to its back, its
+ * top at the row's height; under each a frame along its front and its back
+ * and one across each end, standing on the base board; at an aisle, steps on
+ * each deck up to the next. All along x in the sections' pieces.
+ */
+function framedRows(g) {
+  const s = STAND.shell;
+  return Array.from({ length: g.rows }, (_, i) => ({ i, y0: i === 0 ? 0 : s + i * g.rowDepth, y1: s + (i + 1) * g.rowDepth, z: g.frontHeight + i * g.rowRise }));
+}
+/** A stand of frames in pieces along it: its decks and frames print flat, so only as many as the plate needs. */
+const framedSpans = (g) => {
+  const n = Math.max(1, Math.ceil(g.length / STAND.framed.longest - 1e-9));
+  return Array.from({ length: n }, (_, i) => [(i * g.length) / n, ((i + 1) * g.length) / n]);
+};
+function framedLayout(g) {
+  const sections = framedSpans(g);
+  const n = sections.length;
+  const k = (i) => (n > 1 ? ' ' + (i + 1) + ' of ' + n : '');
+  const parts = sections.map((_, i) => ({ id: 'base-' + (i + 1), name: 'Base board' + k(i), role: 'buildingBase' }));
+  for (const r of framedRows(g)) {
+    sections.forEach((_, i) => parts.push({ id: 'deck-' + (r.i + 1) + '-' + (i + 1), name: 'Deck, row ' + (r.i + 1) + k(i), role: 'floor' }));
+    for (const side of ['front', 'back']) sections.forEach((_, i) => parts.push({ id: 'frame-' + (r.i + 1) + '-' + side + '-' + (i + 1), name: 'Frame, row ' + (r.i + 1) + ', ' + side + k(i), role: 'frame' }));
+    for (const end of ['left', 'right']) parts.push({ id: 'frame-' + (r.i + 1) + '-' + end, name: 'Frame, row ' + (r.i + 1) + ', ' + end, role: 'frame' });
+  }
+  aisleSpans(g).forEach((_, a) => {
+    for (let i = 0; i + 1 < g.rows; i++) parts.push({ id: 'steps-' + (a + 1) + '-' + (i + 1), name: 'Steps, aisle ' + (a + 1) + ', row ' + (i + 1) + ' to ' + (i + 2), role: 'wall' });
+  });
+  const counts = {};
+  for (const b of woodBenches(g)) {
+    const c = (counts[b.row] = (counts[b.row] ?? 0) + 1);
+    for (const key of benchKeys(g)) parts.push({ id: 'bench-' + b.row + '-' + c + '-' + key, name: benchName(key, b.row, c), role: key.startsWith('end') ? 'frame' : 'wall' });
+  }
+  return { building: g, parts, sections };
+}
+function buildFramed(wasm, g) {
+  const { Manifold, CrossSection } = wasm;
+  const temp = [];
+  const own = (m) => (temp.push(m), m);
+  const { box, poly, sweep, truss } = kitShapes(wasm, own);
+  const F = STAND.framed,
+    W = STAND.wood;
+  const sections = framedSpans(g);
+  const L = g.length,
+    D = standDepth(g) - STAND.shell; // the back of the last row
+  const parts = [];
+  try {
+    const zb = F.base;
+    // The base board under it all.
+    sections.forEach(([a, c], i) => parts.push({ id: 'base-' + (i + 1), name: 'Base board' + (sections.length > 1 ? ' ' + (i + 1) + ' of ' + sections.length : ''), role: 'buildingBase', solid: box(a, 0, 0, c, D, zb), lie: [0, 0, 0], apart: [0, 0, -10] }));
+    const k = (i) => (sections.length > 1 ? ' ' + (i + 1) + ' of ' + sections.length : '');
+    // A frame between u0 and u1 (along it), from the base board to under a deck: braced if it is high enough, a board if not.
+    const frameCs = (len, high) => (high >= F.truss ? truss(len, high, { member: F.member, brace: F.brace, bay: F.bay, tab: [2, 0] }).shape : poly([[0, 0], [len, 0], [len, high], [0, high]]));
+    const [pw, gw, gd] = W.plank;
+    for (const r of framedRows(g)) {
+      const under = r.z - F.deck,
+        high = under - zb;
+      // The deck: planks along the row, a groove between each two; it prints the right way up.
+      sections.forEach(([a, c], i) => {
+        let deck = box(a, r.y0, under, c, r.y1, r.z);
+        const grooves = [];
+        for (let y = r.y0 + pw; y < r.y1 - 1; y += pw) grooves.push(box(a - 1, y - gw / 2, r.z - gd, c + 1, y + gw / 2, r.z + 1));
+        if (grooves.length) deck = own(deck.subtract(own(Manifold.union(grooves))));
+        parts.push({ id: 'deck-' + (r.i + 1) + '-' + (i + 1), name: 'Deck, row ' + (r.i + 1) + k(i), role: 'floor', solid: deck, lie: [0, 0, 0], apart: [0, 0, 12 + r.i * 6] });
+        // Along its front and its back, inside its ends.
+        for (const [side, y0, out] of [['front', r.y0, [0, -1, 0]], ['back', r.y1 - F.frame, [0, 1, 0]]]) {
+          const a0 = i === 0 ? a + F.frame : a,
+            c0 = i === sections.length - 1 ? c - F.frame : c;
+          const solid = sweep(frameCs(c0 - a0, high), [1, 0, 0], [0, 0, 1], [a0, y0, zb], [0, 1, 0], 0, F.frame);
+          parts.push({ id: 'frame-' + (r.i + 1) + '-' + side + '-' + (i + 1), name: 'Frame, row ' + (r.i + 1) + ', ' + side + k(i), role: 'frame', solid, outward: out, apart: [0, out[1] * 6, 0] });
+        }
+      });
+      // Across each end, from front to back of the deck.
+      for (const [end, x0, out] of [['left', 0, [-1, 0, 0]], ['right', L - F.frame, [1, 0, 0]]]) {
+        const solid = sweep(frameCs(r.y1 - r.y0, high), [0, 1, 0], [0, 0, 1], [x0, r.y0, zb], [1, 0, 0], 0, F.frame);
+        parts.push({ id: 'frame-' + (r.i + 1) + '-' + end, name: 'Frame, row ' + (r.i + 1) + ', ' + end, role: 'frame', solid, outward: out, apart: [out[0] * 6, 0, 0] });
+      }
+    }
+    // At an aisle, steps on each deck at its back, up to the next deck; each prints on its side.
+    const rows = framedRows(g),
+      [rise, tread] = F.step;
+    aisleSpans(g).forEach(([p, q], a) => {
+      for (let i = 0; i + 1 < rows.length; i++) {
+        const lo = rows[i],
+          hi = rows[i + 1];
+        const n = Math.max(1, Math.ceil((hi.z - lo.z) / rise - 1e-9)),
+          h = (hi.z - lo.z) / n;
+        // The steps in (y, z): n - 1 steps up towards the next deck, against its front frame; the next deck is the last step.
+        const yb = hi.y0;
+        const outline = [[yb - (n - 1) * tread, lo.z]];
+        for (let j = 1; j < n; j++) outline.push([yb - (n - j) * tread, lo.z + j * h], [yb - (n - j - 1) * tread, lo.z + j * h]);
+        outline.push([yb, lo.z]);
+        if (n < 2) continue;
+        const solid = sweep(poly(outline), [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], p + 1, q - 1);
+        parts.push({ id: 'steps-' + (a + 1) + '-' + (i + 1), name: 'Steps, aisle ' + (a + 1) + ', row ' + (i + 1) + ' to ' + (i + 2), role: 'wall', solid, outward: [-1, 0, 0], apart: [0, -6, 6] });
+      }
+    });
+    // The wooden benches on the decks.
+    const counts = {};
+    for (const b of woodBenches(g)) {
+      const c = (counts[b.row] = (counts[b.row] ?? 0) + 1);
+      for (const q of plankBench(wasm, own, { x0: b.x0, x1: b.x1, y0: b.y0, z0: b.z0, depth: W.depth, seat: W.seat, back: g.backrests ? W.back : 0, inset: W.inset }))
+        parts.push({ id: 'bench-' + b.row + '-' + c + '-' + q.key, name: benchName(q.key, b.row, c), role: q.key.startsWith('end') ? 'frame' : 'wall', solid: q.solid, ...q.pose });
+    }
+    const order = framedLayout(g).parts.map((p) => p.id);
+    parts.sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id));
+    const keep = new Set(parts.map((p) => p.solid));
+    for (const m of temp) if (!keep.has(m)) m.delete();
+    return parts;
+  } catch (e) {
+    for (const m of temp) m.delete();
+    throw e;
+  }
+}
+
 export function buildGrandstand(wasm, input) {
   const { Manifold, CrossSection } = wasm;
   const { building: g, sections } = grandstandLayout(input);
+  if (g.build === 'frames') return buildFramed(wasm, g);
   const temp = [];
   const own = (s) => (temp.push(s), s);
   const cs = (rects) => own(new CrossSection(rects.map(([a, b, c, d]) => [[a, b], [c, b], [c, d], [a, d]]), 'Positive'));

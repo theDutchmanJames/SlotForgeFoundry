@@ -680,8 +680,8 @@ export const BUILDING_PRESETS = Object.freeze([
   {
     id: 'stand-mini',
     name: 'Mini stand',
-    note: 'Two rows of wooden benches with backs, the front open, the back row raised',
-    building: { kind: 'grandstand', length: 120, rows: 2, aisles: 0, rowDepth: 20, rowRise: 14, frontHeight: 6, backHeight: 10, backrests: true, sectionLength: 130, benchStyle: 'wood', parapet: false },
+    note: 'Two decks of wooden benches with backs, the back one raised on X-braced frames, steps between them',
+    building: { kind: 'grandstand', build: 'frames', length: 120, rows: 2, aisles: 1, rowDepth: 20, rowRise: 14, frontHeight: 8, backrests: true, benchStyle: 'wood', parapet: false },
   },
   {
     id: 'gantry-start',
