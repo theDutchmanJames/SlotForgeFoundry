@@ -1677,7 +1677,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   // The right panel for a building in the layout: where it stands, and its height.
   function homePanel(entry) {
     const b = entry.building,
-      stand = ['grandstand', 'gantry', 'marshalpost', 'platform'].includes(b.kind),
+      stand = ['grandstand', 'gantry', 'marshalpost', 'platform', 'walkway'].includes(b.kind),
       pits = b.kind === 'pitmodule',
       storeys = stand || pits ? 0 : b.upper.length + 1;
     if (entry.over)

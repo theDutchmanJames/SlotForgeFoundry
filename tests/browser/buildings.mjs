@@ -294,6 +294,27 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-part="roofrail-front"]').waitFor();
   assert.equal(await setting('stWallStyle').inputValue(), 'braced');
   assert.equal(await setting('railingStyle').inputValue(), 'mesh');
+  // A way up: the press tower's staircase; a ladder instead, its card on a click.
+  await host.locator('[data-bd-preset="press-tower"]').click();
+  await page.waitForFunction(() => /Staircase/.test(document.querySelector('[data-bd-part="access"]')?.textContent ?? ''));
+  assert.match(await host.locator('[data-bd-part="access"]').textContent(), /Staircase/);
+  // A ladder stands along the wall: its foot moves onto it first.
+  await setting('accessAt').fill('40');
+  await setting('accessAt').press('Tab');
+  await setting('access').selectOption('ladder');
+  await page.waitForFunction(() => /Ladder/.test(document.querySelector('[data-bd-part="access"]')?.textContent ?? ''));
+  await host.locator('[data-bd-part="access"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="access"]').classList.contains('bd-flash'));
+  // A walkway bridge: its own card; off its legs.
+  await host.locator('[data-bd-preset="walkway"]').click();
+  await host.locator('[data-bd-part="side-back"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="walkway"]').isVisible() && (await host.locator('[data-bd-card="size"]').isHidden()));
+  await setting('wLegs').uncheck();
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="leg-1"]'));
+  // With a tower at each end: the towers' parts in the kit, no legs.
+  await setting('wTowers').check();
+  await host.locator('[data-bd-part="tower2-roof-right"]').waitFor();
+  assert.ok(await host.locator('[data-bd-walkway-legs]').isHidden());
   // A hip roof: its four panels.
   await host.locator('[data-bd-preset="tower-pyramid"]').click();
   await host.locator('[data-bd-part="roof-right"]').waitFor();

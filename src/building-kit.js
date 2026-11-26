@@ -16,6 +16,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
+  if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -41,6 +42,8 @@ export function kitNotes(name, b, parts, sizes) {
       ? ['Stand the base over the end of its pit bay: the track runs in through the open front, its end stop inside, with the base beside it as high as the road.']
       : []),
     ...(stand ? [stand] : []),
+    ...(b.access === 'ladder' ? ['Stand the ladder with its foot on the table and its top against ' + { base: 'the edge of the base', roof: 'the edge of the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3' }[b.accessTo] + ', on the ' + b.accessWall + ' wall, and glue it there.'] : []),
+    ...(b.access === 'stairs' ? ['Stand the staircase on the table against the ' + b.accessWall + ' wall, its landing level with ' + { base: 'the top of the base', roof: 'the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3' }[b.accessTo] + ', its own wall on the outside, and glue it.'] : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
     'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
     ...(divided
@@ -272,5 +275,32 @@ function platformNotes(name, p, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the frames before you put the deck on.',
+  ].join('\n');
+}
+
+// The notes of a walkway between two buildings.
+function walkwayNotes(name, w, parts, sizes) {
+  const list = parts.map((q) => '- ' + q.name + (sizes[q.id] ? ': ' + sizes[q.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const steps = [
+    ...(w.towers ? ['Build each tower as a building: stand its walls in the groove of its base, the doorway facing the walkway, and lay its roof on.', 'Stand the two towers ' + fmt(w.length) + ' mm apart, their doorways facing each other.'] : []),
+    ...(w.towers ? ['Lay the deck between the towers, in their doorways, level with their sills, and glue it.'] : w.legs ? ['Stand the legs on the table, two at each end, and lay the deck on them, each pin up into its pocket under the deck.'] : ['Lay the deck between the two buildings, level with the floors it joins, and glue its ends to them.']),
+    'Stand the two sides in the grooves along the deck, the windows up from the deck, and glue them.',
+    'Lay the roof on top, its two rails just inside the sides, and glue it.',
+    ...(w.towers ? [] : ['Push the walkway up to the buildings it joins: its open ends meet their walls. Cut a door in each wall to walk through, or leave them closed.']),
+  ];
+  return [
+    name + ' · SlotForge Foundry walkway kit',
+    '',
+    'A covered walkway ' + fmt(w.length) + ' mm long and ' + fmt(w.width) + ' mm wide, its deck ' + fmt(w.clearance) + ' mm above the table, ' + w.panes + ' windows along each side.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The deck prints the right way up, its grooves on top; the roof upside down, its rails up; the sides flat, outside up; the legs stand on their feet.',
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
   ].join('\n');
 }

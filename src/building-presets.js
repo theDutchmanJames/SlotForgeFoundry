@@ -198,25 +198,25 @@ export const BUILDING_PRESETS = Object.freeze([
     id: 'booth-column',
     name: 'Booth on a column',
     note: 'An open cabin high on a tapered column, a tin roof',
-    building: { width: 75, depth: 70, height: 48, baseHeight: 6, door: 'none', open: true, waist: 22, standType: 'column', standHeight: 100, standSize: 24, standTaper: 70, roof: 'slope', rises: 'back', pitch: 12, overhangFront: 10, overhangLeft: 4, overhangRight: 4, roofTexture: 'metal' },
+    building: { width: 75, depth: 70, height: 48, baseHeight: 6, door: 'none', open: true, waist: 22, standType: 'column', standHeight: 100, standSize: 24, standTaper: 70, access: 'ladder', accessWall: 'right', accessAt: 35, accessTo: 'base', roof: 'slope', rises: 'back', pitch: 12, overhangFront: 10, overhangLeft: 4, overhangRight: 4, roofTexture: 'metal' },
   },
   {
     id: 'camera-tower',
     name: 'Camera tower',
     note: 'An open platform on a braced tower',
-    building: { width: 90, depth: 90, height: 40, baseHeight: 5, door: 'none', open: true, waist: 18, standType: 'tower', standHeight: 110, standSize: 70, overhangFront: 5, overhangBack: 5, overhangLeft: 5, overhangRight: 5 },
+    building: { width: 90, depth: 90, height: 40, baseHeight: 5, door: 'none', open: true, waist: 18, standType: 'tower', standHeight: 110, standSize: 70, access: 'ladder', accessWall: 'back', accessAt: 45, accessTo: 'base', overhangFront: 5, overhangBack: 5, overhangLeft: 5, overhangRight: 5 },
   },
   {
     id: 'scaffold-tower',
     name: 'Scaffold camera tower',
     note: 'Braced steel frame walls, a deck on top behind a mesh railing',
-    building: { width: 80, depth: 80, height: 120, baseHeight: 4, door: 'none', wallStyle: 'braced', roofRailing: true, railingStyle: 'mesh', overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4 },
+    building: { width: 80, depth: 80, height: 120, baseHeight: 4, door: 'none', wallStyle: 'braced', roofRailing: true, railingStyle: 'mesh', access: 'ladder', accessWall: 'right', accessAt: 40, accessTo: 'roof', overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4 },
   },
   {
     id: 'press-tower',
     name: 'Press tower',
     note: 'An open room on a round column, a flat roof reaching out',
-    building: { width: 100, depth: 90, height: 50, baseHeight: 6, door: 'none', open: true, waist: 24, standType: 'column', standShape: 'round', standHeight: 80, standSize: 40, standTaper: 20, overhangFront: 8, overhangBack: 8, overhangLeft: 8, overhangRight: 8 },
+    building: { width: 100, depth: 90, height: 50, baseHeight: 6, door: 'none', open: true, waist: 24, standType: 'column', standShape: 'round', standHeight: 80, standSize: 40, standTaper: 20, access: 'stairs', accessWall: 'right', accessAt: -42, accessTo: 'base', overhangFront: 8, overhangBack: 8, overhangLeft: 8, overhangRight: 8 },
   },
   {
     id: 'stall-container',
@@ -428,6 +428,18 @@ export const BUILDING_PRESETS = Object.freeze([
     name: 'Viewing platform, no stairs',
     note: 'The deck, frames and railings alone',
     building: { kind: 'platform', stair: 'none' },
+  },
+  {
+    id: 'walkway',
+    name: 'Walkway bridge',
+    note: 'A covered glazed walkway between two buildings, on legs',
+    building: { kind: 'walkway' },
+  },
+  {
+    id: 'walkway-towers',
+    name: 'Towers with a walkway',
+    note: 'Two towers with pyramid roofs, a glazed walkway between them',
+    building: { kind: 'walkway', length: 120, towers: true, towerHeight: 120, clearance: 75, panes: 4 },
   },
   {
     id: 'stand-curved',

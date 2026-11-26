@@ -14,6 +14,7 @@ import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
 import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
 import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
+import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { kitShapes } from './kit-shapes.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
@@ -86,6 +87,14 @@ export const BUILDING_DEFAULTS = Object.freeze({
   wallStyle: 'solid',
   // The railings: 'bars' (posts between a band and a rail) or 'mesh'.
   railingStyle: 'bars',
+  // A way up the outside: 'none', 'ladder' or 'stairs', against a wall,
+  // starting accessAt along it (from its left end as you look at it); up to
+  // 'base' (the top of the base, on a stand), '2' or '3' (a storey's
+  // floor) or 'roof' (a flat roof).
+  access: 'none',
+  accessWall: 'right',
+  accessAt: 20,
+  accessTo: 'roof',
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -193,6 +202,26 @@ export const FRAME_WALL = Object.freeze({
   pitch: 12,
 });
 export const MESH = Object.freeze({ hole: 3, bar: 2 });
+// The way up: a ladder (wide, its rails, rungs, their pitch, thick, its
+// angle, how far it reaches above the top); a staircase (wide, a step at
+// most so high, its tread, the landing, the slab under the steps, the post
+// under the landing, the outer wall: thick and above the steps; at most
+// this long, to print).
+export const ACCESS = Object.freeze({
+  kinds: Object.freeze([
+    ['none', 'None'],
+    ['ladder', 'A ladder'],
+    ['stairs', 'A staircase'],
+  ]),
+  levels: Object.freeze([
+    ['base', 'The base, on a stand'],
+    ['2', 'Storey 2'],
+    ['3', 'Storey 3'],
+    ['roof', 'The roof'],
+  ]),
+  ladder: { width: 16, rail: 4.5, rung: 3, pitch: 9, thick: 3, angle: 75, above: 8 },
+  stairs: { width: 26, rise: 7, tread: 9, landing: 24, slab: 6, post: 6, parapet: [3, 12], longest: 180 },
+});
 // Walls that lean out: at most this many degrees, and only so far out over the storey below.
 export const LEAN = Object.freeze({ most: 30, reach: 25 });
 export const SIGNS = Object.freeze([
@@ -343,6 +372,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'pitmodule') return validatePitModule(input);
   if (input?.kind === 'marshalpost') return validateMarshalPost(input);
   if (input?.kind === 'platform') return validatePlatform(input);
+  if (input?.kind === 'walkway') return validateWalkway(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -479,6 +509,7 @@ export function validateBuilding(input) {
     below = s;
     return s;
   });
+  checkAccess(b, [{ ...b, openings }, ...upper]);
   // Leaning walls: the top storey only, under a flat roof, its walls plain of doors and hatches.
   const all = [b, ...upper];
   all.forEach((s, i) => {
@@ -576,6 +607,48 @@ export function standPins(b) {
   }
   return [];
 }
+// The way up the outside: where it reaches, and room for it along its wall.
+function checkAccess(b, all) {
+  if (!ACCESS.kinds.some(([id]) => id === b.access)) throw Error('Choose a ladder, a staircase or no way up.');
+  if (b.access === 'none') return;
+  if (!WALLS.includes(b.accessWall)) throw Error('Choose the wall the way up stands against.');
+  if (!ACCESS.levels.some(([id]) => id === b.accessTo)) throw Error('Choose where the way up goes.');
+  if (b.accessTo === 'base' && b.standType === 'none') throw Error('The base is on the table: a way up to it needs a stand.');
+  if (b.accessTo === 'roof' && b.roof !== 'flat') throw Error('A way up onto the roof needs a flat roof.');
+  if (['2', '3'].includes(b.accessTo) && Number(b.accessTo) > all.length) throw Error('There is no storey ' + b.accessTo + ' to go up to.');
+  const { against, rise } = accessPlace(b, all);
+  const L = wallLength(against, b.accessWall);
+  const from = b.access === 'ladder' ? b.accessAt - ACCESS.ladder.width / 2 : b.accessAt,
+    to = b.access === 'ladder' ? b.accessAt + ACCESS.ladder.width / 2 : b.accessAt + stairsOf(rise).run;
+  if (b.access === 'stairs' && stairsOf(rise).run > ACCESS.stairs.longest) throw Error('A staircase that high is too long to print in one piece: take a ladder.');
+  // A ladder stands along the wall; a staircase may start beyond its end, its landing at the top along it.
+  const least = b.access === 'ladder' ? from : to - ACCESS.stairs.landing;
+  if (!Number.isFinite(b.accessAt) || least < 0 || to > L)
+    throw Error((b.access === 'ladder' ? 'The ladder' : 'The staircase, ' + fmtMm(to - from) + ' mm long,') + ' does not fit along the ' + fmtMm(L) + ' mm ' + b.accessWall + ' wall at ' + fmtMm(b.accessAt) + ' mm.');
+}
+// Where the way up stands: the storey whose wall it is against, how high it climbs (from the table) and how far out from that wall it stands.
+function accessPlace(b, all) {
+  const stack = storeyStack({ ...b, openings: all[0].openings, upper: all.slice(1) });
+  const H = b.standType === 'none' ? 0 : b.standHeight;
+  const w = b.accessWall;
+  if (b.accessTo === 'base') return { against: stack[0], rise: H + b.baseHeight, out: 0 };
+  if (b.accessTo === 'roof') {
+    const top = stack.at(-1);
+    const over = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight }[w];
+    return { against: top, rise: H + top.eave + KIT.roof, out: over };
+  }
+  const k = Number(b.accessTo);
+  const s = stack[k - 1];
+  const balcony = w === 'front' ? all[k - 1].balcony ?? 0 : 0;
+  return { against: stack[k - 2], rise: H + s.floor, out: balcony };
+}
+// A staircase up so far: its steps, each one's rise, its length along the wall.
+function stairsOf(rise) {
+  const S = ACCESS.stairs;
+  const steps = Math.max(2, Math.ceil(rise / S.rise));
+  return { steps, rise: rise / steps, run: (steps - 1) * S.tread + S.landing };
+}
+
 /** The parts of the stand, without geometry. */
 function standParts(b) {
   if (b.standType === 'legs') return LEG_NAMES.map((n, i) => ({ id: 'leg-' + (i + 1), name: 'Leg, ' + n, role: 'frame' }));
@@ -826,9 +899,11 @@ export function buildingLayout(input) {
   if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }, ...standParts(b)];
+  if (b.access !== 'none') parts.push({ id: 'access', name: b.access === 'ladder' ? 'Ladder' : 'Staircase', role: 'frame' });
   const doors = garageDoors(b);
   for (const s of storeys) {
     if (s.n > 1) parts.push({ id: 'floor' + s.n, name: 'Floor of storey ' + s.n, role: 'floor' }, { id: 'floor' + s.n + '-frame', name: 'Floor frame, storey ' + s.n, role: 'lip' });
@@ -887,7 +962,7 @@ function wallOpenings(s, doors) {
  */
 export function buildingCuts(input, plate) {
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform', 'walkway'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -954,6 +1029,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
   if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
+  if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
@@ -1623,6 +1699,7 @@ export function buildGarage(wasm, input, plate = null) {
       for (let i = 0; i < parts.length; i++) parts[i] = { ...parts[i], solid: own(parts[i].solid.translate([0, 0, H])), apart: add3(parts[i].apart ?? [0, 0, 0], [0, 0, STAND.apart]) };
       parts.push(...buildStand(H + b.baseHeight - deck));
     }
+    if (b.access !== 'none') parts.push(buildAccess());
     // Keep the parts in the order of the kit; free everything else.
     const order = buildingLayout(b).parts.map((p) => p.id);
     const rank = (id) => order.indexOf(order.includes(id) ? id : id.replace(/-\d+$/, ''));
@@ -1651,6 +1728,72 @@ export function buildGarage(wasm, input, plate = null) {
         holesIn.push(B(u, v, -1, u + hole, v + hole, th + 1));
       }
     return own(B(edge - 0.01, v0 - 0.01, 0, len - edge + 0.01, v1 + 0.01, th).subtract(own(Manifold.union(holesIn))));
+  }
+
+  /* ---------- The way up ---------- */
+
+  // A ladder leaning on the wall, or a staircase along it with a wall on its
+  // outer side, from the table up to the level it goes to. It stands clear
+  // of the base's ledge, the relief, a balcony or the roof's overhang.
+  function buildAccess() {
+    const { sweep, poly } = kitShapes(wasm, own);
+    const all = [b, ...b.upper];
+    const { against: s, rise, out: extra } = accessPlace(b, all);
+    const w = b.accessWall;
+    const W = s.width,
+      D = s.depth;
+    const ALONG = { front: [[0, 0], [1, 0, 0]], back: [[W, D], [-1, 0, 0]], left: [[0, D], [0, -1, 0]], right: [[W, 0], [0, 1, 0]] };
+    const [[fx, fy], a] = ALONG[w];
+    const outward = OUTWARD[w];
+    const relief = s.relief && (s.relief.plinth || s.relief.cornice || s.relief.pilasters) ? RELIEF.depth : 0;
+    // Clear of the stand's feet on the table too: they may reach out past the walls.
+    const [, pad] = STAND.foot;
+    const feet = { none: 0, legs: pad + 1, tower: pad + 1, column: Math.max(0, (b.standSize * (1 + b.standTaper / 100)) / 2 + pad - Math.min(b.width, b.depth) / 2 + 1) }[b.standType];
+    const off = Math.max(KIT.ledge, extra, relief, feet) + 0.2;
+    // A point u along the wall, n out from its face, at height z.
+    const P = (u, n, z) => [s.ox + fx + a[0] * u + outward[0] * n, s.oy + fy + a[1] * u + outward[1] * n, z];
+    if (b.access === 'ladder') {
+      const Q = ACCESS.ladder;
+      const run = rise / Math.tan((Q.angle * Math.PI) / 180),
+        ll = Math.hypot(rise, run);
+      // Up the ladder, out of its face, across it.
+      const t = [-outward[0] * (run / ll), -outward[1] * (run / ll), rise / ll],
+        nrm = [outward[0] * (rise / ll), outward[1] * (rise / ll), run / ll];
+      const across = [t[1] * nrm[2] - t[2] * nrm[1], t[2] * nrm[0] - t[0] * nrm[2], t[0] * nrm[1] - t[1] * nrm[0]];
+      const total = ll + Q.above / t[2] + 4;
+      const B = (u0, v0, w0, u1, v1, w1) => own(Manifold.cube([u1 - u0, v1 - v0, w1 - w0]).translate([u0, v0, w0]));
+      const bits = [B(0, -4, 0, Q.rail, total, Q.thick), B(Q.width - Q.rail, -4, 0, Q.width, total, Q.thick)];
+      for (let v = Q.pitch; v <= ll - 2; v += Q.pitch) bits.push(B(Q.rail - 0.01, v - Q.rung / 2, 0, Q.width - Q.rail + 0.01, v + Q.rung / 2, Q.thick));
+      // Its foot on the table, its inside face against the level at the top.
+      const foot = P(b.accessAt, off + run, 0);
+      // Across it from one rail to the other, centred on accessAt.
+      const origin = foot.map((v, i) => v - across[i] * (Q.width / 2));
+      let ladder = own(own(Manifold.union(bits)).transform([...across, 0, ...t, 0, ...nrm, 0, ...origin, 1]));
+      ladder = trim(trim(ladder, [0, 0, 1], 0), [0, 0, -1], -(rise + Q.above));
+      const lie = outward[0] ? [0, (-Math.atan2(nrm[0], nrm[2]) * 180) / Math.PI, 0] : [(Math.atan2(nrm[1], nrm[2]) * 180) / Math.PI, 0, 0];
+      return { id: 'access', name: 'Ladder', role: 'frame', solid: ladder, lie, apart: [outward[0] * 20, outward[1] * 20, 0] };
+    }
+    // A staircase along the wall, rising with u: steps on a slab, a post
+    // under the landing at the top, a wall on its outer side.
+    const S = ACCESS.stairs;
+    const { steps, rise: r, run } = stairsOf(rise);
+    const tr = S.tread;
+    const outline = [[run, rise], [(steps - 1) * tr, rise]];
+    for (let k = steps - 1; k >= 1; k--) outline.push([k * tr, k * r], [(k - 1) * tr, k * r]);
+    const slope = r / tr,
+      drop = S.slab * Math.hypot(1, slope);
+    const zLanding = rise - S.slab,
+      sPost = run - S.post;
+    const meet = Math.min((zLanding + drop) / slope, sPost);
+    outline.push([0, 0], [drop / slope, 0], [meet, zLanding], [sPost, zLanding], [sPost, 0], [run, 0]);
+    const [pt, ph] = S.parapet;
+    const wallOut = poly([[0, 0], [run, 0], [run, rise + ph], [(steps - 1) * tr, rise + ph], [0, r + ph]]);
+    const origin = P(b.accessAt, 0, 0);
+    const steps3 = sweep(poly(outline), a, [0, 0, 1], origin, outward, off, off + S.width - pt + 0.01);
+    const side = sweep(wallOut, a, [0, 0, 1], origin, outward, off + S.width - pt, off + S.width);
+    const solid = own(Manifold.union([steps3, side]));
+    // It prints lying on its outer wall.
+    return { id: 'access', name: 'Staircase', role: 'frame', solid, outward: outward.map((v) => -v), apart: [outward[0] * 20, outward[1] * 20, 0] };
   }
 
   /* ---------- The stand ---------- */

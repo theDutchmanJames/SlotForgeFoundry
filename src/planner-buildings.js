@@ -10,6 +10,7 @@ import { STAND, standDepth } from './geometry/grandstand.js';
 import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
+import { walkwayFootprint } from './geometry/walkway.js';
 import { PIT } from './geometry/pit-module.js';
 
 export const MAX_BUILDINGS = 100;
@@ -76,6 +77,11 @@ export function shapeOf(b) {
     // the visor reach out over the pit lane above the cars.
     outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
     front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'walkway') {
+    // Between two buildings: it is placed by hand, its front side along x.
+    const [x0, y0, x1, y1] = walkwayFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [b.length / 2, y0], f: [0, -1] };
   } else if (b.kind === 'platform') {
     // Its deck and the staircase beside it; the front of the deck faces the track.
     const [x0, y0, x1, y1] = platformFootprint(b);
@@ -144,6 +150,11 @@ export function planShapes(entry) {
       return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
     });
     return { base: footprint(entry), storeys: [], dividers: joins, doors };
+  }
+  if (b.kind === 'walkway') {
+    // Its deck, a line along each side.
+    const side = (y) => [[0, y], [b.length, y]].map((p) => toPlan(entry, p));
+    return { base: footprint(entry), storeys: [], dividers: [side(0), side(b.width)], doors: [] };
   }
   if (b.kind === 'platform') {
     // The deck over its frames.

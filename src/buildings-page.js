@@ -14,6 +14,7 @@ import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
+import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -25,6 +26,7 @@ import {
   LEAN,
   RELIEF,
   FRAME_WALL,
+  ACCESS,
   MAX_ROOMS,
   MAX_UPPER,
   MIN_ROOM,
@@ -187,6 +189,23 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="pRailing"><span>Railing along the balcony</span></label>
       <label class="bd-check"><input type="checkbox" name="pRoofRailing"><span>Railing round the roof</span></label>
       <p class="bd-hint">The balcony reaches out over the pit lane, its front an angled fascia. Above it the lounge's glazing leans out towards the roof, and the roof's visor reaches out beyond it.</p></section>
+    <section class="bd-box" data-bd-card="walkway" data-bd-walkway hidden><h3>Walkway</h3>
+      ${field('wLength', 'Length', 150, WALKWAY_LIMITS.length)}
+      ${field('wWidth', 'Width', 32, WALKWAY_LIMITS.width)}
+      ${field('wHeight', 'Wall height', 30, WALKWAY_LIMITS.height)}
+      ${field('wClearance', 'Deck above the table', 70, WALKWAY_LIMITS.clearance)}
+      ${field('wWaist', 'Wall under the windows', 8, WALKWAY_LIMITS.waist)}
+      ${field('wPanes', 'Panes along each side', 4, WALKWAY_LIMITS.panes, '')}
+      <label class="bd-check" data-bd-walkway-legs><input type="checkbox" name="wLegs"><span>On legs at its ends</span></label>
+      <label class="bd-check"><input type="checkbox" name="wTowers"><span>A tower at each end</span></label>
+      <div data-bd-towers>
+      ${field('wTowerWidth', 'Tower width', 60, WALKWAY_LIMITS.towerWidth)}
+      ${field('wTowerDepth', 'Tower depth', 60, WALKWAY_LIMITS.towerDepth)}
+      ${field('wTowerHeight', 'Tower height', 110, WALKWAY_LIMITS.towerHeight)}
+      <label class="bd-row"><span>Tower roof</span><select name="wTowerRoof"><option value="hip">Pyramid</option><option value="flat">Flat</option></select></label>
+      <label class="bd-check"><input type="checkbox" name="wTowerWindows"><span>A window in each tower's front and back</span></label>
+      </div>
+      <p class="bd-hint">A covered walkway between two buildings, open at its ends where it meets them. Set its length to the gap between them and the deck as high as the floors it joins: the top of a base on a stand, or a storey's floor. Each side stands in a groove along the deck, a band of windows in panes; the roof's rails hold them apart. Without legs it rests on the buildings, glued to them. With a tower at each end it is a whole piece: each tower a building of its own, a doorway in its wall where the walkway joins it at the height of its deck.</p></section>
     <section class="bd-box" data-bd-card="platform" data-bd-platform hidden><h3>Viewing platform</h3>
       ${field('vWidth', 'Width', 150, PLATFORM_LIMITS.width)}
       ${field('vDepth', 'Depth', 110, PLATFORM_LIMITS.depth)}
@@ -328,6 +347,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('standTaper', 'Wider at its foot', building.standTaper, BUILDING_LIMITS.standTaper, '%')}
       </div></div>
       <p class="bd-hint">Raise the building off the table: on four legs in the corners of its base, on one column in the middle (square or round, wider at its foot) or on a braced tower of four frames. Size is a leg's side, the column's top or the tower's side; the building may reach out past it all round. Each support has pins on top that push up into pockets under the base. Legs and the column print standing up; the tower's frames print flat and stand in its foot.</p></section>
+    <section class="bd-box" data-bd-card="access"><h3>Way up</h3>
+      <label class="bd-row"><span>Way up</span><select name="access">${ACCESS.kinds.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
+      <div data-bd-access>
+      <label class="bd-row"><span>Against</span><select name="accessWall">${WALLS.map((w) => `<option value="${w}">The ${w} wall</option>`).join('')}</select></label>
+      ${field('accessAt', 'From the left end', building.accessAt, [-200, 1500])}
+      <label class="bd-row"><span>Up to</span><select name="accessTo">${ACCESS.levels.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
+      </div>
+      <p class="bd-hint">A ladder leans on a wall from the table up to the base on a stand, the floor of a storey or a flat roof; a staircase runs along the wall to a landing there, a wall on its outer side, and may start beyond the end of the wall. From the left end is where its foot is, measured along the wall as you look at it from outside. It stands clear of the base, the relief, a balcony and the roof. A ladder prints flat on its back, a staircase on its outer wall.</p></section>
     <section class="bd-box" data-bd-card="base"><h3>Base</h3>
       ${field('baseHeight', 'Height', building.baseHeight, BUILDING_LIMITS.baseHeight)}
       <p class="bd-hint">Make it as high as your track, so the doorstep is level with the road. It stands on the table, hollow underneath.</p></section>
@@ -345,13 +372,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isPits = () => building.kind === 'pitmodule';
   const isMarshal = () => building.kind === 'marshalpost';
   const isPlatform = () => building.kind === 'platform';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform();
+  const isWalkway = () => building.kind === 'walkway';
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform() && !isWalkway();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform', 'walkway'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -359,6 +387,24 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPits()) drawPits();
     if (isMarshal()) drawMarshal();
     if (isPlatform()) drawPlatform();
+  }
+  const WALKWAY_FIELDS = [['wLength', 'length'], ['wWidth', 'width'], ['wHeight', 'height'], ['wClearance', 'clearance'], ['wWaist', 'waist'], ['wPanes', 'panes'], ['wTowerWidth', 'towerWidth'], ['wTowerDepth', 'towerDepth'], ['wTowerHeight', 'towerHeight']];
+  function fillWalkway(w) {
+    const e = form.elements;
+    for (const [k, key] of WALKWAY_FIELDS) e[k].value = w[key];
+    e.wLegs.checked = w.legs;
+    e.wTowers.checked = w.towers;
+    e.wTowerWindows.checked = w.towerWindows;
+    e.wTowerRoof.value = w.towerRoof;
+    $('[data-bd-towers]').hidden = !w.towers;
+    $('[data-bd-walkway-legs]').hidden = w.towers;
+  }
+  function readWalkway() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const w = { kind: 'walkway', legs: e.wLegs.checked, towers: e.wTowers.checked, towerWindows: e.wTowerWindows.checked, towerRoof: e.wTowerRoof.value };
+    for (const [k, key] of WALKWAY_FIELDS) w[key] = num(e[k]);
+    return w;
   }
   const PLATFORM_FIELDS = [['vWidth', 'width'], ['vDepth', 'depth'], ['vHeight', 'height'], ['vStairWidth', 'stairWidth'], ['vRailingHeight', 'railingHeight'], ['vBoardHeight', 'boardHeight']];
   const PLATFORM_CHECKS = [['vPlanks', 'planks'], ['vRailing', 'railing'], ['vBoard', 'board']];
@@ -636,6 +682,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPits()) return readPits();
     if (isMarshal()) return readMarshal();
     if (isPlatform()) return readPlatform();
+    if (isWalkway()) return readWalkway();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -682,6 +729,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       firstNumber: num(e.firstNumber),
       sign: e.sign.value,
       railingStyle: e.railingStyle.value,
+      access: e.access.value,
+      accessWall: e.accessWall.value,
+      accessAt: num(e.accessAt),
+      accessTo: e.accessTo.value,
       standType: e.standType.value,
       standHeight: num(e.standHeight),
       standSize: num(e.standSize),
@@ -710,11 +761,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPits()) drawPits();
     else if (isMarshal()) drawMarshal();
     else if (isPlatform()) drawPlatform();
+    else if (isWalkway()) fillWalkway(building);
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
       $('[data-bd-stand-size]').hidden = building.standType === 'none';
       $('[data-bd-column]').hidden = building.standType !== 'column';
+      $('[data-bd-access]').hidden = building.access === 'none';
       // Open or closed, the storey's panel shows its waist wall or not.
       if (!!form.elements.stWaist !== !!storeyOf(building, storey)?.open) drawStoreys();
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
@@ -898,6 +951,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isGantry()) card = /^beam/.test(id) ? 'gantryBeam' : /^deck/.test(id) ? 'gantryBridge' : 'gantry';
     else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
+    else if (isWalkway()) card = 'walkway';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
@@ -918,6 +972,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     } else if (/^roof/.test(id)) card = 'roof';
     else if (/^base/.test(id)) card = 'base';
     else if (/^(leg|column|tower)/.test(id)) card = 'support';
+    else if (id === 'access') card = 'access';
     else if (/^door/.test(id)) card = 'garage';
     else if (/^divide/.test(id)) card = 'size';
     else if (/^brace/.test(id)) {
@@ -967,6 +1022,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'pitmodule') return fillPits(b);
     if (b.kind === 'marshalpost') return fillMarshal(b);
     if (b.kind === 'platform') return fillPlatform(b);
+    if (b.kind === 'walkway') return fillWalkway(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -976,6 +1032,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.firstNumber.value = b.firstNumber;
     form.elements.sign.value = b.sign;
     form.elements.railingStyle.value = b.railingStyle;
+    for (const k of ['access', 'accessWall', 'accessAt', 'accessTo']) form.elements[k].value = b[k];
     for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
     for (const k of ['standHeight', 'standSize', 'standTaper']) form.elements[k].value = b[k];
     form.elements.signWidth.value = b.signWidth;
