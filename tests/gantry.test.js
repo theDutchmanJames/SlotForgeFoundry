@@ -185,3 +185,33 @@ test('lattice members: legs as tubes and the beam as a girder opened with diamon
     kit.forEach((p) => p.solid.delete());
   }
 });
+
+test('a half gantry can carry a box sign on its leg instead of a beam', async () => {
+  const { kitNotes } = await import('../src/building-kit.js');
+  assert.throws(() => validateGantry({ type: 'start', sign: true }), /for a half gantry/);
+  assert.throws(() => validateGantry({ type: 'half', sign: true, boardHeight: 12 }), /at least 20 mm high/);
+  assert.throws(() => validateGantry({ type: 'half', hut: true }), /unknown setting: hut/);
+  const plate = { width: 200, depth: 200, margin: 0 };
+  for (const settings of [{ type: 'half', members: 'lattice', sign: true, boardHeight: 40 }, { type: 'half', sign: true, boardHeight: 30 }, { type: 'half', sign: true, reach: 400, boardHeight: 60, clearance: 140 }]) {
+    const kit = buildGantry(wasm, settings, plate);
+    try {
+      const g = validateGantry(settings);
+      for (const p of kit) {
+        assert.equal(p.solid.decompose().length, 1, p.name);
+        assert.ok(overAir(p) < 0.5, p.name + ' prints without supports ' + JSON.stringify(settings));
+      }
+      for (let i = 0; i < kit.length; i++)
+        for (let j = i + 1; j < kit.length; j++) {
+          const both = kit[i].solid.intersect(kit[j].solid);
+          assert.ok(both.volume() < 0.01, kit[i].name + ' and ' + kit[j].name + ' overlap');
+          both.delete();
+        }
+      const signs = kit.filter((p) => /^sign/.test(p.id)).map((p) => p.solid.boundingBox());
+      assert.ok(signs.every((b) => Math.abs(b.min[2] - g.clearance) < 0.01 && Math.abs(b.max[2] - g.clearance - g.boardHeight) < 0.01), 'on top of the leg, as high as the board');
+      assert.ok(!kit.some((p) => /^beam|^board/.test(p.id)), 'no beam with a box sign');
+      assert.match(kitNotes('Gantry', g, gantryLayout(g, plate).parts, {}), /Glue the box sign on top of the leg/);
+    } finally {
+      kit.forEach((p) => p.solid.delete());
+    }
+  }
+});

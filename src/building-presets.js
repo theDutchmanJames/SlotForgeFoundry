@@ -674,6 +674,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'gantry', type: 'half' },
   },
   {
+    id: 'gantry-sign',
+    name: 'Half gantry, box sign',
+    note: 'A lattice tower, a box sign on top reaching out over the road',
+    building: { kind: 'gantry', type: 'half', members: 'lattice', sign: true, boardHeight: 40, reach: 140, clearance: 90 },
+  },
+  {
     id: 'footbridge',
     name: 'Footbridge',
     note: 'A walkway over the track, a staircase at each side',

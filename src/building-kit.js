@@ -167,7 +167,7 @@ function gantryNotes(name, g, parts, sizes) {
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const bridge = g.type === 'bridge';
   const steps = [
-    ...(cut ? ['Join the pieces of the ' + (bridge ? 'walkway' : 'beam') + ' first: push each tab into its socket, glue, and let it set flat.'] : []),
+    ...(cut ? ['Join the pieces of the ' + (bridge ? 'walkway' : g.sign ? 'sign' : 'beam') + ' first: glue them end to end' + (g.sign ? ', standing on a flat table.' : ': push each tab into its socket, glue, and let it set flat.')] : []),
     ...(bridge
       ? [
           'Stand a staircase on each side of the track, ' + fmt(g.span) + ' mm apart, their landings towards it.',
@@ -175,7 +175,9 @@ function gantryNotes(name, g, parts, sizes) {
         ]
       : [
           'Stand the leg' + (g.type === 'half' ? ' beside the track.' : 's on each side of the track, ' + fmt(g.span) + ' mm apart inside.'),
-          'Drop the beam on' + (g.type === 'half' ? ': the socket at its end goes over the pin on top of the leg, and the beam reaches out over the road.' : ': the sockets at its ends go over the pins on top of the legs.') + ' Glue it.',
+          g.sign
+            ? 'Glue the box sign on top of the leg, reaching out over the road' + (g.members === 'solid' ? ', the socket under it over the pin on top of the leg.' : '.')
+            : 'Drop the beam on' + (g.type === 'half' ? ': the socket at its end goes over the pin on top of the leg, and the beam reaches out over the road.' : ': the sockets at its ends go over the pins on top of the legs.') + ' Glue it.',
         ]),
   ];
   return [
@@ -190,7 +192,9 @@ function gantryNotes(name, g, parts, sizes) {
     '- Every part prints without supports.',
     ...(bridge
       ? ['- A staircase lies on its side; the walkway stands upright, its walls up.']
-      : ['- A leg stands on its foot. The beam lies on its back' + (g.board ? ', the board flat on the plate,' : '') + ' its front' + (g.type === 'start' && g.lights ? ' with the start lights' : '') + ' up.']),
+      : g.sign
+        ? ['- The leg stands on its foot; the box sign stands on its bottom edge, the tops of its panels sloping so they print.']
+        : ['- A leg stands on its foot. The beam lies on its back' + (g.board ? ', the board flat on the plate,' : '') + ' its front' + (g.type === 'start' && g.lights ? ' with the start lights' : '') + ' up.']),
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),

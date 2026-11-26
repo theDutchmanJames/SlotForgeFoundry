@@ -30,6 +30,9 @@ export const GANTRY_DEFAULTS = Object.freeze({
   // trusses, like steel) or 'timber' (the same, its members chunkier, the
   // board of planks, like wood).
   members: 'solid',
+  // A half gantry: a box sign on top of its leg instead of a beam, its
+  // height the board height.
+  sign: false,
 });
 export const GANTRY_LIMITS = Object.freeze({
   span: [60, 1200],
@@ -58,6 +61,7 @@ export const GANTRY = Object.freeze({
   lattice: { leg: 22, post: 3, bar: 2.4, girder: [26, 3], pitch: 26, margin: 2 },
   timber: { leg: 26, post: 4.5, bar: 3.4, girder: [30, 3.5], pitch: 32, margin: 2.5 },
   plank: [4, 0.6, 0.5], // a timber board's planks: wide, the groove between them wide and deep
+  sign: { depth: 12, back: 10, panel: [3, 0.8] }, // a box sign: deep, past the leg at the back; its panels in from the edges, sunk
 });
 /** The open members of a gantry: a lattice or timber, or none for solid. */
 const openOf = (g) => (g.members === 'solid' ? null : GANTRY[g.members]);
@@ -85,6 +89,9 @@ export function validateGantry(input) {
   if (!Number.isInteger(g.lights)) throw Error('Start lights are a whole number.');
   if (typeof g.board !== 'boolean') throw Error('Choose whether the beam has a board.');
   if (!['solid', 'lattice', 'timber'].includes(g.members)) throw Error('Choose solid, lattice or timber members.');
+  if (typeof g.sign !== 'boolean') throw Error('Choose whether the half gantry has a box sign.');
+  if (g.sign && g.type !== 'half') throw Error('A box sign is for a half gantry.');
+  if (g.sign && g.boardHeight < 20) throw Error('A box sign is at least 20 mm high: set the board height.');
   if (g.type === 'start' && g.lights * 8 > g.span) throw Error('There is no room for ' + g.lights + ' start lights on a beam of ' + g.span + ' mm: at most ' + Math.floor(g.span / 8) + '.');
   return g;
 }
@@ -123,6 +130,8 @@ export function gantryLayout(input, plate = null) {
     half: [['leg-1', 'Leg', 'frame'], ['beam', 'Beam', 'roof']],
     bridge: [['stair-1', 'Staircase, left', 'wall'], ['stair-2', 'Staircase, right', 'wall'], ['deck', 'Walkway', 'floor']],
   }[g.type];
+  // A half gantry with a box sign: its leg, the sign on top.
+  if (g.sign) return { building: g, parts: [{ id: 'leg-1', name: 'Leg', role: 'frame' }, { id: 'sign', name: 'Box sign', role: 'wall' }] };
   // A lattice gantry: open legs, two girders and a board instead of a beam.
   if (g.members !== 'solid' && g.type !== 'bridge') {
     const legs = names.filter(([id]) => id.startsWith('leg'));
@@ -220,7 +229,7 @@ export function buildGantry(wasm, input, plate = null) {
       const { post: P, bar, girder: [bh, gt], pitch } = LT;
       const legX = half ? [o] : [o, o + L + g.span];
       const zBeam = g.clearance,
-        zTop = zBeam + bh;
+        zTop = g.sign ? zBeam : zBeam + bh;
       const rect = (u0, v0, u1, v1) => poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
       const line = (a, c) => {
         const d = [c[0] - a[0], c[1] - a[1]],
@@ -251,6 +260,7 @@ export function buildGantry(wasm, input, plate = null) {
         const solid = own(own(Manifold.union(bits)).trimByPlane([0, 0, -1], -zTop));
         parts.push({ id: 'leg-' + (i + 1), name: half ? 'Leg' : i ? 'Leg, right' : 'Leg, left', role: 'frame', solid, lie: [0, 0, 0], apart: [i ? 12 : -12, 0, 0] });
       });
+      if (!g.sign) {
       // The girders: across the legs from the outside of one to the outside of
       // the other, or out over the road from a half gantry's leg. Chords, a
       // post at each end and over each leg's inside, and between them panels
@@ -330,6 +340,7 @@ export function buildGantry(wasm, input, plate = null) {
         }
         parts.push({ id: 'board', name: 'Board', role: 'wall', solid: board, outward: [0, -1, 0], apart: [0, -15, 20] });
       }
+      }
     } else {
       const half = g.type === 'half';
       const f = footOf(g),
@@ -343,6 +354,7 @@ export function buildGantry(wasm, input, plate = null) {
         const leg = own(Manifold.union([B(x - o, 0, 0, x - o + f, f, ft), B(x, o, 0, x + L, o + L, zBeam), B(x + (L - pinW) / 2, o + (L - pinW) / 2, zBeam - 0.01, x + (L + pinW) / 2, o + (L + pinW) / 2, zBeam + pinH)]));
         parts.push({ id: 'leg-' + (i + 1), name: half ? 'Leg' : i ? 'Leg, right' : 'Leg, left', role: 'frame', solid: leg, lie: [0, 0, 0], apart: [i ? 12 : -12, 0, 0] });
       });
+      if (!g.sign) {
       // The beam: over the legs, a socket for each pin underneath, the lights in
       // front, a board on top flush with its back.
       const bx0 = half ? o : o,
@@ -365,6 +377,40 @@ export function buildGantry(wasm, input, plate = null) {
       beam = minus(beam, ...sockets, ...lights);
       // It prints on its back: the board flat on the plate, the lights up.
       parts.push(...cutLong({ id: 'beam', name: 'Beam', role: 'roof', solid: beam, lie: [-90, 0, 0], apart: [0, 0, 20] }, [bx0, bx1], 'xz'));
+      }
+    }
+    // A box sign on top of a half gantry's leg, reaching out over the road
+    // and a little past the leg at the back; a panel sunk in each face for
+    // the poster, its top edge at 45° so the sign prints standing on its
+    // bottom. Over a solid leg, a socket for its pin.
+    if (g.sign) {
+      const f = footOf(g),
+        o = (f - L) / 2;
+      const { depth: sd, back, panel: [pi, pdp] } = GANTRY.sign;
+      const x0 = o - back,
+        x1 = o + L + g.reach,
+        y0 = o + L / 2 - sd / 2,
+        y1 = y0 + sd,
+        z0 = g.clearance,
+        z1 = z0 + g.boardHeight;
+      const { poly, sweep } = kitShapes(wasm, own);
+      let sign = B(x0, y0, z0, x1, y1, z1);
+      // A panel's section in (y, z) on each face: sunk, its top sloping back out at 45°.
+      const panels = [];
+      for (const [face, dir] of [[y0, 1], [y1, -1]]) {
+        const sec = poly([[face - dir, z0 + pi], [face + dir * pdp, z0 + pi], [face + dir * pdp, z1 - pi - pdp], [face, z1 - pi], [face - dir, z1 - pi]]);
+        panels.push(sweep(sec, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], x0 + pi, x1 - pi));
+      }
+      sign = minus(sign, ...panels);
+      // Over a solid leg, a socket for its pin, its top pointed so the sign prints standing.
+      if (g.members === 'solid') {
+        const a = o + (L - pinW) / 2 - pl,
+          c = o + (L + pinW) / 2 + pl,
+          top = z0 + pinH + 0.2;
+        sign = minus(sign, sweep(poly([[a, z0 - 1], [c, z0 - 1], [c, top], [(a + c) / 2, top + (c - a) / 2], [a, top]]), [1, 0, 0], [0, 0, 1], [0, 0, 0], [0, 1, 0], a, c));
+      }
+      // Longer than the plate: cut upright, so the joints print standing too.
+      parts.push(...cutLong({ id: 'sign', name: 'Box sign', role: 'wall', solid: sign, lie: [0, 0, 0], apart: [0, 0, 20] }, [x0, x1], 'xy'));
     }
     const keep = new Set(parts.map((p) => p.solid));
     for (const s of temp) if (!keep.has(s)) s.delete();

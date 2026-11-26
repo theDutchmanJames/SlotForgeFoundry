@@ -354,6 +354,7 @@ export async function checkBuildings({ page, action, download, snap }) {
     ['tyre-bridge', 'deck-2', 'tyre'],
     ['stairs-switchback', 'landing-top', 'switchback'],
     ['gantry-timber', 'board', 'gantry'],
+    ['gantry-sign', 'sign', 'gantry'],
     ['stand-raised', 'frame-1', 'standFrame'],
     ['race-control', 'railing3-back', 'size'],
     ['crosswalk', 'tower2-front3', 'walkway'],

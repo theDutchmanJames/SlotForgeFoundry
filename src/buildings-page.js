@@ -323,8 +323,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('tLights', 'Start lights', 5, GANTRY_LIMITS.lights, '', ' data-bd-lights')}
       ${field('tReach', 'Reach over the road', 140, GANTRY_LIMITS.reach, 'mm', ' data-bd-reach')}
       <label class="bd-check"><input type="checkbox" name="tBoard"><span>An advertising board on top</span></label>
+      <label class="bd-check" data-bd-half-extras><input type="checkbox" name="tSign"><span>A box sign on top of the leg instead of a beam</span></label>
       ${field('tBoardHeight', 'Board height', 20, GANTRY_LIMITS.boardHeight)}
-      <p class="bd-hint">The beam drops onto a pin on top of each leg. It prints on its back: the board flat on the plate, the start lights facing up. Legs stand on their foot plates to print.</p></section>
+      <p class="bd-hint">The beam drops onto a pin on top of each leg. It prints on its back: the board flat on the plate, the start lights facing up. Legs stand on their foot plates to print. A half gantry can carry a box sign on top of its leg instead, as high as the board height, a panel sunk in each face for a poster; it prints standing.</p></section>
     <section class="bd-box" data-bd-card="gantryBridge" data-bd-gantry data-bd-bridge hidden><h3>Walkway</h3>
       ${field('tDeck', 'Width', 30, GANTRY_LIMITS.deckWidth)}
       ${field('tWalls', 'Walls above the walkway', 14, GANTRY_LIMITS.wallHeight)}
@@ -707,6 +708,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [k, v] of [['tSpan', g.span], ['tClearance', g.clearance], ['tLights', g.lights], ['tReach', g.reach], ['tBoardHeight', g.boardHeight], ['tDeck', g.deckWidth], ['tWalls', g.wallHeight]]) e[k].value = v;
     e.tBoard.checked = g.board;
+    e.tSign.checked = g.sign;
     e.tMembers.value = g.members;
     drawGantry();
   }
@@ -717,6 +719,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     host.querySelector('[data-bd-bridge]').hidden = g.type !== 'bridge';
     host.querySelector('[data-bd-lights]').hidden = g.type !== 'start';
     host.querySelector('[data-bd-reach]').hidden = g.type !== 'half';
+    host.querySelector('[data-bd-half-extras]').hidden = g.type !== 'half';
     const [w, d] = gantrySize(g);
     $('[data-bd-gantry-size]').textContent =
       (g.type === 'half' ? 'Its beam reaches ' + fmt(g.reach) + ' mm out over the road' : 'Span is the clear width between the ' + (g.type === 'bridge' ? 'staircases' : 'legs') + ': the track with its borders') +
@@ -736,6 +739,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       lights: num(e.tLights),
       reach: num(e.tReach),
       board: e.tBoard.checked,
+      sign: e.tSign.checked && building.type === 'half',
       boardHeight: num(e.tBoardHeight),
       deckWidth: num(e.tDeck),
       wallHeight: num(e.tWalls),
@@ -1418,7 +1422,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawPits();
       } else if (b.dataset.bdGantryType) {
         fitted = false;
-        await rebuild({ ...readGantry(), type: b.dataset.bdGantryType });
+        const type = b.dataset.bdGantryType;
+        // A box sign belongs to a half gantry only.
+        await rebuild({ ...readGantry(), type, ...(type !== 'half' && { sign: false }) });
         drawGantry();
       } else if (b.dataset.bdStandShape) {
         const next = readStand();
