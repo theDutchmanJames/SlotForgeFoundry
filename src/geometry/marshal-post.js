@@ -8,6 +8,7 @@
 // holes through the roof. x across, y from the front (the track at negative
 // y) to the back, z up.
 
+import { kitShapes } from './kit-shapes.js';
 import { sevenSegments } from './pit-module.js';
 
 export const MARSHAL_POST_DEFAULTS = Object.freeze({
@@ -122,7 +123,7 @@ export function marshalPostLayout(input) {
 
 /** The marshal post, built, standing where it goes. */
 export function buildMarshalPost(wasm, input) {
-  const { Manifold, CrossSection } = wasm;
+  const { Manifold } = wasm;
   const m = validateMarshalPost(input);
   const L = marshalLevels(m);
   const W = m.width,
@@ -131,19 +132,8 @@ export function buildMarshalPost(wasm, input) {
     P = MARSHAL.post;
   const temp = [];
   const own = (x) => (temp.push(x), x);
-  const box = (x0, y0, z0, x1, y1, z1) => own(Manifold.cube([x1 - x0, y1 - y0, z1 - z0]).translate([x0, y0, z0]));
+  const { box, sweep } = kitShapes(wasm, own);
   const union = (list) => own(Manifold.union(list));
-  // An outline in the plane of a and b (from `origin`), swept along `dir`
-  // from `from` to `to`: whichever way round a and b make it turn.
-  const sweep = (pts, a, b, origin, dir, from, to) => {
-    let twice = 0;
-    for (let i = 0; i < pts.length; i++) twice += pts[i][0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * pts[i][1];
-    const cs = own(new CrossSection([twice < 0 ? [...pts].reverse() : pts], 'Positive'));
-    const c = cross(a, b),
-      ahead = c[0] * dir[0] + c[1] * dir[1] + c[2] * dir[2] > 0;
-    const o = origin.map((v, i) => v + dir[i] * (ahead ? from : to));
-    return own(own(cs.extrude(to - from)).transform([...a, 0, ...b, 0, ...c, 0, ...o, 1]));
-  };
   // The four walls: front and back along x, the sides along y; o is the
   // left end of the outside face as you look at it, a along it.
   const UP = [0, 0, 1];
@@ -294,5 +284,3 @@ function legsAt(m) {
     [m.width - g, m.depth - g],
   ];
 }
-
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];

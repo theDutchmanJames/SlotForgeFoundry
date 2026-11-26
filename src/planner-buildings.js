@@ -9,6 +9,7 @@ import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geo
 import { STAND, standDepth } from './geometry/grandstand.js';
 import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
+import { platformFootprint } from './geometry/viewing-platform.js';
 import { PIT } from './geometry/pit-module.js';
 
 export const MAX_BUILDINGS = 100;
@@ -75,6 +76,11 @@ export function shapeOf(b) {
     // the visor reach out over the pit lane above the cars.
     outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
     front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'platform') {
+    // Its deck and the staircase beside it; the front of the deck faces the track.
+    const [x0, y0, x1, y1] = platformFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [b.width / 2, 0], f: [0, -1] };
   } else if (b.kind === 'marshalpost') {
     // On its base plate, or on the ground on its floor; the cabin faces the track.
     const [x0, y0, x1, y1] = marshalFootprint(b);
@@ -138,6 +144,10 @@ export function planShapes(entry) {
       return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
     });
     return { base: footprint(entry), storeys: [], dividers: joins, doors };
+  }
+  if (b.kind === 'platform') {
+    // The deck over its frames.
+    return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.

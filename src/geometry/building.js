@@ -13,6 +13,8 @@ import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandst
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
 import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
 import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
+import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
+import { kitShapes } from './kit-shapes.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
@@ -47,6 +49,13 @@ export const BUILDING_DEFAULTS = Object.freeze({
   roofRailing: false, // a railing round a flat roof, for a roof terrace
   numbers: false, // a number plaque above each garage door
   firstNumber: 1,
+  // A board for a sign at the front: 'none'; 'fascia', along the top of the
+  // front wall under the eaves; 'billboard', standing up on the roof at its
+  // front edge. signWidth along the front, in the middle; signHeight its
+  // height, a billboard's above the roof.
+  sign: 'none',
+  signWidth: 80,
+  signHeight: 14,
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -65,6 +74,8 @@ export const BUILDING_LIMITS = Object.freeze({
   overhangBack: [0, 30],
   overhangLeft: [0, 30],
   overhangRight: [0, 30],
+  signWidth: [20, 180],
+  signHeight: [6, 60],
   ...TEXTURE_LIMITS,
 });
 // A storey above: its size, its place on the storey below (from that
@@ -74,7 +85,7 @@ export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y:
 export const MAX_UPPER = 2;
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
-  window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false }),
+  window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false, counter: false, flap: false, flapAngle: 15 }),
   door: Object.freeze({ type: 'door', width: 28, height: 48, sill: 0, frame: false }),
 });
 export const MAX_OPENINGS = 16;
@@ -99,6 +110,16 @@ export function garageDoors(b) {
     return { x: (from + to) / 2 - b.doorWidth / 2, width: b.doorWidth, height: b.doorHeight, from, to, room: i + 1 };
   });
 }
+// A serving hatch: the counter under a window (out, thick), the flap over
+// it (thick, its angle below level), their fins (thick, how far down the
+// wall for their length), the window high enough for a counter, the room a
+// flap takes over a window; the sign's board, thick.
+export const HATCH = Object.freeze({ counter: [10, 2.5], flap: 2, flapAngle: [0, 60], fin: 2, finDrop: 0.6, counterSill: 15, flapClear: 6, sign: 3, longest: 180, billboard: { fin: [12, 10, 3], inset: 1, dip: 0.3 } });
+export const SIGNS = Object.freeze([
+  ['none', 'No sign'],
+  ['fascia', 'Along the top of the front wall'],
+  ['billboard', 'A billboard on the roof'],
+]);
 // Fixed sizes of the kit, in mm. Nothing thinner than 2 mm.
 export const KIT = Object.freeze({
   wall: 3, // wall thickness
@@ -157,12 +178,14 @@ const LABELS = {
   overhangBack: 'Overhang at the back',
   overhangLeft: 'Overhang on the left',
   overhangRight: 'Overhang on the right',
+  signWidth: 'Sign width',
+  signHeight: 'Sign height',
   textureScale: 'Texture size',
   textureJoint: 'Joint width',
   textureDepth: 'Joint depth',
 };
 const UNITS = { pitch: '°', textureScale: ' %' };
-const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame'];
+const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'counter', 'flap', 'flapAngle'];
 const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
 const STOREY_SUFFIX = ['', ', ground floor', ', storey 2', ', storey 3'];
 
@@ -183,6 +206,11 @@ function checkOpening(o, i, dims, where) {
   const full = { ...OPENING_DEFAULTS[kind], ...o, sill: kind === 'door' ? 0 : (o.sill ?? OPENING_DEFAULTS.window.sill) };
   if (!WALLS.includes(full.wall)) throw Error('Choose a wall for opening ' + (i + 1) + where + '.');
   if (typeof full.frame !== 'boolean') throw Error('Choose whether opening ' + (i + 1) + where + ' has a frame.');
+  if (kind === 'door' && (o.counter || o.flap || o.flapAngle !== undefined)) throw Error('A door has no counter or flap: those are for a serving hatch, a window.');
+  if (kind === 'window' && (typeof full.counter !== 'boolean' || typeof full.flap !== 'boolean')) throw Error('Choose whether window ' + (i + 1) + where + ' has a counter and a flap.');
+  const [lo, hi] = HATCH.flapAngle;
+  if (kind === 'window' && (!Number.isFinite(full.flapAngle) || full.flapAngle < lo || full.flapAngle > hi))
+    throw Error('The flap of window ' + (i + 1) + where + ' leans out between ' + lo + '° (level) and ' + hi + '°.');
   const L = wallLength(dims, full.wall);
   if (full.at === undefined) full.at = L / 2;
   for (const [key, min, max] of [
@@ -210,6 +238,10 @@ function checkOpenings(list, dims, blocks, where) {
       throw Error('The ' + o.name.toLowerCase() + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
     if (o.sill + o.height > dims.height - KIT.frame)
       throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (dims.height - KIT.frame) + ' mm above the floor.');
+    if ((o.counter || o.flap) && o.width > HATCH.longest)
+      throw Error('The ' + o.name.toLowerCase() + ' is too wide for a counter or a flap in one piece: at most ' + HATCH.longest + ' mm.');
+    if (o.counter && o.sill < HATCH.counterSill + (o.frame ? KIT.trim : 0))
+      throw Error('The counter under the ' + o.name.toLowerCase() + ' needs the window at least ' + (HATCH.counterSill + (o.frame ? KIT.trim : 0)) + ' mm up from the floor.');
   }
   for (const [i, a] of named.entries())
     for (const c of [...named.slice(i + 1), ...blocks]) {
@@ -226,6 +258,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'gantry') return validateGantry(input);
   if (input?.kind === 'pitmodule') return validatePitModule(input);
   if (input?.kind === 'marshalpost') return validateMarshalPost(input);
+  if (input?.kind === 'platform') return validatePlatform(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -294,6 +327,25 @@ export function validateBuilding(input) {
     ),
   ];
   const openings = checkOpenings(b.openings, b, blocks, several ? STOREY_SUFFIX[1] : '');
+  // A sign along the top of the front wall: everything in the front wall stays under it.
+  if (!SIGNS.some(([id]) => id === b.sign)) throw Error('Choose a sign from the list.');
+  if (b.sign !== 'none' && b.signWidth > b.width) throw Error('The sign is wider than the building: at most ' + b.width + ' mm.');
+  if (b.sign === 'billboard') {
+    // It stands on the roof where the roof is level along the front.
+    const level = b.roof === 'flat' || (b.roof === 'slope' && ['front', 'back'].includes(b.rises)) || (b.roof === 'gable' && b.ridge === 'width');
+    if (!level) throw Error('A billboard stands on a roof that is level along the front: a flat roof, a single slope rising to the front or the back, or a two-sided roof with its ridge side to side.');
+    if (b.roofRailing && b.roof === 'flat') throw Error('The billboard stands where the roof railing runs along the front: choose one.');
+  }
+  if (b.sign === 'fascia') {
+    const dip = b.upper.length === 0 && b.roof !== 'flat' ? HATCH.sign * Math.tan((b.pitch * Math.PI) / 180) : 0;
+    const under = Math.floor((b.height - b.signHeight - dip) * 10) / 10;
+    if (b.numbers && doors.length) throw Error('The sign and the bay numbers both go above the garage doors: choose one.');
+    if (b.door !== 'none' && b.doorHeight > under - 1) throw Error('The garage door reaches up under the sign: at most ' + fmtMm(under - 1) + ' mm high with a sign of ' + b.signHeight + ' mm.');
+    for (const o of openings.filter((q) => q.wall === 'front')) {
+      const reach = o.sill + o.height + (o.frame ? KIT.trim : 0) + (o.flap ? HATCH.flapClear : 0);
+      if (reach > under) throw Error('The ' + openingName(o, openings).toLowerCase() + ' reaches up under the sign: its top can be at most ' + fmtMm(under - (o.frame ? KIT.trim : 0) - (o.flap ? HATCH.flapClear : 0)) + ' mm above the floor.');
+    }
+  }
   // Each storey above stands on the one below, inside its walls.
   let below = { width: b.width, depth: b.depth };
   const upper = b.upper.map((u, i) => {
@@ -550,6 +602,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'gantry') return { ...gantryLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
@@ -571,6 +624,12 @@ export function buildingLayout(input) {
     s.openings.forEach((o, i) => {
       if (o.frame) parts.push({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame' });
     });
+  for (const s of storeys)
+    s.openings.forEach((o, i) => {
+      if (o.counter) parts.push({ id: 'counter' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' counter' + s.label, role: 'frame' });
+      if (o.flap) parts.push({ id: 'flap' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' flap' + s.label, role: 'door' });
+    });
+  if (b.sign !== 'none') parts.push({ id: 'sign', name: b.sign === 'billboard' ? 'Billboard' : 'Sign', role: 'wall' });
   return { building: b, storeys, parts, doors };
 }
 
@@ -605,7 +664,7 @@ function wallOpenings(s, doors) {
  */
 export function buildingCuts(input, plate) {
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -669,6 +728,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'gantry') return buildGantry(wasm, input, plate);
   if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
   if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
+  if (input?.kind === 'platform') return buildPlatform(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
@@ -678,6 +738,7 @@ export function buildGarage(wasm, input, plate = null) {
     own(Manifold.cube([Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)]).translate([Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)]));
   const minus = (a, ...cuts) => (cuts.length ? own(a.subtract(own(Manifold.union(cuts)))) : a);
   const trim = (s, n, offset) => own(s.trimByPlane(n, offset));
+  const { sweep } = kitShapes(wasm, own);
   // A part after its texture is cut: where a grain line meets a joint or a
   // step it can leave a speck of nothing loose. Only the part itself is kept.
   const whole = (solid) => {
@@ -1100,8 +1161,91 @@ export function buildGarage(wasm, input, plate = null) {
         }
         local({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame', solid: frame, outward: OUTWARD[o.wall], apart: add3(wallApart(o.wall), scale3(OUTWARD[o.wall], APART.frame)) });
       });
+      // A serving hatch: a counter under the window, a flap propped open over
+      // it. Each is a plate on small fins: the fins' back edge lies on the
+      // wall (or the window's frame) and sets the plate's angle, so it is
+      // glued on square. Each prints flat, its top on the plate, the fins up.
+      const ALONG = { front: [[0, 0], [1, 0]], back: [[W, D], [-1, 0]], left: [[0, D], [0, -1]], right: [[W, 0], [0, 1]] };
+      const TURN = { front: 0, back: 180, left: 90, right: -90 };
+      const hatchPlate = (o, { at, n0, deg, length, thick, fins: fl }) => {
+        const [[ox, oy], [dx, dy]] = ALONG[o.wall];
+        const out = OUTWARD[o.wall];
+        const a = (deg * Math.PI) / 180,
+          ca = Math.cos(a),
+          sa = Math.sin(a);
+        // In the wall's section: n out from the wall, z up. The plate's underside from the hinge out and down.
+        const tip = [n0 + length * ca, at - length * sa];
+        const plate = [[n0, at], tip, [tip[0] + thick * sa, tip[1] + thick * ca], [n0, at + thick / ca]];
+        // Each fin reaches a little up into the plate, so the two are one body.
+        const into = 0.4;
+        const fin = [[n0, at + into], [n0 + fl * length * ca, at - fl * length * sa + into], [n0, at - HATCH.finDrop * fl * length]];
+        const u0 = o.at - o.width / 2 - KIT.trim,
+          u1 = o.at + o.width / 2 + KIT.trim;
+        const origin = [ox, oy, 0],
+          dir = [dx, dy, 0];
+        const bits = [sweep(plate, out, [0, 0, 1], origin, dir, u0, u1)];
+        // The fins beside the opening: on the frame's sides, or on the wall.
+        const f = HATCH.fin;
+        for (const [v0, v1] of [[u0 + 0.5, u0 + 0.5 + f], [u1 - 0.5 - f, u1 - 0.5]]) bits.push(sweep(fin, out, [0, 0, 1], origin, dir, v0, v1));
+        return { solid: own(Manifold.union(bits)), turn: [TURN[o.wall], 180 - deg] };
+      };
+      s.openings.forEach((o, i) => {
+        const za = top + o.sill,
+          zb = za + o.height;
+        const where = openingName(o, s.openings);
+        const apart = add3(wallApart(o.wall), scale3(OUTWARD[o.wall], APART.frame + 8));
+        if (o.counter) {
+          const { solid, turn } = hatchPlate(o, { at: (o.frame ? za - k : za) - HATCH.counter[1], n0: 0, deg: 0, length: HATCH.counter[0], thick: HATCH.counter[1], fins: 0.9 });
+          local({ id: 'counter' + s.suffix + '-' + (i + 1), name: where + ' counter' + s.label, role: 'frame', solid, turn, apart });
+        }
+        if (o.flap) {
+          const { solid, turn } = hatchPlate(o, { at: o.frame ? zb + k : zb + 1, n0: o.frame ? fd : 0, deg: o.flapAngle, length: o.height + 2 * (o.frame ? k : 1), thick: HATCH.flap, fins: 0.8 });
+          local({ id: 'flap' + s.suffix + '-' + (i + 1), name: where + ' flap' + s.label, role: 'door', solid, turn, apart: add3(apart, [0, 0, 8]) });
+        }
+      });
+      // The sign: a board along the top of the front wall of the ground floor, under the eaves, in the middle.
+      if (s.n === 1 && b.sign === 'fascia') {
+        const sx0 = (W - b.signWidth) / 2,
+          sx1 = (W + b.signWidth) / 2;
+        // Under a sloped roof that reaches down past the wall, the sign stops under its underside.
+        const cap = Math.min(z1, ...[sx0, sx1].flatMap((x) => [0, -HATCH.sign].map((y) => ceilingAt(b, s, shape, x, y)))) - 0.01;
+        local({ id: 'sign', name: 'Sign', role: 'wall', solid: onWall('front', sx0, sx1, 0, HATCH.sign, cap - b.signHeight, cap), outward: [0, -1, 0], apart: add3(wallApart('front'), [0, -APART.frame, 0]) });
+      }
       // Into place on the storey below.
       for (const part of own2) parts.push(s.ox || s.oy ? { ...part, solid: own(part.solid.translate([s.ox, s.oy, 0])) } : part);
+    }
+    // A billboard: a board standing on the roof just inside its front edge,
+    // over the middle of the top storey, its foot following the roof; two
+    // fins behind it rest on the roof and hold it upright. It prints on its
+    // face, the fins up.
+    if (b.sign === 'billboard') {
+      const tops = storeys.at(-1);
+      const roofs = own(Manifold.union(parts.filter((p) => p.role === 'roof').map((p) => p.solid)));
+      const { fin: [fl, fh, fw], inset, dip } = HATCH.billboard;
+      const x0 = tops.ox + (tops.width - b.signWidth) / 2,
+        x1 = x0 + b.signWidth;
+      // The top of the roof across the board at y: the roof is level along the front.
+      const topAt = (y) => {
+        const probe = box(x0, y - 0.05, 0, x1, y + 0.05, 1e4);
+        const hit = own(roofs.intersect(probe));
+        return hit.isEmpty() ? null : hit.boundingBox().max[2];
+      };
+      const yf = tops.oy - b.overhangFront + inset,
+        yb = yf + HATCH.sign;
+      const zf = topAt(yf),
+        zb = topAt(yb),
+        zc = topAt(yb + fl);
+      if (zf === null || zb === null || zc === null) throw Error('There is no roof under the billboard.');
+      // The roof's surface there, a plane through its top at the front of the
+      // board and behind the fins (a texture is only cut into it): the
+      // board and the fins stand on that plane.
+      const k = (zc - zf) / (yb + fl - yf),
+        n = Math.hypot(k, 1);
+      const foot = Math.min(zf, zb, zc) - dip;
+      const board = box(x0, yf, foot, x1, yb, Math.max(zf, zb) + b.signHeight);
+      const fins = [x0 + 3, x1 - 3 - fw].map((fx) => sweep([[yb - 0.4, zb - dip], [yb - 0.4, zb + fh], [yb + fl, zc - dip]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], fx, fx + fw));
+      const solid = trim(own(Manifold.union([board, ...fins])), [0, -k / n, 1 / n], (zf - k * yf) / n);
+      parts.push({ id: 'sign', name: 'Billboard', role: 'wall', solid, outward: [0, 1, 0], apart: [0, 0, APART.roof + 25] });
     }
     // Keep the parts in the order of the kit; free everything else.
     const order = buildingLayout(b).parts.map((p) => p.id);

@@ -13,10 +13,13 @@ import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.j
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
+import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
+  HATCH,
   KIT,
+  SIGNS,
   MAX_ROOMS,
   MAX_UPPER,
   MIN_ROOM,
@@ -179,6 +182,22 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="pRailing"><span>Railing along the balcony</span></label>
       <label class="bd-check"><input type="checkbox" name="pRoofRailing"><span>Railing round the roof</span></label>
       <p class="bd-hint">The balcony reaches out over the pit lane, its front an angled fascia. Above it the lounge's glazing leans out towards the roof, and the roof's visor reaches out beyond it.</p></section>
+    <section class="bd-box" data-bd-card="platform" data-bd-platform hidden><h3>Viewing platform</h3>
+      ${field('vWidth', 'Width', 150, PLATFORM_LIMITS.width)}
+      ${field('vDepth', 'Depth', 110, PLATFORM_LIMITS.depth)}
+      ${field('vHeight', 'Deck height', 65, PLATFORM_LIMITS.height)}
+      <label class="bd-check"><input type="checkbox" name="vPlanks"><span>Planks on the deck</span></label>
+      <p class="bd-hint" data-bd-platform-size></p></section>
+    <section class="bd-box" data-bd-card="platformStair" data-bd-platform hidden><h3>Staircase</h3>
+      <div class="bd-seg bd-wide" role="group" aria-label="Staircase"><button type="button" data-bd-platform-stair="left">Left</button><button type="button" data-bd-platform-stair="right">Right</button><button type="button" data-bd-platform-stair="both">Both</button><button type="button" data-bd-platform-stair="none">None</button></div>
+      ${field('vStairWidth', 'Width', 30, PLATFORM_LIMITS.stairWidth, 'mm', ' data-bd-stair-width')}
+      <p class="bd-hint">A staircase runs up an end of the platform, or both ends, to a landing level with the deck at the back, a wall on its outer side. It prints lying on that wall, the steps rising straight up.</p></section>
+    <section class="bd-box" data-bd-card="platformRail" data-bd-platform hidden><h3>Railing and board</h3>
+      <label class="bd-check"><input type="checkbox" name="vRailing"><span>A railing round the deck</span></label>
+      ${field('vRailingHeight', 'Railing height', 26, PLATFORM_LIMITS.railingHeight, 'mm', ' data-bd-railing-height')}
+      <label class="bd-check"><input type="checkbox" name="vBoard"><span>A board for a sign along the front</span></label>
+      ${field('vBoardHeight', 'Board height', 18, PLATFORM_LIMITS.boardHeight, 'mm', ' data-bd-board-height')}
+      <p class="bd-hint">The railings print flat and push into pockets along the edges of the deck, open at the top of the staircase. The board is glued on the front frame under the deck, flush with its edge.</p></section>
     <section class="bd-box" data-bd-card="marshal" data-bd-marshal hidden><h3>Marshal post</h3>
       ${field('mWidth', 'Width', 80, MARSHAL_POST_LIMITS.width)}
       ${field('mDepth', 'Depth', 72, MARSHAL_POST_LIMITS.depth)}
@@ -283,7 +302,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-seg bd-wide" role="group" aria-label="Wall">${WALLS.map((w) => `<button type="button" data-bd-wall="${w}">${WALL_NAMES[w]}</button>`).join('')}</div>
       <div class="bd-openings"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add="window">${icon('plus')}Window</button><button type="button" class="bd-add" data-bd-add="door">${icon('plus')}Door</button></div>
-      <p class="bd-hint">Each is a hole in the wall. Place is the middle of the opening, measured from the left end of the wall as you look at it from outside. A frame is a part of its own, glued on around the opening.</p></section>
+      <label class="bd-row"><span>Sign</span><select name="sign">${SIGNS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
+      <div data-bd-sign-size>
+      ${field('signWidth', 'Sign width', 80, BUILDING_LIMITS.signWidth)}
+      ${field('signHeight', 'Sign height', 14, BUILDING_LIMITS.signHeight)}
+      </div>
+      <p class="bd-hint">Each is a hole in the wall. Place is the middle of the opening, measured from the left end of the wall as you look at it from outside. A frame is a part of its own, glued on around the opening. A window makes a serving hatch with a counter under it and a flap propped open over it: each prints flat, and two small fins on it set its angle against the wall. A sign is a board for the name of a stall, in the middle of the front: along the top of the front wall under the eaves, or a billboard standing up on the roof at its front edge, its height above the roof, held by two fins behind it.</p></section>
     <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
       <div class="bd-cuts"></div>
       <p class="bd-hint">A part longer than your plate is cut into pieces that join like a puzzle: dovetail tabs, or along the joints of a brick or block wall so the seam is one more joint. Move a cut anywhere in its range: both pieces still fit the plate, with the tab. A cut may run through a window or a door, not along its side.</p></section>
@@ -303,19 +327,48 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isGantry = () => building.kind === 'gantry';
   const isPits = () => building.kind === 'pitmodule';
   const isMarshal = () => building.kind === 'marshalpost';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal();
+  const isPlatform = () => building.kind === 'platform';
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
     if (isGantry()) drawGantry();
     if (isPits()) drawPits();
     if (isMarshal()) drawMarshal();
+    if (isPlatform()) drawPlatform();
+  }
+  const PLATFORM_FIELDS = [['vWidth', 'width'], ['vDepth', 'depth'], ['vHeight', 'height'], ['vStairWidth', 'stairWidth'], ['vRailingHeight', 'railingHeight'], ['vBoardHeight', 'boardHeight']];
+  const PLATFORM_CHECKS = [['vPlanks', 'planks'], ['vRailing', 'railing'], ['vBoard', 'board']];
+  function fillPlatform(p) {
+    const e = form.elements;
+    for (const [k, key] of PLATFORM_FIELDS) e[k].value = p[key];
+    for (const [k, key] of PLATFORM_CHECKS) e[k].checked = p[key];
+    drawPlatform();
+  }
+  function drawPlatform() {
+    const p = building;
+    for (const b of host.querySelectorAll('[data-bd-platform-stair]')) b.setAttribute('aria-pressed', String(b.dataset.bdPlatformStair === p.stair));
+    $('[data-bd-stair-width]').hidden = p.stair === 'none';
+    $('[data-bd-railing-height]').hidden = !p.railing;
+    $('[data-bd-board-height]').hidden = !p.board;
+    const [x0, y0, x1, y1] = platformFootprint(p);
+    const { steps } = platformStair(p);
+    $('[data-bd-platform-size]').textContent =
+      'A deck ' + fmt(p.width) + ' × ' + fmt(p.depth) + ' mm, ' + fmt(p.height) + ' mm above the table' + (p.stair === 'none' ? ', no staircase' : ', ' + steps + ' steps up' + (p.stair === 'both' ? ' at each end' : '')) + '. On the table it takes ' + fmt(x1 - x0) + ' × ' + fmt(y1 - y0) + ' mm. Four braced frames stand under it, their tabs up into pockets in its underside.';
+  }
+  function readPlatform() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const p = { kind: 'platform', stair: building.stair };
+    for (const [k, key] of PLATFORM_FIELDS) p[key] = num(e[k]);
+    for (const [k, key] of PLATFORM_CHECKS) p[key] = e[k].checked;
+    return p;
   }
   const MARSHAL_FIELDS = [['mWidth', 'width'], ['mDepth', 'depth'], ['mDeck', 'deckHeight'], ['mWall', 'wallHeight'], ['mEntrance', 'entrance'], ['mNumber', 'number'], ['mRoom', 'roomHeight'], ['mFall', 'fall'], ['mOverhang', 'overhang']];
   const MARSHAL_CHECKS = [['mLadder', 'ladder'], ['mNumbers', 'numbers']];
@@ -514,6 +567,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('opHeight', 'Height', o.height, [8, s.height])}
   ${o.type === 'window' ? field('sill', 'Up from the floor', o.sill, [0, s.height]) : ''}
   <label class="bd-check"><input type="checkbox" name="frame"${o.frame ? ' checked' : ''}><span>Frame</span></label>
+  ${o.type === 'window' ? `<label class="bd-check"><input type="checkbox" name="counter"${o.counter ? ' checked' : ''}><span>Counter under it</span></label>
+  <label class="bd-check"><input type="checkbox" name="flap"${o.flap ? ' checked' : ''}><span>Flap propped open over it</span></label>
+  ${o.flap ? field('flapAngle', 'Flap angle, down from level', o.flapAngle, HATCH.flapAngle, '°') : ''}` : ''}
 </div>`,
       );
     const where = building.upper.length ? (storey ? ' of storey ' + (storey + 1) : ' of the ground floor') : '';
@@ -525,6 +581,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isGantry()) return readGantry();
     if (isPits()) return readPits();
     if (isMarshal()) return readMarshal();
+    if (isPlatform()) return readPlatform();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -536,7 +593,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         at: num(get('at')),
         width: num(get('opWidth')),
         height: num(get('opHeight')),
-        ...(o.type === 'window' && { sill: num(get('sill')) }),
+        ...(o.type === 'window' && { sill: num(get('sill')), counter: get('counter').checked, flap: get('flap').checked, ...(get('flapAngle') && { flapAngle: num(get('flapAngle')) }) }),
         frame: get('frame').checked,
       };
     });
@@ -569,6 +626,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       roofRailing: e.roofRailing.checked,
       numbers: e.numbers.checked,
       firstNumber: num(e.firstNumber),
+      sign: e.sign.value,
+      signWidth: num(e.signWidth),
+      signHeight: num(e.signHeight),
       cuts: readCuts(building),
     };
   }
@@ -589,8 +649,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isGantry()) drawGantry();
     else if (isPits()) drawPits();
     else if (isMarshal()) drawMarshal();
+    else if (isPlatform()) drawPlatform();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
+      $('[data-bd-sign-size]').hidden = building.sign === 'none';
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
       const walls = storeyOf(building, storey);
       for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
@@ -762,7 +824,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // The settings of a part, on the right: its storey and wall chosen, its card in view.
   function focusPart(id) {
     const wallOf = /^(front|back|left|right)(\d?)(?:-\d+)?$/.exec(id),
-      frameOf = /^frame(\d?)-(\d+)$/.exec(id),
+      frameOf = /^(?:frame|counter|flap)(\d?)-(\d+)$/.exec(id),
       storeyOfPart = /^(?:floor|brace|divide)(\d?)/.exec(id);
     let card = null,
       k = storey,
@@ -772,6 +834,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isGantry()) card = /^beam/.test(id) ? 'gantryBeam' : /^deck/.test(id) ? 'gantryBridge' : 'gantry';
     else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
+    else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
       w = wallOf[1];
@@ -780,6 +843,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       k = frameOf[1] ? Number(frameOf[1]) - 1 : 0;
       opening = Number(frameOf[2]) - 1;
       w = storeyOf(building, k)?.openings[opening]?.wall ?? wall;
+      card = 'openings';
+    } else if (id === 'sign') {
+      k = 0;
+      w = 'front';
       card = 'openings';
     } else if (/^floor/.test(id)) {
       k = Number(/^floor(\d)/.exec(id)[1]) - 1;
@@ -834,6 +901,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'gantry') return fillGantry(b);
     if (b.kind === 'pitmodule') return fillPits(b);
     if (b.kind === 'marshalpost') return fillMarshal(b);
+    if (b.kind === 'platform') return fillPlatform(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -841,6 +909,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.roofRailing.checked = b.roofRailing;
     form.elements.numbers.checked = b.numbers;
     form.elements.firstNumber.value = b.firstNumber;
+    form.elements.sign.value = b.sign;
+    form.elements.signWidth.value = b.signWidth;
+    form.elements.signHeight.value = b.signHeight;
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();
@@ -929,6 +1000,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdPlatformStair) {
+        await rebuild({ ...readPlatform(), stair: b.dataset.bdPlatformStair });
+        drawPlatform();
       } else if (b.dataset.bdMarshalWalls) {
         await rebuild({ ...readMarshal(), walls: b.dataset.bdMarshalWalls });
         drawMarshal();

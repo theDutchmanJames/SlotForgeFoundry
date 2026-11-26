@@ -256,6 +256,37 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
   await host.locator('[data-bd-part="roof"]').click();
   await page.waitForFunction(() => document.querySelector('[data-bd-card="marshalRoof"]').classList.contains('bd-flash'));
+  // A viewing platform: the staircase moves to the other end, or goes.
+  await host.locator('[data-bd-preset="platform"]').click();
+  await host.locator('[data-bd-part="rail-right"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="platformStair"]').isVisible() && (await host.locator('[data-bd-card="marshal"]').isHidden()));
+  assert.match(await host.locator('[data-bd-platform-size]').textContent(), /A deck 150 × 110 mm, 65 mm above the table, 10 steps up/);
+  await host.locator('[data-bd-platform-stair="both"]').click();
+  await host.locator('[data-bd-part="stair-right"]').waitFor();
+  assert.ok(await host.locator('[data-bd-part="stair-left"]').count());
+  await host.locator('[data-bd-platform-stair="none"]').click();
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part^="stair"]'));
+  assert.ok(await host.locator('[data-bd-stair-width]').isHidden());
+  assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
+  await host.locator('[data-bd-part="board"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="platformRail"]').classList.contains('bd-flash'));
+  // A food stall: serving hatches with a counter and a flap, a sign.
+  await host.locator('[data-bd-preset="stall-container"]').click();
+  await host.locator('[data-bd-part="flap-2"]').waitFor();
+  assert.ok((await setting('sign').inputValue()) === 'billboard' && (await host.locator('[data-bd-sign-size]').isVisible()));
+  assert.match(await host.locator('[data-bd-part="sign"]').textContent(), /Billboard/);
+  await setting('sign').selectOption('fascia');
+  await page.waitForFunction(() => /^Sign/.test(document.querySelector('[data-bd-part="sign"] b')?.textContent ?? ''));
+  await setting('sign').selectOption('none');
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="sign"]'));
+  assert.ok(await host.locator('[data-bd-sign-size]').isHidden());
+  await host.locator('[data-bd-part="counter-1"]').click();
+  // Its window's row in the card lights up.
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="openings"] [data-op="0"]')?.classList.contains('bd-flash'));
+  const flap = host.locator('[data-op="0"] [name="flap"]');
+  assert.ok(await flap.isChecked());
+  await flap.uncheck();
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="flap-1"]'));
   // A gantry over the track: a type to choose, its own cards.
   await host.locator('[data-bd-preset="gantry-start"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();

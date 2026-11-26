@@ -15,6 +15,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
+  if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -50,6 +51,10 @@ export function kitNotes(name, b, parts, sizes) {
         'Push the floor frame of storey ' + (i + 2) + ' onto the underside of its floor, each tab up into its slot until it is flush, with a drop of glue. Lay the floor on the walls below, the frame inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top, and glue them as you did below.',
     ),
     ...(framed ? ['Glue each frame around its window or door on the outside of the wall; a window frame has the cross.'] : []),
+    ...(parts.some((p) => /^counter/.test(p.id)) ? ['Glue each counter under its window, level, its fins flat against the wall below it.'] : []),
+    ...(parts.some((p) => /^flap/.test(p.id)) ? ['Glue each flap over its window, propped open: the back edge of its two fins against the wall' + (framed ? ' or the frame' : '') + ' sets its angle.'] : []),
+    ...(b.sign === 'fascia' ? ['Glue the sign along the top of the front wall, under the eaves, for the name of the stall.'] : []),
+    ...(b.sign === 'billboard' ? ['Stand the billboard on the roof at its front edge, its foot following the roof and its two fins resting on the roof behind it, and glue it.'] : []),
     ...(parts.some((p) => /^number/.test(p.id))
       ? [(b.upper?.[0]?.balcony ? 'Glue each bay number under the front edge of the balcony, over its door.' : 'Glue each bay number on the wall above its door.') + ' Paint the raised number, or print the plaque in two colours.']
       : []),
@@ -80,6 +85,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Printing',
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
+    ...(parts.some((p) => /^(counter|flap)/.test(p.id)) ? ['- A counter or a flap lies on its top, its two fins standing up from it.'] : []),
     '- The base prints upside down. ' + andList([sloped ? 'The roof panels' : 'The roof', ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) + ' print the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.' +
       (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : '') +
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
@@ -227,5 +233,36 @@ function marshalNotes(name, m, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the number before you glue the disc on, or print it in two colours.',
+  ].join('\n');
+}
+
+// The notes of a viewing platform.
+function platformNotes(name, p, parts, sizes) {
+  const list = parts.map((q) => '- ' + q.name + (sizes[q.id] ? ': ' + sizes[q.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const steps = [
+    'Stand the four frames on a flat table, the front and the back outside the two ends, and glue the corners.',
+    'Lay the deck on top, the tabs of the frames up into the pockets underneath: it holds them square. Glue it.',
+    ...(p.stair !== 'none' ? [(p.stair === 'both' ? 'Glue a staircase against each end' : 'Glue the staircase against the ' + p.stair + ' end') + ', its landing level with the deck at the back, its post and its foot on the table.'] : []),
+    ...(p.railing ? ['Push the railings into the pockets along the edges of the deck, the front and the back first, then the ends between them, and glue them.' + (p.stair === 'both' ? ' Both ends are open at the top of their staircases.' : p.stair !== 'none' ? ' The ' + p.stair + ' end is open at the top of the staircase.' : '')] : []),
+    ...(p.board ? ['Glue the board on the front frame, under the deck, flush with its front edge, for a sign.'] : []),
+    'Stand the platform beside the track, its front towards the road.',
+  ];
+  return [
+    name + ' · SlotForge Foundry viewing platform kit',
+    '',
+    'A deck ' + fmt(p.width) + ' × ' + fmt(p.depth) + ' mm, ' + fmt(p.height) + ' mm above the table' + (p.stair === 'both' ? ', a staircase up each end' : p.stair !== 'none' ? ', a staircase up its ' + p.stair + ' end' : '') + '.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The frames, the railings and the board lie flat; the deck prints the right way up, its planks on top.',
+    ...(p.stair !== 'none' ? ['- ' + (p.stair === 'both' ? 'Each staircase' : 'The staircase') + ' lies on its outer wall, the steps rising straight up.'] : []),
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the frames before you put the deck on.',
   ].join('\n');
 }

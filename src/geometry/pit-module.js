@@ -11,6 +11,8 @@
 // x along the row, y from the front of the columns back (the pit lane at
 // negative y), z up.
 
+import { kitShapes } from './kit-shapes.js';
+
 export const PIT_MODULE_DEFAULTS = Object.freeze({
   kind: 'pitmodule',
   bays: 3,
@@ -267,25 +269,8 @@ export function buildPitModule(wasm, input) {
     // Railings: flat panels, a solid band, posts and a top rail, two tabs
     // down into pockets: along the front of the balcony and round the roof.
     const R = PIT.rail;
-    const railing = (x0, x1, y, z, out, inset = R.inset) => {
-      const len = x1 - x0;
-      const B = (u0, v0, w0, u1, v1, w1) => own(Manifold.cube([u1 - u0, v1 - v0, w1 - w0]).translate([u0, v0, w0]));
-      const bits = [B(0, 0, 0, len, R.band, R.thick), B(0, R.height - R.post, 0, len, R.height, R.thick)];
-      const posts = Math.max(2, Math.ceil(len / R.pitch) + 1);
-      for (let k = 0; k < posts; k++) {
-        const u = (k * (len - R.post)) / (posts - 1);
-        bits.push(B(u, R.band - 0.01, 0, u + R.post, R.height - R.post + 0.01, R.thick));
-      }
-      const at = [0.2 * len, 0.8 * len];
-      for (const u of at) bits.push(B(u - 3, -R.tab, 0, u + 3, 0.01, R.thick));
-      const inward = out < 0 ? 1 : -1;
-      const yFace = y + inward * inset;
-      // u along x; v up; w in from the edge.
-      const place = (solid) => own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, inward, 0, 0, x0, yFace, z, 1]));
-      const panel = place(own(Manifold.union(bits)));
-      const pockets = at.map((u) => place(B(u - 3 - 0.2, -R.tab - 0.2, -0.2, u + 3 + 0.2, 0.5, R.thick + 0.2)));
-      return { panel, pockets };
-    };
+    const { railing: panelAlong } = kitShapes(wasm, own);
+    const railing = (x0, x1, y, z, out, inset = R.inset) => panelAlong({ from: [x0, y], dir: [1, 0], len: x1 - x0, inward: [0, out < 0 ? 1 : -1], z, inset, spec: R });
     const railings = [];
     for (let i = 0; i < m.bays; i++) {
       const x0 = i * W + 0.1,
