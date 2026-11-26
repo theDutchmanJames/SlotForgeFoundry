@@ -6,7 +6,7 @@
 // border, so the doorstep meets the road.
 import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
-import { STAND, standDepth } from './geometry/grandstand.js';
+import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
 import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
@@ -101,8 +101,10 @@ export function shapeOf(b) {
     const D = standDepth(b),
       ahead = b.roof === 'canopy' ? STAND.reach : 0;
     if (!b.curve) {
-      outline = rect(0, -ahead, b.length, D);
-      front = { p: [b.length / 2, -ahead], f: [0, -1] };
+      // With its staircases beside it and its back railing.
+      const [x0, y0, x1, y1] = standExtent(b);
+      outline = rect(x0, y0, x1, y1);
+      front = { p: [b.length / 2, y0], f: [0, -1] };
     } else {
       const { radius: R, angle, facing } = b.curve;
       const A = (angle * Math.PI) / 180,

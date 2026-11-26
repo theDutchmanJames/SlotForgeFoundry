@@ -826,7 +826,7 @@ test('wood: planks and shingles step from row to row, the lower edge of each pro
 test('the standard buildings are good buildings: each builds, one body a part, and fits the plate once cut', async () => {
   const { BUILDING_PRESETS, pitRow } = await import('../src/building-presets.js');
   const plate = { width: 200, depth: 200, margin: 0 };
-  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'tower', 'vip', 'marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'gantry-start', 'gantry-lattice', 'gantry-half', 'footbridge', 'platform', 'platform-both', 'platform-plain', 'walkway', 'walkway-towers', 'stand-curved']);
+  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'tower', 'vip', 'marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'stand-raised', 'stand-mini', 'gantry-start', 'gantry-lattice', 'gantry-half', 'footbridge', 'platform', 'platform-both', 'platform-plain', 'walkway', 'walkway-towers', 'stand-curved']);
   for (const preset of [...BUILDING_PRESETS, { id: 'nine bays', building: pitRow(9) }])
     withParts(
       preset.building,

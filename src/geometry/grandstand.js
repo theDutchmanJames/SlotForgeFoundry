@@ -4,7 +4,11 @@
 // hollow stepped shell, 3 mm thick, cut into sections that each print
 // standing on their end: the stepped side lies on the plate and the rows
 // rise straight up, so nothing overhangs. The sections join end to end with
-// two small tabs; the roof and its posts print flat. Toy proportions for 1:32.
+// two small tabs; the roof and its posts print flat. A straight stand can be
+// raised on braced frames that print flat, have a staircase up an end and
+// railings round its sides and back, glued on. Toy proportions for 1:32.
+
+import { kitShapes } from './kit-shapes.js';
 
 export const GRANDSTAND_DEFAULTS = Object.freeze({
   kind: 'grandstand',
@@ -14,12 +18,16 @@ export const GRANDSTAND_DEFAULTS = Object.freeze({
   rowRise: 9,
   frontHeight: 12, // the first row above the table
   seats: true, // a bench on each row
+  backrests: false, // a back to each bench
   aisles: 1, // aisles with half steps, spread evenly
   backHeight: 15, // the back wall above the last row
   roof: 'none', // 'none' or 'canopy'
   roofHeight: 50, // the canopy above the last row
   curve: null, // { radius: at the front, angle: degrees, facing: 'in' | 'out' }
   sectionLength: 120, // the longest section, as it stands on the plate
+  raised: 0, // the stand on braced frames this high, or 0 on the table
+  stairs: 'none', // a staircase up an end: 'none', 'left', 'right' or 'both'
+  railings: false, // railings round the sides and the back
 });
 export const GRANDSTAND_LIMITS = Object.freeze({
   length: [60, 1500],
@@ -31,6 +39,7 @@ export const GRANDSTAND_LIMITS = Object.freeze({
   backHeight: [6, 60],
   roofHeight: [30, 120],
   sectionLength: [40, 300],
+  raised: [0, 100],
 });
 export const STAND = Object.freeze({
   shell: 3, // the stepped shell, the parapet and the back wall
@@ -42,6 +51,10 @@ export const STAND = Object.freeze({
   post: 4, // a canopy post, square
   roof: 3, // the canopy, thick
   reach: 6, // the canopy beyond the front row
+  backrest: [2, 7, 5], // a bench's back: thick, above the bench at least, above the next row at least
+  frame: { member: 4, brace: 3, bay: 40, play: 0.15 }, // the frames under a raised stand
+  rail: { height: 14, bar: 2.5, glue: 10 }, // railings: above the walls, their bars, the back railing's band glued on
+  stair: { width: 24, rise: 8, tread: [6, 10], slab: 5, post: 5, wall: [3, 12] }, // a staircase up an end
 });
 const LABELS = {
   length: 'Length',
@@ -53,6 +66,7 @@ const LABELS = {
   backHeight: 'Back wall height',
   roofHeight: 'Canopy height',
   sectionLength: 'Section length',
+  raised: 'Raised',
 };
 
 /** The grandstand as kept: known settings only, each checked. */
@@ -63,6 +77,15 @@ export function validateGrandstand(input) {
     if (!Number.isFinite(g[key]) || g[key] < min || g[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (key === 'rows' || key === 'aisles' ? '' : ' mm') + '.');
   if (!Number.isInteger(g.rows) || !Number.isInteger(g.aisles)) throw Error('Rows and aisles are whole numbers.');
   if (typeof g.seats !== 'boolean') throw Error('Choose whether the rows have benches.');
+  if (typeof g.backrests !== 'boolean' || typeof g.railings !== 'boolean') throw Error('Choose whether the benches have backs and the stand railings.');
+  if (g.backrests && !g.seats) throw Error('Backs are for benches: choose benches too.');
+  if (g.backrests && g.rowDepth < 16) throw Error('Benches with backs need rows at least 16 mm deep.');
+  if (g.raised > 0 && g.raised < 20) throw Error('Raised must be 0, on the table, or between 20 and 100 mm.');
+  if (!['none', 'left', 'right', 'both'].includes(g.stairs)) throw Error('Choose a staircase for the grandstand from the list.');
+  if (g.curve !== null && (g.raised > 0 || g.stairs !== 'none' || g.railings)) throw Error('A raised stand, a staircase and railings are for a straight grandstand.');
+  // One step is no staircase, and its slab would not fit under it.
+  if (g.stairs !== 'none' && standStair(g).steps < 2) throw Error('A staircase needs the last row more than ' + STAND.stair.rise + ' mm up.');
+  if (g.railings && g.roof === 'canopy') throw Error('Railings are for a stand open to the sky: under a canopy its back wall is high.');
   if (!['none', 'canopy'].includes(g.roof)) throw Error('Choose a roof for the grandstand from the list.');
   if (g.curve !== null) {
     const c = g.curve;
@@ -95,8 +118,33 @@ export function sizeLine(b) {
 
 /** How deep the stand is, from the front of the parapet to the back of its back wall. */
 export const standDepth = (g) => STAND.shell + g.rows * g.rowDepth + STAND.shell;
-/** How high its back wall stands: above the last row, or up to the canopy. */
-export const standHeight = (g) => g.frontHeight + (g.rows - 1) * g.rowRise + (g.roof === 'canopy' ? g.roofHeight : g.backHeight);
+/** How high its back wall stands above the bottom of the shell: above the last row, or up to the canopy. */
+const wallTop = (g) => g.frontHeight + (g.rows - 1) * g.rowRise + (g.roof === 'canopy' ? g.roofHeight : g.backHeight);
+/** How high its back wall stands above the table, raised or not. */
+export const standHeight = (g) => g.raised + wallTop(g);
+/** Which ends have a staircase. */
+export const stairEnds = (g) => ({ none: [], left: ['left'], right: ['right'], both: ['left', 'right'] })[g.stairs];
+/**
+ * A staircase up an end, from the table to the last row: as many steps as
+ * it takes, no higher than STAND.stair.rise, over the depth of the stand if
+ * they are not too shallow, else reaching out in front of it.
+ */
+export function standStair(g) {
+  const top = g.raised + g.frontHeight + (g.rows - 1) * g.rowRise;
+  const steps = Math.ceil(top / STAND.stair.rise - 1e-9),
+    [least, most] = STAND.stair.tread;
+  const tread = Math.min(most, Math.max(least, standDepth(g) / steps));
+  return { top, steps, rise: top / steps, tread, y0: standDepth(g) - steps * tread };
+}
+/** A straight stand's outline on the table, [x0, y0, x1, y1]: its staircases beside it, its back railing behind. */
+export function standExtent(g) {
+  const ends = stairEnds(g),
+    S = STAND.stair.width;
+  const x0 = ends.includes('left') ? -S : 0,
+    x1 = g.length + (ends.includes('right') ? STAND.shell + S : 0);
+  const y0 = Math.min(g.roof === 'canopy' ? -STAND.reach : 0, ends.length ? standStair(g).y0 : 0);
+  return [x0, y0, x1, standDepth(g) + (g.railings ? STAND.rail.bar : 0)];
+}
 
 /**
  * The side profile of the stand, in (y from the front, z up): the hollow
@@ -114,7 +162,7 @@ export function profile(g, aisle = false) {
     solid.push([r.y0, 0, r.y1, r.z]);
   }
   const back = s + g.rows * g.rowDepth;
-  solid.push([back, 0, back + s, standHeight(g)]);
+  solid.push([back, 0, back + s, wallTop(g)]);
   // The hollow under the rows, open to the table: under each row less the
   // shell of its tread, and of its riser, the step up from the row before;
   // under the riser, as high as the row before reaches.
@@ -132,9 +180,49 @@ export function profile(g, aisle = false) {
   for (let i = 0; i < g.rows; i++) {
     const r = row(i);
     if (aisle) rects.push([r.y0 + g.rowDepth / 2, r.z - 0.01, r.y1, r.z + g.rowRise / 2]);
-    else if (g.seats) rects.push([r.y1 - STAND.bench[0], r.z - 0.01, r.y1, r.z + STAND.bench[1]]);
+    else if (g.seats && g.backrests) {
+      // Its back stands against the step up behind it (the back wall, on the
+      // last row), rising clear above the next row so it reads as a back.
+      const [bt, bh, above] = STAND.backrest;
+      const top = r.z + Math.max(STAND.bench[1] + bh, i < g.rows - 1 ? g.rowRise + above : 0);
+      rects.push([r.y1 - bt - STAND.bench[0], r.z - 0.01, r.y1 - bt + 0.01, r.z + STAND.bench[1]], [r.y1 - bt, r.z - 0.01, r.y1 + 0.01, top]);
+    } else if (g.seats) rects.push([r.y1 - STAND.bench[0], r.z - 0.01, r.y1, r.z + STAND.bench[1]]);
   }
   return { solid, hollow, top: rects };
+}
+
+/**
+ * A side railing, in the plane of an end of the stand (y, z), as outlines:
+ * a rail from above the parapet up to above the back wall, one halfway
+ * under it, and posts up from the parapet, from each row and from the back wall.
+ */
+function sideRail(g) {
+  const s = STAND.shell,
+    D = standDepth(g),
+    { height: RH, bar } = STAND.rail;
+  const zf = g.frontHeight + STAND.parapet + RH,
+    zb = wallTop(g) + RH;
+  const at = (y) => zf + ((zb - zf) * y) / D;
+  const band = (drop) => [[0, zf - drop - bar], [D, zb - drop - bar], [D, zb - drop], [0, zf - drop]];
+  const outlines = [band(0), band(RH / 2)];
+  const post = (y0, z0) => outlines.push([[y0, z0 - 0.01], [y0 + s, z0 - 0.01], [y0 + s, at(y0 + s)], [y0, at(y0)]]);
+  post(0, g.frontHeight + STAND.parapet);
+  for (let i = 1; i < g.rows; i++) post(s + i * g.rowDepth, g.frontHeight + i * g.rowRise);
+  post(D - s, wallTop(g));
+  return outlines;
+}
+
+/** The parts of a raised stand under it: a frame along the front and the back under each section, a frame across at each end and each joint. */
+function frameSpans(g) {
+  const sections = sectionSpans(g),
+    last = sections.length - 1;
+  // The last frames along reach under the end panel too.
+  const along = sections.map(([a, b], i) => [a, i === last ? b + STAND.shell : b]);
+  const F = STAND.shell,
+    pl = STAND.frame.play;
+  // Across: just inside each end, and astride each joint.
+  const across = [STAND.shell + pl, ...sections.slice(0, -1).map(([, b]) => b - F / 2), g.length - F - pl];
+  return { along, across };
 }
 
 /** The parts of a grandstand, without geometry: its sections, and the canopy and its posts. */
@@ -147,6 +235,13 @@ export function grandstandLayout(input) {
     canopySpans(g).forEach((_, i, all) => parts.push({ id: 'canopy-' + (i + 1), name: 'Canopy' + (all.length > 1 ? ' ' + (i + 1) + ' of ' + all.length : ''), role: 'roof' }));
     postPlaces(g).forEach((_, i) => parts.push({ id: 'post-' + (i + 1), name: 'Canopy post ' + (i + 1), role: 'frame' }));
   }
+  if (g.raised > 0) {
+    const { along, across } = frameSpans(g);
+    along.forEach((_, i) => parts.push({ id: 'frame-front-' + (i + 1), name: 'Frame, front ' + (i + 1), role: 'frame' }, { id: 'frame-back-' + (i + 1), name: 'Frame, back ' + (i + 1), role: 'frame' }));
+    across.forEach((_, i) => parts.push({ id: 'frame-' + (i + 1), name: 'Cross frame ' + (i + 1), role: 'frame' }));
+  }
+  for (const end of stairEnds(g)) parts.push({ id: 'stair-' + end, name: 'Staircase, ' + end, role: 'wall' });
+  if (g.railings) sections.forEach((_, i) => parts.push({ id: 'rail-back-' + (i + 1), name: 'Back railing ' + (i + 1), role: 'wall' }));
   return { building: g, parts, sections };
 }
 
@@ -216,14 +311,22 @@ export function buildGrandstand(wasm, input) {
     const halfSteps = profile(g, true).top;
     const plain = shape(false),
       bare = shape(true, false);
-    // The profile closed, for the ends: the shell without its hollow.
-    const closed = (() => {
+    // The profile closed, for the ends: the shell without its hollow; with
+    // its side railing, where there is no staircase at that end.
+    const { poly, sweep, truss, railing } = kitShapes(wasm, own);
+    const closedFor = (end) => {
       const p = profile(g, false);
-      return p.top.length ? own(cs(p.solid).add(cs(p.top))) : cs(p.solid);
-    })();
+      let c = p.top.length ? own(cs(p.solid).add(cs(p.top))) : cs(p.solid);
+      if (g.railings && !stairEnds(g).includes(end)) c = own(c.add(own(CrossSection.union(sideRail(g).map(poly)))));
+      return c;
+    };
+    const closedStart = closedFor('left'),
+      closedEnd = closedFor('right');
+    // Raised: the shell and all on it stand on the frames.
+    const up = (m) => (g.raised ? own(m.translate([0, 0, g.raised])) : m);
     const aisles = aisleSpans(g);
     const D = standDepth(g),
-      H = standHeight(g);
+      H = wallTop(g);
     // The stretches of one section: seats and aisles, each its own profile.
     const stretches = ([a, b]) => {
       const out = [];
@@ -269,9 +372,11 @@ export function buildGrandstand(wasm, input) {
       // An aisle: the bare rows, and on each a half step. A section prints
       // standing on its start, so where an aisle begins its half steps would
       // stand out over the row below them: each begins with a 45° slope.
-      const aisleRun = (p, q, from = p) => {
+      // The same for benches with backs where they begin again after an
+      // aisle: they stand higher than its half steps.
+      const slopedRun = (tops) => (p, q, from = p) => {
         const pieces = [run(bare, p, q)];
-        for (const [y0, z0, y1, z1] of halfSteps) {
+        for (const [y0, z0, y1, z1] of tops) {
           let step = run(cs([[y0, z0, y1, z1]]), p, q);
           if (g.curve) {
             const th = from / R;
@@ -281,19 +386,23 @@ export function buildGrandstand(wasm, input) {
         }
         return own(Manifold.union(pieces));
       };
+      const aisleRun = slopedRun(halfSteps),
+        benchRun = slopedRun(profile(g, false).top);
       // Each stretch overlaps the next a hair, so on a curve two never meet face to face.
       const eps = 0.02;
       let body = own(
         Manifold.union(stretches([a, b]).map(([p, q, aisle]) => {
           const p0 = p > a ? p - eps : p,
             q0 = q < b ? q + eps : q;
-          return aisle ? aisleRun(p0, q0, p) : run(plain, p0, q0);
+          if (aisle) return aisleRun(p0, q0, p);
+          // After an aisle (a stretch that does not begin the section), backs would stand out over it.
+          return g.backrests && p > a ? benchRun(p0, q0, p) : run(plain, p0, q0);
         })),
       );
       if (i < sections.length - 1) body = own(body.add(run(tabs, b - 0.01, b + tl)));
       if (i > 0) body = own(body.subtract(run(sockets, a - 0.01, a + tl + 0.2)));
       // The first section is closed at its start, the end it prints on.
-      if (i === 0) body = own(body.add(run(closed, a, a + STAND.shell)));
+      if (i === 0) body = own(body.add(run(closedStart, a, a + STAND.shell)));
       // Where a slope meets a facet of a curve it can leave a speck of nothing: only the section is kept.
       const bodies = body.decompose();
       if (bodies.length > 1) {
@@ -308,7 +417,7 @@ export function buildGrandstand(wasm, input) {
         id: 'stand-' + (i + 1),
         name: 'Grandstand section ' + (i + 1) + ' of ' + sections.length,
         role: 'wall',
-        solid: body,
+        solid: up(body),
         // Straight: its start face down. Curved: turned so its start lies along x, then stood up on it.
         ...(g.curve ? { turn: [-startDeg, 90] } : { lie: [0, -90, 0] }),
         apart: g.curve ? [0, 0, 0] : [i * 8, 0, 0],
@@ -317,13 +426,13 @@ export function buildGrandstand(wasm, input) {
     // The far end closed by a panel of its own, glued on: printed on the
     // section it would have to bridge the hollow, so it prints flat.
     {
-      const end = run(closed, g.length, g.length + STAND.shell);
+      const end = up(run(closedEnd, g.length, g.length + STAND.shell));
       const endDeg = g.curve ? (g.length / R) * (180 / Math.PI) : 0;
       parts.push({ id: 'end', name: 'End panel', role: 'wall', solid: end, ...(g.curve ? { turn: [-endDeg, 90] } : { lie: [0, -90, 0] }), apart: g.curve ? [0, 0, 0] : [16, 0, 0] });
     }
     // The canopy: a plate over the rows on posts at the back, held by the back wall.
     if (g.roof === 'canopy') {
-      const zTop = H,
+      const zTop = standHeight(g),
         front = -STAND.reach;
       const roofCs = cs([[front, zTop, D, zTop + STAND.roof]]);
       canopySpans(g).forEach(([a, b], i, all) => {
@@ -337,8 +446,66 @@ export function buildGrandstand(wasm, input) {
         parts.push({ id: 'post-' + (i + 1), name: 'Canopy post ' + (i + 1), role: 'frame', solid: post, lie: [0, 90, 0], apart: [0, -20, 15] });
       });
     }
+    const s = STAND.shell;
+    // The frames of a raised stand: braced, printing flat. Along the front
+    // and the back under the parapet and the back wall; across, standing
+    // between them, each with its top in the hollow of the shell, which holds it square.
+    if (g.raised > 0) {
+      const { member, brace, bay, play } = STAND.frame;
+      const frame = (len) => truss(len, g.raised, { member, brace, bay, tab: [2, 0] }).shape;
+      const { along, across } = frameSpans(g);
+      along.forEach(([a, b], i) => {
+        const shape = frame(b - a);
+        parts.push({ id: 'frame-front-' + (i + 1), name: 'Frame, front ' + (i + 1), role: 'frame', solid: sweep(shape, [1, 0, 0], [0, 0, 1], [a, 0, 0], [0, 1, 0], 0, s), outward: [0, -1, 0], apart: [0, -15, 0] });
+        parts.push({ id: 'frame-back-' + (i + 1), name: 'Frame, back ' + (i + 1), role: 'frame', solid: sweep(shape, [1, 0, 0], [0, 0, 1], [a, D - s, 0], [0, 1, 0], 0, s), outward: [0, 1, 0], apart: [0, 15, 0] });
+      });
+      const hollow = profile(g, false).hollow.map(([y0, z0, y1, z1]) => [y0, Math.max(z0, -1) + g.raised, y1, z1 + g.raised]);
+      const plug = own(cs(hollow).offset(-play, 'Miter'));
+      const cross = own(CrossSection.union([own(frame(D - 2 * s).translate([s, 0])), plug]));
+      across.forEach((x, i) => {
+        parts.push({ id: 'frame-' + (i + 1), name: 'Cross frame ' + (i + 1), role: 'frame', solid: sweep(cross, [0, 1, 0], [0, 0, 1], [x, 0, 0], [1, 0, 0], 0, s), outward: [-1, 0, 0], apart: [0, 0, -10] });
+      });
+    }
+    // A staircase up an end, from the table to the last row: steps on a
+    // slab, a post under the top, a wall on its outer side. Its profile in
+    // (y, z), swept across its width; it prints on its side.
+    if (stairEnds(g).length) {
+      const { top, steps, rise, tread: t, y0 } = standStair(g);
+      const { width: S, slab, post, wall: [pt, ph] } = STAND.stair;
+      const outline = [[D, top], [y0 + (steps - 1) * t, top]];
+      for (let k = steps - 1; k >= 1; k--) outline.push([y0 + k * t, k * rise], [y0 + (k - 1) * t, k * rise]);
+      // Under the steps a slab, as thick as `slab` square to them, up to the post under the top.
+      const slope = rise / t,
+        drop = slab * Math.hypot(1, slope);
+      const zUnder = top - slab,
+        yPost = D - post;
+      const foot = y0 + drop / slope,
+        meet = Math.min(y0 + (zUnder + drop) / slope, yPost);
+      outline.push([y0, 0], [foot, 0], [meet, zUnder], [yPost, zUnder], [yPost, 0], [D, 0]);
+      const steps2d = poly(outline);
+      // Its wall follows the slab under the steps, open below it as they are.
+      const side = poly([[y0, 0], [foot, 0], [meet, zUnder], [yPost, zUnder], [yPost, 0], [D, 0], [D, top + ph], [y0 + (steps - 1) * t, top + ph], [y0, rise + ph]]);
+      const left = own(Manifold.union([sweep(steps2d, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -S + pt - 0.01, 0), sweep(side, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -S, -S + pt)]));
+      for (const end of stairEnds(g)) {
+        const right = end === 'right';
+        const solid = right ? own(own(left.mirror([1, 0, 0])).translate([g.length + s, 0, 0])) : left;
+        parts.push({ id: 'stair-' + end, name: 'Staircase, ' + end, role: 'wall', solid, outward: [right ? -1 : 1, 0, 0], apart: [right ? 20 : -20, 0, 0] });
+      }
+    }
+    // The back railing: a panel per section glued on the back of the back
+    // wall, its band down the wall, rising above it as high as the side railings.
+    if (g.railings) {
+      const { height: RH, bar, glue } = STAND.rail;
+      const spec = { thick: bar, band: glue, post: 3, height: glue + RH, pitch: 20, tab: 0.01, mid: true };
+      const last = sections.length - 1;
+      sections.forEach(([a, b], i) => {
+        const len = (i === last ? b + s : b) - a;
+        const { panel } = railing({ from: [a, D], dir: [1, 0], len, inward: [0, 1], z: standHeight(g) - glue, inset: 0, spec });
+        parts.push({ id: 'rail-back-' + (i + 1), name: 'Back railing ' + (i + 1), role: 'wall', solid: panel, outward: [0, 1, 0], apart: [0, 15, 10] });
+      });
+    }
     const keep = new Set(parts.map((p) => p.solid));
-    for (const s of temp) if (!keep.has(s)) s.delete();
+    for (const x of temp) if (!keep.has(x)) x.delete();
     return parts;
   } catch (e) {
     for (const s of temp) s.delete();

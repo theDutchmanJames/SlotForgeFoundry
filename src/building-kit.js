@@ -118,7 +118,14 @@ function standNotes(name, g, parts, sizes) {
     ...(sections > 1
       ? ['Join the sections end to end in their order, 1 of ' + sections + ' first: push the two tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table.']
       : []),
-    'Stand the grandstand on the table, its parapet towards the track.',
+    ...(parts.some((p) => /^frame/.test(p.id))
+      ? [
+          'Stand the frames: glue a front and a back frame for each section along the table, as far apart as the stand is deep, and the cross frames between them, at each end and at each joint between two sections.',
+          'Lower the grandstand onto the frames, the top of each cross frame up into the hollow under the rows, its parapet over the front frames, towards the track.',
+        ]
+      : ['Stand the grandstand on the table, its parapet towards the track.']),
+    ...(parts.some((p) => /^stair/.test(p.id)) ? ['Glue each staircase against its end of the stand, its top step level with the last row, its wall on the outside.'] : []),
+    ...(parts.some((p) => /^rail-back/.test(p.id)) ? ['Glue the back railings on the back of the back wall, their solid band down against it, one for each section, end to end.'] : []),
     ...(canopy
       ? ['Glue the canopy' + (parts.filter((p) => /^canopy/.test(p.id)).length > 1 ? ' pieces' : '') + ' on top of the back wall, reaching out over the rows, and glue the posts under its front edge, in front of the parapet.']
       : []),

@@ -294,7 +294,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('gBack', 'Back wall above the last row', 15, GRANDSTAND_LIMITS.backHeight)}
       ${field('gAisles', 'Aisles', 1, GRANDSTAND_LIMITS.aisles, '')}
       <label class="bd-check"><input type="checkbox" name="gSeats"><span>A bench on each row</span></label>
+      <label class="bd-check"><input type="checkbox" name="gBackrests"><span>Benches with backs</span></label>
       <p class="bd-hint" data-bd-stand-size></p></section>
+    <section class="bd-box" data-bd-card="standFrame" data-bd-stand hidden><h3>Frame, stairs and railings</h3>
+      <div data-bd-stand-straight>
+      ${field('gRaised', 'Raised on frames', 0, GRANDSTAND_LIMITS.raised)}
+      <label class="bd-row"><span>Staircase</span><select name="gStairs"><option value="none">None</option><option value="left">At the left end</option><option value="right">At the right end</option><option value="both">At both ends</option></select></label>
+      <label class="bd-check"><input type="checkbox" name="gRailings"><span>Railings round the sides and the back</span></label>
+      </div>
+      <p class="bd-hint" data-bd-stand-frame-hint></p></section>
     <section class="bd-box" data-bd-card="standShape" data-bd-stand hidden><h3>Shape</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Shape"><button type="button" data-bd-stand-shape="straight">Straight</button><button type="button" data-bd-stand-shape="curved">Curved</button></div>
       <div data-bd-curve>
@@ -585,6 +593,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [k, v] of [['gLength', g.length], ['gRows', g.rows], ['gRowDepth', g.rowDepth], ['gRowRise', g.rowRise], ['gFront', g.frontHeight], ['gBack', g.backHeight], ['gAisles', g.aisles], ['gRoofHeight', g.roofHeight], ['gSection', g.sectionLength]])
       e[k].value = v;
     e.gSeats.checked = g.seats;
+    e.gBackrests.checked = g.backrests;
+    e.gRaised.value = g.raised;
+    e.gStairs.value = g.stairs;
+    e.gRailings.checked = g.railings;
     e.gRoof.value = g.roof;
     if (g.curve) {
       e.gRadius.value = g.curve.radius;
@@ -600,6 +612,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.gLength.disabled = !!g.curve;
     form.elements.gLength.value = g.length;
     host.querySelector('[data-bd-canopy]').hidden = g.roof !== 'canopy';
+    $('[data-bd-stand-straight]').hidden = !!g.curve;
+    $('[data-bd-stand-frame-hint]').textContent = g.curve
+      ? 'Frames, a staircase and railings are for a straight grandstand.'
+      : 'Raised, the stand stands on braced frames: one along the front and one along the back under each section, and one across at each end and each joint, its top pushed up into the hollow of the shell, which holds it square. They print flat. A staircase climbs an end from the table to the last row and prints on its side. The side railings are part of the end panels; the back railing is glued on the back of the back wall, a panel for each section, printing flat.';
     $('[data-bd-stand-size]').textContent =
       g.rows + ' rows, ' + fmt(g.length) + ' mm long and ' + fmt(standDepth(g)) + ' mm deep. The front row is ' + fmt(g.frontHeight) + ' mm up, behind a parapet; each row is ' + fmt(g.rowRise) + ' mm higher.';
   }
@@ -616,6 +632,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       backHeight: num(e.gBack),
       aisles: num(e.gAisles),
       seats: e.gSeats.checked,
+      backrests: e.gSeats.checked && e.gBackrests.checked,
+      raised: building.curve ? 0 : num(e.gRaised),
+      stairs: building.curve ? 'none' : e.gStairs.value,
+      railings: !building.curve && e.gRailings.checked,
       roof: e.gRoof.value,
       roofHeight: num(e.gRoofHeight),
       sectionLength: num(e.gSection),
@@ -1217,6 +1237,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       } else if (b.dataset.bdStandShape) {
         const next = readStand();
         next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;
+        // Curved: no frames, staircases or railings.
+        if (next.curve) Object.assign(next, { raised: 0, stairs: 'none', railings: false });
         fitted = false;
         await rebuild(next);
         drawStand();
