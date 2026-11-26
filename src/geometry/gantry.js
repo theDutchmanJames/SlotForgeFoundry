@@ -26,8 +26,9 @@ export const GANTRY_DEFAULTS = Object.freeze({
   reach: 140, // a half gantry: how far its beam reaches from its leg
   deckWidth: 30, // a footbridge: its walkway, outside its walls
   wallHeight: 14, // and its walls, above the walkway
-  // The legs, the beam and the walkway's walls: 'solid', or 'lattice' (square
-  // tubes and girders opened with diamonds, like a steel truss).
+  // The legs, the beam and the walkway's walls: 'solid', 'lattice' (open
+  // trusses, like steel) or 'timber' (the same, its members chunkier, the
+  // board of planks, like wood).
   members: 'solid',
 });
 export const GANTRY_LIMITS = Object.freeze({
@@ -55,9 +56,13 @@ export const GANTRY = Object.freeze({
   // the girders (high, thick) and the longest panel between their posts; the
   // margin round the diamonds in a footbridge's walls.
   lattice: { leg: 22, post: 3, bar: 2.4, girder: [26, 3], pitch: 26, margin: 2 },
+  timber: { leg: 26, post: 4.5, bar: 3.4, girder: [30, 3.5], pitch: 32, margin: 2.5 },
+  plank: [4, 0.6, 0.5], // a timber board's planks: wide, the groove between them wide and deep
 });
+/** The open members of a gantry: a lattice or timber, or none for solid. */
+const openOf = (g) => (g.members === 'solid' ? null : GANTRY[g.members]);
 /** A leg's side: wider as a lattice tube. */
-export const legOf = (g) => (g.members === 'lattice' ? GANTRY.lattice.leg : GANTRY.leg);
+export const legOf = (g) => openOf(g)?.leg ?? GANTRY.leg;
 /** A foot's side: round its leg. */
 export const footOf = (g) => Math.max(g.type === 'half' ? GANTRY.foot[0] + 10 : GANTRY.foot[0], legOf(g) + 8);
 const LABELS = {
@@ -79,7 +84,7 @@ export function validateGantry(input) {
     if (!Number.isFinite(g[key]) || g[key] < min || g[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (key === 'lights' ? '' : ' mm') + '.');
   if (!Number.isInteger(g.lights)) throw Error('Start lights are a whole number.');
   if (typeof g.board !== 'boolean') throw Error('Choose whether the beam has a board.');
-  if (!['solid', 'lattice'].includes(g.members)) throw Error('Choose solid or lattice members.');
+  if (!['solid', 'lattice', 'timber'].includes(g.members)) throw Error('Choose solid, lattice or timber members.');
   if (g.type === 'start' && g.lights * 8 > g.span) throw Error('There is no room for ' + g.lights + ' start lights on a beam of ' + g.span + ' mm: at most ' + Math.floor(g.span / 8) + '.');
   return g;
 }
@@ -119,7 +124,7 @@ export function gantryLayout(input, plate = null) {
     bridge: [['stair-1', 'Staircase, left', 'wall'], ['stair-2', 'Staircase, right', 'wall'], ['deck', 'Walkway', 'floor']],
   }[g.type];
   // A lattice gantry: open legs, two girders and a board instead of a beam.
-  if (g.members === 'lattice' && g.type !== 'bridge') {
+  if (g.members !== 'solid' && g.type !== 'bridge') {
     const legs = names.filter(([id]) => id.startsWith('leg'));
     const more = [['beam-front', 'Girder, front', 'roof'], ['beam-back', 'Girder, back', 'roof'], ['beam-top', 'Girder, top', 'roof'], ...(g.board ? [['board', 'Board', 'wall']] : [])];
     return { building: g, parts: [...legs, ...more].map(([id, name, role]) => ({ id, name, role })) };
@@ -143,8 +148,8 @@ export function buildGantry(wasm, input, plate = null) {
   const L = legOf(g),
     [pinW, pinH] = GANTRY.pin,
     pl = GANTRY.play;
-  const lattice = g.members === 'lattice',
-    LT = GANTRY.lattice;
+  const lattice = g.members !== 'solid',
+    LT = openOf(g) ?? GANTRY.lattice;
   // Diamonds through a member along its length (u from u0 to u1, at its middle
   // across the height v0 to v1), as prisms through it along `through`: every
   // edge at 45°, so they print wherever the member stands or lies.
@@ -315,6 +320,13 @@ export function buildGantry(wasm, input, plate = null) {
             lights.push(own(own(Manifold.cylinder(depth + 1, r, r, 24)).rotate([-90, 0, 0]).translate([x, y1 - GANTRY.board - 1, zc])));
           }
           board = minus(board, ...lights);
+        }
+        // Timber: the board of planks, a groove along its face between each two.
+        if (g.members === 'timber') {
+          const [pw, gw, gd] = GANTRY.plank;
+          const grooves = [];
+          for (let z = zc - h / 2 + pw; z < zc + h / 2 - pw / 2; z += pw) grooves.push(B(mid - w / 2 - 1, y1 - GANTRY.board - 1, z - gw / 2, mid + w / 2 + 1, y1 - GANTRY.board + gd, z + gw / 2));
+          board = minus(board, ...grooves);
         }
         parts.push({ id: 'board', name: 'Board', role: 'wall', solid: board, outward: [0, -1, 0], apart: [0, -15, 20] });
       }

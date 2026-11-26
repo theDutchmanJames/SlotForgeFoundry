@@ -650,6 +650,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { kind: 'gantry', type: 'start', members: 'lattice', lights: 0, boardHeight: 22 },
   },
   {
+    id: 'gantry-timber',
+    name: 'Start gantry, timber',
+    note: 'Open legs and girders of chunky beams, a board of planks',
+    building: { kind: 'gantry', type: 'start', members: 'timber', lights: 0, boardHeight: 22 },
+  },
+  {
     id: 'gantry-half',
     name: 'Half gantry',
     note: 'One leg, a beam with a board reaching out over the road',

@@ -301,7 +301,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-seg bd-wide" role="group" aria-label="Type">${GANTRY_TYPES.map(([id, label]) => `<button type="button" data-bd-gantry-type="${id}">${label}</button>`).join('')}</div>
       ${field('tSpan', 'Span', 220, GANTRY_LIMITS.span)}
       ${field('tClearance', 'Clearance', 70, GANTRY_LIMITS.clearance)}
-      <label class="bd-row"><span>Members</span><select name="tMembers"><option value="solid">Solid</option><option value="lattice">Lattice, like steel</option></select></label>
+      <label class="bd-row"><span>Members</span><select name="tMembers"><option value="solid">Solid</option><option value="lattice">Lattice, like steel</option><option value="timber">Timber, like wood</option></select></label>
       <p class="bd-hint" data-bd-gantry-size></p></section>
     <section class="bd-box" data-bd-card="gantryBeam" data-bd-gantry data-bd-beam hidden><h3>Beam</h3>
       ${field('tLights', 'Start lights', 5, GANTRY_LIMITS.lights, '', ' data-bd-lights')}
@@ -670,6 +670,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[data-bd-gantry-size]').textContent =
       (g.type === 'half' ? 'Its beam reaches ' + fmt(g.reach) + ' mm out over the road' : 'Span is the clear width between the ' + (g.type === 'bridge' ? 'staircases' : 'legs') + ': the track with its borders') +
       ', ' + fmt(g.clearance) + ' mm clear underneath. On the table it takes ' + fmt(w) + ' × ' + fmt(d) + ' mm. In the Track Planner, a gantry over a straight takes the straight\'s width as its span.' +
+      (g.members === 'timber' ? ' Timber: open legs and girders like the lattice, their members chunkier, like beams of wood; the board of planks.' : '') +
       (g.members === 'lattice' ? ' Lattice: each leg an open box of four corner posts with an X in every panel, printing standing; the beam two flat lattice girders glued across the legs and a lattice top over them, a board on the front for a sign, the start lights in it.' : '');
   }
   function readGantry() {

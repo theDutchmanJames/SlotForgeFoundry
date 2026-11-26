@@ -119,7 +119,7 @@ test('lattice members: legs as tubes and the beam as a girder opened with diamon
     return a;
   };
   const plate = { width: 200, depth: 200, margin: 0 };
-  for (const settings of [{ members: 'lattice' }, { members: 'lattice', type: 'half', reach: 180 }, { members: 'lattice', type: 'bridge' }, { members: 'lattice', lights: 0, span: 400 }]) {
+  for (const settings of [{ members: 'lattice' }, { members: 'lattice', type: 'half', reach: 180 }, { members: 'lattice', type: 'bridge' }, { members: 'lattice', lights: 0, span: 400 }, { members: 'timber' }, { members: 'timber', type: 'half' }, { members: 'timber', type: 'bridge' }, { members: 'timber', span: 400, clearance: 120 }]) {
     const parts = buildGantry(wasm, settings, plate);
     try {
       const label = JSON.stringify(settings);
@@ -148,7 +148,22 @@ test('lattice members: legs as tubes and the beam as a girder opened with diamon
   } finally {
     parts.forEach((p) => p.solid.delete());
   }
-  assert.throws(() => validateGantry({ members: 'wood' }), /solid or lattice/);
+  assert.throws(() => validateGantry({ members: 'wood' }), /solid, lattice or timber/);
+  // Timber: the same open truss with chunkier members, the board of planks.
+  assert.ok(legOf({ members: 'timber' }) > legOf({ members: 'lattice' }));
+  assert.deepEqual(gantryLayout({ members: 'timber' }).parts.map((p) => p.id), gantryLayout({ members: 'lattice' }).parts.map((p) => p.id));
+  {
+    // A board less than its box: the grooves (and the light holes) cut from it; for timber the grooves too.
+    const shortOf = (members) => {
+      const kit = buildGantry(wasm, { members, lights: 0 });
+      const s = kit.find((p) => p.id === 'board').solid;
+      const { min, max } = s.boundingBox();
+      const v = (max[0] - min[0]) * (max[1] - min[1]) * (max[2] - min[2]) - s.volume();
+      kit.forEach((p) => p.solid.delete());
+      return v;
+    };
+    assert.ok(shortOf('lattice') < 0.01 && shortOf('timber') > 20, 'grooves between the planks');
+  }
   // Laid out as open legs, two girders and a board; the girders glued to the faces of the legs.
   assert.deepEqual(gantryLayout({ members: 'lattice' }).parts.map((p) => p.id), ['leg-1', 'leg-2', 'beam-front', 'beam-back', 'beam-top', 'board']);
   assert.deepEqual(gantryLayout({ members: 'lattice', type: 'half', board: false }).parts.map((p) => p.id), ['leg-1', 'beam-front', 'beam-back', 'beam-top']);
