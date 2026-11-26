@@ -52,6 +52,10 @@ export function modernPits(bays = 3, depth = 160) {
 }
 
 export const BUILDING_PRESETS = Object.freeze([
+  { id: 'connected', name: 'Connected halls and wings', note: 'Attach sections with their own heights and pitched roofs', building: { kind: 'sections' } },
+  { id: 'footprint-l', name: 'L-shaped building', note: 'Draw a wing and arrange openings on every wall', building: { kind: 'footprint', shape: 'L' } },
+  { id: 'footprint-u', name: 'U-shaped building', note: 'Two wings around an open courtyard', building: { kind: 'footprint', shape: 'U' } },
+  { id: 'footprint-t', name: 'T-shaped building', note: 'A front wing with a central extension', building: { kind: 'footprint', shape: 'T' } },
   {
     id: 'garage',
     name: 'Pit garage',

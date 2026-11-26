@@ -4,6 +4,11 @@
 // rebuilds the model; Save keeps the building in the Library and Export kit
 // downloads its STL files with notes on printing and putting it together.
 import './buildings.css';
+import { createBuildingHistory, editWalls } from './building-edit.js';
+import { createBuildingCanvas } from './building-canvas.js';
+import { addSection, removeSection } from './geometry/connected-building.js';
+import { sectionFields, readSectionFields } from './building-sections.js';
+import { FOOTPRINT_DEFAULTS } from './geometry/footprint-building.js';
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
@@ -122,6 +127,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   delete building.name;
   delete building.savedId;
   building = safe(building);
+  const history = createBuildingHistory({ building, name });
+  let accepted = structuredClone(building), buildingBusy = false, invalid = false;
 
   function load() {
     try {
@@ -139,7 +146,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
   function remember() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ ...building, name, savedId }));
+      localStorage.setItem(KEY, JSON.stringify({ ...accepted, name, savedId }));
     } catch {
       // Storage can be off; the building is still on the page.
     }
@@ -155,16 +162,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <div class="bd-parts" role="list"></div>
   <div class="bd-group">Your buildings</div>
   <div class="bd-saved"></div>
-  <div class="bd-group">Coming later</div>
-  <p class="bd-later">Grandstands, gantries and bridges over the track, billboards and a podium; clipping to the track. Place a saved building beside the track, or a row of garages over the pit bays, in the Track Planner.</p>
+  <div class="bd-group">Design and assemble</div>
+  <p class="bd-later">Use Draw to arrange windows or shape a footprint. Save buildings here to place them beside your track in the Track Planner.</p>
 </aside>
 <section class="bd-centre">
   <header><div class="bd-title"><small class="sf-eyebrow">Buildings</small><input name="buildingName" aria-label="Building name" maxlength="120"></div>
     <span class="bd-pill" data-bd-fit></span>
     <label class="bd-apart" title="Pull the parts apart to see how they fit together"><span>Exploded</span><input type="range" name="apart" min="0" max="100" step="1" value="0" aria-label="Exploded view: how far apart the parts are"></label>
-    <div class="bd-seg" role="group" aria-label="View"><button type="button" data-bd-view="model">Model</button><button type="button" data-bd-view="plate">Parts on the plate</button></div>
+    <button type="button" class="sf-btn ghost" data-bd="undo" title="Undo building edit (Ctrl+Z)">Undo</button><button type="button" class="sf-btn ghost" data-bd="redo" title="Redo building edit (Ctrl+Shift+Z)">Redo</button>
+    <div class="bd-seg" role="group" aria-label="View"><button type="button" data-bd-view="model">Model</button><button type="button" data-bd-view="draw">Draw</button><button type="button" data-bd-view="plate">Parts on the plate</button></div>
   </header>
-  <div class="bd-stage"><div class="bd-model"></div><div class="bd-plates" hidden></div><div class="bd-message" role="status" hidden></div></div>
+  <div class="bd-stage"><div class="bd-model"></div><div class="bd-canvas" hidden></div><div class="bd-plates" hidden></div><div class="bd-message" role="status" hidden></div></div>
   <footer><div class="bd-chips" data-bd-chips></div><span class="bd-grow"></span>
     <button type="button" class="sf-btn ghost" data-bd="new">${icon('plus')}New building</button>
     <button type="button" class="sf-btn soft" data-bd="save">${icon('library')}Save to Library</button>
@@ -173,6 +181,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <form class="bd-form" autocomplete="off">
+    <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
+    <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
+      <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option></select></label>
+      ${[['width','Width',100,1200],['depth','Depth',100,1200],['wing','Wing width',40,500],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max])).join('')}
+      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall. Shaped buildings have one storey, plain walls and a flat roof. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise.</p>
+    </section>
     <section class="bd-box" data-bd-card="pits" data-bd-pits hidden><h3>Pit building</h3>
       ${field('pBays', 'Bays', 3, PIT_MODULE_LIMITS.bays, '')}
       ${field('pBayWidth', 'Bay width', 110, PIT_MODULE_LIMITS.bayWidth)}
@@ -449,6 +463,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 </aside></div>`;
 
   const form = $('.bd-form');
+  form.elements['fp-play'].step = '0.05';
+  form.elements['fp-wall'].step = '0.1';
+  form.elements['fp-roof'].step = '0.1';
 
   const isStand = () => building.kind === 'grandstand';
   const isGantry = () => building.kind === 'gantry';
@@ -462,13 +479,32 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isSwitchback() && !isBench() && !isTyre() && !isPlatform() && !isWalkway() && !isBays();
+  let section = 0;
+  const isSections = () => building.kind === 'sections';
+  const fillSections = () => { section = Math.min(section, building.sections.length - 1); $('[data-bd-sections]').innerHTML = sectionFields(building, section); };
+  const isFootprint = () => building.kind === 'footprint';
+  const isGarage = () => building.kind === 'garage';
+  const canvas = createBuildingCanvas($('.bd-canvas'), {
+    getState: () => ({ building, level: isSections() ? section : isGarage() ? storey : 0, wall }),
+    error: text => showError(text),
+    onSection: async value => { clearTimeout(timer); await rebuild(); if (invalid) return; section = value; fillSections(); sync(); },
+    onWall: value => { wall = value; if (isGarage()) drawOpenings(); },
+    commit: async next => { clearTimeout(timer); building = next; fill(next); await rebuild(next); },
+  });
+  function readFootprint() {
+    const next = { ...building, shape: form.elements.fpShape.value };
+    for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
+      const value = form.elements['fp-' + key].value;
+      next[key] = value === '' ? NaN : Number(value);
+    }
+    return next;
+  }
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isTyre() ? 'tyre' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isTyre() ? 'tyre' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'tyre', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'tyre', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -843,7 +879,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const below = storeyOf(building, storey - 1);
     $('.bd-storey').innerHTML = storey
       ? `<div class="bd-opening"><div class="bd-op-head">${icon('building')}<b>Storey ${storey + 1}</b><span class="bd-grow"></span>
-    <button type="button" class="bd-remove" data-bd-remove-storey title="Remove" aria-label="Remove storey ${storey + 1}">${icon('close')}</button></div>
+    <button type="button" class="bd-remove" data-bd-remove-storey title="Remove this storey and every storey above it" aria-label="Remove storey ${storey + 1} and every storey above it">${icon('close')}</button></div>
+    ${storey < building.upper.length ? '<p class="bd-hint">Removing this storey also removes those above it. Undo restores them together.</p>' : ''}
   ${field('upWidth', 'Width', s.width, [60, below.width])}
   ${field('upDepth', 'Depth', s.depth, [60, below.depth])}
   ${field('upX', 'From the left', s.x, [0, below.width])}
@@ -918,6 +955,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     };
   }
   function readForm() {
+    if (isSections()) return readSectionFields(form, building, section);
+    if (isFootprint()) return readFootprint();
     if (isStand()) return readStand();
     if (isGantry()) return readGantry();
     if (isPits()) return readPits();
@@ -1004,9 +1043,27 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     box.hidden = !text;
   }
   function sync() {
+    $('[data-bd="undo"]').disabled = !history.canUndo;
+    $('[data-bd="redo"]').disabled = !history.canRedo;
+    $('[data-bd="save"]').disabled = buildingBusy || invalid;
+    $('[data-bd="export"]').disabled = buildingBusy || invalid;
+    $('[data-bd-view="draw"]').hidden = !isGarage() && !isFootprint() && !isSections();
+    if (view === 'draw' && !isGarage() && !isFootprint() && !isSections()) view = 'model';
+    if (isGarage() || isFootprint() || isSections()) {
+      const walls = editWalls(building, isSections() ? section : isGarage() ? storey : 0);
+      if (!walls.some(w => w.id === wall)) wall = walls[0].id;
+      canvas.render();
+    }
+    $('.bd-canvas').hidden = view !== 'draw';
     $('[data-bd-name]').textContent = name || 'Building';
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
-    if (isStand()) drawStand();
+    if (isSections()) {
+      for (const button of host.querySelectorAll('[data-bd-section]')) button.textContent = building.sections[Number(button.dataset.bdSection)]?.name ?? '';
+      const roof = building.sections[section].roofType;
+      for (const [key, visible] of [['pitch', roof !== 'flat'], ['ridge', roof === 'gable'], ['rises', roof === 'slope']]) form.elements['cs-' + key].closest('label').hidden = !visible;
+    }
+    else if (isFootprint()) { /* Dedicated footprint fields are already filled. */ }
+    else if (isStand()) drawStand();
     else if (isGantry()) drawGantry();
     else if (isPits()) drawPits();
     else if (isMarshal()) drawMarshal();
@@ -1145,12 +1202,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     return cuts;
   }
   // Takes a building as the page now has it, and builds it.
-  async function rebuild(next = readForm()) {
+  async function rebuild(next = readForm(), { record = true } = {}) {
     const mine = ++serial;
+    invalid = false;
     try {
       next = validateBuilding(next);
     } catch (err) {
+      invalid = true;
+      buildingBusy = false;
+      message('');
       showError(err.message);
+      sync();
       return;
     }
     const before = building;
@@ -1158,7 +1220,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const problem = drawCuts();
     if (problem) {
       building = before;
+      invalid = true;
+      buildingBusy = false;
+      message('');
       showError(problem.message);
+      sync();
       return;
     }
     showError('');
@@ -1169,19 +1235,23 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       const sum = $('.bd-rooms .bd-hint');
       if (sum) sum.textContent = building.rooms.sizes.map((v) => fmt(v)).join(' + ') + ' = ' + fmt(building[along]) + ' mm ' + (along === 'width' ? 'wide' : 'deep') + '.';
     }
-    remember();
+    buildingBusy = true;
     sync();
     message('Building the parts…');
     try {
       const made = await call('buildingParts', { building, plate: plate() });
       if (mine !== serial) return;
+      buildingBusy = false;
       parts = made;
       sizes = Object.fromEntries(made.map((p) => [p.id, p.print]));
       message('');
+      accepted = structuredClone(building);
+      if (record) history.commit({ building, name });
+      remember();
       if (view === 'model') show();
       sync();
     } catch (err) {
-      if (mine === serial) message(err.message);
+      if (mine === serial) { buildingBusy = false; invalid = true; building = structuredClone(accepted); fill(building); showError(err.message); message(''); sync(); }
     }
   }
   function show() {
@@ -1200,6 +1270,16 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
   // The settings of a part, on the right: its storey and wall chosen, its card in view.
   function focusPart(id) {
+    if (isSections()) {
+      const hit = /^(s\d+)-(front|back|left|right|roof)/.exec(id);
+      if (hit) { section = building.sections.findIndex(s => s.id === hit[1]); if (hit[2] !== 'roof') wall = hit[2]; fillSections(); }
+      return;
+    }
+    if (isFootprint()) {
+      const edge = /^(edge-\d+)/.exec(id);
+      if (edge) wall = edge[1];
+      return;
+    }
     const wallOf = /^(front|back|left|right)(\d?)(?:-\d+)?$/.exec(id),
       frameOf = /^(?:frame|counter|flap)(\d?)-(\d+)$/.exec(id),
       storeyOfPart = /^(?:floor|brace|divide)(\d?)/.exec(id);
@@ -1283,6 +1363,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function fill(b) {
     showKind();
     $('[name="buildingName"]').value = name;
+    if (b.kind === 'sections') return fillSections();
+    if (b.kind === 'footprint') {
+      form.elements.fpShape.value = b.shape;
+      for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) form.elements['fp-' + key].value = b[key];
+      return;
+    }
     if (b.kind === 'grandstand') return fillStand(b);
     if (b.kind === 'gantry') return fillGantry(b);
     if (b.kind === 'pitmodule') return fillPits(b);
@@ -1316,6 +1402,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     drawOpenings();
   }
   async function exportKit() {
+    clearTimeout(timer);
+    await rebuild(readForm());
+    if (buildingBusy || invalid) return;
     const files = await call('buildingKit', { building, plate: plate() });
     const zip = { 'README.txt': strToU8(kitNotes(name, building, files, sizes)) };
     files.forEach((f, i) => (zip[String(i + 1).padStart(2, '0') + ' ' + f.name + '.stl'] = f.bytes));
@@ -1323,6 +1412,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     notice('Kit downloaded: ' + files.length + ' STL files and the notes for printing and putting it together.');
   }
   async function save() {
+    clearTimeout(timer);
+    await rebuild(readForm());
+    if (buildingBusy || invalid) return;
     const s = await store();
     savedId = await s.saveBuilding({ id: savedId ?? undefined, name: name || 'Building', building, updated: Date.now() });
     remember();
@@ -1373,7 +1465,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const b = e.target.closest('button');
     if (!b) return;
     try {
-      if (b.dataset.bdView) {
+      if (b.dataset.bd === 'undo' || b.dataset.bd === 'redo') await travel(b.dataset.bd);
+      else if (b.dataset.bdSection !== undefined) {
+        clearTimeout(timer); await rebuild(); if (invalid) return;
+        section = Number(b.dataset.bdSection); fillSections(); sync();
+      } else if (b.dataset.bdSectionAdd) {
+        clearTimeout(timer); const next = addSection(readForm(), section, b.dataset.bdSectionAdd);
+        section = next.sections.length - 1; building = next; fillSections(); await rebuild(next);
+      } else if (b.hasAttribute('data-bd-section-remove')) {
+        clearTimeout(timer); const next = removeSection(readForm(), section); section = 0; building = next; fillSections(); await rebuild(next);
+      }
+      else if (b.dataset.bdView) {
         view = b.dataset.bdView;
         sync();
         if (view === 'model' && parts.length) show();
@@ -1486,6 +1588,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
           // Keep the last good building; the error stays in view.
         }
         drawOpenings();
+        sync();
       } else if (b.dataset.bdAdd) await addOpening(b.dataset.bdAdd);
       else if (b.dataset.bdRemove !== undefined) {
         const next = readForm();
@@ -1517,6 +1620,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const saved = await (await store()).building(id);
     building = saved.building;
     name = saved.name;
+    history.reset({ building, name });
     savedId = saved.id;
     storey = 0;
     fitted = false;
@@ -1526,6 +1630,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
 
   return {
+    keydown(e) {
+      if (!(e.ctrlKey || e.metaKey) || e.target.matches('input,textarea,select')) return;
+      const action = e.key.toLowerCase() === 'z' ? (e.shiftKey ? 'redo' : 'undo') : e.key.toLowerCase() === 'y' ? 'redo' : e.key.toLowerCase() === 's' ? 'save' : null;
+      if (action) { e.preventDefault(); (action === 'save' ? save() : travel(action)).catch(err => notice(err.message)); }
+    },
     async show() {
       fill(building);
       await Promise.all([rebuild(building), listSaved()]);
@@ -1533,4 +1642,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     open,
     resize: () => viewport?.resize(),
   };
+  async function travel(direction) {
+    clearTimeout(timer);
+    const snapshot = history[direction]();
+    building = snapshot.building; name = snapshot.name;
+    storey = Math.min(storey, building.upper?.length ?? 0);
+    selected = null;
+    fill(building);
+    await rebuild(building, { record: false });
+  }
 }

@@ -18,24 +18,26 @@ export const JOINT = Object.freeze({
 // front2 for the second storey, ...) and across its height (frontZ); the
 // base, a floor and the roof across (X) and front to back (Y).
 const WALL_IDS = ['front', 'back', 'left', 'right'];
-const STOREY_NAMES = ['', '', ', storey 2', ', storey 3'];
+const STOREY_NAMES = ['', '', ', storey 2', ', storey 3', ', storey 4'];
 export const CUT_KEYS = Object.freeze([
-  ...[1, 2, 3].flatMap((s) => WALL_IDS.flatMap((w) => [w + (s > 1 ? s : ''), w + (s > 1 ? s : '') + 'Z'])),
+  ...[1, 2, 3, 4].flatMap((s) => WALL_IDS.flatMap((w) => [w + (s > 1 ? s : ''), w + (s > 1 ? s : '') + 'Z'])),
   'baseX',
   'baseY',
   'floor2X',
   'floor2Y',
   'floor3X',
   'floor3Y',
+  'floor4X',
+  'floor4Y',
   'roofX',
   'roofY',
-  ...[1, 2, 3].flatMap((i) => ['divide' + i, 'divide' + i + 'Z']),
+  ...Array.from({ length: 23 }, (_, i) => i + 1).flatMap((i) => ['divide' + i, 'divide' + i + 'Z']),
 ]);
 /** What a cut key is called on the page. */
 export function cutLabel(key) {
   const m = /^(front|back|left|right)(\d?)(Z?)$/.exec(key);
   if (m) return m[1][0].toUpperCase() + m[1].slice(1) + ' wall' + STOREY_NAMES[Number(m[2] || 1)] + (m[3] ? ', across its height' : '');
-  const d = /^divide(\d)(Z?)$/.exec(key);
+  const d = /^divide(\d+)(Z?)$/.exec(key);
   if (d) return 'Dividing wall ' + d[1] + (d[2] ? ', across its height' : '');
   const f = /^(base|roof|floor)(\d?)([XY])$/.exec(key);
   if (!f) return key;
