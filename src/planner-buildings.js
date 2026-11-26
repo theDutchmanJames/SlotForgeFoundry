@@ -7,7 +7,7 @@
 import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth } from './geometry/grandstand.js';
-import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
+import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
 import { walkwayFootprint } from './geometry/walkway.js';
@@ -447,7 +447,7 @@ export const OVER_CLEAR = 8;
  * road's edge to its feet, which reach in beyond its legs.
  */
 export function overGantry(building, width) {
-  const feet = building.type === 'bridge' ? 0 : GANTRY.foot[0] - GANTRY.leg;
+  const feet = building.type === 'bridge' ? 0 : footOf({ ...building, type: 'start' }) - legOf(building);
   return validateBuilding({ ...building, span: Math.round((width + 2 * OVER_CLEAR + feet) * 10) / 10 });
 }
 /**
@@ -461,8 +461,8 @@ export function overPose(building, { at, across }) {
   let mid = w / 2;
   if (building.type === 'half') {
     // Its foot OVER_CLEAR from the road's edge: the middle of the road half a span on.
-    const f = GANTRY.foot[0] + 10;
-    mid = f + (building.span - (GANTRY.foot[0] - GANTRY.leg)) / 2;
+    const f = footOf(building);
+    mid = f + (building.span - (footOf({ ...building, type: 'start' }) - legOf(building))) / 2;
   }
   const u = mid - shape.centre[0];
   const a = Math.atan2(across[1], across[0]);

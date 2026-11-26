@@ -273,6 +273,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-seg bd-wide" role="group" aria-label="Type">${GANTRY_TYPES.map(([id, label]) => `<button type="button" data-bd-gantry-type="${id}">${label}</button>`).join('')}</div>
       ${field('tSpan', 'Span', 220, GANTRY_LIMITS.span)}
       ${field('tClearance', 'Clearance', 70, GANTRY_LIMITS.clearance)}
+      <label class="bd-row"><span>Members</span><select name="tMembers"><option value="solid">Solid</option><option value="lattice">Lattice, like steel</option></select></label>
       <p class="bd-hint" data-bd-gantry-size></p></section>
     <section class="bd-box" data-bd-card="gantryBeam" data-bd-gantry data-bd-beam hidden><h3>Beam</h3>
       ${field('tLights', 'Start lights', 5, GANTRY_LIMITS.lights, '', ' data-bd-lights')}
@@ -546,6 +547,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [k, v] of [['tSpan', g.span], ['tClearance', g.clearance], ['tLights', g.lights], ['tReach', g.reach], ['tBoardHeight', g.boardHeight], ['tDeck', g.deckWidth], ['tWalls', g.wallHeight]]) e[k].value = v;
     e.tBoard.checked = g.board;
+    e.tMembers.value = g.members;
     drawGantry();
   }
   function drawGantry() {
@@ -558,7 +560,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const [w, d] = gantrySize(g);
     $('[data-bd-gantry-size]').textContent =
       (g.type === 'half' ? 'Its beam reaches ' + fmt(g.reach) + ' mm out over the road' : 'Span is the clear width between the ' + (g.type === 'bridge' ? 'staircases' : 'legs') + ': the track with its borders') +
-      ', ' + fmt(g.clearance) + ' mm clear underneath. On the table it takes ' + fmt(w) + ' × ' + fmt(d) + ' mm. In the Track Planner, a gantry over a straight takes the straight\'s width as its span.';
+      ', ' + fmt(g.clearance) + ' mm clear underneath. On the table it takes ' + fmt(w) + ' × ' + fmt(d) + ' mm. In the Track Planner, a gantry over a straight takes the straight\'s width as its span.' +
+      (g.members === 'lattice' ? ' Lattice: the legs are square tubes and the beam a girder, opened with diamonds whose edges are all at 45°, so they print without supports.' : '');
   }
   function readGantry() {
     const e = form.elements;
@@ -566,6 +569,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     return {
       kind: 'gantry',
       type: building.type,
+      members: e.tMembers.value,
       span: num(e.tSpan),
       clearance: num(e.tClearance),
       lights: num(e.tLights),

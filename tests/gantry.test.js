@@ -99,3 +99,54 @@ test('over a straight a gantry takes its width, its span centred on the road, it
   const left = toPlan(entry, [GANTRY.foot[0] / 2, GANTRY.foot[0] / 2]);
   assert.ok(near(left[0], 150, 0.01) && left[1] < -55, 'a leg beside the road: ' + left);
 });
+
+test('lattice members: legs as tubes and the beam as a girder opened with diamonds, one body each, printing without supports', async () => {
+  const { GANTRY, legOf } = await import('../src/geometry/gantry.js');
+  const { fitsPlate, printPose, printSize } = await import('../src/geometry/building.js');
+  const over = (part) => {
+    const printed = printPose(part);
+    const m = printed.getMesh();
+    let a = 0;
+    for (let i = 0; i < m.triVerts.length; i += 3) {
+      const v = [0, 1, 2].map((k) => Array.from(m.vertProperties.subarray(m.triVerts[i + k] * m.numProp, m.triVerts[i + k] * m.numProp + 3)));
+      const p = v[1].map((x, j) => x - v[0][j]),
+        q = v[2].map((x, j) => x - v[0][j]);
+      const n = [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+      const len = Math.hypot(...n);
+      if (n[2] / len < -0.71 && Math.min(v[0][2], v[1][2], v[2][2]) > 0.05) a += len / 2;
+    }
+    printed.delete();
+    return a;
+  };
+  const plate = { width: 200, depth: 200, margin: 0 };
+  for (const settings of [{ members: 'lattice' }, { members: 'lattice', type: 'half', reach: 180 }, { members: 'lattice', type: 'bridge' }, { members: 'lattice', lights: 0, span: 400 }]) {
+    const parts = buildGantry(wasm, settings, plate);
+    try {
+      const label = JSON.stringify(settings);
+      for (const p of parts) {
+        assert.equal(p.solid.decompose().length, 1, p.name + ' is one body ' + label);
+        assert.ok(fitsPlate(printSize(p), plate), p.name + ' fits ' + label);
+        // Bridged: only the tops of the pin sockets in the beam.
+        assert.ok(over(p) <= (p.id.startsWith('beam') ? 30 : 0.5), p.name + ' prints ' + over(p).toFixed(1) + ' mm² over air ' + label);
+      }
+      for (let i = 0; i < parts.length; i++)
+        for (let j = i + 1; j < parts.length; j++) {
+          const both = parts[i].solid.intersect(parts[j].solid);
+          assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap ' + label);
+          both.delete();
+        }
+    } finally {
+      parts.forEach((p) => p.solid.delete());
+    }
+  }
+  // Opened: a lattice leg is a tube with diamonds, far lighter than it would be solid.
+  const parts = buildGantry(wasm, { members: 'lattice' });
+  try {
+    const L = legOf({ members: 'lattice' });
+    assert.equal(L, GANTRY.lattice.leg);
+    assert.ok(parts.find((p) => p.id === 'leg-1').solid.volume() < 0.75 * L * L * 70, 'a tube with diamonds, far lighter than a solid column');
+  } finally {
+    parts.forEach((p) => p.solid.delete());
+  }
+  assert.throws(() => validateGantry({ members: 'wood' }), /solid or lattice/);
+});
