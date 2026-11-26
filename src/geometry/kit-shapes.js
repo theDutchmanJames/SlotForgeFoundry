@@ -36,6 +36,21 @@ export function kitShapes(wasm, own) {
       const u = (k * (len - R.post)) / (posts - 1);
       bits.push(B(u, R.band - 0.01, 0, u + R.post, R.height - R.post + 0.01, R.thick));
     }
+    // Mesh: the field between the end posts filled, square holes through it (spec.mesh: [hole, bar]).
+    if (R.mesh) {
+      const [hole, bar] = R.mesh,
+        pitch = hole + bar,
+        v0 = R.band,
+        v1 = R.height - R.post;
+      const nu = Math.max(1, Math.floor((len - 2 * R.post - bar) / pitch)),
+        nv = Math.max(1, Math.floor((v1 - v0 - bar) / pitch));
+      const su = (len - 2 * R.post - nu * pitch + bar) / 2,
+        sv = (v1 - v0 - nv * pitch + bar) / 2;
+      const holes = [];
+      for (let i = 0; i < nu; i++)
+        for (let j = 0; j < nv; j++) holes.push(B(R.post + su + i * pitch, v0 + sv + j * pitch, -1, R.post + su + i * pitch + hole, v0 + sv + j * pitch + hole, R.thick + 1));
+      bits.push(own(B(R.post - 0.01, v0 - 0.01, 0, len - R.post + 0.01, v1 + 0.01, R.thick).subtract(own(Manifold.union(holes)))));
+    }
     const at = [0.2 * len, 0.8 * len];
     for (const u of at) bits.push(B(u - 3, -R.tab, 0, u + 3, 0.01, R.thick));
     // u along the edge, v up, w in from it.

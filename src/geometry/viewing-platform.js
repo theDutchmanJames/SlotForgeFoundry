@@ -18,6 +18,7 @@ export const PLATFORM_DEFAULTS = Object.freeze({
   stairWidth: 30,
   railing: true,
   railingHeight: 26,
+  railingStyle: 'bars', // 'bars' or 'mesh'
   board: true, // a board for a sign along the front, under the deck
   boardHeight: 18,
   planks: true,
@@ -65,6 +66,7 @@ export function validatePlatform(input) {
   for (const [key, [min, max]] of Object.entries(PLATFORM_LIMITS))
     if (!Number.isFinite(p[key]) || p[key] < min || p[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + ' mm.');
   if (!['left', 'right', 'both', 'none'].includes(p.stair)) throw Error('Put a staircase at the left, at the right or at both ends, or leave it out.');
+  if (!['bars', 'mesh'].includes(p.railingStyle)) throw Error('Choose railings of bars or of mesh.');
   for (const key of ['railing', 'board', 'planks']) if (typeof p[key] !== 'boolean') throw Error('Choose whether the platform has ' + { railing: 'a railing', board: 'a board', planks: 'planks' }[key] + '.');
   const room = p.height - PLATFORM.deck - 2 * PLATFORM.member;
   if (p.board && p.boardHeight > room) throw Error('The board is too high for the frames under the deck: at most ' + room + ' mm.');
@@ -165,7 +167,7 @@ export function buildPlatform(wasm, input) {
       const [pw, gd] = PLATFORM.plank;
       for (let y = pw; y < D - 2; y += pw) cuts.push(sweep([[y - gd, H + 0.5], [y, H - gd], [y + gd, H + 0.5]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -1, W + 1));
     }
-    const R = { ...PLATFORM.rail, height: p.railingHeight };
+    const R = { ...PLATFORM.rail, height: p.railingHeight, ...(p.railingStyle === 'mesh' && { mesh: [3, 2] }) };
     const rails = [];
     if (p.railing) {
       const side = R.inset + R.thick + 0.2;

@@ -207,6 +207,12 @@ export const BUILDING_PRESETS = Object.freeze([
     building: { width: 90, depth: 90, height: 40, baseHeight: 5, door: 'none', open: true, waist: 18, standType: 'tower', standHeight: 110, standSize: 70, overhangFront: 5, overhangBack: 5, overhangLeft: 5, overhangRight: 5 },
   },
   {
+    id: 'scaffold-tower',
+    name: 'Scaffold camera tower',
+    note: 'Braced steel frame walls, a deck on top behind a mesh railing',
+    building: { width: 80, depth: 80, height: 120, baseHeight: 4, door: 'none', wallStyle: 'braced', roofRailing: true, railingStyle: 'mesh', overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4 },
+  },
+  {
     id: 'press-tower',
     name: 'Press tower',
     note: 'An open room on a round column, a flat roof reaching out',

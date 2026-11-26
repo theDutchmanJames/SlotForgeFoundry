@@ -24,6 +24,7 @@ import {
   OPEN,
   LEAN,
   RELIEF,
+  FRAME_WALL,
   MAX_ROOMS,
   MAX_UPPER,
   MIN_ROOM,
@@ -199,6 +200,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="platformRail" data-bd-platform hidden><h3>Railing and board</h3>
       <label class="bd-check"><input type="checkbox" name="vRailing"><span>A railing round the deck</span></label>
       ${field('vRailingHeight', 'Railing height', 26, PLATFORM_LIMITS.railingHeight, 'mm', ' data-bd-railing-height')}
+      <label class="bd-row"><span>Railing</span><select name="vRailingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option></select></label>
       <label class="bd-check"><input type="checkbox" name="vBoard"><span>A board for a sign along the front</span></label>
       ${field('vBoardHeight', 'Board height', 18, PLATFORM_LIMITS.boardHeight, 'mm', ' data-bd-board-height')}
       <p class="bd-hint">The railings print flat and push into pockets along the edges of the deck, open at the top of the staircase. The board is glued on the front frame under the deck, flush with its edge.</p></section>
@@ -280,6 +282,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
+      <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option></select></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
@@ -363,6 +366,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [k, key] of PLATFORM_FIELDS) e[k].value = p[key];
     for (const [k, key] of PLATFORM_CHECKS) e[k].checked = p[key];
+    e.vRailingStyle.value = p.railingStyle;
     drawPlatform();
   }
   function drawPlatform() {
@@ -379,7 +383,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readPlatform() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const p = { kind: 'platform', stair: building.stair };
+    const p = { kind: 'platform', stair: building.stair, railingStyle: form.elements.vRailingStyle.value };
     for (const [k, key] of PLATFORM_FIELDS) p[key] = num(e[k]);
     for (const [k, key] of PLATFORM_CHECKS) p[key] = e[k].checked;
     return p;
@@ -566,6 +570,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
   ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
+  <label class="bd-row"><span>Walls</span><select name="stWallStyle">${FRAME_WALL.styles.map(([id, label]) => `<option value="${id}"${s.wallStyle === id ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
   <div class="bd-sub">Relief</div>
   ${field('stPlinth', 'Plinth', s.plinth, RELIEF.band)}
   ${field('stCornice', 'Cornice', s.cornice, RELIEF.band)}
@@ -576,12 +581,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <label class="bd-check"><input type="checkbox" name="stOpen"${s.open ? ' checked' : ''}><span>Open above a waist wall</span></label>
   ${s.open ? field('stWaist', 'Waist wall', s.waist, [8, s.height - 20]) + field('stPanes', 'Panes along each wall', s.panes, [1, OPEN.panes], '') : ''}
   ${field('stLean', 'Walls lean out at the top', s.lean, [0, LEAN.most], '°')}
+  <label class="bd-row"><span>Walls</span><select name="stWallStyle">${FRAME_WALL.styles.map(([id, label]) => `<option value="${id}"${s.wallStyle === id ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
   <div class="bd-sub">Relief</div>
   ${field('stPlinth', 'Plinth', s.plinth, RELIEF.band)}
   ${field('stCornice', 'Cornice', s.cornice, RELIEF.band)}
   ${field('stPilasters', 'Pilasters apart', s.pilasters, [0, RELIEF.spacing[1]])}
   <label class="bd-check"><input type="checkbox" name="stPanels"${s.panels ? ' checked' : ''}><span>Recessed panels</span></label>
-  <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof. Relief stands out of the walls: a plinth at the foot, a cornice under the eaves, pilasters at the corners and every so far along (0 for none), and panels sunk between them; it runs round the corners and keeps clear of every opening.</p>`;
+  <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof. Walls can be a braced steel frame or a lattice, open between their members. Relief stands out of the walls: a plinth at the foot, a cornice under the eaves, pilasters at the corners and every so far along (0 for none), and panels sunk between them; it runs round the corners and keeps clear of every opening.</p>`;
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
   function drawOpenings() {
@@ -621,6 +627,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       cornice: num(e.stCornice, s.cornice),
       pilasters: num(e.stPilasters, s.pilasters),
       panels: e.stPanels ? e.stPanels.checked : s.panels,
+      wallStyle: e.stWallStyle ? e.stWallStyle.value : s.wallStyle,
     };
   }
   function readForm() {
@@ -674,6 +681,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       numbers: e.numbers.checked,
       firstNumber: num(e.firstNumber),
       sign: e.sign.value,
+      railingStyle: e.railingStyle.value,
       standType: e.standType.value,
       standHeight: num(e.standHeight),
       standSize: num(e.standSize),
@@ -967,6 +975,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.numbers.checked = b.numbers;
     form.elements.firstNumber.value = b.firstNumber;
     form.elements.sign.value = b.sign;
+    form.elements.railingStyle.value = b.railingStyle;
     for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
     for (const k of ['standHeight', 'standSize', 'standTaper']) form.elements[k].value = b[k];
     form.elements.signWidth.value = b.signWidth;

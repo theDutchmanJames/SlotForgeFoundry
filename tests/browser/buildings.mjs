@@ -289,6 +289,11 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-storey="2"]').click();
   assert.equal(await setting('stLean').inputValue(), '15');
   assert.equal(await setting('stPanes').inputValue(), '3');
+  // A scaffold: braced walls, a mesh railing.
+  await host.locator('[data-bd-preset="scaffold-tower"]').click();
+  await host.locator('[data-bd-part="roofrail-front"]').waitFor();
+  assert.equal(await setting('stWallStyle').inputValue(), 'braced');
+  assert.equal(await setting('railingStyle').inputValue(), 'mesh');
   // A hip roof: its four panels.
   await host.locator('[data-bd-preset="tower-pyramid"]').click();
   await host.locator('[data-bd-part="roof-right"]').waitFor();

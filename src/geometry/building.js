@@ -81,6 +81,11 @@ export const BUILDING_DEFAULTS = Object.freeze({
   cornice: 0,
   pilasters: 0,
   panels: false,
+  // The walls of the ground floor as a steel frame: 'solid', 'braced' (an
+  // X in each bay between posts) or 'lattice' (a diamond grid).
+  wallStyle: 'solid',
+  // The railings: 'bars' (posts between a band and a rail) or 'mesh'.
+  railingStyle: 'bars',
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -109,7 +114,7 @@ export const BUILDING_LIMITS = Object.freeze({
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
 // balcony: how far its floor reaches out in front of the storey below, over the garage front; railing: round the open edges of its floor.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false });
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
 export const MAX_UPPER = 2;
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
@@ -170,6 +175,24 @@ export const HIP_ACROSS = 190;
 export const OPEN = Object.freeze({ post: 9, beam: 6, mullion: 3, panes: 8 });
 // Relief: how far it stands out, a pilaster's width, a panel's recess and its margin.
 export const RELIEF = Object.freeze({ depth: 1.5, pilaster: 6, recess: 0.8, margin: 3, band: [0, 20], spacing: [20, 300] });
+// Frame walls: their styles; posts at the corners and between bays, a chord
+// at the foot and a beam at the top, braces, the longest bay; a lattice's
+// bars and their spacing. A mesh railing: its holes and bars.
+export const FRAME_WALL = Object.freeze({
+  styles: Object.freeze([
+    ['solid', 'Solid'],
+    ['braced', 'Braced frame'],
+    ['lattice', 'Lattice'],
+  ]),
+  post: 9,
+  member: 6,
+  chord: 6,
+  brace: 4,
+  bay: 45,
+  bar: 2.5,
+  pitch: 12,
+});
+export const MESH = Object.freeze({ hole: 3, bar: 2 });
 // Walls that lean out: at most this many degrees, and only so far out over the storey below.
 export const LEAN = Object.freeze({ most: 30, reach: 25 });
 export const SIGNS = Object.freeze([
@@ -406,6 +429,7 @@ export function validateBuilding(input) {
       throw Error({ legs: 'A leg', column: 'The column', tower: 'The tower' }[b.standType] + ' must be ' + lo + ' to ' + fmtMm(hi) + ' mm' + (b.standType === 'legs' ? ' square.' : ' across, inside the base.'));
   }
   // A sign along the top of the front wall: everything in the front wall stays under it.
+  if (!['bars', 'mesh'].includes(b.railingStyle)) throw Error('Choose railings of bars or of mesh.');
   if (!SIGNS.some(([id]) => id === b.sign)) throw Error('Choose a sign from the list.');
   if (b.sign !== 'none' && b.signWidth > b.width) throw Error('The sign is wider than the building: at most ' + b.width + ' mm.');
   if (b.sign === 'billboard') {
@@ -480,6 +504,12 @@ function checkOpen(s, openings, where, door) {
   if (s.plinth + s.cornice > s.height - 10) throw Error('The plinth and the cornice' + where + ' leave too little wall: together at most ' + fmtMm(s.height - 10) + ' mm.');
   if (!Number.isFinite(s.pilasters) || (s.pilasters !== 0 && (s.pilasters < p0 || s.pilasters > p1))) throw Error('Pilasters' + where + ' stand ' + p0 + ' to ' + p1 + ' mm apart, or 0 for none.');
   if (typeof s.panels !== 'boolean') throw Error('Choose whether the walls' + where + ' have recessed panels.');
+  if (!FRAME_WALL.styles.some(([id]) => id === s.wallStyle)) throw Error('Choose solid, braced or lattice walls' + where + '.');
+  if (s.wallStyle !== 'solid') {
+    if (s.open) throw Error('A storey' + where + ' is open or framed, not both.');
+    if (openings.length || door) throw Error('Framed walls' + where + ' have no windows or doors: they are open between their members.');
+    if (s.plinth || s.cornice || s.pilasters || s.panels) throw Error('Framed walls' + where + ' have no relief.');
+  }
   if (!Number.isInteger(s.panes) || s.panes < 1 || s.panes > OPEN.panes) throw Error('An open storey' + where + ' has 1 to ' + OPEN.panes + ' panes along each wall.');
   if (!s.open) return;
   if (!Number.isFinite(s.waist) || s.waist < 8 || s.waist > s.height - 20) throw Error('The waist wall' + where + ' must be 8 to ' + fmtMm(s.height - 20) + ' mm high.');
@@ -566,7 +596,7 @@ export function storeyStack(b) {
   let z = b.baseHeight;
   let ox = 0,
     oy = 0;
-  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels }, ...b.upper];
+  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels, wallStyle: b.wallStyle }, ...b.upper];
   all.forEach((s, i) => {
     const n = i + 1;
     if (i) z += KIT.slab;
@@ -586,6 +616,7 @@ export function storeyStack(b) {
       open: !!s.open,
       lean: s.lean ?? 0,
       relief: { plinth: s.plinth ?? 0, cornice: s.cornice ?? 0, pilasters: s.pilasters ?? 0, panels: !!s.panels },
+      wallStyle: s.wallStyle ?? 'solid',
       garage: i === 0,
       top: i === all.length - 1,
       suffix: n > 1 ? String(n) : '',
@@ -643,7 +674,7 @@ export function roofShape(b) {
  * roller door stands behind its opening. x, y: where each leg reaches.
  */
 export function braceCorners(b, s, doors) {
-  if (!b.braces || s.open || s.lean || s.height - KIT.lipDepth - 1 < 10) return [];
+  if (!b.braces || s.open || s.lean || (s.wallStyle && s.wallStyle !== 'solid') || s.height - KIT.lipDepth - 1 < 10) return [];
   const lo = KIT.wall + KIT.play,
     leg = KIT.braceLeg,
     W = s.width,
@@ -968,6 +999,8 @@ export function buildGarage(wasm, input, plate = null) {
       const u = Math.min(len - post, Math.max(0, (k * (len - post)) / (posts - 1)));
       bits.push(B(u, band - 0.01, 0, u + post, h - post + 0.01, th));
     }
+    // Mesh: the field between the end posts filled, square holes through it.
+    if (b.railingStyle === 'mesh') bits.push(meshField(B, len, post, band, h - post, th));
     const tabs = [0.2, 0.8].map((f) => len * f);
     for (const u of tabs) bits.push(B(u - 3, -tab, 0, u + 3, 0.01, th));
     const panel = place(own(Manifold.union(bits)));
@@ -1106,6 +1139,44 @@ export function buildGarage(wasm, input, plate = null) {
       const holes = { front: s.garage ? doors.map((door) => box(door.x, -1, b.lane ? z0 - 1 : top, door.x + door.width, t + 1, top + door.height)) : [], back: [], left: [], right: [] };
       for (const o of s.openings)
         holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
+      // Frame walls: open between posts at the corners and between bays, a
+      // chord at the foot and a beam under the eaves; in each bay an X of
+      // braces, or a diamond lattice. Holes straight through a flat wall.
+      if (s.wallStyle !== 'solid') {
+        const { sweep, poly } = kitShapes(wasm, own);
+        const F = FRAME_WALL;
+        const ALONG3 = { front: [[0, 0], [1, 0, 0]], back: [[W, D], [-1, 0, 0]], left: [[0, D], [0, -1, 0]], right: [[W, 0], [0, 1, 0]] };
+        const rect = (u0, v0, u1, v1) => poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+        const bar = (a, c2, wide) => {
+          const dd = [c2[0] - a[0], c2[1] - a[1]],
+            l = Math.hypot(...dd),
+            n = [(-dd[1] / l) * (wide / 2), (dd[0] / l) * (wide / 2)];
+          return poly([[a[0] - n[0], a[1] - n[1]], [c2[0] - n[0], c2[1] - n[1]], [c2[0] + n[0], c2[1] + n[1]], [a[0] + n[0], a[1] + n[1]]]);
+        };
+        for (const w of WALLS) {
+          const L = wallLength(s, w);
+          const v0 = top + F.chord,
+            v1 = z1 - F.chord;
+          const span = L - 2 * F.post;
+          const bays = Math.max(1, Math.ceil(span / F.bay));
+          const cuts = [];
+          for (let k = 0; k < bays; k++) {
+            const u0 = F.post + (k * (span + F.member)) / bays,
+              u1 = F.post + ((k + 1) * (span + F.member)) / bays - F.member;
+            const bayOpen = rect(u0, v0, u1, v1);
+            const members = [];
+            if (s.wallStyle === 'braced') members.push(bar([u0, v0], [u1, v1], F.brace), bar([u0, v1], [u1, v0], F.brace));
+            else {
+              const reach = u1 - u0 + v1 - v0;
+              for (let q = -reach; q <= reach; q += F.pitch) members.push(bar([u0 + q, v0], [u0 + q + (v1 - v0), v1], F.bar), bar([u0 + q, v1], [u0 + q + (v1 - v0), v0], F.bar));
+            }
+            cuts.push(own(bayOpen.subtract(own(wasm.CrossSection.union(members)))));
+          }
+          const [[ox, oy], dir] = ALONG3[w];
+          const inward = OUTWARD[w].map((v) => -v);
+          holes[w].push(sweep(own(wasm.CrossSection.union(cuts)), dir, [0, 0, 1], [ox, oy, 0], inward, -1, t + 1));
+        }
+      }
       for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
       // A wall texture: joints in the outside face, clear of every opening
       // and of the frame around it, and of the wall's foot in the groove.
@@ -1562,6 +1633,24 @@ export function buildGarage(wasm, input, plate = null) {
   } catch (e) {
     for (const s of new Set(temp)) s.delete();
     throw e;
+  }
+
+  // A mesh between u = edge and len - edge, v0 and v1: a plate with square holes through it.
+  function meshField(B, len, edge, v0, v1, th) {
+    const { hole, bar } = MESH;
+    const pitch = hole + bar;
+    const nu = Math.max(1, Math.floor((len - 2 * edge - bar) / pitch)),
+      nv = Math.max(1, Math.floor((v1 - v0 - bar) / pitch));
+    const su = (len - 2 * edge - nu * pitch + bar) / 2,
+      sv = (v1 - v0 - nv * pitch + bar) / 2;
+    const holesIn = [];
+    for (let i = 0; i < nu; i++)
+      for (let j = 0; j < nv; j++) {
+        const u = edge + su + i * pitch,
+          v = v0 + sv + j * pitch;
+        holesIn.push(B(u, v, -1, u + hole, v + hole, th + 1));
+      }
+    return own(B(edge - 0.01, v0 - 0.01, 0, len - edge + 0.01, v1 + 0.01, th).subtract(own(Manifold.union(holesIn))));
   }
 
   /* ---------- The stand ---------- */
