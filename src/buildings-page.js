@@ -13,6 +13,7 @@ import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.j
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
+import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -30,6 +31,7 @@ import {
   ACCESS,
   MAX_ROOMS,
   MAX_UPPER,
+  PANES,
   MIN_ROOM,
   OPENING_DEFAULTS,
   UPPER_DEFAULTS,
@@ -257,6 +259,16 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('mDeck', 'Floor above the table', 40, MARSHAL_POST_LIMITS.deckHeight)}
       <label class="bd-check" data-bd-raised><input type="checkbox" name="mLadder"><span>A ladder up to the back</span></label>
       <p class="bd-hint" data-bd-marshal-size></p></section>
+    <section class="bd-box" data-bd-card="flag" data-bd-flag hidden><h3>Flag waver's post</h3>
+      ${field('fWidth', 'Width', 40, FLAG_POST_LIMITS.width)}
+      ${field('fHeight', 'Landing above the table', 30, FLAG_POST_LIMITS.height)}
+      ${field('fSteps', 'Steps', 5, FLAG_POST_LIMITS.steps, '')}
+      ${field('fTread', 'Tread', 9, FLAG_POST_LIMITS.tread)}
+      ${field('fLanding', 'Landing, front to back', 16, FLAG_POST_LIMITS.landing)}
+      ${field('fRail', 'Handrail height', 18, FLAG_POST_LIMITS.railHeight)}
+      <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
+      ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
+      <p class="bd-hint" data-bd-flag-size></p></section>
     <section class="bd-box" data-bd-card="marshalWalls" data-bd-marshal hidden><h3>Wall</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall"><button type="button" data-bd-marshal-walls="slats">Slats</button><button type="button" data-bd-marshal-walls="boards">Boards</button><button type="button" data-bd-marshal-walls="plain">Plain</button></div>
       ${field('mWall', 'Wall height', 22, MARSHAL_POST_LIMITS.wallHeight)}
@@ -335,10 +347,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip"')}
-      <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
+      ${field('arch', 'Arched, higher in the middle', building.arch, BUILDING_LIMITS.arch, 'mm', ' data-bd-for="flat"')}
+      <label class="bd-row" data-bd-for="gable flat"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
-      <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option></select></label>
+      <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option><option value="solid">Solid, a parapet</option></select></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
@@ -378,12 +391,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row"><span>Stands on</span><select name="standType">${STAND.types.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
       <div data-bd-stand-size>
       ${field('standHeight', 'Height', building.standHeight, BUILDING_LIMITS.standHeight)}
-      ${field('standSize', 'Size', building.standSize, BUILDING_LIMITS.standSize)}
+      <div data-bd-stand-sized>${field('standSize', 'Size', building.standSize, BUILDING_LIMITS.standSize)}</div>
+      <label class="bd-check" data-bd-legs><input type="checkbox" name="standBraces"><span>Knee braces up into the base</span></label>
       <div data-bd-column>
       <label class="bd-row"><span>Column</span><select name="standShape"><option value="square">Square</option><option value="round">Round</option></select></label>
       ${field('standTaper', 'Wider at its foot', building.standTaper, BUILDING_LIMITS.standTaper, '%')}
       </div></div>
-      <p class="bd-hint">Raise the building off the table: on four legs in the corners of its base, on one column in the middle (square or round, wider at its foot) or on a braced tower of four frames. Size is a leg's side, the column's top or the tower's side; the building may reach out past it all round. Each support has pins on top that push up into pockets under the base. Legs and the column print standing up; the tower's frames print flat and stand in its foot.</p></section>
+      <p class="bd-hint">Raise the building off the table: on four legs in the corners of its base (with knee braces if you like), on one column in the middle (square or round, wider at its foot), on a braced tower of four frames, or on braced frames all round, just inside the edges of the base. Size is a leg's side, the column's top or the tower's side; the building may reach out past it all round. Each support has pins on top that push up into pockets under the base. Legs and the column print standing up; the frames print flat and stand in their foot.</p></section>
     <section class="bd-box" data-bd-card="access"><h3>Way up</h3>
       <label class="bd-row"><span>Way up</span><select name="access">${ACCESS.kinds.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
       <div data-bd-access>
@@ -408,23 +422,45 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isGantry = () => building.kind === 'gantry';
   const isPits = () => building.kind === 'pitmodule';
   const isMarshal = () => building.kind === 'marshalpost';
+  const isFlag = () => building.kind === 'flagpost';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isPlatform() && !isWalkway() && !isBays();
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isPlatform() && !isWalkway() && !isBays();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
     if (isGantry()) drawGantry();
     if (isPits()) drawPits();
     if (isMarshal()) drawMarshal();
+    if (isFlag()) drawFlag();
     if (isPlatform()) drawPlatform();
+  }
+  const FLAG_FIELDS = [['fWidth', 'width'], ['fHeight', 'height'], ['fSteps', 'steps'], ['fTread', 'tread'], ['fLanding', 'landing'], ['fRail', 'railHeight'], ['fBoardHeight', 'boardHeight']];
+  function fillFlag(f) {
+    const e = form.elements;
+    for (const [k, key] of FLAG_FIELDS) e[k].value = f[key];
+    e.fBoard.checked = f.board;
+    drawFlag();
+  }
+  function drawFlag() {
+    const f = building;
+    form.elements.fBoardHeight.closest('label').hidden = !f.board;
+    $('[data-bd-flag-size]').textContent =
+      f.steps + ' steps of ' + fmt(Math.round((f.height / f.steps) * 10) / 10) + ' mm up to the landing, ' + fmt(flagDepth(f)) + ' mm deep in all. A cheek up each side carries the handrail; the front rail stands on the front of the landing. The steps print on their side, the cheeks and the front flat.';
+  }
+  function readFlag() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const f = { kind: 'flagpost', board: e.fBoard.checked };
+    for (const [k, key] of FLAG_FIELDS) f[key] = num(e[k]);
+    return f;
   }
   const BAYS_FIELDS = [['bBayWidth', 'bayWidth'], ['bDepth', 'depth'], ['bBase', 'baseHeight'], ['bDoorWidth', 'doorWidth'], ['bDoorHeight', 'doorHeight'], ['bRecess', 'recess'], ['bFirst', 'firstNumber'], ['bGround', 'groundHeight'], ['bUpper', 'upperHeight'], ['bJut', 'jut'], ['bSetBack', 'setBack'], ['bLean', 'lean'], ['bBalcony', 'balcony']];
   const BAYS_CHECKS = [['bNumbers', 'numbers'], ['bBalconyRailing', 'balconyRailing'], ['bRoofRailing', 'roofRailing'], ['bPillars', 'pillars']];
@@ -734,6 +770,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('opHeight', 'Height', o.height, [8, s.height])}
   ${o.type === 'window' ? field('sill', 'Up from the floor', o.sill, [0, s.height]) : ''}
   <label class="bd-check"><input type="checkbox" name="frame"${o.frame ? ' checked' : ''}><span>Frame</span></label>
+  ${o.type === 'window' && o.frame ? field('across', 'Panes across', o.across, [1, PANES.most], '') + field('up', 'Panes up', o.up, [1, PANES.most], '') : ''}
+  ${o.type === 'door' && !storey ? `<label class="bd-check"><input type="checkbox" name="step"${o.step ? ' checked' : ''}><span>A step in front</span></label>` : ''}
   ${o.type === 'window' ? `<label class="bd-check"><input type="checkbox" name="counter"${o.counter ? ' checked' : ''}><span>Counter under it</span></label>
   <label class="bd-check"><input type="checkbox" name="flap"${o.flap ? ' checked' : ''}><span>Flap propped open over it</span></label>
   ${o.flap ? field('flapAngle', 'Flap angle, down from level', o.flapAngle, HATCH.flapAngle, '°') : ''}` : ''}
@@ -765,6 +803,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isGantry()) return readGantry();
     if (isPits()) return readPits();
     if (isMarshal()) return readMarshal();
+    if (isFlag()) return readFlag();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
@@ -779,7 +818,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         at: num(get('at')),
         width: num(get('opWidth')),
         height: num(get('opHeight')),
-        ...(o.type === 'window' && { sill: num(get('sill')), counter: get('counter').checked, flap: get('flap').checked, ...(get('flapAngle') && { flapAngle: num(get('flapAngle')) }) }),
+        ...(o.type === 'window' && { sill: num(get('sill')), counter: get('counter').checked, flap: get('flap').checked, ...(get('flapAngle') && { flapAngle: num(get('flapAngle')) }), ...(get('across') && { across: num(get('across')), up: num(get('up')) }) }),
+        ...(o.type === 'door' && get('step') && { step: get('step').checked }),
         frame: get('frame').checked,
       };
     });
@@ -823,6 +863,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       standSize: num(e.standSize),
       standShape: e.standShape.value,
       standTaper: num(e.standTaper),
+      standBraces: e.standType.value === 'legs' && e.standBraces.checked,
+      arch: building.roof === 'flat' ? num(e.arch) : 0,
       signWidth: num(e.signWidth),
       signHeight: num(e.signHeight),
       cuts: readCuts(building),
@@ -845,6 +887,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isGantry()) drawGantry();
     else if (isPits()) drawPits();
     else if (isMarshal()) drawMarshal();
+    else if (isFlag()) drawFlag();
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
     else if (isBays()) drawBays();
@@ -853,6 +896,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
       $('[data-bd-stand-size]').hidden = building.standType === 'none';
       $('[data-bd-column]').hidden = building.standType !== 'column';
+      $('[data-bd-legs]').hidden = building.standType !== 'legs';
+      $('[data-bd-stand-sized]').hidden = building.standType === 'frames';
       $('[data-bd-access]').hidden = building.access === 'none';
       // Open or closed, the storey's panel shows its waist wall or not.
       if (!!form.elements.stWaist !== !!storeyOf(building, storey)?.open) drawStoreys();
@@ -1037,6 +1082,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isGantry()) card = /^beam/.test(id) ? 'gantryBeam' : /^deck/.test(id) ? 'gantryBridge' : 'gantry';
     else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
+    else if (isFlag()) card = 'flag';
     else if (isWalkway()) card = 'walkway';
     else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
@@ -1108,6 +1154,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'gantry') return fillGantry(b);
     if (b.kind === 'pitmodule') return fillPits(b);
     if (b.kind === 'marshalpost') return fillMarshal(b);
+    if (b.kind === 'flagpost') return fillFlag(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
@@ -1122,7 +1169,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.railingStyle.value = b.railingStyle;
     for (const k of ['access', 'accessWall', 'accessAt', 'accessTo']) form.elements[k].value = b[k];
     for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
-    for (const k of ['standHeight', 'standSize', 'standTaper']) form.elements[k].value = b[k];
+    for (const k of ['standHeight', 'standSize', 'standTaper', 'arch']) form.elements[k].value = b[k];
+    form.elements.standBraces.checked = b.standBraces;
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
     $('[name="buildingName"]').value = name;
@@ -1194,6 +1242,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         if (view === 'model' && parts.length) show();
       } else if (b.dataset.bdRoof) {
         const next = { ...readForm(), roof: b.dataset.bdRoof };
+        // Only a flat roof is arched.
+        if (next.roof !== 'flat') next.arch = 0;
         fitted = false;
         await rebuild(next);
       } else if (b.dataset.bdEven) {

@@ -50,7 +50,7 @@ test('four storeys, a balcony all round and lattice railings are checked', () =>
   const five = { ...TOWER, upper: [...TOWER.upper, TOWER.upper[0]] };
   assert.throws(() => validateBuilding(five), /at most 3 storeys above the ground floor/);
   assert.throws(() => validateBuilding({ ...SMALL, upper: [{ ...SMALL.upper[0], balconyAll: 'yes' }] }), /runs all round/);
-  assert.throws(() => validateBuilding({ ...SMALL, railingStyle: 'rope' }), /bars, of mesh or a lattice/);
+  assert.throws(() => validateBuilding({ ...SMALL, railingStyle: 'rope' }), /bars, of mesh, a lattice or a solid parapet/);
   // A way up to storey 4.
   const plain = { ...TOWER, upper: TOWER.upper.map((u) => ({ ...u, balcony: 0, balconyAll: false, railing: false, lean: 0 })) };
   assert.equal(validateBuilding({ ...plain, access: 'ladder', accessWall: 'right', accessAt: 40, accessTo: '4' }).accessTo, '4');

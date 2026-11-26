@@ -21,6 +21,7 @@ export const ROOF_TEXTURES = Object.freeze([
   ['tile', 'Tiles'],
   ['metal', 'Corrugated'],
   ['shingle', 'Wooden shingles'],
+  ['seam', 'Standing seams'],
 ]);
 export const TEXTURE_DEFAULTS = Object.freeze({
   wallTexture: 'plain',
@@ -44,6 +45,7 @@ export const DRAWN = {
   planks: { course: 4, length: [28, 64] }, // a plank shows 4 mm; its ends are 28 to 64 mm apart
   boards: { width: 6 },
   shingle: { course: 5, length: [4, 8] },
+  seam: { pitch: 14, ridge: 1.4 }, // sheets between raised seams running down the roof
 };
 // Rows of wood that overlap, each sloping from its lower edge to its top.
 export const LAPPED = Object.freeze(['planks', 'shingle']);
@@ -115,6 +117,12 @@ export function jointPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
       for (let x = x0 - random() * hi * k; x < x1; x += (lo + random() * (hi - lo)) * k)
         if (x > x0) out.push(rect(x - w / 2, Math.max(yb, y0), x + w / 2, Math.min(yb + c, y1)));
     }
+  } else if (kind === 'seam') {
+    // The sheets cut down between the seams, so each seam stands proud.
+    const { pitch, ridge } = DRAWN.seam;
+    const p = pitch * k,
+      r = ridge * k;
+    for (let x = Math.floor(x0 / p) * p; x < x1; x += p) out.push(rect(x + r / 2, y0 - 1, x + p - r / 2, y1 + 1));
   } else if (kind === 'boards') {
     const bw = DRAWN.boards.width * k;
     for (let x = Math.floor(x0 / bw) * bw; x < x1; x += bw) if (x > x0) out.push(rect(x - w / 2, y0 - 1, x + w / 2, y1 + 1));

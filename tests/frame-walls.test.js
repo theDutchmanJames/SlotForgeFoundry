@@ -41,7 +41,7 @@ test('frame walls and mesh railings are checked', () => {
   assert.throws(() => validateBuilding({ wallStyle: 'braced' }), /Framed walls have no windows or doors/);
   assert.throws(() => validateBuilding({ door: 'none', wallStyle: 'braced', open: true }), /open or framed, not both/);
   assert.throws(() => validateBuilding({ door: 'none', wallStyle: 'lattice', cornice: 4 }), /Framed walls have no relief/);
-  assert.throws(() => validateBuilding({ railingStyle: 'chain' }), /bars, of mesh or a lattice/);
+  assert.throws(() => validateBuilding({ railingStyle: 'chain' }), /bars, of mesh, a lattice or a solid parapet/);
   assert.ok(!buildingLayout({ door: 'none', wallStyle: 'braced' }).parts.some((p) => /^brace/.test(p.id)), 'no corner braces in a frame');
 });
 

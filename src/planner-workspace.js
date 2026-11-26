@@ -1677,7 +1677,7 @@ export function createPlanner({ host, call, download, current, promote }) {
   // The right panel for a building in the layout: where it stands, and its height.
   function homePanel(entry) {
     const b = entry.building,
-      stand = ['grandstand', 'gantry', 'marshalpost', 'platform', 'walkway'].includes(b.kind),
+      stand = ['grandstand', 'gantry', 'marshalpost', 'flagpost', 'platform', 'walkway'].includes(b.kind),
       pits = b.kind === 'pitmodule' || b.kind === 'pitbays',
       storeys = stand || pits ? 0 : b.upper.length + 1;
     if (entry.over)
@@ -1709,7 +1709,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       '<label>X · mm<input data-pl-field="homeX" type="number" step="any" value="' + Math.round(entry.pose.x * 10) / 10 + '"></label>' +
       '<label>Y · mm<input data-pl-field="homeY" type="number" step="any" value="' + Math.round(entry.pose.y * 10) / 10 + '"></label>' +
       '<label>Facing · °<input data-pl-field="homeA" type="number" step="any" value="' + degrees + '"></label>' +
-      '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front' + (b.kind === 'marshalpost' ? ', the front of the cabin,' : b.kind === 'platform' ? ', the front of the deck,' : stand ? ', the parapet,' : ', the garage door,') + ' along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
+      '<small>Drag the building in the plan to move it. Dropped near the track, it stands with its front' + (b.kind === 'marshalpost' ? ', the front of the cabin,' : b.kind === 'flagpost' ? ', the front rail,' : b.kind === 'platform' ? ', the front of the deck,' : stand ? ', the parapet,' : ', the garage door,') + ' along the outside of the border, 1 mm from it. X and Y are the middle of its base; at 0° its front faces down the plan.</small>' +
       btn('b-place', 'Apply place', 'check') +
       '</div></details>' +
       (stand ? '' :

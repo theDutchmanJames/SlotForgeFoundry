@@ -9,6 +9,7 @@ import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geo
 import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
 import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
+import { flagFootprint } from './geometry/flag-post.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
 import { walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
@@ -92,6 +93,11 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = platformFootprint(b);
     outline = rect(x0, y0, x1, y1);
     front = { p: [b.width / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'flagpost') {
+    // The steps between their cheeks, the front rail towards the track.
+    const [x0, y0, x1, y1] = flagFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [b.width / 2, y0], f: [0, -1] };
   } else if (b.kind === 'marshalpost') {
     // On its base plate, or on the ground on its floor; the cabin faces the track.
     const [x0, y0, x1, y1] = marshalFootprint(b);
@@ -176,6 +182,7 @@ export function planShapes(entry) {
     // The deck over its frames.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
+  if (b.kind === 'flagpost') return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };

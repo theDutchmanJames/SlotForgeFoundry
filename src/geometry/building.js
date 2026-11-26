@@ -13,6 +13,7 @@ import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandst
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
 import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
 import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
+import { buildFlagPost, flagPostLayout, validateFlagPost } from './flag-post.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
 import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
@@ -49,6 +50,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   braces: true, // a corner brace in each inside corner, holding the walls square
   roofLip: 'frame', // under the roof a frame held by tabs, as under every floor; or 'none'
+  // A flat roof arched on top, this much higher in the middle than at its
+  // edges, the crown along the ridge ('depth' or 'width'): a curved hut roof.
+  // Its underside stays flat, so it prints flat and sits on its frame.
+  arch: 0,
   roofRailing: false, // a railing round a flat roof, for a roof terrace
   numbers: false, // a number plaque above each garage door
   firstNumber: 1,
@@ -61,7 +66,9 @@ export const BUILDING_DEFAULTS = Object.freeze({
   signHeight: 14,
   // What the building stands on: 'none' (the table), 'legs' (one at each
   // corner), 'column' (one in the middle, square or round, wider at its foot
-  // by standTaper %) or 'tower' (a braced tower of four frames). standSize:
+  // by standTaper %), 'tower' (a braced tower of four frames) or 'frames'
+  // (four braced frames round the edges of the base). Legs can have knee
+  // braces (standBraces) up into the base. standSize:
   // a leg, the column at its top, the tower's side. The base sits on top,
   // the supports' pins up in pockets under it.
   standType: 'none',
@@ -69,6 +76,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   standSize: 12,
   standShape: 'square',
   standTaper: 0,
+  standBraces: false,
   // The ground floor open above a waist wall: corner posts and a beam at the
   // top, the band split into panes by mullions.
   open: false,
@@ -86,8 +94,8 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // The walls of the ground floor as a steel frame: 'solid', 'braced' (an
   // X in each bay between posts) or 'lattice' (a diamond grid).
   wallStyle: 'solid',
-  // The railings: 'bars' (posts between a band and a rail), 'mesh' or
-  // 'lattice' (an X between each two posts).
+  // The railings: 'bars' (posts between a band and a rail), 'mesh',
+  // 'lattice' (an X between each two posts) or 'solid' (a parapet wall).
   railingStyle: 'bars',
   // A way up the outside: 'none', 'ladder' or 'stairs', against a wall,
   // starting accessAt along it (from its left end as you look at it); up to
@@ -120,6 +128,7 @@ export const BUILDING_LIMITS = Object.freeze({
   standHeight: [15, 190],
   standSize: [8, 200],
   standTaper: [0, 100],
+  arch: [0, 30],
   ...TEXTURE_LIMITS,
 });
 // A storey above: its size, its place on the storey below (from that
@@ -135,8 +144,10 @@ export function leanGrow(s) {
 }
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
-  window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false, counter: false, flap: false, flapAngle: 15 }),
-  door: Object.freeze({ type: 'door', width: 28, height: 48, sill: 0, frame: false }),
+  // A framed window: its frame splits it into panes, across and up (2 × 2: a cross).
+  window: Object.freeze({ type: 'window', width: 40, height: 30, sill: 25, frame: false, across: 2, up: 2, counter: false, flap: false, flapAngle: 15 }),
+  // A door on the ground floor can have a step in front of it.
+  door: Object.freeze({ type: 'door', width: 28, height: 48, sill: 0, frame: false, step: false }),
 });
 export const MAX_OPENINGS = 16;
 export const MAX_ROOMS = 24;
@@ -175,7 +186,9 @@ export const STAND = Object.freeze({
     ['legs', 'Four legs'],
     ['column', 'A column'],
     ['tower', 'A braced tower'],
+    ['frames', 'Braced frames all round'],
   ]),
+  knee: { reach: 22, angle: 55, thick: 0.7 }, // a knee brace: out along the wall, steepness, as thick as a leg × this
   foot: [3, 6],
   pin: [5, 1.5],
   frame: 4,
@@ -272,6 +285,7 @@ export const KIT = Object.freeze({
   railPost: 3, // its posts and its top rail, square
   railPitch: 20, // posts at most this far apart
   railBar: 2, // a lattice railing's bars, wide
+  step: [8, 3], // a step in front of a door: out from the base, wider than the door each side
   railInset: 1, // in from the edge of the deck
   railTab: 1.2, // its two tabs, down into pockets in the deck
   plaque: [18, 10, 1.5], // a bay number plaque: wide, high, thick
@@ -302,13 +316,16 @@ const LABELS = {
   standHeight: 'Height of the stand',
   standSize: 'Size of the stand',
   standTaper: 'Taper',
+  arch: 'Arch',
   waist: 'Waist wall',
   textureScale: 'Texture size',
   textureJoint: 'Joint width',
   textureDepth: 'Joint depth',
 };
 const UNITS = { pitch: '°', textureScale: ' %', standTaper: ' %' };
-const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'counter', 'flap', 'flapAngle'];
+const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle'];
+// Panes in a framed window, at most so many each way and at least so big.
+export const PANES = Object.freeze({ most: 6, least: 4 });
 const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
 const STOREY_SUFFIX = ['', ', ground floor', ', storey 2', ', storey 3', ', storey 4'];
 
@@ -330,6 +347,12 @@ function checkOpening(o, i, dims, where) {
   if (!WALLS.includes(full.wall)) throw Error('Choose a wall for opening ' + (i + 1) + where + '.');
   if (typeof full.frame !== 'boolean') throw Error('Choose whether opening ' + (i + 1) + where + ' has a frame.');
   if (kind === 'door' && (o.counter || o.flap || o.flapAngle !== undefined)) throw Error('A door has no counter or flap: those are for a serving hatch, a window.');
+  if (kind === 'door' && (o.across !== undefined || o.up !== undefined)) throw Error('A door has no panes: those are for a window.');
+  if (kind === 'window' && o.step !== undefined) throw Error('A window has no step: that is for a door.');
+  if (kind === 'door' && typeof full.step !== 'boolean') throw Error('Choose whether door ' + (i + 1) + where + ' has a step.');
+  if (kind === 'window')
+    for (const key of ['across', 'up'])
+      if (!Number.isInteger(full[key]) || full[key] < 1 || full[key] > PANES.most) throw Error('Window ' + (i + 1) + where + ': 1 to ' + PANES.most + ' panes ' + key + '.');
   if (kind === 'window' && (typeof full.counter !== 'boolean' || typeof full.flap !== 'boolean')) throw Error('Choose whether window ' + (i + 1) + where + ' has a counter and a flap.');
   const [lo, hi] = HATCH.flapAngle;
   if (kind === 'window' && (!Number.isFinite(full.flapAngle) || full.flapAngle < lo || full.flapAngle > hi))
@@ -361,6 +384,8 @@ function checkOpenings(list, dims, blocks, where) {
       throw Error('The ' + o.name.toLowerCase() + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
     if (o.sill + o.height > dims.height - KIT.frame)
       throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (dims.height - KIT.frame) + ' mm above the floor.');
+    if (o.type === 'window' && o.frame && (o.width / o.across < PANES.least + KIT.bar || o.height / o.up < PANES.least + KIT.bar))
+      throw Error('The panes of the ' + o.name.toLowerCase() + ' are too small: each at least ' + PANES.least + ' mm.');
     if ((o.counter || o.flap) && o.width > HATCH.longest)
       throw Error('The ' + o.name.toLowerCase() + ' is too wide for a counter or a flap in one piece: at most ' + HATCH.longest + ' mm.');
     if (o.counter && o.sill < HATCH.counterSill + (o.frame ? KIT.trim : 0))
@@ -386,6 +411,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'gantry') return validateGantry(input);
   if (input?.kind === 'pitmodule') return validatePitModule(input);
   if (input?.kind === 'marshalpost') return validateMarshalPost(input);
+  if (input?.kind === 'flagpost') return validateFlagPost(input);
   if (input?.kind === 'platform') return validatePlatform(input);
   if (input?.kind === 'walkway') return validateWalkway(input);
   if (input?.kind === 'pitbays') return validatePitBays(input);
@@ -470,12 +496,19 @@ export function validateBuilding(input) {
     if (b.lane) throw Error('A garage over a pit bay stands on the table.');
     const inner = Math.floor((standInside(b)[2] - standInside(b)[0]) * 10) / 10;
     const room = Math.min(inner, Math.floor((standInside(b)[3] - standInside(b)[1]) * 10) / 10);
-    const [lo, hi] = { legs: [8, 20], column: [10, room], tower: [30, room] }[b.standType];
+    const [lo, hi] = { legs: [8, 20], column: [10, room], tower: [30, room], frames: [0, Infinity] }[b.standType];
     if (b.standSize < lo || b.standSize > hi)
       throw Error({ legs: 'A leg', column: 'The column', tower: 'The tower' }[b.standType] + ' must be ' + lo + ' to ' + fmtMm(hi) + ' mm' + (b.standType === 'legs' ? ' square.' : ' across, inside the base.'));
   }
+  if (b.arch) {
+    if (b.roof !== 'flat') throw Error('An arched roof is a flat roof with an arch on top: choose a flat roof.');
+    if (b.roofRailing || b.sign === 'billboard' || b.accessTo === 'roof' && b.access !== 'none') throw Error('An arched roof has no railing, billboard or way up onto it.');
+  }
+  if (typeof b.standBraces !== 'boolean') throw Error('Choose whether the legs have knee braces.');
+  if (b.standBraces && b.standType !== 'legs') throw Error('Knee braces are for legs.');
+  if (b.standBraces && b.standHeight < STAND.knee.reach * Math.tan((STAND.knee.angle * Math.PI) / 180) + STAND.foot[0] + 5) throw Error('Legs with knee braces need a stand at least ' + Math.ceil(STAND.knee.reach * Math.tan((STAND.knee.angle * Math.PI) / 180) + STAND.foot[0] + 5) + ' mm high.');
   // A sign along the top of the front wall: everything in the front wall stays under it.
-  if (!['bars', 'mesh', 'lattice'].includes(b.railingStyle)) throw Error('Choose railings of bars, of mesh or a lattice.');
+  if (!['bars', 'mesh', 'lattice', 'solid'].includes(b.railingStyle)) throw Error('Choose railings of bars, of mesh, a lattice or a solid parapet.');
   if (!SIGNS.some(([id]) => id === b.sign)) throw Error('Choose a sign from the list.');
   if (b.sign !== 'none' && b.signWidth > b.width) throw Error('The sign is wider than the building: at most ' + b.width + ' mm.');
   if (b.sign === 'billboard') {
@@ -527,6 +560,9 @@ export function validateBuilding(input) {
     return s;
   });
   checkAccess(b, [{ ...b, openings }, ...upper]);
+  // A step in front of a door: on the ground floor, the building on the table.
+  if (upper.some((s) => s.openings.some((o) => o.step))) throw Error('A step is for a door on the ground floor.');
+  if (b.standType !== 'none' && openings.some((o) => o.step)) throw Error('A door on a stand has no step: the base is off the table.');
   // Leaning walls: the top storey only, under a flat roof, its walls plain of doors and hatches.
   const all = [b, ...upper];
   all.forEach((s, i) => {
@@ -591,17 +627,22 @@ function standLegs(b) {
     h = b.standSize / 2;
   return [[x0 + h, y0 + h], [x1 - h, y0 + h], [x0 + h, y1 - h], [x1 - h, y1 - h]];
 }
-// The four frames of a braced tower, square round the middle: where each starts, along and in.
+// The four frames of a braced tower, square round the middle; or, braced
+// frames all round, just inside the edges of the base: where each starts, along and in.
 function towerFrames(b) {
-  const T = b.standSize,
+  const all = b.standType === 'frames';
+  const [x0, y0, x1, y1] = standInside(b);
+  const Tw = all ? x1 - x0 : b.standSize,
+    Td = all ? y1 - y0 : b.standSize,
     F = STAND.frame,
-    cx = b.width / 2 - T / 2,
-    cy = b.depth / 2 - T / 2;
+    cx = all ? x0 : b.width / 2 - Tw / 2,
+    cy = all ? y0 : b.depth / 2 - Td / 2;
+  const [key, name] = all ? ['stand', 'Frame'] : ['tower', 'Tower frame'];
   return [
-    { id: 'tower-front', name: 'Tower frame, front', from: [cx, cy], dir: [1, 0, 0], inward: [0, 1, 0], len: T },
-    { id: 'tower-back', name: 'Tower frame, back', from: [cx, cy + T], dir: [1, 0, 0], inward: [0, -1, 0], len: T },
-    { id: 'tower-left', name: 'Tower frame, left', from: [cx, cy + F], dir: [0, 1, 0], inward: [1, 0, 0], len: T - 2 * F },
-    { id: 'tower-right', name: 'Tower frame, right', from: [cx + T, cy + F], dir: [0, 1, 0], inward: [-1, 0, 0], len: T - 2 * F },
+    { id: key + '-front', name: name + ', front', from: [cx, cy], dir: [1, 0, 0], inward: [0, 1, 0], len: Tw },
+    { id: key + '-back', name: name + ', back', from: [cx, cy + Td], dir: [1, 0, 0], inward: [0, -1, 0], len: Tw },
+    { id: key + '-left', name: name + ', left', from: [cx, cy + F], dir: [0, 1, 0], inward: [1, 0, 0], len: Td - 2 * F },
+    { id: key + '-right', name: name + ', right', from: [cx + Tw, cy + F], dir: [0, 1, 0], inward: [-1, 0, 0], len: Td - 2 * F },
   ];
 }
 /** The pins on top of the stand, as [x0, y0, x1, y1]: each goes up into a pocket under the base. */
@@ -615,7 +656,7 @@ export function standPins(b) {
     const q = Math.min(3, b.standSize / 2 - 2);
     return [[b.width / 2 - q, b.depth / 2 - q, b.width / 2 + q, b.depth / 2 + q]];
   }
-  if (b.standType === 'tower') {
+  if (b.standType === 'tower' || b.standType === 'frames') {
     const [tl] = STAND.tab,
       F = STAND.frame;
     return towerFrames(b).flatMap((f) =>
@@ -662,7 +703,8 @@ function accessPlace(b, all) {
   if (b.accessTo === 'roof') {
     const top = stack.at(-1);
     const over = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight }[w];
-    return { against: top, rise: H + top.eave + KIT.roof, out: over };
+    // Out past a roof railing too: the ladder's top reaches above the roof.
+    return { against: top, rise: H + top.eave + KIT.roof, out: over + (b.roofRailing ? KIT.railInset + KIT.railThick + KIT.play : 0) };
   }
   const k = Number(b.accessTo);
   const s = stack[k - 1];
@@ -681,6 +723,7 @@ function standParts(b) {
   if (b.standType === 'legs') return LEG_NAMES.map((n, i) => ({ id: 'leg-' + (i + 1), name: 'Leg, ' + n, role: 'frame' }));
   if (b.standType === 'column') return [{ id: 'column', name: b.standShape === 'round' ? 'Round column' : 'Column', role: 'frame' }];
   if (b.standType === 'tower') return [...towerFrames(b).map((f) => ({ id: f.id, name: f.name, role: 'frame' })), { id: 'tower-foot', name: 'Tower foot', role: 'buildingBase' }];
+  if (b.standType === 'frames') return [...towerFrames(b).map((f) => ({ id: f.id, name: f.name, role: 'frame' })), { id: 'stand-foot', name: 'Foot frame', role: 'buildingBase' }];
   return [];
 }
 
@@ -937,6 +980,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'gantry') return { ...gantryLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'flagpost') return { ...flagPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitbays') return { ...pitBaysLayout(input), storeys: [], doors: [] };
@@ -966,6 +1010,7 @@ export function buildingLayout(input) {
     s.openings.forEach((o, i) => {
       if (o.counter) parts.push({ id: 'counter' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' counter' + s.label, role: 'frame' });
       if (o.flap) parts.push({ id: 'flap' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' flap' + s.label, role: 'door' });
+      if (o.step) parts.push({ id: 'step-' + (i + 1), name: openingName(o, s.openings) + ' step', role: 'buildingBase' });
     });
   if (b.sign !== 'none') parts.push({ id: 'sign', name: b.sign === 'billboard' ? 'Billboard' : 'Sign', role: 'wall' });
   return { building: b, storeys, parts, doors };
@@ -1002,7 +1047,7 @@ function wallOpenings(s, doors) {
  */
 export function buildingCuts(input, plate) {
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1073,6 +1118,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'gantry') return buildGantry(wasm, input, plate);
   if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
   if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
+  if (input?.kind === 'flagpost') return buildFlagPost(wasm, input);
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
@@ -1123,6 +1169,8 @@ export function buildGarage(wasm, input, plate = null) {
     }
     // Mesh: the field between the end posts filled, square holes through it.
     if (b.railingStyle === 'mesh') bits.push(meshField(B, len, post, band, h - post, th));
+    // Solid: the field between the band and the rail filled, a parapet.
+    if (b.railingStyle === 'solid') bits.push(B(0, band - 0.01, 0, len, h - post + 0.01, th));
     // Lattice: an X between each two posts, a little into them, the band and the rail.
     if (b.railingStyle === 'lattice') {
       const v0 = band,
@@ -1475,6 +1523,21 @@ export function buildGarage(wasm, input, plate = null) {
           // walls and keeps them square; its tabs go into pockets in the
           // underside of the roof, so nothing shows on top.
           let roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
+          // Arched: the top a circular arc across it, the crown along the ridge, as thick as a flat roof at its edges.
+          if (b.arch) {
+            const along = b.ridge === 'depth';
+            const [a0, a1] = along ? [-ov.left, W + ov.right] : [-ov.front, D + ov.back];
+            const [l0, l1] = along ? [-ov.front - 1, D + ov.back + 1] : [-ov.left - 1, W + ov.right + 1];
+            const c = (a1 - a0) / 2,
+              h = b.arch,
+              R = (c * c + h * h) / (2 * h);
+            const mid = (a0 + a1) / 2,
+              zc = z1 + rt + h - R;
+            let drum = own(Manifold.cylinder(l1 - l0, R, R, 256));
+            // The cylinder's axis along the ridge, its top at the crown.
+            drum = along ? own(own(drum.rotate([-90, 0, 0])).translate([mid, l0, zc])) : own(own(drum.rotate([0, 90, 0])).translate([l0, mid, zc]));
+            roofPlate = own(box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt + h).intersect(drum));
+          }
           // A roof terrace: its railing in pockets in the top of the roof.
           for (const { panel, pockets, piece } of railingsOf(s).filter((r) => r.piece.id.startsWith('roofrail'))) {
             roofPlate = minus(roofPlate, ...pockets);
@@ -1652,7 +1715,8 @@ export function buildGarage(wasm, input, plate = null) {
         local({ id: q.id, name: q.name, role: 'frame', solid: plaque, outward: [0, -1, 0], apart: [0, -APART.out - 10, 0] });
       }
       // Frames: a band around the opening on the outside of the wall, open at
-      // the bottom for a door; a window gets a cross in it.
+      // the bottom for a door; a window gets bars between its panes, a cross
+      // for 2 × 2.
       const { trim: k, trimDepth: fd, bar } = KIT;
       s.openings.forEach((o, i) => {
         if (!o.frame) return;
@@ -1662,13 +1726,29 @@ export function buildGarage(wasm, input, plate = null) {
           zb = za + o.height;
         const bottom = o.type === 'window' ? za - k : za;
         let frame = minus(onWall(o.wall, u0 - k, u1 + k, 0, fd, bottom, zb + k), onWall(o.wall, u0, u1, -1, fd + 1, za, zb));
-        if (o.type === 'window') {
-          const um = (u0 + u1) / 2,
-            zm = (za + zb) / 2;
-          frame = own(frame.add(own(Manifold.union([onWall(o.wall, um - bar / 2, um + bar / 2, 0, fd, za, zb), onWall(o.wall, u0, u1, 0, fd, zm - bar / 2, zm + bar / 2)]))));
+        if (o.type === 'window' && o.across * o.up > 1) {
+          const bars = [];
+          for (let j = 1; j < o.across; j++) {
+            const u = u0 + (j * (u1 - u0)) / o.across;
+            bars.push(onWall(o.wall, u - bar / 2, u + bar / 2, 0, fd, za, zb));
+          }
+          for (let j = 1; j < o.up; j++) {
+            const z = za + (j * (zb - za)) / o.up;
+            bars.push(onWall(o.wall, u0, u1, 0, fd, z - bar / 2, z + bar / 2));
+          }
+          frame = own(frame.add(own(Manifold.union(bars))));
         }
         local({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame', solid: frame, outward: OUTWARD[o.wall], apart: add3(wallApart(o.wall), scale3(OUTWARD[o.wall], APART.frame)) });
       });
+      // A step in front of a door: a block against the side of the base, half
+      // as high, a little wider than the door. It prints as it stands.
+      if (s.n === 1)
+        s.openings.forEach((o, i) => {
+          if (!o.step) return;
+          const [reach, wider] = KIT.step;
+          const solid = onWall(o.wall, o.at - o.width / 2 - wider, o.at + o.width / 2 + wider, m + reach, m, 0, top / 2);
+          local({ id: 'step-' + (i + 1), name: openingName(o, s.openings) + ' step', role: 'buildingBase', solid, lie: [0, 0, 0], apart: scale3(OUTWARD[o.wall], APART.out) });
+        });
       // A serving hatch: a counter under the window, a flap propped open over
       // it. Each is a plate on small fins: the fins' back edge lies on the
       // wall (or the window's frame) and sets the plate's angle, so it is
@@ -1830,10 +1910,23 @@ export function buildGarage(wasm, input, plate = null) {
     const [[fx, fy], a] = ALONG[w];
     const outward = OUTWARD[w];
     const relief = s.relief && (s.relief.plinth || s.relief.cornice || s.relief.pilasters) ? RELIEF.depth : 0;
-    // Clear of the stand's feet on the table too: they may reach out past the walls.
-    const [, pad] = STAND.foot;
-    const feet = { none: 0, legs: pad + 1, tower: pad + 1, column: Math.max(0, (b.standSize * (1 + b.standTaper / 100)) / 2 + pad - Math.min(b.width, b.depth) / 2 + 1) }[b.standType];
-    const off = Math.max(KIT.ledge, extra, relief, feet) + 0.2;
+    // Against the base, the relief, a balcony or the roof's overhang; where
+    // the stand's feet reach out past the walls on the table, the way up is
+    // notched round them, so it still stands against the building.
+    const off = Math.max(KIT.ledge, extra, relief) + 0.2;
+    const [ft, pad] = STAND.foot,
+      g = 0.3;
+    const feet = [];
+    if (b.standType === 'legs') for (const [cx, cy] of standLegs(b)) feet.push(box(cx - b.standSize / 2 - pad - g, cy - b.standSize / 2 - pad - g, -1, cx + b.standSize / 2 + pad + g, cy + b.standSize / 2 + pad + g, ft + g));
+    if (b.standType === 'frames') {
+      const [x0, y0, x1, y1] = standInside(b);
+      feet.push(box(x0 - pad - g, y0 - pad - g, -1, x1 + pad + g, y1 + pad + g, ft + g));
+    }
+    if (b.standType === 'tower' || b.standType === 'column') {
+      const r = (b.standType === 'tower' ? b.standSize : b.standSize * (1 + b.standTaper / 100)) / 2 + pad + g;
+      feet.push(box(b.width / 2 - r, b.depth / 2 - r, -1, b.width / 2 + r, b.depth / 2 + r, ft + g));
+    }
+    const clearOfFeet = (solid) => (feet.length ? minus(solid, ...feet) : solid);
     // A point u along the wall, n out from its face, at height z.
     const P = (u, n, z) => [s.ox + fx + a[0] * u + outward[0] * n, s.oy + fy + a[1] * u + outward[1] * n, z];
     if (b.access === 'ladder') {
@@ -1853,7 +1946,7 @@ export function buildGarage(wasm, input, plate = null) {
       // Across it from one rail to the other, centred on accessAt.
       const origin = foot.map((v, i) => v - across[i] * (Q.width / 2));
       let ladder = own(own(Manifold.union(bits)).transform([...across, 0, ...t, 0, ...nrm, 0, ...origin, 1]));
-      ladder = trim(trim(ladder, [0, 0, 1], 0), [0, 0, -1], -(rise + Q.above));
+      ladder = clearOfFeet(trim(trim(ladder, [0, 0, 1], 0), [0, 0, -1], -(rise + Q.above)));
       const lie = outward[0] ? [0, (-Math.atan2(nrm[0], nrm[2]) * 180) / Math.PI, 0] : [(Math.atan2(nrm[1], nrm[2]) * 180) / Math.PI, 0, 0];
       return { id: 'access', name: 'Ladder', role: 'frame', solid: ladder, lie, apart: [outward[0] * 20, outward[1] * 20, 0] };
     }
@@ -1875,7 +1968,7 @@ export function buildGarage(wasm, input, plate = null) {
     const origin = P(b.accessAt, 0, 0);
     const steps3 = sweep(poly(outline), a, [0, 0, 1], origin, outward, off, off + S.width - pt + 0.01);
     const side = sweep(wallOut, a, [0, 0, 1], origin, outward, off + S.width - pt, off + S.width);
-    const solid = own(Manifold.union([steps3, side]));
+    const solid = clearOfFeet(own(Manifold.union([steps3, side])));
     // It prints lying on its outer wall.
     return { id: 'access', name: 'Staircase', role: 'frame', solid, outward: outward.map((v) => -v), apart: [outward[0] * 20, outward[1] * 20, 0] };
   }
@@ -1892,7 +1985,30 @@ export function buildGarage(wasm, input, plate = null) {
     const out = [];
     if (b.standType === 'legs') {
       standLegs(b).forEach(([cx, cy], i) => {
-        const solid = own(Manifold.union([box(cx - S / 2 - pad, cy - S / 2 - pad, 0, cx + S / 2 + pad, cy + S / 2 + pad, ft), box(cx - S / 2, cy - S / 2, ft - 0.01, cx + S / 2, cy + S / 2, zTop), pins[i]]));
+        const bits = [box(cx - S / 2 - pad, cy - S / 2 - pad, 0, cx + S / 2 + pad, cy + S / 2 + pad, ft), box(cx - S / 2, cy - S / 2, ft - 0.01, cx + S / 2, cy + S / 2, zTop), pins[i]];
+        // Knee braces: from the leg up and out along each wall towards the
+        // middle, ending under the deck; steeper than 45°, so they print.
+        if (b.standBraces) {
+          const { reach, angle, thick } = STAND.knee;
+          const rise = reach * Math.tan((angle * Math.PI) / 180),
+            k = (S * thick) / 2;
+          const sx = cx < b.width / 2 ? 1 : -1,
+            sy = cy < b.depth / 2 ? 1 : -1;
+          // In the plane along x (or y) through the leg: a bar from the leg's
+          // inner face, its bottom end square to the leg, its top level under the deck.
+          const tan = Math.tan((angle * Math.PI) / 180),
+            d = k / Math.cos((angle * Math.PI) / 180),
+            s0 = S / 2 - 0.3,
+            zA = zTop - rise;
+          const outline = [[s0, zA - d], [s0 + (rise + d) / tan, zTop], [s0 + (rise - d) / tan, zTop], [s0, zA + d]];
+          const strut = (along) => {
+            const sg = along === 'x' ? sx : sy;
+            const pts = outline.map(([u, z]) => [u * sg, z]);
+            return along === 'x' ? sweep(pts, [1, 0, 0], [0, 0, 1], [cx, cy, 0], [0, 1, 0], -k, k) : sweep(pts, [0, 1, 0], [0, 0, 1], [cx, cy, 0], [1, 0, 0], -k, k);
+          };
+          bits.push(strut('x'), strut('y'));
+        }
+        const solid = own(Manifold.union(bits));
         out.push({ id: 'leg-' + (i + 1), name: 'Leg, ' + LEG_NAMES[i], role: 'frame', solid, lie: [0, 0, 0], apart: [0, 0, 0] });
       });
     } else if (b.standType === 'column') {
@@ -1923,9 +2039,17 @@ export function buildGarage(wasm, input, plate = null) {
         const out3 = f.inward.map((v) => -v);
         out.push({ id: f.id, name: f.name, role: 'frame', solid, outward: out3, apart: [out3[0] * 10, out3[1] * 10, 0] });
       }
-      const [cx, cy] = [b.width / 2, b.depth / 2];
-      const r = S / 2 + pad;
-      out.push({ id: 'tower-foot', name: 'Tower foot', role: 'buildingBase', solid: minus(box(cx - r, cy - r, 0, cx + r, cy + r, ft), ...pockets), lie: [0, 0, 0], apart: [0, 0, -10] });
+      if (b.standType === 'frames') {
+        // A ring under the frames, as wide as their feet reach.
+        const [x0, y0, x1, y1] = standInside(b),
+          w = F + 2 * pad;
+        const ring = minus(box(x0 - pad, y0 - pad, 0, x1 + pad, y1 + pad, ft), box(x0 - pad + w, y0 - pad + w, -1, x1 + pad - w, y1 + pad - w, ft + 1));
+        out.push({ id: 'stand-foot', name: 'Foot frame', role: 'buildingBase', solid: minus(ring, ...pockets), lie: [0, 0, 0], apart: [0, 0, -10] });
+      } else {
+        const [cx, cy] = [b.width / 2, b.depth / 2];
+        const r = S / 2 + pad;
+        out.push({ id: 'tower-foot', name: 'Tower foot', role: 'buildingBase', solid: minus(box(cx - r, cy - r, 0, cx + r, cy + r, ft), ...pockets), lie: [0, 0, 0], apart: [0, 0, -10] });
+      }
     }
     return out;
   }

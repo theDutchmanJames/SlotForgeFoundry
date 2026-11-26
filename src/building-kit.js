@@ -15,6 +15,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
+  if (b.kind === 'flagpost') return flagNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -34,6 +35,7 @@ export function kitNotes(name, b, parts, sizes) {
     legs: 'Stand the four legs on the table and lay the base on them, each pin up into its pocket under the base, with a drop of glue.',
     column: 'Stand the column on the table and lay the base on it, its pin up into the pocket under the middle of the base, with a drop of glue.',
     tower: 'Stand the four tower frames in the slots of the tower foot, the front and the back outside the ends, and glue the corners. Lay the base on top, the tabs of the frames up into the pockets under it.',
+    frames: 'Stand the four frames in the slots of the foot frame, the front and the back outside the ends, and glue the corners. Lay the base on top, the tabs of the frames up into the pockets under it.',
   }[b.standType];
   const steps = [
     ...(cut
@@ -70,6 +72,9 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     ...(parts.some((p) => /^(railing|roofrail)/.test(p.id))
       ? ['Push the two tabs of each railing into their pockets along the edge of its floor or roof, the posts on the outside, with a drop of glue in each. The pieces of a long railing meet end to end.']
+      : []),
+    ...(parts.some((p) => /^step-/.test(p.id))
+      ? ['Glue each step against the side of the base, in front of its door, its foot on the table.']
       : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
@@ -222,6 +227,28 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of a flag waver's post: the steps, their cheeks and the front rail.
+function flagNotes(name, f, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  return [
+    name + " · SlotForge Foundry flag waver's post kit",
+    '',
+    f.steps + ' steps up to a landing ' + fmt(f.height) + ' mm above the table, ' + fmt(f.width) + ' mm wide, a handrail ' + fmt(f.railHeight) + ' mm high each side' + (f.board ? ' and a board on the front rail.' : '.'),
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The steps print on their side, their profile on the plate; the cheeks and the front lie flat.',
+    '',
+    'Putting it together',
+    '1. Glue a cheek against each side of the steps, its foot on the table, the handrail over the steps.',
+    '2. Glue the front against the front of the landing, between the cheeks, its band down and the rail level with the handrails.',
+    '3. Stand it beside the track, the front rail towards the road.',
+  ].join('\n');
+}
+
 function marshalNotes(name, m, parts, sizes) {
   const L = marshalLevels(m);
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
