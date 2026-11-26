@@ -1,5 +1,6 @@
 // The notes that come with a building kit: its parts, how they print and
 // how they go together.
+import { glazingSheets } from './building-glazing.js';
 import { fmt } from './ui.js';
 import { marshalLevels } from './geometry/marshal-post.js';
 import { BILLBOARD } from './geometry/billboard.js';
@@ -12,6 +13,12 @@ import { tyreOpening } from './geometry/tyre-bridge.js';
  */
 const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1);
 
+// Window and door frames on a connected or shaped building.
+const FRAMES_NOTE = 'Window and door frames print face up, their back flat on the plate. Paint them, then glue each round its opening on the outside of its wall, its inner edge flush with the opening; the texture keeps clear of where it sits.';
+// The parts are as exported, with their ids: a frame is "frame-2", "s1-frame-2" or a piece of one.
+// The glazing template, when there are windows to glaze.
+const glazingNote = (b) => (glazingSheets(b).length ? ['Glazing: glazing.svg has the clear sheet for each window, full size. Print it at 100 %, cut the sheets from clear plastic 0.3 to 0.5 mm thick, and glue each behind its window on the inside of its wall before the walls go together.'] : []);
+const hasFrames = (parts) => parts.some((p) => /(^|-)frame-\d/.test(p.id));
 export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'sections') return [
     name + ' · SlotForge Foundry connected building kit',
@@ -19,6 +26,8 @@ export function kitNotes(name, b, parts, sizes) {
     'All sections share one base and floor level. Connections are open; no duplicate internal walls. Upper walls close steps between roofs.',
     'Parts are supplied in print orientation. Assemble numbered tiles flat using straight glue seams, then dry-fit wall feet into the base grooves and glue. Groove clearance: '+b.play+' mm per side.',
     'Roof panels print flat on their undersides. Join panels at their mitred ridges/hips at the specified pitch, then glue along the shaped wall tops. Eaves are trimmed at attached sections; roof junctions are stepped joins, not continuous valleys. There is no locating frame or flashing.',
+    ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
+    ...glazingNote(b),
     'Sections and wall directions are included in part names. Keep matching pieces together. Dry-fit each section and its roof before gluing; perform a printer fit trial before a complete kit.',
     '', 'Parts:', ...parts.map(p => '- '+p.name+(sizes[p.id] ? ': '+sizes[p.id].join(' × ')+' mm' : '')),
   ].join('\n');
@@ -29,6 +38,8 @@ export function kitNotes(name, b, parts, sizes) {
     'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
     'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners. Glue the wall seams and feet.',
     'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
+    ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
+    ...glazingNote(b),
     'Check fit on your printer before printing the complete kit. The groove clearance is ' + b.play + ' mm per side.',
     '', 'Parts:', ...parts.map(p => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].join(' × ') + ' mm' : '')),
   ].join('\n');
@@ -74,7 +85,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...(b.access === 'ladder' ? ['Stand the ladder with its foot on the table and its top against ' + { base: 'the edge of the base', roof: 'the edge of the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', on the ' + b.accessWall + ' wall, and glue it there.'] : []),
     ...(b.access === 'stairs' ? ['Stand the staircase on the table against the ' + b.accessWall + ' wall, its landing level with ' + { base: 'the top of the base', roof: 'the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', its own wall on the outside, and glue it.'] : []),
     'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
-    'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.',
+    'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove. The grooves leave ' + b.play + ' mm on each side of a wall: if your walls are too tight or too loose in them, change the joint clearance and print the base again.',
     ...(divided
       ? ['Stand each dividing wall in its groove in the base, between the walls, and glue its ends to them. Its notched top corners let the lip of the roof or the floor above pass over it.']
       : []),
@@ -137,6 +148,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     ...(b.container && b.container !== 'none' ? ['Container details: the corner posts, rails, cargo-door hardware and roof ribs are integrated into their panels. Cargo doors and corner-casting recesses are decorative, not working hinges or stacking connectors. Keep the roof loose for interior access. Add clear sheet behind the windows and your own graphics to the sign.'] : []),
+    ...glazingNote(b),
     'Paint the parts before you glue them, or print them in different colours.',
   ].join('\n');
 }

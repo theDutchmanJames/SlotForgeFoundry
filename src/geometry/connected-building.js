@@ -2,9 +2,10 @@
 // All coordinates are derived from attachments; a join is an open connection, not two closed kits.
 import polygonClipping from 'polygon-clipping';
 import { kitShapes } from './kit-shapes.js';
+import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellFrame, trimOf } from './shell-details.js';
 
-export const SECTION_DEFAULTS = Object.freeze({ id: 's1', name: 'Main hall', parent: null, side: 'back', offset: 0, width: 220, depth: 120, height: 80, roofType: 'gable', pitch: 25, ridge: 'width', rises: 'back', overhang: 4, openings: [] });
-export const CONNECTED_DEFAULTS = Object.freeze({ kind: 'sections', baseHeight: 6, wall: 3, roof: 3, play: 0.2, sections: [SECTION_DEFAULTS, { ...SECTION_DEFAULTS, id: 's2', name: 'Wing', parent: 's1', width: 100, depth: 100, height: 60, roofType: 'slope', rises: 'front' }] });
+export const SECTION_DEFAULTS = Object.freeze({ id: 's1', name: 'Main hall', parent: null, side: 'back', offset: 0, width: 220, depth: 120, height: 80, roofType: 'gable', pitch: 25, ridge: 'width', rises: 'back', overhang: 4, ...SHELL_FINISH_DEFAULTS, openings: [] });
+export const CONNECTED_DEFAULTS = Object.freeze({ kind: 'sections', baseHeight: 6, wall: 3, roof: 3, play: 0.2, ...SHELL_TEXTURE_DEFAULTS, sections: [SECTION_DEFAULTS, { ...SECTION_DEFAULTS, id: 's2', name: 'Wing', parent: 's1', width: 100, depth: 100, height: 60, roofType: 'slope', rises: 'front' }] });
 export const SIDES = ['front', 'right', 'back', 'left'];
 export function sectionPositions(b) {
   const placed = [];
@@ -62,6 +63,7 @@ export function validateConnected(input) {
   const b = { ...CONNECTED_DEFAULTS, ...input };
   if (b.kind !== 'sections') throw Error('Invalid connected building kind.');
   for (const [key,lo,hi] of [['baseHeight',4,20],['wall',2,5],['roof',2,5],['play',0.1,0.5]]) range(b[key],lo,hi,key);
+  checkShellTexture(b);
   if (!Array.isArray(b.sections) || !b.sections.length || b.sections.length > 8) throw Error('Use between one and eight connected sections.');
   const ids = new Set();
   b.sections = b.sections.map((input,i) => {
@@ -75,7 +77,7 @@ export function validateConnected(input) {
     if (!Number.isFinite(s.pitch) || s.pitch < 5 || s.pitch > 60) throw Error('Roof pitch must be 5–60 degrees.');
     if (!SIDES.includes(s.side) || !SIDES.includes(s.rises) || !['width','depth'].includes(s.ridge) || !['flat','slope','gable','hip'].includes(s.roofType)) throw Error('Choose valid attachment and roof options.');
     if (!Array.isArray(s.openings) || s.openings.length > 64) throw Error('Use at most 64 openings per section.');
-    return s;
+    return { ...s, ...checkShellFinish(s, SIDES, s.height, ' of ' + s.name) };
   });
   const placed = sectionPositions(b);
   for (let i=0;i<placed.length;i++) {
@@ -91,17 +93,20 @@ export function validateConnected(input) {
     }
     const walls = sectionWalls(s), contacts = sectionContacts(b,i);
     b.sections[i].openings = s.openings.map(o => {
-      keysOnly(o,{wall:0,type:0,at:0,width:0,height:0,sill:0},'opening');
-      const w = walls.find(w => w.id===o.wall), p = {...o,sill:o.type==='door'?0:o.sill};
-      if (!w || !['door','window'].includes(p.type) || ![p.at,p.width,p.height,p.sill].every(Number.isFinite) || p.width<8 || p.height<8 || p.sill<0) throw Error('Choose a wall and positive opening dimensions.');
-      const lo = p.at-p.width/2, hi=p.at+p.width/2;
-      if (lo<9 || hi>w.length-9) throw Error(s.name+': keep openings 9 mm from corners.');
-      if (p.sill+p.height>s.height-6) throw Error(s.name+': keep openings 6 mm below the eaves.');
+      keysOnly(o,Object.fromEntries(SHELL_OPENING_KEYS.map(k=>[k,0])),'opening');
+      const w = walls.find(w => w.id===o.wall);
+      if (!w || !['door','window'].includes(o.type) || ![o.at,o.width,o.height,o.type==='door'?0:o.sill].every(Number.isFinite) || o.width<8 || o.height<8 || o.sill<0) throw Error('Choose a wall and positive opening dimensions.');
+      const p = checkShellOpening({...o,sill:o.type==='door'?0:o.sill}, s.name+' '+w.id+' wall');
+      // A frame reaches past the sides and top of its opening: it keeps the same room.
+      const t = trimOf(p), lo = p.at-p.width/2-t, hi=p.at+p.width/2+t;
+      if (lo<9 || hi>w.length-9) throw Error(s.name+': keep openings'+(t?' and their frames':'')+' 9 mm from corners.');
+      if (p.sill+p.height+t>s.height-6) throw Error(s.name+': keep openings'+(t?' and their frames':'')+' 6 mm below the eaves.');
       if (contacts.some(c=>c.wall===p.wall && hi>c.lo-6 && lo<c.hi+6)) throw Error(s.name+': this wall connects to another section. Keep openings at least 6 mm clear of the connection.');
       return p;
     });
     b.sections[i].openings.forEach((o,j,all)=>all.slice(j+1).forEach(p=>{
-      if(o.wall===p.wall && Math.abs(p.at-o.at)-(p.width+o.width)/2<6 && Math.max(p.sill-o.sill-o.height,o.sill-p.sill-p.height)<6) throw Error('Keep openings at least 6 mm apart.');
+      const t = trimOf(o)+trimOf(p);
+      if(o.wall===p.wall && Math.abs(p.at-o.at)-(p.width+o.width)/2<6+t && Math.max(p.sill-o.sill-o.height,o.sill-p.sill-p.height)<6+t) throw Error('Keep openings'+(t?' and their frames':'')+' at least 6 mm apart.');
     }));
   }
   const outline=connectedOutline(b), xs=outline.map(p=>p[0]), ys=outline.map(p=>p[1]);
@@ -110,7 +115,7 @@ export function validateConnected(input) {
 }
 export function connectedLayout(input) {
   const b=validateConnected(input);
-  return {building:b,storeys:[],doors:[],parts:[{id:'base',name:'Connected base',role:'buildingBase'},...b.sections.flatMap(s=>[...SIDES.map(w=>({id:s.id+'-'+w,name:s.name+' '+w+' wall',role:'wall'})),...sectionRoofPlanes({...s,x:0,y:0}).map(p=>({id:s.id+'-roof-'+p.id,name:s.name+' roof '+p.id,role:'roof'}))])]};
+  return {building:b,storeys:[],doors:[],parts:[{id:'base',name:'Connected base',role:'buildingBase'},...b.sections.flatMap(s=>[...SIDES.map(w=>({id:s.id+'-'+w,name:s.name+' '+w+' wall',role:'wall'})),...s.openings.flatMap((o,i)=>o.frame?[{id:s.id+'-frame-'+(i+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(i+1)+' frame',role:'frame'}]:[]),...sectionRoofPlanes({...s,x:0,y:0}).map(p=>({id:s.id+'-roof-'+p.id,name:s.name+' roof '+p.id,role:'roof'}))])]};
 }
 export function addSection(input, parentIndex, side='back') {
   const b=validateConnected(input), p=b.sections[parentIndex];
@@ -128,7 +133,7 @@ export function removeSection(input,index) {
 
 export function buildConnected(wasm,input,plate=null) {
   const b=validateConnected(input), sections=sectionPositions(b), temp=[], result=[];
-  const own=s=>(temp.push(s),s), {poly,box,sweep}=kitShapes(wasm,own);
+  const own=s=>(temp.push(s),s), {poly,box,sweep}=kitShapes(wasm,own), Manifold=wasm.Manifold;
   const trim=(s,n,off)=>own(s.trimByPlane(n,off/Math.hypot(...n)));
   const room=plate?[plate.width-2*(plate.margin??0),plate.depth-2*(plate.margin??0)]:[Infinity,Infinity];
   if(room.some(n=>n<40 || Number.isNaN(n))) throw Error('Use a print plate with at least 40 mm usable width and depth.');
@@ -170,7 +175,7 @@ export function buildConnected(wasm,input,plate=null) {
         roofs.push({solid:panel,id:s.id+'-roof-'+face.id,name:s.name+' roof '+face.id,role:'roof',lie:c?[-Math.sign(c)*deg,0,0]:[0,Math.sign(a)*deg,0],apart:[0,0,35]});
       }
     }
-    const wallParts=[];
+    const wallParts=[], frames=[];
     for(let i=0;i<sections.length;i++) {
       const s=sections[i], pts=sectionRect(s), inner=sectionRect(s,-b.wall), contacts=sectionContacts(b,i);
       for(const [k,w] of sectionWalls(s).entries()) {
@@ -186,9 +191,17 @@ export function buildConnected(wasm,input,plate=null) {
           const z0=b.baseHeight+(o.type==='door'?-2.01:o.sill), z1=b.baseHeight+o.sill+o.height;
           solid=own(solid.subtract(sweep([[o.at-o.width/2,z0],[o.at+o.width/2,z0],[o.at+o.width/2,z1],[o.at-o.width/2,z1]],[...w.dir,0],[0,0,1],[...w.a,0],[...w.inward,0],-1,b.wall+1)));
         }
+        // The texture, clear of the openings, their frames and the joins to other sections; up to the ridge.
+        const rise=s.roofType==='flat'?0:Math.tan(s.pitch*Math.PI/180)*Math.max(s.width,s.depth);
+        solid=finishShellWall(wasm,own,solid,w,{floor:b.baseHeight,top:b.baseHeight+s.height+rise,openings:s.openings.filter(o=>o.wall===w.id),avoid:contacts.filter(c=>c.wall===w.id).map(c=>[c.lo,c.hi])},b,s);
         for(const r of roofs) solid=own(solid.subtract(r.solid));
         const lie=w.inward[1]>0?[-90,0,0]:w.inward[1]<0?[90,0,0]:w.inward[0]>0?[0,90,0]:[0,-90,0];
         wallParts.push({solid,id:s.id+'-'+w.id,name:s.name+' '+w.name.toLowerCase()+' wall',role:'wall',lie,apart:[-w.inward[0]*20,-w.inward[1]*20,8]});
+        // A frame prints face up, like its wall, glued on round its opening.
+        s.openings.forEach((o,n)=>{
+          if(o.wall!==w.id || !o.frame) return;
+          frames.push({solid:shellFrame(o,w,b.baseHeight,{sweep,own,Manifold}),id:s.id+'-frame-'+(n+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(n+1)+' frame',role:'frame',lie,apart:[-w.inward[0]*28,-w.inward[1]*28,8]});
+        });
       }
     }
     // One base for the whole building. Grooves follow only surviving wall feet; joins have no trench.
@@ -202,7 +215,7 @@ export function buildConnected(wasm,input,plate=null) {
       base=own(base.subtract(groove));
     }
     tiles(base,{id:'base',name:'Connected base',role:'buildingBase',lie:[0,0,0],apart:[0,0,-12]});
-    for(const p of [...wallParts,...roofs]) if(p.solid.volume()>0.001) tiles(p.solid,p);
+    for(const p of [...wallParts,...frames,...roofs]) if(p.solid.volume()>0.001) tiles(p.solid,p);
     return result;
   } catch(e) { result.forEach(p=>p.solid.delete()); throw e; }
   finally { temp.forEach(s=>s.delete()); }

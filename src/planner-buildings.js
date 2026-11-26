@@ -307,7 +307,7 @@ export function baseParts(entry) {
   if (b.kind === 'gantry') return gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
   if (!b.lane) return [footprint(entry)];
   const half = b.lane.width / 2 + KIT.lanePlay,
-    end = b.depth - KIT.wall - KIT.play;
+    end = b.depth - KIT.wall - (b.play ?? KIT.play);
   return [rect(-m, -m, b.width / 2 - half, b.depth + m), rect(b.width / 2 + half, -m, b.width + m, b.depth + m), rect(b.width / 2 - half, end, b.width / 2 + half, b.depth + m)].map(
     (loop) => loop.map((p) => toPlan(entry, p)),
   );

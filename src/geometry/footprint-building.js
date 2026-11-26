@@ -1,8 +1,9 @@
 // Orthogonal building kits. Wall identities follow the boundary, including re-entrant corners.
 // This generator is deliberately separate from the existing rectangular/storey schema.
 import { kitShapes } from './kit-shapes.js';
+import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellFrame, trimOf } from './shell-details.js';
 
-export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, openings: [] });
+export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [] });
 export function footprintPoints(b) {
   const W = b.width, D = b.depth, a = b.wing;
   if (b.shape === 'rectangle') return [[0, 0], [W, 0], [W, D], [0, D]];
@@ -35,27 +36,33 @@ export function validateFootprint(input) {
   if (b.shape !== 'rectangle' && (b.wing > b.depth - 30 || b.wing > (b.shape === 'U' ? (b.width - 30) / 2 : b.shape === 'T' ? b.width - 60 : b.width - 30))) throw Error('The wing leaves too little room for the recess. Reduce the wing width or enlarge the building.');
   if (!Array.isArray(b.openings) || b.openings.length > 64) throw Error('Use at most 64 openings.');
   const walls = footprintWalls(b);
+  checkShellTexture(b);
+  Object.assign(b, checkShellFinish(b, walls.map((w) => w.id), b.height, ''));
   b.openings = b.openings.map((o, i) => {
-    if (!o || typeof o !== 'object' || Object.keys(o).some(k => !['wall', 'type', 'at', 'width', 'height', 'sill'].includes(k))) throw Error('Invalid opening ' + (i + 1));
+    if (!o || typeof o !== 'object' || Object.keys(o).some(k => !SHELL_OPENING_KEYS.includes(k))) throw Error('Invalid opening ' + (i + 1));
     const w = walls.find(w => w.id === o.wall);
     if (!w || !['window', 'door'].includes(o.type)) throw Error('Choose a wall and an opening type.');
-    const p = { ...o, sill: o.type === 'door' ? 0 : o.sill };
-    if (![p.at, p.width, p.height, p.sill].every(Number.isFinite) || p.width < 8 || p.height < 8 || p.sill < 0) throw Error('Openings need positive sizes and a position above the floor.');
-    if (p.at - p.width / 2 < 9 || p.at + p.width / 2 > w.length - 9) throw Error(w.name + ': keep the opening at least 9 mm from each corner.');
-    if (p.sill + p.height > b.height - 6) throw Error(w.name + ': leave at least 6 mm above the opening.');
+    const q = { ...o, sill: o.type === 'door' ? 0 : o.sill };
+    if (![q.at, q.width, q.height, q.sill].every(Number.isFinite) || q.width < 8 || q.height < 8 || q.sill < 0) throw Error('Openings need positive sizes and a position above the floor.');
+    const p = checkShellOpening(q, w.name);
+    // A frame reaches past the sides and top of its opening: it keeps the same room.
+    const t = trimOf(p);
+    if (p.at - p.width / 2 - t < 9 || p.at + p.width / 2 + t > w.length - 9) throw Error(w.name + ': keep the opening' + (t ? ' and its frame' : '') + ' at least 9 mm from each corner.');
+    if (p.sill + p.height + t > b.height - 6) throw Error(w.name + ': leave at least 6 mm above the opening' + (t ? ' and its frame' : '') + '.');
     return p;
   });
   b.openings.forEach((o, i) => b.openings.slice(i + 1).forEach(p => {
     if (p.wall !== o.wall) return;
     const across = Math.abs(p.at - o.at) - (p.width + o.width) / 2;
     const vertical = Math.max(p.sill - o.sill - o.height, o.sill - p.sill - p.height);
-    if (across < 6 && vertical < 6) throw Error('Keep at least 6 mm between openings.');
+    const t = trimOf(o) + trimOf(p);
+    if (across < 6 + t && vertical < 6 + t) throw Error('Keep at least 6 mm between openings' + (t ? ' and their frames' : '') + '.');
   }));
   return b;
 }
 export function footprintLayout(input) {
   const b = validateFootprint(input);
-  return { building: b, storeys: [], doors: [], parts: [{ id: 'base', name: 'Shaped base', role: 'buildingBase' }, ...footprintWalls(b).map(w => ({ id: w.id, name: w.name, role: 'wall' })), { id: 'roof', name: 'Shaped flat roof', role: 'roof' }] };
+  return { building: b, storeys: [], doors: [], parts: [{ id: 'base', name: 'Shaped base', role: 'buildingBase' }, ...footprintWalls(b).map(w => ({ id: w.id, name: w.name, role: 'wall' })), ...b.openings.flatMap((o, i) => o.frame ? [{ id: 'frame-' + (i + 1), name: (o.type === 'door' ? 'Door ' : 'Window ') + (i + 1) + ' frame', role: 'frame' }] : []), { id: 'roof', name: 'Shaped flat roof', role: 'roof' }] };
 }
 
 export function buildFootprint(wasm, input, plate = null) {
@@ -107,7 +114,14 @@ export function buildFootprint(wasm, input, plate = null) {
         const hole = sweep([[o.at - o.width / 2, z0], [o.at + o.width / 2, z0], [o.at + o.width / 2, b.baseHeight + o.sill + o.height], [o.at - o.width / 2, b.baseHeight + o.sill + o.height]], [...w.dir, 0], [0, 0, 1], [...w.a, 0], [...w.inward, 0], -1, b.wall + 1);
         solid = own(solid.subtract(hole));
       }
+      solid = finishShellWall(wasm, own, solid, w, { floor: b.baseHeight, top, openings: b.openings.filter((o) => o.wall === w.id) }, b, b);
       tiles(solid, { id: w.id, name: w.name, role: 'wall', outward: w.inward.map(n => -n), apart: [-w.inward[0] * 20, -w.inward[1] * 20, 8] }, w);
+    });
+    // A frame prints face up, glued on round its opening.
+    b.openings.forEach((o, i) => {
+      if (!o.frame) return;
+      const w = walls.find((x) => x.id === o.wall);
+      tiles(shellFrame(o, w, b.baseHeight, { sweep, own, Manifold: wasm.Manifold }), { id: 'frame-' + (i + 1), name: (o.type === 'door' ? 'Door ' : 'Window ') + (i + 1) + ' frame', role: 'frame', outward: w.inward.map((n) => -n), apart: [-w.inward[0] * 28, -w.inward[1] * 28, 8] });
     });
     const roof = own(poly(footprintOffset(b, b.overhang)).extrude(b.roof)).translate([0, 0, top]); own(roof);
     tiles(roof, { id: 'roof', name: 'Shaped flat roof', role: 'roof', lie: [0, 0, 0], apart: [0, 0, 30] });

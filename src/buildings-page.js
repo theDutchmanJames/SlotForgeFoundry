@@ -8,11 +8,12 @@ import { createBuildingHistory, editWalls } from './building-edit.js';
 import { createBuildingCanvas } from './building-canvas.js';
 import { addSection, removeSection } from './geometry/connected-building.js';
 import { sectionFields, readSectionFields } from './building-sections.js';
-import { FOOTPRINT_DEFAULTS } from './geometry/footprint-building.js';
+import { FOOTPRINT_DEFAULTS, footprintWalls } from './geometry/footprint-building.js';
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
+import { glazingSheets, glazingSvg } from './building-glazing.js';
 import { BUILDING_PRESETS } from './building-presets.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
@@ -54,11 +55,19 @@ import {
   validateBuilding,
   wallLength,
 } from './geometry/building.js';
-import { ROOF_TEXTURES, WALL_TEXTURES } from './geometry/building-texture.js';
+import { ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-texture.js';
+import { finishFields, fillFinish, readFinish, showBands } from './building-finish.js';
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
 
 const KEY = 'foundry.building';
+// The four walls of a storey, for the finish of each.
+const FOUR = WALLS.map((id) => ({ id, name: WALL_NAMES[id] }));
 const PART_ICONS = { base: 'plate', front: 'box', back: 'box', left: 'box', right: 'box', door: 'layers' };
+// The size of a texture, the width and depth of its joints.
+const textureSize = (prefix, b) =>
+  `<div class="bd-sub">Texture size</div>${field(prefix + 'textureScale', 'Size', b.textureScale, BUILDING_LIMITS.textureScale, '%')}
+  <label class="bd-row"><span>Joint width</span><span class="bd-input"><input type="number" name="${prefix}textureJoint" value="${b.textureJoint}" min="${BUILDING_LIMITS.textureJoint[0]}" max="${BUILDING_LIMITS.textureJoint[1]}" step="0.05"><small>mm</small></span></label>
+  <label class="bd-row"><span>Joint depth</span><span class="bd-input"><input type="number" name="${prefix}textureDepth" value="${b.textureDepth}" min="${BUILDING_LIMITS.textureDepth[0]}" max="${BUILDING_LIMITS.textureDepth[1]}" step="0.05"><small>mm</small></span></label>`;
 const field = (name, label, value, [min, max], unit = 'mm', extra = '') =>
   `<label class="bd-row"${extra}><span>${esc(label)}</span><span class="bd-input"><input type="number" name="${name}" value="${esc(String(value))}" min="${min}" max="${max}" step="1"><small>${unit}</small></span></label>`;
 // A small picture of each texture for its swatch.
@@ -186,7 +195,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
       <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option></select></label>
       ${[['width','Width',100,1200],['depth','Depth',100,1200],['wing','Wing width',40,500],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max])).join('')}
-      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall. Shaped buildings have one storey, plain walls and a flat roof. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise.</p>
+      <div data-bd-fp-finish></div>
+      ${textureSize('fp-', FOOTPRINT_DEFAULTS)}
+      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. Shaped buildings have one storey and a flat roof; the walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise.</p>
     </section>
     <section class="bd-box" data-bd-card="pits" data-bd-pits hidden><h3>Pit building</h3>
       ${field('pBays', 'Bays', 3, PIT_MODULE_LIMITS.bays, '')}
@@ -415,6 +426,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
+      <div data-bd-finish>${finishFields('fw', building, FOUR)}</div>
       <div data-bd-roof-texture-box><div class="bd-sub">Roof</div>
       ${swatches(ROOF_TEXTURES, 'data-bd-roof-texture')}</div>
       <div data-bd-texture-size>
@@ -422,7 +434,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row"><span>Joint width</span><span class="bd-input"><input type="number" name="textureJoint" value="${building.textureJoint}" min="${BUILDING_LIMITS.textureJoint[0]}" max="${BUILDING_LIMITS.textureJoint[1]}" step="0.05"><small>mm</small></span></label>
       <label class="bd-row"><span>Joint depth</span><span class="bd-input"><input type="number" name="textureDepth" value="${building.textureDepth}" min="${BUILDING_LIMITS.textureDepth[0]}" max="${BUILDING_LIMITS.textureDepth[1]}" step="0.05"><small>mm</small></span></label>
       </div>
-      <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain.</p></section>
+      <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain. A wall can have a texture of its own, and the walls a band of another along their foot, brick below and boards above, with a smooth strip between.</p></section>
     <section class="bd-box" data-bd-card="garage"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
@@ -471,7 +483,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     </section>
     <section class="bd-box" data-bd-card="walls"><h3>Walls</h3>
       <label class="bd-check"><input type="checkbox" name="braces"><span>Corner braces</span></label>
-      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. Under the roof and every floor a frame drops inside the walls and holds their tops.</p></section>
+      <label class="bd-row"><span>Joint clearance</span><span class="bd-input"><input type="number" name="play" value="${building.play}" min="${BUILDING_LIMITS.play[0]}" max="${BUILDING_LIMITS.play[1]}" step="0.05"><small>mm</small></span></label>
+      <p class="bd-hint">Walls ${KIT.wall} mm thick, mitred at the corners so the outside has no seam, standing ${KIT.groove} mm deep in a groove of the base, with the joint clearance on each side; make it more if the walls are tight in their grooves on your printer, less if they are loose. A corner brace is a small L glued into each inside corner, on the floor against both walls: it holds the corner square while the glue sets. Under the roof and every floor a frame drops inside the walls and holds their tops.</p></section>
     <p class="bd-error" role="alert" hidden></p>
   </form>
 </aside></div>`;
@@ -506,8 +519,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     onWall: value => { wall = value; if (isGarage()) drawOpenings(); },
     commit: async next => { clearTimeout(timer); building = next; fill(next); await rebuild(next); },
   });
+  const fpWalls = (b) => footprintWalls(b).map((w) => ({ id: w.id, name: w.name }));
   function readFootprint() {
-    const next = { ...building, shape: form.elements.fpShape.value };
+    const next = { ...building, shape: form.elements.fpShape.value, ...readFinish(form, 'ff', building, fpWalls(building)) };
     for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
       const value = form.elements['fp-' + key].value;
       next[key] = value === '' ? NaN : Number(value);
@@ -988,6 +1002,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       pilasters: num(e.stPilasters, s.pilasters),
       panels: e.stPanels ? e.stPanels.checked : s.panels,
       wallStyle: e.stWallStyle ? e.stWallStyle.value : s.wallStyle,
+      ...readFinish(form, 'fw', s, FOUR),
     };
   }
   function readForm() {
@@ -1043,6 +1058,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       textureScale: num(e.textureScale),
       textureJoint: num(e.textureJoint),
       textureDepth: num(e.textureDepth),
+      play: num(e.play),
       door: e.door.value,
       container: e.container.value,
       ridge: e.ridge.value,
@@ -1100,7 +1116,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       const roof = building.sections[section].roofType;
       for (const [key, visible] of [['pitch', roof !== 'flat'], ['ridge', roof === 'gable'], ['rises', roof === 'slope']]) form.elements['cs-' + key].closest('label').hidden = !visible;
     }
-    else if (isFootprint()) { /* Dedicated footprint fields are already filled. */ }
+    else if (isFootprint()) {
+      // Its walls follow its shape: a new shape, their fields drawn afresh.
+      const walls = fpWalls(building);
+      if (form.querySelectorAll('[name^="ff-wall-"]').length !== walls.length) $('[data-bd-fp-finish]').innerHTML = finishFields('ff', building, walls, { main: true });
+    }
     else if (isStand()) drawStand();
     else if (isGantry()) drawGantry();
     else if (isPits()) drawPits();
@@ -1131,10 +1151,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
       const walls = storeyOf(building, storey);
       for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
+      fillFinish(form, 'fw', walls, FOUR);
       $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
       for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
       $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
-      const textured = [building, ...building.upper].some((u) => u.wallTexture !== 'plain');
+      const textured = [building, ...building.upper].some(isTextured);
       $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
     }
     $('.bd-model').hidden = view !== 'model';
@@ -1409,6 +1430,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'footprint') {
       form.elements.fpShape.value = b.shape;
       for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) form.elements['fp-' + key].value = b[key];
+      // Its walls change with its shape: their fields are drawn afresh.
+      $('[data-bd-fp-finish]').innerHTML = finishFields('ff', b, fpWalls(b), { main: true });
       return;
     }
     if (b.kind === 'grandstand') return fillStand(b);
@@ -1424,7 +1447,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
-    for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
+    for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth', 'play'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip', 'container']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
@@ -1450,6 +1473,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (buildingBusy || invalid) return;
     const files = await call('buildingKit', { building, plate: plate() });
     const zip = { 'README.txt': strToU8(kitNotes(name, building, files, sizes)) };
+    // The clear sheet behind each window, full size, to cut.
+    const sheets = glazingSheets(building);
+    if (sheets.length) zip['glazing.svg'] = strToU8(glazingSvg(name || 'Building', sheets));
     files.forEach((f, i) => (zip[String(i + 1).padStart(2, '0') + ' ' + f.name + '.stl'] = f.bytes));
     download((name || 'Building').replace(/[\\/:*?"<>|]+/g, '-') + ' kit.zip', zipSync(zip, { level: 6 }), 'application/zip');
     notice('Kit downloaded: ' + files.length + ' STL files and the notes for printing and putting it together.');
@@ -1493,6 +1519,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   });
   form.addEventListener('change', () => {
     clearTimeout(timer);
+    showBands(form);
     rebuild();
   });
   $('[name="apart"]').addEventListener('input', (e) => {

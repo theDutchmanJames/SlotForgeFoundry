@@ -212,42 +212,47 @@ const matrix = (X, Y, Z, O) => [...X, 0, ...Y, 0, ...Z, 0, ...O, 1];
  * rectangles [u0, z0, u1, z1] in the wall's frame) and of the part of the
  * wall that stands in the groove of the base.
  */
-export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop }, keepOut, settings, kind) {
-  const polys = jointPolygons(kind, [0, length], [bottom, zTop], settings, WALLS_SEED[wall]);
+export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, frame = null, ceil = zTop + 1 }, keepOut, settings, kind) {
+  const seed = wallSeed(wall);
+  const polys = jointPolygons(kind, [0, length], [bottom, zTop], settings, seed);
   if (!polys.length) return null;
   // The mitred end of a wall thins to nothing at its outside edge: a joint
   // near it would cut a sliver loose. Joints keep away from the ends; only
   // the rows of bricks or blocks run on to the corner, to meet the next wall.
   const end = settings.textureDepth + 0.5;
   let section = own(new wasm.CrossSection(polys, 'Positive'));
-  section = own(section.intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, zTop + 1)], 'Positive'))));
+  section = own(section.intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, ceil)], 'Positive'))));
   if (kind === 'brick' || kind === 'block') {
     const rows = courseJoints(kind, [0, length], [bottom, zTop], settings);
     if (rows.length)
       section = own(section.add(own(own(new wasm.CrossSection(rows, 'Positive')).intersect(
-        own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, zTop + 1)], 'Positive')),
+        own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, ceil)], 'Positive')),
       ))));
   }
   const clear = keepOut.length ? own(new wasm.CrossSection(keepOut.map(([a, b, c, d]) => rect(a - CLEAR, b - CLEAR, c + CLEAR, d + CLEAR)), 'Positive')) : null;
   if (clear) section = own(section.subtract(clear));
-  const { U, N, origin } = DIRS[wall];
-  const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, origin(W, D))));
+  // A wall of a rectangular storey, or any straight wall: its start, its
+  // direction along it and inward, and the face 1 mm outside it.
+  const { U, N, O } = frame
+    ? { U: [frame.dir[0], frame.dir[1], 0], N: [frame.inward[0], frame.inward[1], 0], O: [frame.a[0] - frame.inward[0], frame.a[1] - frame.inward[1], 0] }
+    : { ...DIRS[wall], O: DIRS[wall].origin(W, D) };
+  const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, O)));
   const cuts = [];
   if (!section.isEmpty()) cuts.push(place(own(section.extrude(settings.textureDepth + 1))));
   // The grain, a third as deep, clear of the ends and the openings like the joints.
-  const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, WALLS_SEED[wall]);
+  const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, seed);
   if (grain.length) {
-    let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, zTop + 1)], 'Positive'))));
+    let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, ceil)], 'Positive'))));
     if (clear) g = own(g.subtract(clear));
     if (!g.isEmpty()) cuts.push(place(own(g.extrude(1 + settings.textureDepth / 3))));
   }
   // Planks: each row slopes into the wall, the rows running on round the corner.
   if (LAPPED.includes(kind)) {
-    const rows = lappedRows(kind, [bottom, zTop + 1], settings, bottom);
+    const rows = lappedRows(kind, [bottom, ceil], settings, bottom);
     // Across the rows (v, w), run along the wall (u): turned into the wall's frame.
     const run = own(own(own(new wasm.CrossSection(rows, 'Positive')).extrude(length + 2)).translate([0, 0, -1]));
-    const across = own(run.transform(matrix([0, 0, 1], N, U, origin(W, D))));
-    let allowed = own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, zTop + 1)], 'Positive'));
+    const across = own(run.transform(matrix([0, 0, 1], N, U, O)));
+    let allowed = own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, ceil)], 'Positive'));
     if (clear) allowed = own(allowed.subtract(clear));
     const within = place(own(allowed.extrude(settings.textureDepth + 1)));
     cuts.push(own(across.intersect(within)));
@@ -256,6 +261,8 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop },
   return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];
 }
 const WALLS_SEED = { front: 11, back: 23, left: 37, right: 53 };
+// Any other wall (a section's, a footprint edge): a seed from its name, the same every time.
+const wallSeed = (wall) => WALLS_SEED[wall] ?? [...String(wall)].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7);
 
 /**
  * The joints of a sloped roof panel, cut into its top: the panel rises
@@ -299,6 +306,62 @@ export function roofJoints(wasm, own, panel, { dir: [dx, dy], t, eave: [ex, ey],
     const rows = lappedRows(kind, upR, settings, 0);
     const run = own(own(own(new wasm.CrossSection(rows, 'Positive')).extrude(alongR[1] - alongR[0])).translate([0, 0, alongR[0]]));
     cuts.push(own(run.transform(matrix(S, Nin, A, O))));
+  }
+  if (!cuts.length) return null;
+  return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];
+}
+
+/**
+ * A wall finish: the storey's texture, a different one on any wall, and a
+ * band of another texture along the foot of the walls (brick below, boards
+ * above). Shared by ordinary storeys, connected sections and shaped
+ * footprints; walls are named by their own ids.
+ */
+export const FINISH_DEFAULTS = Object.freeze({ wallTexture: 'plain', wallTextures: Object.freeze({}), lowerTexture: 'none', lowerHeight: 20 });
+export const LOWER = Object.freeze({ least: 8, above: 8 }); // the band's height, and wall kept above it
+/** The texture of one wall. */
+export const textureOf = (s, wall) => s.wallTextures?.[wall] ?? s.wallTexture;
+/** Whether any wall of it has joints cut. */
+export const isTextured = (s) => [s.wallTexture, ...Object.values(s.wallTextures ?? {}), s.lowerTexture ?? 'none'].some((t) => t !== 'plain' && t !== 'none');
+/** Where the upper texture's rows begin, above the band. */
+export const bandTop = (s, floor) => floor + ((s.lowerTexture ?? 'none') === 'none' ? 0 : s.lowerHeight);
+const isTexture = (t) => WALL_TEXTURES.some(([id]) => id === t);
+/** Checks a finish; walls are the ids its walls go by. Returns it with only the walls it has. */
+export function checkFinish(s, walls, height, where = '') {
+  if (!isTexture(s.wallTexture)) throw Error('Choose a wall texture from the list' + where + '.');
+  const per = s.wallTextures ?? {};
+  if (!per || typeof per !== 'object' || Array.isArray(per)) throw Error('Choose a texture for each wall' + where + ' from the list.');
+  const own = {};
+  for (const [w, t] of Object.entries(per)) {
+    if (!isTexture(t)) throw Error('Choose a texture for the ' + w + ' wall' + where + ' from the list.');
+    // A wall that is gone (a shape with fewer sides) keeps no texture of its own.
+    if (walls.includes(w) && t !== s.wallTexture) own[w] = t;
+  }
+  const lower = s.lowerTexture ?? 'none';
+  if (lower !== 'none' && !isTexture(lower)) throw Error('Choose a texture for the lower walls' + where + ' from the list.');
+  const h = s.lowerHeight ?? FINISH_DEFAULTS.lowerHeight;
+  if (lower !== 'none' && (!Number.isFinite(h) || h < LOWER.least || h > height - LOWER.above))
+    throw Error('The lower walls' + where + ' reach ' + LOWER.least + ' to ' + Math.max(LOWER.least, height - LOWER.above) + ' mm up.');
+  return { wallTexture: s.wallTexture, wallTextures: own, lowerTexture: lower, lowerHeight: h };
+}
+/**
+ * The joints of one wall with its finish, as one solid to cut, or null.
+ * Between the band and the texture above it a strip 0.6 mm high stays smooth.
+ */
+export function finishJoints(wasm, own, wall, geom, keepOut, settings, s) {
+  const main = textureOf(s, wall),
+    lower = s.lowerTexture ?? 'none',
+    cuts = [];
+  const add = (g, kind) => {
+    if (kind === 'plain' || kind === 'none') return;
+    const j = wallJoints(wasm, own, wall, g, keepOut, settings, kind);
+    if (j) cuts.push(j);
+  };
+  if (lower === 'none') add(geom, main);
+  else {
+    const split = geom.bottom + s.lowerHeight;
+    add({ ...geom, top: split, ceil: split - 0.3 }, lower);
+    add({ ...geom, bottom: split }, main);
   }
   if (!cuts.length) return null;
   return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];

@@ -1,3 +1,4 @@
+import { glazingSheets, glazingSvg } from './building-glazing.js';
 import { KERB_EDGES, MARKING_SIDES, markingsOf } from './markings-controls.js';
 import {
   TEXTURE_CHOICES,
@@ -2025,6 +2026,8 @@ export function createPlanner({ host, call, download, current, promote }) {
         homeGroups.push({ count: 1, volume: stlVolume(f.bytes) });
       });
       files['buildings/' + folder + '/README.txt'] = strToU8(kitNotes(entry.name, entry.building, kit, {}));
+      const sheets = glazingSheets(entry.building);
+      if (sheets.length) files['buildings/' + folder + '/glazing.svg'] = strToU8(glazingSvg(entry.name, sheets));
     }
     const settings = loadSettings();
     files['shopping-list.txt'] = strToU8(

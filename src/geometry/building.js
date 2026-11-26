@@ -7,7 +7,7 @@
 // proportions for 1:32 by default: a one-car garage is about 120 × 180 mm
 // and 75 mm high and takes practically any slot car.
 
-import { DRAWN, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, WALL_TEXTURES, roofJoints, wallJoints } from './building-texture.js';
+import { DRAWN, FINISH_DEFAULTS, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, bandTop, checkFinish, finishJoints, isTextured, roofJoints, textureOf } from './building-texture.js';
 import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
 import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
@@ -55,6 +55,12 @@ export const BUILDING_DEFAULTS = Object.freeze({
   overhangRight: 3,
   openings: Object.freeze([]),
   ...TEXTURE_DEFAULTS,
+  // A texture of its own on any wall ({ front: 'brick' }), and a band along the foot of the walls.
+  wallTextures: FINISH_DEFAULTS.wallTextures,
+  lowerTexture: 'none',
+  lowerHeight: 20,
+  // Clearance each side of a wall in its groove, and round the frame under the roof: more for a printer that prints wide.
+  play: 0.2,
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   braces: true, // a corner brace in each inside corner, holding the walls square
@@ -138,12 +144,13 @@ export const BUILDING_LIMITS = Object.freeze({
   standSize: [8, 200],
   standTaper: [0, 100],
   arch: [0, 30],
+  play: [0.1, 0.5],
   ...TEXTURE_LIMITS,
 });
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
 // balcony: how far its floor reaches out in front of the storey below, over the garage front, or all round (balconyAll); railing: round the open edges of its floor.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, balconyAll: false, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', wallTextures: FINISH_DEFAULTS.wallTextures, lowerTexture: 'none', lowerHeight: 20, openings: Object.freeze([]), balcony: 0, balconyAll: false, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
 export const MAX_UPPER = 3;
 /** Walls that lean out: how far out at the top, and the factor everything of the storey widens by there. */
 export function leanGrow(s) {
@@ -326,6 +333,7 @@ const LABELS = {
   standSize: 'Size of the stand',
   standTaper: 'Taper',
   arch: 'Arch',
+  play: 'Joint clearance',
   waist: 'Waist wall',
   textureScale: 'Texture size',
   textureJoint: 'Joint width',
@@ -447,7 +455,7 @@ export function validateBuilding(input) {
     if (across > HIP_ACROSS) throw Error('A hip roof is not cut to fit the plate: the top storey with its overhangs can be at most ' + HIP_ACROSS + ' mm across, not ' + fmtMm(across) + '.');
   }
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
-  if (!WALL_TEXTURES.some(([id]) => id === b.wallTexture)) throw Error('Choose a wall texture from the list.');
+  Object.assign(b, checkFinish(b, WALLS, b.height));
   if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
   if (!['frame', 'none'].includes(b.roofLip)) throw Error('Choose a frame under the roof, or none.');
   if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
@@ -566,7 +574,7 @@ export function validateBuilding(input) {
         throw Error('Storey ' + n + ': ' + name + ' must be between ' + min + ' and ' + fmtMm(max) + ' mm.');
     if (s.x + s.width > below.width + 1e-9 || s.y + s.depth > below.depth + 1e-9)
       throw Error('Storey ' + n + ' reaches past the storey below: it is ' + fmtMm(s.width) + ' × ' + fmtMm(s.depth) + ' mm at ' + fmtMm(s.x) + ', ' + fmtMm(s.y) + ' mm on a storey of ' + fmtMm(below.width) + ' × ' + fmtMm(below.depth) + ' mm.');
-    if (!WALL_TEXTURES.some(([id]) => id === s.wallTexture)) throw Error('Choose a wall texture from the list for storey ' + n + '.');
+    Object.assign(s, checkFinish(s, WALLS, s.height, ' for storey ' + n));
     s.openings = checkOpenings(s.openings, s, [], where);
     checkOpen(s, s.openings, where, false);
     if (!Number.isFinite(s.balcony) || s.balcony < 0 || s.balcony > 40) throw Error('Storey ' + n + ': the balcony must reach out 0 to 40 mm.');
@@ -634,7 +642,7 @@ function openBand(s) {
 }
 // The hollow inside the base, where the stand's supports reach up: [x0, y0, x1, y1].
 function standInside(b) {
-  const lo = -KIT.ledge + KIT.shell + KIT.play;
+  const lo = -KIT.ledge + KIT.shell + b.play;
   return [lo, lo, b.width - lo, b.depth - lo];
 }
 const LEG_NAMES = ['front left', 'front right', 'back left', 'back right'];
@@ -721,7 +729,7 @@ function accessPlace(b, all) {
     const top = stack.at(-1);
     const over = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight }[w];
     // Out past a roof railing too: the ladder's top reaches above the roof.
-    return { against: top, rise: H + top.eave + KIT.roof, out: over + (b.roofRailing ? KIT.railInset + KIT.railThick + KIT.play : 0) };
+    return { against: top, rise: H + top.eave + KIT.roof, out: over + (b.roofRailing ? KIT.railInset + KIT.railThick + b.play : 0) };
   }
   const k = Number(b.accessTo);
   const s = stack[k - 1];
@@ -756,7 +764,7 @@ export function storeyStack(b) {
   let z = b.baseHeight;
   let ox = 0,
     oy = 0;
-  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels, wallStyle: b.wallStyle }, ...b.upper];
+  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, wallTextures: b.wallTextures, lowerTexture: b.lowerTexture, lowerHeight: b.lowerHeight, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels, wallStyle: b.wallStyle }, ...b.upper];
   all.forEach((s, i) => {
     const n = i + 1;
     if (i) z += KIT.slab;
@@ -772,6 +780,9 @@ export function storeyStack(b) {
       eave: z + s.height,
       height: s.height,
       wallTexture: s.wallTexture,
+      wallTextures: s.wallTextures ?? {},
+      lowerTexture: s.lowerTexture ?? 'none',
+      lowerHeight: s.lowerHeight ?? 20,
       openings: s.open ? openBand(s) : s.openings,
       open: !!s.open,
       lean: s.lean ?? 0,
@@ -835,7 +846,7 @@ export function roofShape(b) {
  */
 export function braceCorners(b, s, doors) {
   if (!b.braces || s.open || s.lean || (s.wallStyle && s.wallStyle !== 'solid') || s.height - KIT.lipDepth - 1 < 10) return [];
-  const lo = KIT.wall + KIT.play,
+  const lo = KIT.wall + b.play,
     leg = KIT.braceLeg,
     W = s.width,
     D = s.depth;
@@ -861,8 +872,8 @@ export function braceCorners(b, s, doors) {
  * of the tab on the plan; d: along the wall; out: how to measure in from the
  * wall's outside face; side: which wall.
  */
-export function tabSpots(W, D, avoid = () => false) {
-  const centre = KIT.wall + KIT.play + KIT.tabIn + KIT.tabThick / 2;
+export function tabSpots(W, D, avoid = () => false, play = KIT.play) {
+  const centre = KIT.wall + play + KIT.tabIn + KIT.tabThick / 2;
   const sides = [
     { side: 'front', len: W, d: [1, 0], at: (u, v) => [u, v] },
     { side: 'back', len: W, d: [1, 0], at: (u, v) => [u, D - v] },
@@ -897,7 +908,7 @@ const frameIds = (b, storeys) => {
 export function railingRuns(b, storeys) {
   const runs = [];
   const inset = KIT.railInset,
-    back = inset + KIT.railThick + KIT.play;
+    back = inset + KIT.railThick + b.play;
   storeys.forEach((s, i) => {
     const above = storeys[i + 1];
     if (above && b.upper[above.n - 2].railing) {
@@ -1091,13 +1102,14 @@ export function buildingCuts(input, plate) {
     walls.push({ key: 'divide' + (i + 1), length: L, height: high + KIT.groove, keepOut: [], keepOutUp: [[-1, KIT.groove + JOINT.edge]] });
   });
   for (const s of storeys) {
-    // A brick or block wall is cut along its joints: the seam steps half a brick either way.
-    const step = ['brick', 'block'].includes(s.wallTexture) ? (DRAWN[s.wallTexture].length * b.textureScale) / 200 : 0;
-    const aside = JOINT.aside + step;
-    // Across the height a brick seam moves onto the nearest course line: up to half a course.
-    const asideUp = JOINT.aside + (step ? (DRAWN[s.wallTexture].course * b.textureScale) / 200 : 0);
     const { along, up } = wallOpenings(s, doors);
     for (const w of ['front', 'back', 'left', 'right']) {
+      // A brick or block wall is cut along its joints: the seam steps half a brick either way.
+      const tex = textureOf(s, w);
+      const step = ['brick', 'block'].includes(tex) ? (DRAWN[tex].length * b.textureScale) / 200 : 0;
+      const aside = JOINT.aside + step;
+      // Across the height a brick seam moves onto the nearest course line: up to half a course.
+      const asideUp = JOINT.aside + (step ? (DRAWN[tex].course * b.textureScale) / 200 : 0);
       // A wall prints as tall as it stands, its foot in the groove included.
       let high = s.height;
       if (s.top && b.roof === 'gable') high += (b.ridge === 'depth') === (w === 'front' || w === 'back') ? rise : 0;
@@ -1158,7 +1170,8 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
   const { Manifold, CrossSection } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
-  const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;
+  const { wall: t, groove: g, ledge: m, shell, deck, roof: rt } = KIT;
+  const c = b.play;
   const temp = [];
   const own = (s) => (temp.push(s), s);
   const box = (x0, y0, z0, x1, y1, z1) =>
@@ -1258,7 +1271,7 @@ export function buildGarage(wasm, input, plate = null) {
     const z0 = Math.min(...zs) - KIT.lipDepth - 2,
       zHigh = Math.max(...zs) + 2;
     const inside = (q) => keeps.every(([n, off]) => n[0] * q[0] + n[1] * q[1] >= off + L);
-    const spots = tabSpots(W, D, avoid).filter((q) => inside(q.p));
+    const spots = tabSpots(W, D, avoid, c).filter((q) => inside(q.p));
     // The ring and the blocks under the tabs, then cut to between the ceiling and lipDepth below it.
     const blockAt = (q) => {
       const [a0, b0] = q.at(q.u - L / 2 - 1, lo),
@@ -1431,14 +1444,14 @@ export function buildGarage(wasm, input, plate = null) {
       for (const w of WALLS) walls[w] = minus(walls[w], ...holes[w]);
       // A wall texture: joints in the outside face, clear of every opening
       // and of the frame around it, and of the wall's foot in the groove.
-      if (s.wallTexture !== 'plain') {
+      if (isTextured(s)) {
         const keepOut = { front: s.garage ? doors.map((door) => [door.x, top, door.x + door.width, top + door.height]) : [], back: [], left: [], right: [] };
         for (const o of s.openings) {
           const extra = o.frame ? KIT.trim : 0;
           keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
         }
         for (const w of WALLS) {
-          const joints = wallJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s.wallTexture);
+          const joints = finishJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s);
           if (joints) walls[w] = whole(own(walls[w].subtract(joints)));
         }
       }
@@ -1451,7 +1464,7 @@ export function buildGarage(wasm, input, plate = null) {
         const d = RELIEF.depth,
           P = RELIEF.pilaster;
         // From the bottom of the texture's joints, so the relief fills them under it.
-        const sink = s.wallTexture === 'plain' ? 0.01 : b.textureDepth + 0.1;
+        const sink = isTextured(s) ? b.textureDepth + 0.1 : 0.01;
         const mitre = (w, solid) => {
           const r2 = Math.SQRT1_2;
           const planes = {
@@ -1549,7 +1562,7 @@ export function buildGarage(wasm, input, plate = null) {
                 cutFrame: across ? [[0, 1, 0], [1, 0, 0], [at - t / 2 - 2, 0, 0]] : [[1, 0, 0], [0, 1, 0], [0, at - t / 2 - 2, 0]],
               },
               'divide',
-              { ...s, wallTexture: 'plain', openings: [], garage: false },
+              { ...s, wallTexture: 'plain', wallTextures: {}, lowerTexture: 'none', openings: [], garage: false },
               { W, D, z0, zTop, top, z1 },
             ),
           );
@@ -2165,22 +2178,25 @@ export function buildGarage(wasm, input, plate = null) {
     const along = plan?.[part.id]?.cuts ?? [],
       up = plan?.[part.id + 'Z']?.cuts ?? [];
     if (!along.length && !up.length) return [part];
-    const stepped = ['brick', 'block'].includes(s.wallTexture);
+    const tex = textureOf(s, wall);
+    const stepped = ['brick', 'block'].includes(tex);
     const k = b.textureScale / 100;
-    const rowH = stepped ? DRAWN[s.wallTexture].course * k : 0,
-      brick = stepped ? DRAWN[s.wallTexture].length * k : 0;
+    const rowH = stepped ? DRAWN[tex].course * k : 0,
+      brick = stepped ? DRAWN[tex].length * k : 0;
+    // The rows of bricks start above a band along the foot of the wall.
+    const rows0 = bandTop(s, top);
     const L = part.length ?? wallLength(s, wall);
     // Across the height: measured from the foot of the wall, on a course line for bricks.
-    const ups = up.map((v) => (stepped ? top + Math.round((z0 + v - top) / rowH) * rowH : z0 + v));
+    const ups = up.map((v) => (stepped ? rows0 + Math.round((z0 + v - rows0) / rowH) * rowH : z0 + v));
     const openingsAt = (u) => [
       ...(s.garage && wall === 'front' ? doors.filter((door) => u > door.x && u < door.x + door.width).map((door) => [top, top + door.height]) : []),
       ...s.openings.filter((o) => o.wall === wall && Math.abs(u - o.at) < o.width / 2).map((o) => [top + o.sill, top + o.sill + o.height]),
     ];
     const brickSteps = (at) => {
       const rows = [];
-      for (let r = -1; top + r * rowH < zTop + rowH; r++) {
+      for (let r = -1; rows0 + r * rowH < zTop + rowH; r++) {
         const shift = ((((r % 2) + 2) % 2) * brick) / 2;
-        rows.push({ v: top + r * rowH, top: top + (r + 1) * rowH, at: Math.round((at - shift) / brick) * brick + shift });
+        rows.push({ v: rows0 + r * rowH, top: rows0 + (r + 1) * rowH, at: Math.round((at - shift) / brick) * brick + shift });
       }
       rows[0].v = z0 - 1;
       return rows;
