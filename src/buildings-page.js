@@ -212,6 +212,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable"')}
       <label class="bd-row" data-bd-for="gable"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
+      <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
@@ -230,8 +231,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="garage"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
-      <label class="bd-row"><span>Door</span><select name="door"><option value="roller">Roller door</option><option value="open">Open, no door</option><option value="none">No garage door</option></select></label>
-      <p class="bd-hint">The opening starts at the top of the base, so a car rolls straight in from the road.</p></section>
+      <label class="bd-row"><span>Door</span><select name="door"><option value="roller">Roller door</option><option value="panel">Up-and-over door</option><option value="open">Open, no door</option><option value="none">No garage door</option></select></label>
+      <label class="bd-check"><input type="checkbox" name="numbers"><span>Bay numbers above the doors</span></label>
+      ${field('firstNumber', 'First number', 1, [0, 76], '')}
+      <p class="bd-hint">The opening starts at the top of the base, so a car rolls straight in from the road. An up-and-over door is a panel door in four parts. A bay number is a plaque with its number raised in seven segments, like on a pit wall, glued above its door; the bays count on from the first number.</p></section>
     <section class="bd-box" data-bd-card="openings"><h3>Windows and doors</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall">${WALLS.map((w) => `<button type="button" data-bd-wall="${w}">${WALL_NAMES[w]}</button>`).join('')}</div>
       <div class="bd-openings"></div>
@@ -391,7 +394,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('upX', 'From the left', s.x, [0, below.width])}
   ${field('upY', 'From the front', s.y, [0, below.depth])}
   ${field('upHeight', 'Wall height', s.height, BUILDING_LIMITS.height)}
-  <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside.</p></div>`
+  ${field('upBalcony', 'Balcony in front', s.balcony, [0, 40])}
+  <label class="bd-check"><input type="checkbox" name="upRailing"${s.railing ? ' checked' : ''}><span>A railing round its floor</span></label>
+  <p class="bd-hint">Its place is from the left and front walls of the storey below, outside to outside. A balcony is its floor reaching out in front, over the garage doors and the pit lane. The railing runs along the open edges of its floor: the balcony, and a terrace where it is set back.</p></div>`
       : '<p class="bd-hint">The ground floor has the garage door; its size is set above.</p>';
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
@@ -434,7 +439,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       };
     });
     const upper = storey
-      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), openings }
+      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), railing: e.upRailing.checked, openings }
       : { openings };
     const rooms = building.rooms && { along: building.rooms.along, sizes: building.rooms.sizes.map((_, i) => num(e['room-' + i])) };
     return {
@@ -459,6 +464,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       rises: e.rises.value,
       braces: e.braces.checked,
       roofLip: e.roofLip.value,
+      roofRailing: e.roofRailing.checked,
+      numbers: e.numbers.checked,
+      firstNumber: num(e.firstNumber),
       cuts: readCuts(building),
     };
   }
@@ -722,6 +730,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
+    form.elements.roofRailing.checked = b.roofRailing;
+    form.elements.numbers.checked = b.numbers;
+    form.elements.firstNumber.value = b.firstNumber;
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();

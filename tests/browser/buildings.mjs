@@ -223,6 +223,11 @@ export async function checkBuildings({ page, action, download, snap }) {
   await page.waitForFunction(() => /3 rows/.test(document.querySelector('[data-bd-stand-size]').textContent));
   await host.locator('[data-bd-stand-shape="straight"]').click();
   await page.waitForFunction(() => !document.querySelector('form.bd-form [name="gLength"]').disabled);
+  // The modern pit building: railings, a balcony and bay numbers.
+  await host.locator('[data-bd-preset="pit-modern"]').click();
+  await host.locator('[data-bd-part="number-3"]').waitFor();
+  assert.ok(await host.locator('[data-bd-part^="railing2-front"]').count());
+  assert.ok(await setting('numbers').isChecked());
   // A gantry over the track: a type to choose, its own cards.
   await host.locator('[data-bd-preset="gantry-start"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();

@@ -27,7 +27,7 @@ export const BUILDING_DEFAULTS = Object.freeze({
   baseHeight: 10, // as high as the track, so the doorstep is level with the road
   doorWidth: 90,
   doorHeight: 55,
-  door: 'roller', // 'roller', 'open' (an opening without a door) or 'none' (no garage door)
+  door: 'roller', // 'roller', 'panel' (up and over), 'open' (an opening without a door) or 'none' (no garage door)
   roof: 'flat', // 'flat', 'slope' or 'gable'
   pitch: 30, // degrees, for a sloped or two-sided roof
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -42,6 +42,9 @@ export const BUILDING_DEFAULTS = Object.freeze({
   lane: null, // a garage over a pit bay: { width } of the track that runs in through its door
   braces: true, // a corner brace in each inside corner, holding the walls square
   roofLip: 'frame', // under the roof a frame held by tabs, as under every floor; or 'none'
+  roofRailing: false, // a railing round a flat roof, for a roof terrace
+  numbers: false, // a number plaque above each garage door
+  firstNumber: 1,
   // Rooms side by side ('width') or front to back ('depth'), each its size
   // outside to outside, to the middle of the dividing wall: they add up to
   // the width or the depth of the building.
@@ -64,7 +67,8 @@ export const BUILDING_LIMITS = Object.freeze({
 });
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]) });
+// balcony: how far its floor reaches out in front of the storey below, over the garage front; railing: round the open edges of its floor.
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', openings: Object.freeze([]), balcony: 0, railing: false });
 export const MAX_UPPER = 2;
 // A new window or door, in toy proportions for 1:32.
 export const OPENING_DEFAULTS = Object.freeze({
@@ -121,6 +125,14 @@ export const KIT = Object.freeze({
   brace: 2, // a corner brace: its legs are this thick
   braceLeg: 5.5, // and reach this far along each wall, clear of a window or a door
   braceHeight: 60, // at most this tall, from the floor: the lip above holds the tops
+  railHeight: 15, // a railing: its height above the deck
+  railThick: 3, // and thick, as it prints flat
+  railBand: 4, // a solid band along its foot
+  railPost: 3, // its posts and its top rail, square
+  railPitch: 20, // posts at most this far apart
+  railInset: 1, // in from the edge of the deck
+  railTab: 1.2, // its two tabs, down into pockets in the deck
+  plaque: [18, 10, 1.5], // a bay number plaque: wide, high, thick
   laneClear: 2, // a garage door beyond the track through it, each side
   lanePlay: 0.5, // the base beside the track through it, each side
 });
@@ -215,7 +227,9 @@ export function validateBuilding(input) {
   for (const key of Object.keys(b))
     if (!Object.hasOwn(BUILDING_DEFAULTS, key)) throw Error('The building has an unknown setting: ' + key + '.');
   if (b.kind !== 'garage') throw Error('Choose a building type from the list.');
-  if (!['roller', 'open', 'none'].includes(b.door)) throw Error('Choose a door from the list.');
+  if (!['roller', 'panel', 'open', 'none'].includes(b.door)) throw Error('Choose a door from the list.');
+  if (typeof b.roofRailing !== 'boolean' || typeof b.numbers !== 'boolean') throw Error('Choose whether the roof has a railing and the doors their numbers.');
+  if (!Number.isInteger(b.firstNumber) || b.firstNumber < 0 || b.firstNumber > 99 - 23) throw Error('The first bay number must be a whole number from 0 to 76.');
   if (!ROOFS.some(([id]) => id === b.roof)) throw Error('Choose a roof from the list.');
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
@@ -299,6 +313,8 @@ export function validateBuilding(input) {
       throw Error('Storey ' + n + ' reaches past the storey below: it is ' + fmtMm(s.width) + ' × ' + fmtMm(s.depth) + ' mm at ' + fmtMm(s.x) + ', ' + fmtMm(s.y) + ' mm on a storey of ' + fmtMm(below.width) + ' × ' + fmtMm(below.depth) + ' mm.');
     if (!WALL_TEXTURES.some(([id]) => id === s.wallTexture)) throw Error('Choose a wall texture from the list for storey ' + n + '.');
     s.openings = checkOpenings(s.openings, s, [], where);
+    if (!Number.isFinite(s.balcony) || s.balcony < 0 || s.balcony > 40) throw Error('Storey ' + n + ': the balcony must reach out 0 to 40 mm.');
+    if (typeof s.railing !== 'boolean') throw Error('Choose whether storey ' + n + ' has a railing.');
     below = s;
     return s;
   });
@@ -395,7 +411,7 @@ export function braceCorners(b, s, doors) {
       const half = b.lane.width / 2 + KIT.lanePlay;
       if (q.x[1] > W / 2 - half && q.x[0] < W / 2 + half) return false;
     }
-    if (s.garage && b.door === 'roller' && q.sy > 0 && doors.some((door) => q.x[1] > door.x - KIT.margin && q.x[0] < door.x + door.width + KIT.margin)) return false;
+    if (s.garage && (b.door === 'roller' || b.door === 'panel') && q.sy > 0 && doors.some((door) => q.x[1] > door.x - KIT.margin && q.x[0] < door.x + door.width + KIT.margin)) return false;
     return true;
   });
 }
@@ -432,8 +448,90 @@ const frameIds = (b, storeys) => {
   else for (const p of roofShape(b).panels) out.push({ id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip' });
   return out;
 };
-const doorPart = (d, doors) =>
-  doors.length > 1 ? { id: 'door' + d.room, name: 'Roller door, room ' + d.room, role: 'door' } : { id: 'door', name: 'Roller door', role: 'door' };
+/**
+ * The railings of a building, as runs along the open edges of a deck: a
+ * balcony or terrace on the floor under a storey, and round a flat roof.
+ * Each is { id, name, from: [x, y] in its storey's frame, d: along, out:
+ * outward, length, z: the deck's top, storey }. Railings stand RAIL inset
+ * from the edge; side runs start behind the front one.
+ */
+export function railingRuns(b, storeys) {
+  const runs = [];
+  const inset = KIT.railInset,
+    back = inset + KIT.railThick + KIT.play;
+  storeys.forEach((s, i) => {
+    const above = storeys[i + 1];
+    if (above && b.upper[above.n - 2].railing) {
+      const u = b.upper[above.n - 2];
+      const bal = u.balcony,
+        W = s.width,
+        D = s.depth,
+        z = s.eave + KIT.slab;
+      const ax = above.ox - s.ox,
+        ay = above.oy - s.oy;
+      const label = ', storey ' + above.n;
+      // Along the front of the floor, and back along each side to the storey above, or all the way where it stands in from that side.
+      runs.push({ id: 'railing' + above.n + '-front', name: 'Railing' + label + ', front', from: [0, -bal], d: [1, 0], out: [0, -1], length: W, z, storey: s });
+      const sideTo = (inFrom) => (inFrom > 3 ? D : ay);
+      const left = sideTo(ax),
+        right = sideTo(W - ax - above.width);
+      if (left + bal - back > 20) runs.push({ id: 'railing' + above.n + '-left', name: 'Railing' + label + ', left', from: [0, -bal + back], d: [0, 1], out: [-1, 0], length: left + bal - back, z, storey: s });
+      if (right + bal - back > 20) runs.push({ id: 'railing' + above.n + '-right', name: 'Railing' + label + ', right', from: [W, -bal + back], d: [0, 1], out: [1, 0], length: right + bal - back, z, storey: s });
+    }
+    if (!above && b.roofRailing && b.roof === 'flat') {
+      const W = s.width,
+        D = s.depth,
+        z = s.eave + KIT.roof;
+      const x0 = -b.overhangLeft,
+        x1 = W + b.overhangRight,
+        y0 = -b.overhangFront,
+        y1 = D + b.overhangBack;
+      runs.push({ id: 'roofrail-front', name: 'Roof railing, front', from: [x0, y0], d: [1, 0], out: [0, -1], length: x1 - x0, z, storey: s });
+      runs.push({ id: 'roofrail-back', name: 'Roof railing, back', from: [x0, y1], d: [1, 0], out: [0, 1], length: x1 - x0, z, storey: s });
+      runs.push({ id: 'roofrail-left', name: 'Roof railing, left', from: [x0, y0 + back], d: [0, 1], out: [-1, 0], length: y1 - y0 - 2 * back, z, storey: s });
+      runs.push({ id: 'roofrail-right', name: 'Roof railing, right', from: [x1, y0 + back], d: [0, 1], out: [1, 0], length: y1 - y0 - 2 * back, z, storey: s });
+    }
+  });
+  return runs;
+}
+/** A run of railing in pieces no longer than the plate allows, each with its two tabs. */
+export function railingPieces(run, plate) {
+  const room = plate ? Math.max(plate.width, plate.depth) - 2 * (plate.margin ?? 0) - 4 : Infinity;
+  const n = Math.max(1, Math.ceil(run.length / room - 1e-9));
+  return Array.from({ length: n }, (_, k) => ({
+    ...run,
+    id: n > 1 ? run.id + '-' + (k + 1) : run.id,
+    name: n > 1 ? run.name + ' ' + (k + 1) + ' of ' + n : run.name,
+    a: (run.length * k) / n + (k ? 0.1 : 0),
+    b: (run.length * (k + 1)) / n - (k < n - 1 ? 0.1 : 0),
+  }));
+}
+// Seven segments, as a racing number: which of a b c d e f g each digit lights.
+const SEGMENTS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
+/**
+ * The bay number plaques: one over each garage door. Under a balcony they
+ * hang from its front edge, as pit boards do, where they are seen from
+ * above; without one, on the wall above the door, where there is room.
+ */
+export function plaquePlaces(b, doors, s) {
+  if (!b.numbers || !s.garage) return [];
+  const [pw, ph, pt] = KIT.plaque;
+  const balcony = b.upper[0]?.balcony ?? 0;
+  const room = s.height - (doors[0]?.height ?? s.height);
+  if (!balcony && room < ph + 2) return [];
+  return doors.map((d, i) => ({
+    id: 'number-' + (i + 1),
+    name: 'Bay number ' + (b.firstNumber + i),
+    number: b.firstNumber + i,
+    x: d.x + d.width / 2 - pw / 2,
+    z: balcony ? s.eave + KIT.slab - ph : s.floor + d.height + (room - ph) / 2,
+    y: balcony ? -balcony - pt : -pt,
+  }));
+}
+const doorPart = (d, doors, b) => {
+  const kind = b?.door === 'panel' ? 'Up-and-over door' : 'Roller door';
+  return doors.length > 1 ? { id: 'door' + d.room, name: kind + ', room ' + d.room, role: 'door' } : { id: 'door', name: kind, role: 'door' };
+};
 const dividerParts = (b) =>
   dividers(b).map((_, i, all) => ({ id: 'divide' + (i + 1), name: 'Dividing wall' + (all.length > 1 ? ' ' + (i + 1) : ''), role: 'divider' }));
 /** How high the ceiling is over a point of a storey: the floor above or the roof, under a sloped roof its underside. */
@@ -458,7 +556,9 @@ export function buildingLayout(input) {
   if (b.roof === 'flat') parts.push({ id: 'roof', name: 'Flat roof', role: 'roof' });
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
   parts.push(...frameIds(b, storeys));
-  if (b.door === 'roller') parts.push(...doors.map((d) => doorPart(d, doors)));
+  if (b.door === 'roller' || b.door === 'panel') parts.push(...doors.map((d) => doorPart(d, doors, b)));
+  for (const run of railingRuns(b, storeys)) parts.push({ id: run.id, name: run.name, role: 'frame' });
+  for (const q of plaquePlaces(b, doors, storeys[0])) parts.push({ id: q.id, name: q.name, role: 'frame' });
   for (const s of storeys)
     for (const q of braceCorners(b, s, doors)) parts.push({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace' });
   for (const s of storeys)
@@ -552,7 +652,7 @@ export function buildingCuts(input, plate) {
     flats: [
       { name: 'base', extent: [b.width + 2 * KIT.ledge, b.depth + 2 * KIT.ledge], scale: [1, 1] },
       // A floor covers the storey below it.
-      ...storeys.slice(1).map((s, i) => ({ name: 'floor' + s.n, extent: [storeys[i].width, storeys[i].depth], scale: [1, 1] })),
+      ...storeys.slice(1).map((s, i) => ({ name: 'floor' + s.n, extent: [storeys[i].width, storeys[i].depth + b.upper[i].balcony], scale: [1, 1] })),
       { name: 'roof', extent: roofExtent, scale },
     ],
   });
@@ -586,6 +686,32 @@ export function buildGarage(wasm, input, plate = null) {
   const shape = roofShape(b);
   const OUTWARD = { front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
   const plan = plate ? buildingCuts(b, plate) : null;
+  const runs = railingRuns(b, storeys);
+  /**
+   * A railing piece where it stands, and the pockets for its tabs: a flat
+   * panel, a solid band along its foot, posts and a top rail, two tabs
+   * below. u along the run, v up from the deck, w in from the edge.
+   */
+  function railing(piece) {
+    const { railHeight: h, railThick: th, railBand: band, railPost: post, railPitch: pitch, railInset: inset, railTab: tab, play } = KIT;
+    const len = piece.b - piece.a;
+    const inward = [-piece.out[0], -piece.out[1], 0],
+      O = [piece.from[0] + piece.d[0] * piece.a + inward[0] * inset, piece.from[1] + piece.d[1] * piece.a + inward[1] * inset, piece.z];
+    const place = (solid) => own(solid.transform([piece.d[0], piece.d[1], 0, 0, 0, 0, 1, 0, ...inward, 0, ...O, 1]));
+    const B = (u0, v0, w0, u1, v1, w1) => own(Manifold.cube([u1 - u0, v1 - v0, w1 - w0]).translate([u0, v0, w0]));
+    const bits = [B(0, 0, 0, len, band, th), B(0, h - post, 0, len, h, th)];
+    const posts = Math.max(2, Math.ceil(len / pitch) + 1);
+    for (let k = 0; k < posts; k++) {
+      const u = Math.min(len - post, Math.max(0, (k * (len - post)) / (posts - 1)));
+      bits.push(B(u, band - 0.01, 0, u + post, h - post + 0.01, th));
+    }
+    const tabs = [0.2, 0.8].map((f) => len * f);
+    for (const u of tabs) bits.push(B(u - 3, -tab, 0, u + 3, 0.01, th));
+    const panel = place(own(Manifold.union(bits)));
+    const pockets = tabs.map((u) => place(B(u - 3 - play, -tab - 0.2, -play, u + 3 + play, 0.5, th + play)));
+    return { panel, pockets };
+  }
+  const railingsOf = (s) => runs.filter((r) => r.storey === s).flatMap((run) => railingPieces(run, plate).map(railing).map((made, i) => ({ ...made, piece: railingPieces(run, plate)[i] })));
   /**
    * The frame under a ceiling of a storey W × D: a ring just inside the
    * walls, lipDepth deep, with a block on its inside at each tab and the tabs
@@ -777,6 +903,11 @@ export function buildGarage(wasm, input, plate = null) {
           // walls and keeps them square; its tabs go into pockets in the
           // underside of the roof, so nothing shows on top.
           let roofPlate = box(-ov.left, -ov.front, z1, W + ov.right, D + ov.back, z1 + rt);
+          // A roof terrace: its railing in pockets in the top of the roof.
+          for (const { panel, pockets, piece } of railingsOf(s).filter((r) => r.piece.id.startsWith('roofrail'))) {
+            roofPlate = minus(roofPlate, ...pockets);
+            local({ id: piece.id, name: piece.name, role: 'frame', solid: panel, outward: [...piece.out, 0], apart: [piece.out[0] * 10, piece.out[1] * 10, lift + APART.up + APART.roof + 15] });
+          }
           if (b.roofLip !== 'none') {
             const { frame, holes } = lipFrame(W, D, { z1 }, { avoid: clearOfDividers(s), high: KIT.tabRoof });
             roofPlate = minus(roofPlate, ...holes);
@@ -840,7 +971,13 @@ export function buildGarage(wasm, input, plate = null) {
       const above = storeys[s.n];
       if (above) {
         const slabTop = z1 + KIT.slab;
-        const slab = box(0, 0, z1, W, D, slabTop);
+        // A balcony: the floor reaches out in front, over the garage front.
+        const bal = b.upper[above.n - 2].balcony;
+        let slab = box(0, -bal, z1, W, D, slabTop);
+        for (const { panel, pockets, piece } of railingsOf(s).filter((r) => r.piece.id.startsWith('railing'))) {
+          slab = minus(slab, ...pockets);
+          local({ id: piece.id, name: piece.name, role: 'frame', solid: panel, outward: [...piece.out, 0], apart: [piece.out[0] * 10, piece.out[1] * 10, lift + APART.storey + 10] });
+        }
         const ax = above.ox - s.ox,
           ay = above.oy - s.oy;
         // The frame under the floor: its tabs go through slots in the floor,
@@ -866,7 +1003,7 @@ export function buildGarage(wasm, input, plate = null) {
         // It prints the right way up, the groove open on top, the slots straight through.
         const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(slab, groove, ...holes), lie: [0, 0, 0], apart: floorApart };
         const floorPlan = plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']];
-        local(...cutFlat(floor, floorPlan, [0, 0]));
+        local(...cutFlat(floor, floorPlan, [0, -bal]));
         local(...cutFlat({ id: 'floor' + above.n + '-frame', name: 'Floor frame, storey ' + above.n, role: 'lip', solid: frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.storey - APART.up - 10] }, floorPlan, [0, 0]));
       }
 
@@ -882,19 +1019,61 @@ export function buildGarage(wasm, input, plate = null) {
         local({ id: 'brace' + s.suffix + '-' + q.key, name: 'Corner brace, ' + q.name + s.label, role: 'brace', solid: brace, lie: [q.sy > 0 ? 90 : -90, 0, 0], apart: [0, 0, lift + APART.up] });
       }
 
-      if (s.garage && b.door === 'roller')
+      if (s.garage && (b.door === 'roller' || b.door === 'panel'))
         for (const door of doors) {
-          // A plate behind the opening, standing on the floor inside, with ribs
-          // facing out through the opening like the slats of a roller door.
+          // A plate behind the opening, standing on the floor inside: with ribs
+          // facing out through the opening like the slats of a roller door, or
+          // in panels with shallow grooves between them, as an up-and-over door.
           const x0 = door.x - KIT.margin,
             x1 = door.x + door.width + KIT.margin;
           let insert = box(x0, t, top, x1, t + KIT.insert, top + door.height + KIT.margin);
-          const ribs = [];
-          for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
-            ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
-          if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
-          local({ ...doorPart(door, doors), solid: insert, outward: [0, -1, 0], apart: [0, APART.door, 0] });
+          if (b.door === 'roller') {
+            const ribs = [];
+            for (let z = top + KIT.ribPitch / 2; z + 1 <= top + door.height; z += KIT.ribPitch)
+              ribs.push(box(door.x + 0.5, t - KIT.rib, z, door.x + door.width - 0.5, t, z + 1.6));
+            if (ribs.length) insert = own(insert.add(own(Manifold.union(ribs))));
+          } else {
+            // A face proud of the plate through the opening, four panels high.
+            let face = box(door.x + 0.5, t - KIT.rib, top, door.x + door.width - 0.5, t + 0.01, top + door.height - 0.5);
+            const grooves = [1, 2, 3].map((k) => box(door.x - 1, t - KIT.rib - 1, top + (k * door.height) / 4 - 0.5, door.x + door.width + 1, t - KIT.rib + 0.6, top + (k * door.height) / 4 + 0.5));
+            face = minus(face, ...grooves);
+            insert = own(insert.add(face));
+          }
+          local({ ...doorPart(door, doors, b), solid: insert, outward: [0, -1, 0], apart: [0, APART.door, 0] });
         }
+      // Bay numbers: a plaque above each garage door, its number raised in
+      // seven segments like the numbers on a pit wall. Glued to the wall.
+      for (const q of plaquePlaces(b, doors, s)) {
+        const [pw, ph, pt] = KIT.plaque;
+        let plaque = box(q.x, q.y, q.z, q.x + pw, q.y + pt, q.z + ph);
+        const digits = String(q.number).split('');
+        const dw = 5,
+          dh = 7,
+          st = 1,
+          gap = 1.6,
+          raise = 0.8;
+        const total = digits.length * dw + (digits.length - 1) * gap;
+        const segs = [];
+        digits.forEach((ch, k) => {
+          const x = q.x + pw / 2 - total / 2 + k * (dw + gap),
+            z = q.z + (ph - dh) / 2;
+          const seg = {
+            a: [x, z + dh - st, x + dw, z + dh],
+            g: [x, z + dh / 2 - st / 2, x + dw, z + dh / 2 + st / 2],
+            d: [x, z, x + dw, z + st],
+            f: [x, z + dh / 2, x + st, z + dh],
+            b: [x + dw - st, z + dh / 2, x + dw, z + dh],
+            e: [x, z, x + st, z + dh / 2],
+            c: [x + dw - st, z, x + dw, z + dh / 2],
+          };
+          for (const name of SEGMENTS[Number(ch)]) {
+            const [u0, v0, u1, v1] = seg[name];
+            segs.push(box(u0, q.y - raise, v0, u1, q.y + 0.01, v1));
+          }
+        });
+        if (segs.length) plaque = own(plaque.add(own(Manifold.union(segs))));
+        local({ id: q.id, name: q.name, role: 'frame', solid: plaque, outward: [0, -1, 0], apart: [0, -APART.out - 10, 0] });
+      }
       // Frames: a band around the opening on the outside of the wall, open at
       // the bottom for a door; a window gets a cross in it.
       const { trim: k, trimDepth: fd, bar } = KIT;

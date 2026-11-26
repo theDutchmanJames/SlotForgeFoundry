@@ -47,6 +47,12 @@ export function kitNotes(name, b, parts, sizes) {
         'Push the floor frame of storey ' + (i + 2) + ' onto the underside of its floor, each tab up into its slot until it is flush, with a drop of glue. Lay the floor on the walls below, the frame inside them. Stand the walls of storey ' + (i + 2) + ' in the groove on top, and glue them as you did below.',
     ),
     ...(framed ? ['Glue each frame around its window or door on the outside of the wall; a window frame has the cross.'] : []),
+    ...(parts.some((p) => /^number/.test(p.id))
+      ? [(b.upper?.[0]?.balcony ? 'Glue each bay number under the front edge of the balcony, over its door.' : 'Glue each bay number on the wall above its door.') + ' Paint the raised number, or print the plaque in two colours.']
+      : []),
+    ...(parts.some((p) => /^(railing|roofrail)/.test(p.id))
+      ? ['Push the two tabs of each railing into their pockets along the edge of its floor or roof, the posts on the outside, with a drop of glue in each. The pieces of a long railing meet end to end.']
+      : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && b.roof === 'gable' ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
       ? b.roof === 'gable'
@@ -72,7 +78,8 @@ export function kitNotes(name, b, parts, sizes) {
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
     '- The base prints upside down. ' + andList([sloped ? 'The roof panels' : 'The roof', ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) + ' print the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.' +
-      (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : ''),
+      (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : '') +
+      (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),

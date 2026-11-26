@@ -17,6 +17,36 @@ export function pitRow(bays = 4) {
   };
 }
 
+/** A modern pit building: garages below, a glazed lounge above them on a balcony over the pit lane, a roof terrace. */
+export function modernPits(bays = 3, depth = 160) {
+  const width = bays * 110;
+  return {
+    ...pitRow(bays),
+    depth,
+    door: 'panel',
+    doorHeight: 52,
+    numbers: true,
+    wallTexture: 'plain',
+    roofRailing: true,
+    overhangFront: 2,
+    overhangBack: 2,
+    overhangLeft: 2,
+    overhangRight: 2,
+    upper: [
+      {
+        width,
+        depth: depth - 20,
+        x: 0,
+        y: 0,
+        height: 55,
+        balcony: 25,
+        railing: true,
+        openings: Array.from({ length: bays }, (_, i) => window('front', 55 + i * 110, 86, 32, 12)),
+      },
+    ],
+  };
+}
+
 export const BUILDING_PRESETS = Object.freeze([
   {
     id: 'garage',
@@ -29,6 +59,18 @@ export const BUILDING_PRESETS = Object.freeze([
     name: 'Pit row',
     note: 'Bays side by side; add as many as you like under Rooms',
     building: pitRow(4),
+  },
+  {
+    id: 'pit-modern',
+    name: 'Modern pit building',
+    note: 'Up-and-over doors with bay numbers, a glazed lounge over a balcony, a roof terrace',
+    building: modernPits(3, 160),
+  },
+  {
+    id: 'pit-low',
+    name: 'Modern pits, low relief',
+    note: 'The same front, 80 mm deep, to stand against a wall',
+    building: modernPits(3, 80),
   },
   {
     id: 'tower',

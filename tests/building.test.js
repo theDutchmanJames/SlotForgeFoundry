@@ -826,7 +826,7 @@ test('wood: planks and shingles step from row to row, the lower edge of each pro
 test('the standard buildings are good buildings: each builds, one body a part, and fits the plate once cut', async () => {
   const { BUILDING_PRESETS, pitRow } = await import('../src/building-presets.js');
   const plate = { width: 200, depth: 200, margin: 0 };
-  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'tower', 'vip', 'marshal', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'gantry-start', 'gantry-half', 'footbridge', 'stand-curved']);
+  assert.deepEqual(BUILDING_PRESETS.map((p) => p.id), ['garage', 'pitrow', 'pit-modern', 'pit-low', 'tower', 'vip', 'marshal', 'timing', 'container', 'classic', 'shed', 'stand', 'stand-covered', 'gantry-start', 'gantry-half', 'footbridge', 'stand-curved']);
   for (const preset of [...BUILDING_PRESETS, { id: 'nine bays', building: pitRow(9) }])
     withParts(
       preset.building,
@@ -846,4 +846,47 @@ test('the standard buildings are good buildings: each builds, one body a part, a
   const hut = buildingLayout(BUILDING_PRESETS.find((p) => p.id === 'marshal').building);
   assert.equal(hut.parts.filter((p) => p.role === 'door').length, 0);
   assert.equal(validateBuilding({ door: 'none', doorHeight: 190 }).door, 'none', 'its garage door sizes do not matter');
+});
+
+/* ---------- The modern pit building ---------- */
+
+test('a modern pit building: panel doors, a balcony over them with its railing, bay numbers, a roof terrace', async () => {
+  const { modernPits } = await import('../src/building-presets.js');
+  const { railingRuns, railingPieces, plaquePlaces, garageDoors, storeyStack } = await import('../src/geometry/building.js');
+  const b = validateBuilding(modernPits(3, 160));
+  const plate = { width: 200, depth: 200, margin: 0 };
+  // Railings run along the balcony's front and back along its sides, and round the roof.
+  const runs = railingRuns(b, storeyStack(b));
+  assert.deepEqual(runs.map((r) => r.id), ['railing2-front', 'railing2-left', 'railing2-right', 'roofrail-front', 'roofrail-back', 'roofrail-left', 'roofrail-right']);
+  // A run longer than the plate comes in pieces that fit it.
+  const pieces = railingPieces(runs[0], plate);
+  assert.equal(pieces.length, 2);
+  for (const p of pieces) assert.ok(p.b - p.a <= 196);
+  // The numbers hang under the front edge of the balcony, one over each door.
+  const plaques = plaquePlaces(b, garageDoors(b), storeyStack(b)[0]);
+  assert.deepEqual(plaques.map((q) => q.number), [1, 2, 3]);
+  assert.ok(near(plaques[0].y, -25 - KIT.plaque[2]) && near(plaques[0].z + KIT.plaque[1], 85 + KIT.slab), 'hung under the balcony edge');
+  assert.throws(() => validateBuilding({ upper: [{ balcony: 50 }] }), /balcony must reach out 0 to 40 mm/);
+  assert.throws(() => validateBuilding({ firstNumber: 99 }), /first bay number/);
+  withParts(b, (parts, part) => {
+    // The floor reaches out 25 mm over the doors.
+    assert.ok(near(parts.filter((p) => p.id.startsWith('floor2') && p.role === 'floor').reduce((m, p) => Math.min(m, p.solid.boundingBox().min[1]), 0), -25));
+    // A railing panel: as tall as set, standing in its pockets on the deck, as thick as it prints.
+    const rail = part('railing2-left').solid.boundingBox();
+    assert.ok(near(rail.max[2], 85 + KIT.slab + KIT.railHeight) && near(rail.min[2], 85 + KIT.slab - KIT.railTab));
+    assert.ok(near(printSize(part('railing2-left'))[2], KIT.railThick), 'it lies flat to print');
+    // The up-and-over door has its panels; every part is one body, no two in the same space.
+    assert.match(part('door1').name, /Up-and-over door, room 1/);
+    for (const p of parts) assert.equal(p.solid.decompose().length, 1, p.name + ' is one body');
+    for (let i = 0; i < parts.length; i++)
+      for (let j = i + 1; j < parts.length; j++) {
+        const both = parts[i].solid.intersect(parts[j].solid);
+        assert.ok(both.volume() < 0.01, parts[i].name + ' and ' + parts[j].name + ' overlap by ' + both.volume());
+        both.delete();
+      }
+  }, plate);
+  // Without a balcony the numbers go on the wall above the doors, where there is room.
+  const plain = validateBuilding({ numbers: true, rooms: { along: 'width', sizes: [110, 110] }, doorWidth: 80 });
+  const onWall = plaquePlaces(plain, garageDoors(plain), storeyStack(plain)[0]);
+  assert.ok(onWall.length === 2 && near(onWall[0].y, -KIT.plaque[2]));
 });
