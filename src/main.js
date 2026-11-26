@@ -5576,6 +5576,7 @@ $('#inspector').addEventListener('change', (e) => {
     renderInspector();
 });
 document.addEventListener('keydown', (e) => {
+  if (buildingsOpen) { buildingsPage?.keydown(e); return; }
   if (busy || inAction || starting || document.querySelector('dialog[open]'))
     return;
   if(planning) {

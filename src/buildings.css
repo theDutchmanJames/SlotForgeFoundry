@@ -1,5 +1,22 @@
 /* Buildings (SlotForge Graphite): parts on the left, the model in the
    middle, settings in cards on the right, as in Track Set and the Planner. */
+.bd-canvas { height: 100%; overflow: auto; padding: 16px; box-sizing: border-box; background: var(--panel); }
+.bd-canvas[hidden] { display: none; }
+.bd-drawing-toolbar, .bd-drawing-properties { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.bd-drawing-toolbar label, .bd-drawing-properties label { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.bd-drawing-toolbar button, .bd-drawing-properties button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--box); color: var(--ink); cursor: pointer; }
+.bd-drawing-properties input { width: 62px; }
+.bd-drawing-properties { padding: 14px 0; border-top: 1px solid var(--line); }
+.bd-drawing { width: 100%; height: clamp(240px, 46vh, 600px); display: block; touch-action: none; border: 1px solid var(--line); border-radius: 8px; background: var(--box); }
+.bd-drawing text { fill: var(--ink); font: 8px var(--font-ui); pointer-events: none; }
+.bd-drawing-wall { fill: var(--sel); stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.bd-drawing-opening rect { fill: var(--box); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
+.bd-drawing-opening.selected rect { fill: var(--accent-fill); stroke-width: 3; }
+.bd-drawing-opening .bd-resize { fill: var(--accent); cursor: nesw-resize; }
+.bd-fixed-opening { fill: var(--panel); stroke: var(--muted); stroke-dasharray: 3 2; }
+.bd-shape-handle { fill: var(--accent); stroke: var(--ink); stroke-width: 1; cursor: nwse-resize; }
+.bd-drawing.invalid { outline: 2px solid #dd6464; }
+.bd-centre > header { flex-wrap: wrap; }
 #buildings-page {
   flex: 1;
   min-height: 0;
@@ -599,3 +616,10 @@
 .bd-preset:hover {
   border-color: var(--accent);
 }
+.bd-section-list, .bd-section-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.bd-section-list button[aria-pressed="true"] { border-color: var(--accent, #e0a451); color: var(--accent, #e0a451); }
+.bd-plan-section polygon { fill: #263442; stroke: #94a3b8; stroke-width: 1; cursor: pointer; }
+.bd-plan-section.selected polygon { fill: #3b3b2b; stroke: #e5b862; stroke-width: 2; }
+.bd-plan-section text { pointer-events: none; font-size: 9px; }
+.bd-shared-wall { fill: #596776; opacity: .55; stroke: #c3cedb; stroke-dasharray: 3 2; }
+.bd-offset-handle { fill: #edaa43 !important; }

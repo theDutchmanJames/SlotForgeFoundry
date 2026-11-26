@@ -129,6 +129,8 @@ export function validateGrandstand(input) {
 
 /** A building's size in a line: a garage's outside, a grandstand's rows and length. */
 export function sizeLine(b) {
+  if (b.kind === 'sections') return `${b.sections.length} connected sections · independent heights and roofs`;
+  if (b.kind === 'footprint') return `${b.shape} footprint · ${b.width} × ${b.depth} × ${b.height} mm`;
   if (b.kind === 'gantry') return { start: 'Start gantry', half: 'Half gantry', bridge: 'Footbridge' }[b.type] + ' · span ' + Math.round(b.span) + ' mm';
   if (b.kind === 'pitmodule') return b.bays + (b.bays === 1 ? ' bay' : ' bays') + ' · ' + Math.round(b.bays * b.bayWidth + 3) + ' × ' + Math.round(b.depth) + ' mm';
   if (b.kind === 'pitbays') return b.types.length + (b.types.length === 1 ? ' bay' : ' bays') + ' · ' + Math.round(b.types.length * b.bayWidth + 5) + ' × ' + Math.round(b.depth) + ' mm';

@@ -99,7 +99,7 @@ function buildingCard(saved) {
   return `<article class="lp-card">
   <div class="lp-pic lp-icon">${icon('building')}</div>
   <div class="lp-body">
-    <div class="sf-eyebrow">One-car garage</div>
+    <div class="sf-eyebrow">${b.kind === 'sections' ? 'Connected building' : b.kind === 'footprint' ? 'Shaped building' : 'Building'}</div>
     <h3>${esc(saved.name)}</h3>
     <div class="lp-chips"><span>${esc(fmt(b.width) + ' × ' + fmt(b.depth) + ' × ' + fmt(b.height) + ' mm')}</span><span>${esc(when(saved.updated))}</span></div>
   </div>

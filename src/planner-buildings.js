@@ -5,6 +5,8 @@
 // Dropped near the track it snaps with its front along the outside of the
 // border, so the doorstep meets the road.
 import polygonClipping from 'polygon-clipping';
+import { connectedOutline, sectionPositions, sectionRect, sectionWalls } from './geometry/connected-building.js';
+import { footprintPoints, footprintOffset, footprintWalls } from './geometry/footprint-building.js';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
 import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
@@ -74,7 +76,15 @@ const rect = (x0, y0, x1, y1) => [
  */
 export function shapeOf(b) {
   let outline, front;
-  if (b.kind === 'gantry') {
+  if (b.kind === 'sections') {
+    outline = connectedOutline(b, 3);
+    const edges = outline.map((p,i) => [p,outline[(i+1)%outline.length]]).filter(([a,c]) => Math.abs(a[1]-c[1])<1e-7);
+    const [a,c] = edges.sort((a,c) => a[0][1]-c[0][1])[0];
+    front = { p: [(a[0]+c[0])/2,a[1]], f: [0,-1] };
+  } else if (b.kind === 'footprint') {
+    outline = footprintOffset(b, 3);
+    front = { p: [b.width / 2, -3], f: [0, -1] };
+  } else if (b.kind === 'gantry') {
     // Over the track: it has no front to stand against the track with.
     const [w, d] = gantrySize(b);
     outline = rect(0, 0, w, d);
@@ -179,6 +189,21 @@ export function footprint(entry) {
 /** What the plan draws: the base, each storey, its dividing walls, and the garage doors in the front wall. */
 export function planShapes(entry) {
   const b = validateBuilding(entry.building);
+  if (b.kind === 'sections') {
+    const sections = sectionPositions(b), doors = sections.flatMap(s => s.openings.filter(o => o.type === 'door').map(o => {
+      const w = sectionWalls(s).find(w => w.id === o.wall);
+      return [o.at-o.width/2,o.at+o.width/2].map(at => toPlan(entry,[w.a[0]+w.dir[0]*at,w.a[1]+w.dir[1]*at]));
+    }));
+    return { base: footprint(entry), storeys: sections.map(s => sectionRect(s).map(p => toPlan(entry,p))), dividers: [], doors };
+  }
+  if (b.kind === 'footprint') {
+    const walls = footprintWalls(b);
+    const doors = b.openings.filter(o => o.type === 'door').map(o => {
+      const w = walls.find(w => w.id === o.wall);
+      return [o.at - o.width / 2, o.at + o.width / 2].map(at => toPlan(entry, [w.a[0] + w.dir[0] * at, w.a[1] + w.dir[1] * at]));
+    });
+    return { base: footprint(entry), storeys: [footprintPoints(b).map(p => toPlan(entry, p))], dividers: [], doors };
+  }
   if (b.kind === 'gantry') {
     // Its feet, and the beam or the walkway across.
     const [w, d] = gantrySize(b);

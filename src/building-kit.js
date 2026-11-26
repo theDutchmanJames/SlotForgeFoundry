@@ -13,6 +13,25 @@ import { tyreOpening } from './geometry/tyre-bridge.js';
 const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1);
 
 export function kitNotes(name, b, parts, sizes) {
+  if (b.kind === 'sections') return [
+    name + ' · SlotForge Foundry connected building kit',
+    ...b.sections.map(s => s.name+' ('+s.id+'): '+s.width+' × '+s.depth+' mm, eaves '+s.height+' mm, '+s.roofType+' roof'+(s.roofType === 'flat' ? '' : ', pitch '+s.pitch+' degrees')+'. '+(s.parent ? 'Attached to '+s.parent+' '+s.side+', offset '+s.offset+' mm.' : 'Main section.')),
+    'All sections share one base and floor level. Connections are open; no duplicate internal walls. Upper walls close steps between roofs.',
+    'Parts are supplied in print orientation. Assemble numbered tiles flat using straight glue seams, then dry-fit wall feet into the base grooves and glue. Groove clearance: '+b.play+' mm per side.',
+    'Roof panels print flat on their undersides. Join panels at their mitred ridges/hips at the specified pitch, then glue along the shaped wall tops. Eaves are trimmed at attached sections; roof junctions are stepped joins, not continuous valleys. There is no locating frame or flashing.',
+    'Sections and wall directions are included in part names. Keep matching pieces together. Dry-fit each section and its roof before gluing; perform a printer fit trial before a complete kit.',
+    '', 'Parts:', ...parts.map(p => '- '+p.name+(sizes[p.id] ? ': '+sizes[p.id].join(' × ')+' mm' : '')),
+  ].join('\n');
+  if (b.kind === 'footprint') return [
+    name + ' · SlotForge Foundry shaped building kit',
+    `${b.shape} footprint, ${b.width} × ${b.depth} mm; walls ${b.height} mm tall, ${b.wall} mm thick.`,
+    'Print the base and roof flat, and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
+    'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
+    'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners. Glue the wall seams and feet.',
+    'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
+    'Check fit on your printer before printing the complete kit. The groove clearance is ' + b.play + ' mm per side.',
+    '', 'Parts:', ...parts.map(p => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].join(' × ') + ' mm' : '')),
+  ].join('\n');
   if (b.kind === 'grandstand') return standNotes(name, b, parts, sizes);
   if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);

@@ -23,6 +23,8 @@ import { buildPlatform, platformLayout, validatePlatform } from './viewing-platf
 import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { kitShapes } from './kit-shapes.js';
+import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
+import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
@@ -412,6 +414,8 @@ function checkOpenings(list, dims, blocks, where) {
 
 /** The building as it is kept: known settings only, each checked. */
 export function validateBuilding(input) {
+  if (input?.kind === 'sections') return validateConnected(input);
+  if (input?.kind === 'footprint') return validateFootprint(input);
   if (input?.kind === 'grandstand') return validateGrandstand(input);
   if (input?.kind === 'gantry') return validateGantry(input);
   if (input?.kind === 'pitmodule') return validatePitModule(input);
@@ -986,6 +990,8 @@ function ceilingAt(b, s, shape, x, y) {
 
 /** The parts of the kit, without geometry: their ids, names and roles. */
 export function buildingLayout(input) {
+  if (input?.kind === 'sections') return connectedLayout(input);
+  if (input?.kind === 'footprint') return footprintLayout(input);
   if (input?.kind === 'grandstand') return { ...grandstandLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'gantry') return { ...gantryLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
@@ -1061,6 +1067,8 @@ function wallOpenings(s, doors) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
+  if (input?.kind === 'sections') return {};
+  if (input?.kind === 'footprint') return {};
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
   if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
@@ -1129,6 +1137,8 @@ export function buildingCuts(input, plate) {
 }
 
 export function buildGarage(wasm, input, plate = null) {
+  if (input?.kind === 'sections') return buildConnected(wasm, input, plate);
+  if (input?.kind === 'footprint') return buildFootprint(wasm, input, plate);
   if (input?.kind === 'grandstand') return buildGrandstand(wasm, input);
   if (input?.kind === 'gantry') return buildGantry(wasm, input, plate);
   if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
