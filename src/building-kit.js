@@ -16,6 +16,17 @@ const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1
 // Window and door frames on a connected or shaped building.
 const FRAMES_NOTE = 'Window and door frames print face up, their back flat on the plate. Paint them, then glue each round its opening on the outside of its wall, its inner edge flush with the opening; the texture keeps clear of where it sits.';
 // The parts are as exported, with their ids: a frame is "frame-2", "s1-frame-2" or a piece of one.
+// Lettering on a building's sign and walls, raised or cut, and how to paint it.
+function letteringNote(b) {
+  const lines = [...(b.lettering ?? []), ...(b.upper ?? []).flatMap((u) => u.lettering ?? [])];
+  if (!lines.length && !(b.signText && b.sign !== 'none')) return [];
+  const out = [];
+  if (b.signText && b.sign === 'fascia') out.push('“' + b.signText + '” stands 0.6 mm proud on the face of the sign.');
+  if (b.signText && b.sign === 'billboard') out.push('“' + b.signText + '” is carved into the face of the billboard in V-grooves, so it prints face down without supports.');
+  if (lines.some((l) => !l.cut)) out.push('Raised lettering on the walls: ' + lines.filter((l) => !l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
+  if (lines.some((l) => l.cut)) out.push('Cut lettering on the walls: ' + lines.filter((l) => l.cut).map((l) => '“' + l.text + '”').join(', ') + '.');
+  return ['Lettering: ' + out.join(' ') + ' Paint raised letters with a fine brush, or roll a little paint over them on a flat card; fill cut or carved letters with paint and wipe the face clean while it is wet.'];
+}
 // The glazing template, when there are windows to glaze.
 const glazingNote = (b) => (glazingSheets(b).length ? ['Glazing: glazing.svg has the clear sheet for each window, full size. Print it at 100 %, cut the sheets from clear plastic 0.3 to 0.5 mm thick, and glue each behind its window on the inside of its wall before the walls go together.'] : []);
 const hasFrames = (parts) => parts.some((p) => /(^|-)frame-\d/.test(p.id));
@@ -149,6 +160,7 @@ export function kitNotes(name, b, parts, sizes) {
     '',
     ...(b.container && b.container !== 'none' ? ['Container details: the corner posts, rails, cargo-door hardware and roof ribs are integrated into their panels. Cargo doors and corner-casting recesses are decorative, not working hinges or stacking connectors. Keep the roof loose for interior access. Add clear sheet behind the windows and your own graphics to the sign.'] : []),
     ...glazingNote(b),
+    ...letteringNote(b),
     'Paint the parts before you glue them, or print them in different colours.',
   ].join('\n');
 }
@@ -404,7 +416,8 @@ function billboardNotes(name, b, parts, sizes) {
     '',
     'Printing',
     '- Every part prints without supports.',
-    '- Each board prints on its back, the face up' + (b.border ? ', its border raised round it' : '') + '; the struts lie flat.',
+    '- Each board prints on its back, the face up' + (b.border ? ', its border raised round it' : '') + (b.text ? ', “' + b.text + '” raised on it' + (pieces > 1 ? ' across the pieces' : '') : '') + '; the struts lie flat.',
+    ...(b.text ? ['- Paint the board, then the raised letters with a fine brush, or roll a little paint over them on a flat card.'] : []),
     '',
     'Putting it together',
     ...[

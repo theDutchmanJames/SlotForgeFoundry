@@ -633,3 +633,5 @@
 .bd-drawing .bd-edge-name { font-size: 7px; fill: var(--muted); pointer-events: none; }
 .bd-corner { fill: var(--panel); stroke: var(--ink); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer; }
 .bd-corner.selected { fill: var(--accent); }
+/* Lettering on a wall, as it reads in the elevation. */
+.bd-drawing .bd-drawing-letters { fill: var(--accent); font-weight: 700; opacity: 0.85; }

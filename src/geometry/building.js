@@ -24,6 +24,7 @@ import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
+import { LETTERING, checkText, fitHeight, textCarve, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
 
@@ -77,6 +78,9 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // front edge. signWidth along the front, in the middle; signHeight its
   // height, a billboard's above the roof.
   sign: 'none',
+  signText: '', // lettered on the sign: raised on a fascia sign, cut into the face of a roof billboard
+  // Lettering on the walls of the ground floor: { wall, text, at (its middle along the wall), up (its middle above the floor), height, cut }.
+  lettering: Object.freeze([]),
   signWidth: 80,
   signHeight: 14,
   // What the building stands on: 'none' (the table), 'legs' (one at each
@@ -150,7 +154,7 @@ export const BUILDING_LIMITS = Object.freeze({
 // A storey above: its size, its place on the storey below (from that
 // storey's left and front walls), its height, wall texture and openings.
 // balcony: how far its floor reaches out in front of the storey below, over the garage front, or all round (balconyAll); railing: round the open edges of its floor.
-export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, wallTexture: 'plain', wallTextures: FINISH_DEFAULTS.wallTextures, lowerTexture: 'none', lowerHeight: 20, openings: Object.freeze([]), balcony: 0, balconyAll: false, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
+export const UPPER_DEFAULTS = Object.freeze({ width: null, depth: null, x: 0, y: 0, height: 65, lettering: Object.freeze([]), wallTexture: 'plain', wallTextures: FINISH_DEFAULTS.wallTextures, lowerTexture: 'none', lowerHeight: 20, openings: Object.freeze([]), balcony: 0, balconyAll: false, railing: false, open: false, waist: 25, panes: 1, lean: 0, plinth: 0, cornice: 0, pilasters: 0, panels: false, wallStyle: 'solid' });
 export const MAX_UPPER = 3;
 /** Walls that lean out: how far out at the top, and the factor everything of the storey widens by there. */
 export function leanGrow(s) {
@@ -544,8 +548,7 @@ export function validateBuilding(input) {
   if (b.sign === 'fascia' && b.cornice) throw Error('The sign and the cornice both run along the top of the front wall: choose one.');
   if (b.numbers && (b.cornice || b.pilasters || b.panels)) throw Error('The bay numbers sit on the wall above the doors, where the relief would be: choose one.');
   if (b.sign === 'fascia') {
-    const dip = b.upper.length === 0 && b.roof !== 'flat' ? HATCH.sign * Math.tan((b.pitch * Math.PI) / 180) : 0;
-    const under = Math.floor((b.height - b.signHeight - dip) * 10) / 10;
+    const under = signUnder(b);
     if (b.numbers && doors.length) throw Error('The sign and the bay numbers both go above the garage doors: choose one.');
     if (b.door !== 'none' && b.doorHeight > under - 1) throw Error('The garage door reaches up under the sign: at most ' + fmtMm(under - 1) + ' mm high with a sign of ' + b.signHeight + ' mm.');
     for (const o of openings.filter((q) => q.wall === 'front')) {
@@ -603,7 +606,15 @@ export function validateBuilding(input) {
     if (s.height * Math.tan((s.lean * Math.PI) / 180) > LEAN.reach) throw Error('The walls' + where + ' lean out too far: at most ' + LEAN.reach + ' mm at the top.');
   });
   checkContainer(b, openings);
-  return { ...b, openings, upper, cuts: validateCuts(b.cuts) };
+  b.signText = checkText(b.signText, 'The sign text');
+  if (b.signText && b.sign !== 'none') {
+    // As high as the board leaves room for, 2 mm clear all round; on a roof billboard, of the part above the roof.
+    const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4);
+    if (h < LETTERING.height[0]) throw Error('The sign is too small for “' + b.signText + '”: make it wider or higher, or the text shorter.');
+  }
+  const lettering = checkLettering(b.lettering, { ...b, openings }, doors, b.sign === 'fascia' ? signUnder(b) : Infinity, '');
+  upper.forEach((u, i) => (u.lettering = checkLettering(u.lettering, u, [], Infinity, STOREY_SUFFIX[i + 2])));
+  return { ...b, openings, lettering, upper, cuts: validateCuts(b.cuts) };
 }
 
 // An open storey: no windows or doors of its own, a waist wall low enough to leave a band open.
@@ -764,7 +775,7 @@ export function storeyStack(b) {
   let z = b.baseHeight;
   let ox = 0,
     oy = 0;
-  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, wallTexture: b.wallTexture, wallTextures: b.wallTextures, lowerTexture: b.lowerTexture, lowerHeight: b.lowerHeight, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels, wallStyle: b.wallStyle }, ...b.upper];
+  const all = [{ width: b.width, depth: b.depth, x: 0, y: 0, height: b.height, lettering: b.lettering, wallTexture: b.wallTexture, wallTextures: b.wallTextures, lowerTexture: b.lowerTexture, lowerHeight: b.lowerHeight, openings: b.openings, open: b.open, waist: b.waist, panes: b.panes, lean: b.lean, plinth: b.plinth, cornice: b.cornice, pilasters: b.pilasters, panels: b.panels, wallStyle: b.wallStyle }, ...b.upper];
   all.forEach((s, i) => {
     const n = i + 1;
     if (i) z += KIT.slab;
@@ -783,6 +794,7 @@ export function storeyStack(b) {
       wallTextures: s.wallTextures ?? {},
       lowerTexture: s.lowerTexture ?? 'none',
       lowerHeight: s.lowerHeight ?? 20,
+      lettering: s.lettering ?? [],
       openings: s.open ? openBand(s) : s.openings,
       open: !!s.open,
       lean: s.lean ?? 0,
@@ -796,6 +808,56 @@ export function storeyStack(b) {
     z += s.height;
   });
   return out;
+}
+
+// How high a wall reaches under the fascia sign along the top of the front wall.
+function signUnder(b) {
+  const dip = b.upper.length === 0 && b.roof !== 'flat' ? HATCH.sign * Math.tan((b.pitch * Math.PI) / 180) : 0;
+  return Math.floor((b.height - b.signHeight - dip) * 10) / 10;
+}
+const LETTER_KEYS = ['wall', 'text', 'at', 'up', 'height', 'cut'];
+/**
+ * A storey's lettering, checked: each clear of the ends of its wall, its
+ * foot and its top, the openings and their frames, the garage doors, the
+ * sign, the relief bands and the container rails, and of each other.
+ */
+function checkLettering(list, s, doors, under, where) {
+  if (!Array.isArray(list) || list.length > 8) throw Error('A storey' + where + ' has at most 8 lines of lettering.');
+  const boxes = [];
+  return list.map((item, i) => {
+    const name = 'Lettering ' + (i + 1) + where;
+    if (!item || typeof item !== 'object' || Object.keys(item).some((k) => !LETTER_KEYS.includes(k))) throw Error(name + ' has an unknown setting.');
+    const l = { cut: false, ...item };
+    if (!WALLS.includes(l.wall)) throw Error(name + ': choose a wall.');
+    l.text = checkText(l.text, name);
+    if (!l.text) throw Error(name + ' has no text.');
+    if (typeof l.cut !== 'boolean') throw Error(name + ': choose raised or cut letters.');
+    const [lo, hi] = LETTERING.height;
+    if (!Number.isFinite(l.height) || l.height < lo || l.height > hi) throw Error(name + ': letters ' + lo + ' to ' + hi + ' mm high.');
+    if (!Number.isFinite(l.at) || !Number.isFinite(l.up)) throw Error(name + ': give its place on the wall.');
+    // Letters stand on a solid wall: not on a braced or lattice frame, nor in the open band of an open storey.
+    if ((s.wallStyle ?? 'solid') !== 'solid') throw Error(name + ': lettering needs solid walls, not a braced or lattice frame.');
+    const L = wallLength(s, l.wall), w = textWidth(l.text, l.height);
+    const u0 = l.at - w / 2, u1 = l.at + w / 2, z0 = l.up - l.height / 2, z1 = l.up + l.height / 2;
+    const rail = (s.container ?? 'none') !== 'none';
+    const end = rail ? 8 : 4, foot = Math.max(2, s.plinth ?? 0, rail ? 6 : 0), head = Math.min(s.height - 2 - (s.cornice ?? 0) - (rail ? 5 : 0), l.wall === 'front' ? under - 1 : Infinity, s.open ? s.waist - 1 : Infinity);
+    if (u0 < end || u1 > L - end) throw Error(name + ' (' + fmtMm(w) + ' mm long) does not fit along the ' + l.wall + ' wall there: keep it ' + end + ' mm from each end.');
+    if (z0 < foot || z1 > head) throw Error(name + ' is too low or too high on the wall: its middle between ' + fmtMm(foot + l.height / 2) + ' and ' + fmtMm(head - l.height / 2) + ' mm up.');
+    const hits = (a0, c0, a1, c1) => u0 < a1 + 1 && u1 > a0 - 1 && z0 < c1 + 1 && z1 > c0 - 1;
+    for (const o of s.openings.filter((q) => q.wall === l.wall)) {
+      const k = o.frame ? KIT.trim : 0;
+      if (hits(o.at - o.width / 2 - k, o.sill - (o.type === 'window' ? k : 0), o.at + o.width / 2 + k, o.sill + o.height + k)) throw Error(name + ' runs over the ' + openingName(o, s.openings).toLowerCase() + '.');
+    }
+    if (l.wall === 'front') for (const d of doors) if (hits(d.x, 0, d.x + d.width, d.height)) throw Error(name + ' runs over a garage door.');
+    // The bay numbers' plaques, on the wall above the doors (under a balcony they hang from its edge instead).
+    if (l.wall === 'front' && s.numbers && doors.length && !(s.upper?.[0]?.balcony > 0)) {
+      const [pw, ph] = KIT.plaque, room = s.height - doors[0].height;
+      for (const d of doors) if (room >= ph + 2 && hits(d.x + d.width / 2 - pw / 2, d.height + (room - ph) / 2, d.x + d.width / 2 + pw / 2, d.height + (room + ph) / 2)) throw Error(name + ' runs over a bay number.');
+    }
+    for (const q of boxes) if (q.wall === l.wall && hits(...q.box)) throw Error(name + ' runs over lettering ' + (q.i + 1) + '.');
+    boxes.push({ wall: l.wall, box: [u0, z0, u1, z1], i });
+    return l;
+  });
 }
 
 /** How the roof stands on the top storey: the slope of each panel, and how high it rises. */
@@ -1369,6 +1431,13 @@ export function buildGarage(wasm, input, plate = null) {
       const lift = (s.n - 1) * APART.storey;
       const wallApart = (w) => add3(scale3(OUTWARD[w], APART.out), [0, 0, APART.up + lift]);
       const local = (...ps) => own2.push(...ps);
+      // Letters on a wall of this storey: `text`, `height` high, its middle at u along the wall and z,
+      // from n0 to n1 out from the face (into the wall where negative).
+      const lettersOn = (wall, text, height, u, z, n0, n1) => {
+        const frame = { front: [[0, 0], [1, 0, 0]], back: [[W, D], [-1, 0, 0]], left: [[0, D], [0, -1, 0]], right: [[W, 0], [0, 1, 0]] }[wall];
+        const shape = own(textShape(wasm, own, text, height).translate([u - textWidth(text, height) / 2, z - height / 2]));
+        return sweep(shape, frame[1], [0, 0, 1], [...frame[0], 0], OUTWARD[wall].map((v) => -v), -n1, -n0);
+      };
       const onWall = (wall, u0, u1, n0, n1, za, zb) => {
         if (wall === 'front') return box(u0, -n0, za, u1, -n1, zb);
         if (wall === 'back') return box(W - u0, D + n0, za, W - u1, D + n1, zb);
@@ -1450,6 +1519,11 @@ export function buildGarage(wasm, input, plate = null) {
           const extra = o.frame ? KIT.trim : 0;
           keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
         }
+        // Behind lettering the wall is smooth, like a painted panel, so the letters read.
+        for (const l of s.lettering) {
+          const half = textWidth(l.text, l.height) / 2;
+          keepOut[l.wall].push([l.at - half - 1, top + l.up - l.height / 2 - 1, l.at + half + 1, top + l.up + l.height / 2 + 1]);
+        }
         for (const w of WALLS) {
           const joints = finishJoints(wasm, own, w, { W, D, length: wallLength(s, w), bottom: top, top: zTop }, keepOut[w], b, s);
           if (joints) walls[w] = whole(own(walls[w].subtract(joints)));
@@ -1527,6 +1601,14 @@ export function buildGarage(wasm, input, plate = null) {
             }
             if (sunk.length) walls[w] = minus(walls[w], ...sunk);
           }
+        }
+      }
+      // Lettering: raised from the face, its foot in the joints of the texture, or cut into it.
+      {
+        const sink = isTextured(s) ? b.textureDepth + 0.1 : 0.01;
+        for (const l of s.lettering) {
+          const letters = l.cut ? lettersOn(l.wall, l.text, l.height, l.at, top + l.up, -LETTERING.depth, 1) : lettersOn(l.wall, l.text, l.height, l.at, top + l.up, -sink, LETTERING.depth);
+          walls[l.wall] = own(l.cut ? walls[l.wall].subtract(letters) : walls[l.wall].add(letters));
         }
       }
       for (const w of ['front', 'back', 'left', 'right'])
@@ -1852,7 +1934,10 @@ export function buildGarage(wasm, input, plate = null) {
           sx1 = (W + b.signWidth) / 2;
         // Under a sloped roof that reaches down past the wall, the sign stops under its underside.
         const cap = Math.min(z1, ...[sx0, sx1].flatMap((x) => [0, -HATCH.sign].map((y) => ceilingAt(b, s, shape, x, y)))) - 0.01;
-        local({ id: 'sign', name: 'Sign', role: 'wall', solid: onWall('front', sx0, sx1, 0, HATCH.sign, cap - b.signHeight, cap), outward: [0, -1, 0], apart: add3(wallApart('front'), [0, -APART.frame, 0]) });
+        let sign = onWall('front', sx0, sx1, 0, HATCH.sign, cap - b.signHeight, cap);
+        // Its text raised on its face, which prints up.
+        if (b.signText) sign = own(sign.add(lettersOn('front', b.signText, fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4), W / 2, cap - b.signHeight / 2, HATCH.sign - 0.01, HATCH.sign + LETTERING.depth)));
+        local({ id: 'sign', name: 'Sign', role: 'wall', solid: sign, outward: [0, -1, 0], apart: add3(wallApart('front'), [0, -APART.frame, 0]) });
       }
       // Walls that lean out: everything of this storey widens with the height
       // above its floor, the same way for every part, so they still meet;
@@ -1910,7 +1995,16 @@ export function buildGarage(wasm, input, plate = null) {
       const foot = Math.min(zf, zb, zc) - dip;
       const board = box(x0, yf, foot, x1, yb, Math.max(zf, zb) + b.signHeight);
       const fins = [x0 + 3, x1 - 3 - fw].map((fx) => sweep([[yb - 0.4, zb - dip], [yb - 0.4, zb + fh], [yb + fl, zc - dip]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], fx, fx + fw));
-      const solid = trim(own(Manifold.union([board, ...fins])), [0, -k / n, 1 / n], (zf - k * yf) / n);
+      let whole = own(Manifold.union([board, ...fins]));
+      // Its text carved into its face: the billboard prints face down, so raised letters would hang
+      // over air; V-grooves steeper than 45° print clean. The text's frame: x along, y up, z out of the face.
+      if (b.signText) {
+        const h = fitHeight(b.signText, b.signWidth - 4, b.signHeight - 4), shown = Math.max(zf, zb);
+        const { solid: carve } = textCarve(wasm, own, b.signText, h);
+        const u = (x0 + x1) / 2 - textWidth(b.signText, h) / 2, v = shown + b.signHeight / 2 - h / 2;
+        whole = own(whole.subtract(own(carve.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, u, yf, v, 1]))));
+      }
+      const solid = trim(whole, [0, -k / n, 1 / n], (zf - k * yf) / n);
       parts.push({ id: 'sign', name: 'Billboard', role: 'wall', solid, outward: [0, 1, 0], apart: [0, 0, APART.roof + 25] });
     }
     if (b.standType !== 'none') {

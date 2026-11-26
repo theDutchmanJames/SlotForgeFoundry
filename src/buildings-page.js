@@ -56,6 +56,7 @@ import {
   wallLength,
 } from './geometry/building.js';
 import { ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-texture.js';
+import { LETTERING, textWidth } from './geometry/lettering.js';
 import { finishFields, fillFinish, readFinish, showBands } from './building-finish.js';
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
 
@@ -331,6 +332,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('kHeight', 'Board height', 40, BILLBOARD_LIMITS.height)}
       ${field('kClearance', 'Above the table', 45, BILLBOARD_LIMITS.clearance)}
       <label class="bd-check"><input type="checkbox" name="kBorder"><span>A raised border round the face</span></label>
+      <label class="bd-row"><span>Text</span><input name="kText" maxlength="${LETTERING.longest}" placeholder="None"></label>
       <p class="bd-hint" data-bd-billboard-size></p></section>
     <section class="bd-box" data-bd-card="marshalWalls" data-bd-marshal hidden><h3>Wall</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall"><button type="button" data-bd-marshal-walls="slats">Slats</button><button type="button" data-bd-marshal-walls="boards">Boards</button><button type="button" data-bd-marshal-walls="plain">Plain</button></div>
@@ -445,11 +447,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="openings"><h3>Windows and doors</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall">${WALLS.map((w) => `<button type="button" data-bd-wall="${w}">${WALL_NAMES[w]}</button>`).join('')}</div>
       <div class="bd-openings"></div>
-      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add="window">${icon('plus')}Window</button><button type="button" class="bd-add" data-bd-add="door">${icon('plus')}Door</button></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add="window">${icon('plus')}Window</button><button type="button" class="bd-add" data-bd-add="door">${icon('plus')}Door</button><button type="button" class="bd-add" data-bd-add-letters>${icon('plus')}Lettering</button></div>
+      <div class="bd-letters"></div>
       <label class="bd-row"><span>Sign</span><select name="sign">${SIGNS.map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label>
       <div data-bd-sign-size>
       ${field('signWidth', 'Sign width', 80, BUILDING_LIMITS.signWidth)}
       ${field('signHeight', 'Sign height', 14, BUILDING_LIMITS.signHeight)}
+      <label class="bd-row"><span>Sign text</span><input name="signText" maxlength="${LETTERING.longest}" placeholder="None"></label>
       </div>
       <p class="bd-hint">Each is a hole in the wall. Place is the middle of the opening, measured from the left end of the wall as you look at it from outside. A frame is a part of its own, glued on around the opening. A window makes a serving hatch with a counter under it and a flap propped open over it: each prints flat, and two small fins on it set its angle against the wall. A sign is a board for the name of a stall, in the middle of the front: along the top of the front wall under the eaves, or a billboard standing up on the roof at its front edge, its height above the roof, held by two fins behind it.</p></section>
     <section class="bd-box" data-bd-fitting hidden><h3>Fitting the plate</h3>
@@ -618,6 +622,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [n, key] of BILLBOARD_FIELDS) e[n].value = k[key];
     e.kStyle.value = k.style;
     e.kBorder.checked = k.border;
+    e.kText.value = k.text;
     drawBillboard();
   }
   function drawBillboard() {
@@ -631,7 +636,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readBillboard() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const k = { kind: 'billboard', style: e.kStyle.value, border: e.kBorder.checked };
+    const k = { kind: 'billboard', style: e.kStyle.value, border: e.kBorder.checked, text: e.kText.value };
     for (const [n, key] of BILLBOARD_FIELDS) k[key] = num(e[n]);
     return k;
   }
@@ -962,7 +967,28 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof. Walls can be a braced steel frame or a lattice, open between their members. Relief stands out of the walls: a plinth at the foot, a cornice under the eaves, pilasters at the corners and every so far along (0 for none), and panels sunk between them; it runs round the corners and keeps clear of every opening.</p>`;
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
+  // The lettering of the chosen wall on the chosen storey, each a small card.
+  function drawLetters() {
+    const s = storeyOf(building, storey);
+    const rows = (s.lettering ?? [])
+      .map((l, i) => [l, i])
+      .filter(([l]) => l.wall === wall)
+      .map(
+        ([l, i]) => `<div class="bd-opening" data-lt="${i}">
+  <div class="bd-op-head">${icon('pencil')}<b>Lettering</b><span class="bd-grow"></span>
+    <button type="button" class="bd-remove" data-bd-remove-letters="${i}" title="Remove" aria-label="Remove this lettering">${icon('close')}</button></div>
+  <label class="bd-row"><span>Text</span><input name="ltText" maxlength="${LETTERING.longest}" value="${esc(l.text)}"></label>
+  ${field('ltHeight', 'Letters high', l.height, LETTERING.height)}
+  ${field('ltAt', 'Place', l.at, [0, wallLength(s, l.wall)])}
+  ${field('ltUp', 'Up from the floor', l.up, [0, s.height])}
+  <label class="bd-check"><input type="checkbox" name="ltCut"${l.cut ? ' checked' : ''}><span>Cut in, not raised</span></label>
+  <p class="bd-hint">${fmt(textWidth(l.text, l.height))} mm long. Place and up are its middle.</p>
+</div>`,
+      );
+    $('.bd-letters').innerHTML = rows.join('');
+  }
   function drawOpenings() {
+    drawLetters();
     const s = storeyOf(building, storey);
     const rows = s.openings
       .map((o, i) => [o, i])
@@ -1037,9 +1063,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         frame: get('frame').checked,
       };
     });
+    const lettering = (storeyOf(building, storey).lettering ?? []).map((l, i) => {
+      const row = form.querySelector('[data-lt="' + i + '"]');
+      if (!row) return l;
+      const get = (n) => row.querySelector('[name="' + n + '"]');
+      return { ...l, text: get('ltText').value, height: num(get('ltHeight')), at: num(get('ltAt')), up: num(get('ltUp')), cut: get('ltCut').checked };
+    });
     const upper = storey
-      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), balconyAll: e.upBalconyAll.checked, railing: e.upRailing.checked, openings, ...openOf() }
-      : { openings, ...openOf() };
+      ? { width: num(e.upWidth), depth: num(e.upDepth), x: num(e.upX), y: num(e.upY), height: num(e.upHeight), balcony: num(e.upBalcony), balconyAll: e.upBalconyAll.checked, railing: e.upRailing.checked, openings, lettering, ...openOf() }
+      : { openings, lettering, ...openOf() };
     const rooms = building.rooms && { along: building.rooms.along, sizes: building.rooms.sizes.map((_, i) => num(e['room-' + i])) };
     return {
       ...withStorey(building, storey, upper),
@@ -1083,6 +1115,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       arch: building.roof === 'flat' ? num(e.arch) : 0,
       signWidth: num(e.signWidth),
       signHeight: num(e.signHeight),
+      signText: e.signText.value,
       cuts: readCuts(building),
     };
   }
@@ -1467,6 +1500,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.standBraces.checked = b.standBraces;
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
+    form.elements.signText.value = b.signText;
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();
@@ -1516,6 +1550,25 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     building = withStorey(base, storey, { openings: [...s.openings, { ...opening, wall, at }] });
     drawOpenings();
     await rebuild(building);
+  }
+  // New lettering on the chosen wall: the first place, from the top of the wall down, where it fits.
+  async function addLetters() {
+    const base = readForm(), s = storeyOf(base, storey), L = wallLength(s, wall);
+    const text = storey ? 'OFFICE' : 'PIT', height = Math.min(10, Math.max(LETTERING.height[0], Math.floor(s.height / 6)));
+    for (let up = s.height - height; up >= height; up -= 2)
+      for (const at of [L / 2, L / 4, (3 * L) / 4]) {
+        const next = withStorey(base, storey, { lettering: [...(s.lettering ?? []), { wall, text, at, up, height, cut: false }] });
+        try {
+          validateBuilding(next);
+        } catch {
+          continue;
+        }
+        building = next;
+        drawOpenings();
+        await rebuild(building);
+        return;
+      }
+    showError('There is no room for lettering ' + height + ' mm high on the ' + wall + ' wall: move a window or the sign, or make the wall higher.');
   }
 
   form.addEventListener('input', () => {
@@ -1665,6 +1718,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawOpenings();
         sync();
       } else if (b.dataset.bdAdd) await addOpening(b.dataset.bdAdd);
+      else if (b.dataset.bdAddLetters !== undefined) await addLetters();
+      else if (b.dataset.bdRemoveLetters !== undefined) {
+        const next = readForm();
+        const lettering = storeyOf(next, storey).lettering.filter((_, i) => i !== Number(b.dataset.bdRemoveLetters));
+        building = withStorey(building, storey, { lettering });
+        drawOpenings();
+        await rebuild(withStorey(next, storey, { lettering }));
+      }
       else if (b.dataset.bdRemove !== undefined) {
         const next = readForm();
         const openings = storeyOf(next, storey).openings.filter((_, i) => i !== Number(b.dataset.bdRemove));

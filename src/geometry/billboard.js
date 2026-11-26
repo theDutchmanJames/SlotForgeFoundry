@@ -6,6 +6,7 @@
 // y from its face (the track at negative y) back, z up.
 
 import { kitShapes } from './kit-shapes.js';
+import { LETTERING, checkText, fitHeight, textShape, textWidth } from './lettering.js';
 
 export const BILLBOARD_DEFAULTS = Object.freeze({
   kind: 'billboard',
@@ -14,6 +15,7 @@ export const BILLBOARD_DEFAULTS = Object.freeze({
   height: 40, // the board itself
   clearance: 45, // its bottom above the table
   border: true, // a raised border round the face
+  text: '', // lettered across the face, raised, as large as it fits
 });
 export const BILLBOARD_LIMITS = Object.freeze({
   length: [30, 1500],
@@ -39,11 +41,20 @@ export function validateBillboard(input) {
   for (const [key, [min, max]] of Object.entries(BILLBOARD_LIMITS))
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + ' mm.');
   if (typeof b.border !== 'boolean') throw Error('Choose whether the board has a border.');
+  b.text = checkText(b.text, 'The billboard text');
+  if (b.text && Number.isFinite(b.length) && Number.isFinite(b.height) && textHeight(b) < LETTERING.height[0]) throw Error('The board is too small for “' + b.text + '”: make it longer or higher, or the text shorter.');
   if (b.style === 'board' && b.length > BILLBOARD.piece) throw Error('A billboard on two posts is at most ' + BILLBOARD.piece + ' mm long: a longer one is a hoarding.');
   if (b.clearance + b.height > 190) throw Error('The billboard stands at most 190 mm high, to print: ' + (b.clearance + b.height) + ' mm now.');
   return b;
 }
 
+// The room for the text: inside the border, 2 mm clear of it.
+const room = (b) => {
+  const m = (b.border ? BILLBOARD.border[0] : 0) + 2;
+  return [b.length - 2 * m, b.height - 2 * m];
+};
+/** How high the text is lettered: as high as the board leaves room for. */
+export const textHeight = (b) => fitHeight(b.text, ...room(b));
 /** Where the posts stand along it (their middles). */
 export function billboardPosts(b) {
   const P = BILLBOARD.post;
@@ -99,6 +110,13 @@ export function buildBillboard(wasm, input) {
   const posts = billboardPosts(b);
   const parts = [];
   try {
+    // The text, raised on the face in the middle of the board; each piece takes its share.
+    let letters = null;
+    if (b.text) {
+      const h = textHeight(b);
+      const shape = own(textShape(wasm, own, b.text, h).translate([b.length / 2 - textWidth(b.text, h) / 2, (z0 + z1) / 2 - h / 2]));
+      letters = sweep(shape, [1, 0, 0], [0, 0, 1], [0, 0, 0], [0, 1, 0], -LETTERING.depth, 0.01);
+    }
     billboardPieces(b).forEach(([a, c], i, all) => {
       // The board between a and c, its posts from the table to its top.
       const bits = [box(a, 0, z0, c, T, z1)];
@@ -113,6 +131,10 @@ export function buildBillboard(wasm, input) {
           const piece = own(r.intersect(within));
           if (!piece.isEmpty()) bits.push(piece);
         }
+      }
+      if (letters) {
+        const piece = own(letters.intersect(box(a, -LETTERING.depth - 1, z0 - 1, c, 0.02, z1 + 1)));
+        if (!piece.isEmpty()) bits.push(piece);
       }
       parts.push({ id: 'board-' + (i + 1), name: all.length > 1 ? 'Board ' + (i + 1) + ' of ' + all.length : 'Board', role: 'wall', solid: own(Manifold.union(bits)), outward: [0, -1, 0], apart: [i * 6, -10, 0] });
     });
