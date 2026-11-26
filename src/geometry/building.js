@@ -16,6 +16,7 @@ import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './mars
 import { buildFlagPost, flagPostLayout, validateFlagPost } from './flag-post.js';
 import { billboardLayout, buildBillboard, validateBillboard } from './billboard.js';
 import { buildSwitchback, switchbackLayout, validateSwitchback } from './switchback.js';
+import { benchLayout, buildBench, validateBench } from './bench.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
 import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
@@ -416,6 +417,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'flagpost') return validateFlagPost(input);
   if (input?.kind === 'billboard') return validateBillboard(input);
   if (input?.kind === 'switchback') return validateSwitchback(input);
+  if (input?.kind === 'bench') return validateBench(input);
   if (input?.kind === 'platform') return validatePlatform(input);
   if (input?.kind === 'walkway') return validateWalkway(input);
   if (input?.kind === 'pitbays') return validatePitBays(input);
@@ -987,6 +989,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'flagpost') return { ...flagPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'billboard') return { ...billboardLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'switchback') return { ...switchbackLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'bench') return { ...benchLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitbays') return { ...pitBaysLayout(input), storeys: [], doors: [] };
@@ -1053,7 +1056,7 @@ function wallOpenings(s, doors) {
  */
 export function buildingCuts(input, plate) {
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1127,6 +1130,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'flagpost') return buildFlagPost(wasm, input);
   if (input?.kind === 'billboard') return buildBillboard(wasm, input);
   if (input?.kind === 'switchback') return buildSwitchback(wasm, input);
+  if (input?.kind === 'bench') return buildBench(wasm, input);
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);

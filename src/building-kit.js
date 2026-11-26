@@ -19,6 +19,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'flagpost') return flagNotes(name, b, parts, sizes);
   if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
+  if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -230,6 +231,27 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of benches: a seat and two end frames each.
+function benchNotes(name, b, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  return [
+    name + ' · SlotForge Foundry benches kit',
+    '',
+    (b.count === 1 ? 'A bench ' : b.count + ' benches, each ') + fmt(b.length) + ' mm long, the seat ' + fmt(b.seatHeight) + ' mm up' + (b.backrest ? ', with a back.' : '.'),
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- ' + (b.backrest ? 'Each seat and back prints lying on the back, the seat standing up' : 'Each seat prints flat') + '; the end frames lie flat.',
+    '',
+    'Putting it together',
+    '1. Glue an end frame against each end of a seat, its legs down, the seat on its bearer' + (b.backrest ? ' and the back against the back leg.' : '.'),
+    '2. Stand the benches in a row beside the track, ' + fmt(b.gap) + ' mm apart, the seats facing the road.',
+  ].join('\n');
+}
+
 // The notes of switchback stairs: two flights, two landings, their railings.
 function switchbackNotes(name, s, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');

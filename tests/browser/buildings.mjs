@@ -345,6 +345,26 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.ok(await flap.isChecked());
   await flap.uncheck();
   await page.waitForFunction(() => !document.querySelector('[data-bd-part="flap-1"]'));
+  // Each newer kind and preset loads in the page and builds, its own card showing, no error.
+  for (const [preset, part, card] of [
+    ['flag-post', 'steps', 'flag'],
+    ['billboard', 'board-1', 'billboard'],
+    ['hoarding', 'board-3', 'billboard'],
+    ['benches', 'seat-3', 'bench'],
+    ['stairs-switchback', 'landing-top', 'switchback'],
+    ['gantry-timber', 'board', 'gantry'],
+    ['stand-raised', 'frame-1', 'standFrame'],
+    ['race-control', 'railing3-back', 'size'],
+    ['crosswalk', 'tower2-front3', 'walkway'],
+    ['hut-frames', 'stand-foot', 'support'],
+    ['hut-legs', 'access', 'access'],
+    ['hut-brick', 'step-1', 'size'],
+  ]) {
+    await host.locator('[data-bd-preset="' + preset + '"]').click();
+    await host.locator('[data-bd-part="' + part + '"]').waitFor();
+    assert.ok(await host.locator('[data-bd-card="' + card + '"]').isVisible(), preset + ': its card');
+    assert.ok(await host.locator('.bd-error').isHidden(), preset + ': no error');
+  }
   // A gantry over the track: a type to choose, its own cards.
   await host.locator('[data-bd-preset="gantry-start"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();

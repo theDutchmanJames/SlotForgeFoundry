@@ -16,6 +16,7 @@ import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
 import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
 import { BILLBOARD_LIMITS, billboardPieces, billboardPosts } from './geometry/billboard.js';
 import { SWITCHBACK_LIMITS, switchbackPlan } from './geometry/switchback.js';
+import { BENCH_LIMITS } from './geometry/bench.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -271,6 +272,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
       <p class="bd-hint" data-bd-flag-size></p></section>
+    <section class="bd-box" data-bd-card="bench" data-bd-bench hidden><h3>Benches</h3>
+      ${field('eCount', 'Benches in the row', 3, BENCH_LIMITS.count, '')}
+      ${field('eLength', 'Length of each', 60, BENCH_LIMITS.length)}
+      ${field('eGap', 'Gap between them', 12, BENCH_LIMITS.gap)}
+      ${field('eSeat', 'Seat height', 14, BENCH_LIMITS.seatHeight)}
+      <label class="bd-check"><input type="checkbox" name="eBack"><span>A back on each bench</span></label>
+      <p class="bd-hint">Each bench is a seat between two end frames, their legs joined by a stretcher, the back leg rising to carry the back. The seat and back print as one piece lying on the back; the end frames print flat and are glued to its ends.</p></section>
     <section class="bd-box" data-bd-card="switchback" data-bd-switchback hidden><h3>Switchback stairs</h3>
       ${field('sHeight', 'Height of the top landing', 70, SWITCHBACK_LIMITS.height)}
       ${field('sWidth', 'Flight width', 24, SWITCHBACK_LIMITS.width)}
@@ -440,16 +448,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isFlag = () => building.kind === 'flagpost';
   const isBillboard = () => building.kind === 'billboard';
   const isSwitchback = () => building.kind === 'switchback';
+  const isBench = () => building.kind === 'bench';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isSwitchback() && !isPlatform() && !isWalkway() && !isBays();
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isSwitchback() && !isBench() && !isPlatform() && !isWalkway() && !isBays();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -460,6 +469,19 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isBillboard()) drawBillboard();
     if (isSwitchback()) drawSwitchback();
     if (isPlatform()) drawPlatform();
+  }
+  const BENCH_FIELDS = [['eCount', 'count'], ['eLength', 'length'], ['eGap', 'gap'], ['eSeat', 'seatHeight']];
+  function fillBench(k) {
+    const e = form.elements;
+    for (const [n, key] of BENCH_FIELDS) e[n].value = k[key];
+    e.eBack.checked = k.backrest;
+  }
+  function readBench() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const k = { kind: 'bench', backrest: e.eBack.checked };
+    for (const [n, key] of BENCH_FIELDS) k[key] = num(e[n]);
+    return k;
   }
   const SWITCHBACK_FIELDS = [['sHeight', 'height'], ['sWidth', 'width'], ['sRail', 'railHeight']];
   function fillSwitchback(k) {
@@ -870,6 +892,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isFlag()) return readFlag();
     if (isBillboard()) return readBillboard();
     if (isSwitchback()) return readSwitchback();
+    if (isBench()) return readBench();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
@@ -956,6 +979,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isFlag()) drawFlag();
     else if (isBillboard()) drawBillboard();
     else if (isSwitchback()) drawSwitchback();
+    else if (isBench()) {
+      // Nothing of its own to redraw: its card is all fields.
+    }
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
     else if (isBays()) drawBays();
@@ -1153,6 +1179,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isFlag()) card = 'flag';
     else if (isBillboard()) card = 'billboard';
     else if (isSwitchback()) card = 'switchback';
+    else if (isBench()) card = 'bench';
     else if (isWalkway()) card = 'walkway';
     else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
@@ -1227,6 +1254,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'flagpost') return fillFlag(b);
     if (b.kind === 'billboard') return fillBillboard(b);
     if (b.kind === 'switchback') return fillSwitchback(b);
+    if (b.kind === 'bench') return fillBench(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
