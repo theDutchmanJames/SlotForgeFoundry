@@ -21,13 +21,14 @@ export function overAir(part) {
   return over;
 }
 
-export function checkKit(parts, plate, label = '') {
+// `bridges(part)`: how much a part may bridge (mm²), where its kit is known to bridge the tops of sockets.
+export function checkKit(parts, plate, label = '', bridges = () => 0.5) {
   for (const p of parts) {
     const bodies = p.solid.decompose();
     assert.equal(bodies.length, 1, label + p.name + ' is in ' + bodies.length + ' bodies');
     bodies.forEach((s) => s.delete());
     if (plate) assert.ok(fitsPlate(printSize(p), plate), label + p.name + ': ' + printSize(p));
-    if (!/^(base|roof|floor)/.test(p.id) && !/-roof-/.test(p.id)) assert.ok(overAir(p) <= 0.5, label + p.name + ' prints ' + overAir(p).toFixed(1) + ' mm² over air');
+    if (!/^(base|roof|floor)/.test(p.id) && !/-roof-/.test(p.id)) assert.ok(overAir(p) <= bridges(p), label + p.name + ' prints ' + overAir(p).toFixed(1) + ' mm² over air');
   }
   for (let i = 0; i < parts.length; i++)
     for (let j = i + 1; j < parts.length; j++) {

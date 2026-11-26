@@ -7,6 +7,8 @@ const door = (wall, at, frame = true) => ({ wall, type: 'door', at, width: 28, h
 // A serving hatch: a window with a counter under it and a flap propped open over it.
 // A window of panes: its frame split across and up.
 const panes = (wall, at, width, height, sill, across, up) => ({ ...window(wall, at, width, height, sill), across, up });
+// An opening of a connected section or a shaped building: framed, a window with its panes.
+const shell = (wall, type, at, width, height, sill, across = 1, up = 1) => ({ wall, type, at, width, height, sill, frame: true, ...(type === 'window' && { across, up }) });
 const hatch = (wall, at, width, height, sill, frame = false) => ({ ...window(wall, at, width, height, sill, frame), counter: true, flap: true });
 
 /** A row of pit garages side by side, one bay each, as many as wanted. */
@@ -51,11 +53,32 @@ export function modernPits(bays = 3, depth = 160) {
   };
 }
 
-export const BUILDING_PRESETS = Object.freeze([
-  { id: 'connected', name: 'Connected halls and wings', note: 'Attach sections with their own heights and pitched roofs', building: { kind: 'sections' } },
-  { id: 'footprint-l', name: 'L-shaped building', note: 'Draw a wing and arrange openings on every wall', building: { kind: 'footprint', shape: 'L' } },
-  { id: 'footprint-u', name: 'U-shaped building', note: 'Two wings around an open courtyard', building: { kind: 'footprint', shape: 'U' } },
-  { id: 'footprint-t', name: 'T-shaped building', note: 'A front wing with a central extension', building: { kind: 'footprint', shape: 'T' } },
+const PRESETS = [
+  {
+    id: 'connected', name: 'Connected halls and wings', note: 'A brick hall with a gabled roof and a planked lean-to wing: attach more sections, each with its own height and roof',
+    building: { kind: 'sections', sections: [
+      { id: 's1', name: 'Main hall', parent: null, side: 'back', offset: 0, width: 220, depth: 120, height: 80, roofType: 'gable', pitch: 25, ridge: 'width', rises: 'back', overhang: 4,
+        wallTexture: 'brick', lowerTexture: 'block', lowerHeight: 14,
+        openings: [shell('front', 'window', 45, 32, 28, 30, 2, 2), shell('front', 'door', 110, 28, 50, 0), shell('front', 'window', 175, 32, 28, 30, 2, 2), shell('left', 'window', 60, 32, 28, 30, 2, 2)] },
+      { id: 's2', name: 'Wing', parent: 's1', side: 'back', offset: 0, width: 100, depth: 100, height: 60, roofType: 'slope', pitch: 25, ridge: 'width', rises: 'front', overhang: 4,
+        wallTexture: 'planks', openings: [shell('back', 'window', 50, 30, 22, 20, 2, 1), shell('left', 'door', 60, 28, 46, 0)] },
+    ] },
+  },
+  {
+    id: 'footprint-l', name: 'L-shaped building', note: 'Brick on a band of blocks, framed windows: drag its walls, add a bay or cut a corner in Draw',
+    building: { kind: 'footprint', shape: 'L', wallTexture: 'brick', lowerTexture: 'block', lowerHeight: 14,
+      openings: [shell('edge-1', 'door', 30, 28, 50, 0), shell('edge-1', 'window', 85, 32, 26, 28, 2, 2), shell('edge-1', 'window', 135, 32, 26, 28, 2, 2), shell('edge-3', 'window', 40, 32, 26, 28, 2, 2), shell('edge-6', 'window', 90, 32, 26, 28, 2, 2)] },
+  },
+  {
+    id: 'footprint-u', name: 'U-shaped building', note: 'Two planked wings round a courtyard on a brick band: framed windows on the courtyard',
+    building: { kind: 'footprint', shape: 'U', wallTexture: 'planks', lowerTexture: 'brick', lowerHeight: 16,
+      openings: [shell('edge-1', 'window', 40, 30, 26, 28, 2, 1), shell('edge-1', 'door', 110, 28, 50, 0), shell('edge-1', 'window', 180, 30, 26, 28, 2, 1), shell('edge-4', 'window', 50, 30, 26, 28, 2, 1), shell('edge-5', 'door', 30, 28, 50, 0), shell('edge-6', 'window', 50, 30, 26, 28, 2, 1)] },
+  },
+  {
+    id: 'footprint-t', name: 'T-shaped building', note: 'Concrete blocks with a brick front, a central extension behind: framed windows all round',
+    building: { kind: 'footprint', shape: 'T', wallTexture: 'block', wallTextures: { 'edge-1': 'brick' },
+      openings: [shell('edge-1', 'window', 40, 34, 26, 28, 2, 2), shell('edge-1', 'door', 110, 30, 50, 0), shell('edge-1', 'window', 180, 34, 26, 28, 2, 2), shell('edge-4', 'window', 50, 30, 26, 28, 2, 1), shell('edge-5', 'door', 40, 28, 50, 0), shell('edge-6', 'window', 50, 30, 26, 28, 2, 1)] },
+  },
   {
     id: 'garage',
     name: 'Pit garage',
@@ -750,4 +773,41 @@ export const BUILDING_PRESETS = Object.freeze([
     note: 'Round the outside of a bend, facing into it',
     building: { kind: 'grandstand', rows: 5, aisles: 2, curve: { radius: 450, angle: 45, facing: 'in' } },
   },
-]);
+];
+
+// The words on them: plain names of what they are, as a circuit letters its
+// buildings, no brands. Wall lettering by storey (0 the ground floor), and the text of a sign.
+const WORDS = {
+  'race-control': { storey: 3, lettering: [{ wall: 'front', text: 'RACE CONTROL', at: 65, up: 8, height: 10 }] },
+  'race-hq': { storey: 0, lettering: [{ wall: 'front', text: 'RACE HQ', at: 165, up: 14, height: 12 }] },
+  // A cross over the words on its one plain wall.
+  'hut-first-aid': { storey: 0, lettering: [{ wall: 'left', text: '+', at: 35, up: 36, height: 18 }, { wall: 'left', text: 'FIRST AID', at: 35, up: 15, height: 8 }] },
+  'press-tower': { storey: 0, lettering: [{ wall: 'front', text: 'PRESS', at: 50, up: 17, height: 12 }] },
+  vip: { storey: 0, lettering: [{ wall: 'left', text: 'VIP', at: 80, up: 38, height: 24 }] },
+  'crosswalk-tower': { storey: 2, lettering: [{ wall: 'front', text: 'CONTROL', at: 35, up: 9, height: 8 }] },
+  marshal: { storey: 0, lettering: [{ wall: 'front', text: 'POST 1', at: 84, up: 12, height: 10 }] },
+  'hut-brick': { storey: 0, lettering: [{ wall: 'front', text: 'POST 2', at: 63.25, up: 50, height: 8 }] },
+  'hut-large': { storey: 0, lettering: [{ wall: 'front', text: 'POST 3', at: 65, up: 8, height: 12 }] },
+  'hut-legs': { storey: 0, lettering: [{ wall: 'front', text: 'POST 4', at: 40, up: 14, height: 12 }] },
+  'hut-frames': { storey: 0, lettering: [{ wall: 'front', text: 'POST 5', at: 37.5, up: 17, height: 12 }] },
+  'hut-tower': { storey: 0, lettering: [{ wall: 'front', text: 'POST 6', at: 30, up: 41, height: 10 }] },
+  timing: { signText: 'TIMING' },
+  'stall-tickets': { signText: 'TICKETS' },
+  'stall-kiosk': { signText: 'SNACKS' },
+  'stall-container': { signText: 'CAFE' },
+  'stall-twin': { signText: 'FOOD & DRINK' },
+  // The start gantry's banner (016 comes with lettering for it), the flag waver's board.
+  'gantry-start': { set: { text: 'START' } },
+  'gantry-lattice': { set: { text: 'FINISH' } },
+  'gantry-timber': { set: { text: 'START' } },
+  'gantry-half': { set: { text: 'FINISH' } },
+  'flag-post': { set: { text: '3' } },
+};
+function lettered(p) {
+  const w = WORDS[p.id];
+  if (!w) return p;
+  let b = { ...p.building, ...(w.signText && { signText: w.signText }), ...w.set };
+  if (w.lettering) b = w.storey ? { ...b, upper: b.upper.map((u, i) => (i === w.storey - 1 ? { ...u, lettering: w.lettering } : u)) } : { ...b, lettering: w.lettering };
+  return { ...p, building: b };
+}
+export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));

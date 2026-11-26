@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
 import { buildGarage, validateBuilding } from '../src/geometry/building.js';
+import { BUILDING_PRESETS } from '../src/building-presets.js';
 import { LETTERS, LETTERING, checkText, fitHeight, textShape, textStrokes, textWidth, textCarve } from '../src/geometry/lettering.js';
 import { checkKit } from './print-checks.js';
 
@@ -143,4 +144,43 @@ test('a billboard and a hoarding: the text raised across the face, shared by the
     free(hoarding);
   }
   assert.throws(() => validateBuilding({ ...board, length: 30, height: 10, text: 'Much too long for this' }), /too small for/);
+});
+
+test('gantries, flag posts and pit buildings: text on their boards, refused where it cannot go', () => {
+  const plate = { width: 200, depth: 200, margin: 0 };
+  // The bays of a pit building bridge the tops of their tab sockets, as their own tests allow.
+  const kit = (b) => { const parts = buildGarage(wasm, b, plate); try { checkKit(parts, plate, (b.members ?? b.kind) + ': ', (p) => (p.id.startsWith('bay') ? 100 : 0.5)); return parts.map((p) => [p.id, p.solid.volume()]); } finally { free(parts); } };
+  const vol = (list, id) => list.filter(([k]) => k === id || k.startsWith(id + '-')).reduce((v, [, x]) => v + x, 0);
+  for (const members of ['solid', 'lattice', 'timber']) {
+    const gantry = { kind: 'gantry', type: 'start', members, span: 180, lights: 5, boardHeight: 24 };
+    const id = members === 'solid' ? 'beam' : 'board';
+    assert.ok(vol(kit({ ...gantry, text: 'Start' }), id) > vol(kit(gantry), id) + 5, members + ': letters on the board');
+  }
+  assert.ok(kit({ kind: 'gantry', type: 'half', members: 'solid', reach: 160, boardHeight: 20, text: 'Finish' }).length);
+  assert.throws(() => validateBuilding({ kind: 'gantry', type: 'bridge', text: 'Paddock' }), /footbridge has no board/);
+  assert.throws(() => validateBuilding({ kind: 'gantry', type: 'start', board: false, text: 'Start' }), /give the gantry its board/);
+  assert.throws(() => validateBuilding({ kind: 'gantry', type: 'half', sign: true, boardHeight: 24, text: 'Start' }), /box sign/);
+  assert.throws(() => validateBuilding({ kind: 'gantry', type: 'start', span: 80, lights: 0, boardHeight: 8, text: 'Start and finish line of the grand prix' }), /too small for/);
+  const post = { kind: 'flagpost', width: 40 };
+  assert.ok(vol(kit({ ...post, text: 'Post 4' }), 'front') > vol(kit(post), 'front') + 2);
+  assert.throws(() => validateBuilding({ ...post, board: false, text: '4' }), /its board/);
+  for (const kind of ['pitmodule', 'pitbays']) {
+    const named = kit({ kind, numbers: false, text: 'Pit lane' });
+    assert.ok(named.some(([id]) => id === 'name'), kind + ' has its name board');
+    assert.throws(() => validateBuilding({ kind, text: 'Pit lane' }), /choose one/);
+  }
+});
+
+test('the lettered standard buildings all build and print clean', () => {
+  const plate = { width: 200, depth: 200, margin: 0 };
+  const lettered = BUILDING_PRESETS.filter((p) => p.building.text || p.building.signText || p.building.lettering?.length || p.building.upper?.some((u) => u.lettering?.length));
+  assert.ok(lettered.length >= 20, lettered.length + ' lettered');
+  for (const p of lettered) {
+    const parts = buildGarage(wasm, p.building, plate);
+    try {
+      checkKit(parts, plate, p.id + ': ', (q) => (q.id.startsWith('bay') ? 100 : 0.5));
+    } finally {
+      free(parts);
+    }
+  }
 });

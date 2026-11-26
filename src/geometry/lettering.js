@@ -142,3 +142,24 @@ export function textCarve(wasm, own, text, height) {
   }
   return { solid: own(Manifold.union(bits)), depth: deep };
 }
+
+/**
+ * Raised text on a face, as a solid to add to it: in the face's frame, u
+ * along it, v up it, w out of it. Its middle at (u, v); from w0 (a little into
+ * the face) out to the face plus the letters' depth.
+ */
+export function raisedText(wasm, own, text, height, [u, v], w0 = -0.01, w1 = LETTERING.depth) {
+  const shape = own(textShape(wasm, own, text, height).translate([u - textWidth(text, height) / 2, v - height / 2]));
+  return own(own(shape.extrude(w1 - w0)).translate([0, 0, w0]));
+}
+/** A name board: a flat plate with the text raised on it, its letters this high. In its frame: u along it from its middle, v up it from its foot, w out of it from its back. */
+export const NAME_BOARD = Object.freeze({ pad: 2.5, thick: 1.5 });
+export function nameBoard(wasm, own, text, height) {
+  const width = textWidth(text, height) + 2 * NAME_BOARD.pad,
+    high = height + 2 * NAME_BOARD.pad;
+  const plate = own(wasm.Manifold.cube([width, high, NAME_BOARD.thick]).translate([-width / 2, 0, 0]));
+  const letters = raisedText(wasm, own, text, height, [0, high / 2], NAME_BOARD.thick - 0.01, NAME_BOARD.thick + LETTERING.depth);
+  return { solid: own(plate.add(letters)), width, height: high };
+}
+/** The text height a name board takes to be at most `high` high and `wide` wide. */
+export const nameBoardText = (text, wide, high) => fitHeight(text, wide - 2 * NAME_BOARD.pad, high - 2 * NAME_BOARD.pad);

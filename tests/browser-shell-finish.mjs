@@ -18,13 +18,31 @@ page.on('pageerror', (e) => errors.push(e.message));
 const output = new URL('../test-results/shell-finish/', import.meta.url);
 await mkdir(output, { recursive: true });
 const host = page.locator('#buildings-page');
-const idle = () => page.waitForFunction(() => { const h = document.querySelector('#buildings-page'); return h && h.querySelector('.bd-message').hidden && !h.querySelector('[data-bd="save"]').disabled; });
+const idle = async () => {
+  try {
+    await page.waitForFunction(() => { const h = document.querySelector('#buildings-page'); return h && h.querySelector('.bd-message').hidden && !h.querySelector('[data-bd="save"]').disabled; }, null, { timeout: 15000 });
+  } catch {
+    throw Error('Not idle: ' + (await host.locator('.bd-error').textContent()));
+  }
+};
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('foundry.building')));
 const setting = (name) => host.locator(`[name="${name}"]`);
 const choose = async (name, value) => { await setting(name).selectOption(value); await idle(); };
 const edit = async (name, value) => { await setting(name).fill(String(value)); await setting(name).press('Tab'); await idle(); };
 const snap = (name) => host.locator('.bd-centre').screenshot({ path: fileURLToPath(new URL(name + '.png', output)) });
 const noError = async (what) => assert.equal(await host.locator('.bd-error').isVisible(), false, what + ': ' + (await host.locator('.bd-error').textContent()));
+// Every window and door off the walls shown in Draw, wall by wall, with Choose all and Remove.
+async function clearOpenings() {
+  await host.locator('[data-canvas-mode="wall"]').click();
+  for (const id of await host.locator('[data-canvas-wall] option').evaluateAll((os) => os.map((o) => o.value))) {
+    await host.locator('[data-canvas-wall]').selectOption(id);
+    if (!(await host.locator('[data-opening]').count())) continue;
+    await host.locator('[data-opening] > rect:not(.bd-drawing-frame)').first().click();
+    await host.locator('[data-canvas-group="all"]').click();
+    await host.locator('[data-canvas-delete]').click();
+    await idle();
+  }
+}
 try {
   await page.goto(new URL('../dist/index.html?ui-test#track', import.meta.url).href);
   await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false');
@@ -48,6 +66,10 @@ try {
   // A framed window with panes, in Draw.
   await host.locator('[data-bd-view="draw"]').click();
   await host.locator('[data-canvas-mode="wall"]').click();
+  await host.locator('[data-canvas-wall]').selectOption('front');
+  // The hall's own windows and doors off first, wall by wall, so the new window is the first.
+  await clearOpenings();
+  assert.equal((await saved()).sections[0].openings.length, 0);
   await host.locator('[data-canvas-wall]').selectOption('front');
   await host.locator('[data-canvas-add="window"]').click();
   await idle();
@@ -98,7 +120,10 @@ try {
   b = await saved();
   assert.deepEqual([b.wallTexture, b.wallTextures, b.lowerTexture, b.lowerHeight], ['planks', { 'edge-1': 'brick' }, 'brick', 14]);
   await noError('footprint finish');
-  // A different shape: the walls' fields follow it.
+  // A different shape: the walls' fields follow it. Its windows off first: they are on walls the U has shorter.
+  await host.locator('[data-bd-view="draw"]').click();
+  await clearOpenings();
+  await host.locator('[data-bd-view="model"]').click();
   await choose('fpShape', 'U');
   assert.equal(await host.locator('[name^="ff-wall-edge-"]').count(), 8);
   await snap('footprint');

@@ -96,6 +96,25 @@ try {
   assert.equal((await saved()).text, 'FOUNDRY OIL');
   await noError('billboard');
   await snap('billboard');
+  // A gantry's board text, typed in.
+  await host.locator('[data-bd-preset="gantry-start"]').click();
+  await idle();
+  assert.equal(await setting('tText').inputValue(), 'START');
+  await fill(setting('tText'), 'Start finish');
+  assert.equal((await saved()).text, 'START FINISH');
+  // A footbridge has no board: made one, the text goes, and nothing is refused.
+  await host.locator('[data-bd-gantry-type="bridge"]').click();
+  await idle();
+  await noError('gantry made a footbridge');
+  assert.deepEqual([(await saved()).type, (await saved()).text], ['bridge', '']);
+  // Every standard building that carries words: built without an error, pictured.
+  await mkdir(new URL('presets/', output), { recursive: true });
+  for (const id of ['race-control', 'race-hq', 'hut-first-aid', 'press-tower', 'vip', 'crosswalk-tower', 'marshal', 'hut-brick', 'hut-large', 'hut-legs', 'hut-frames', 'hut-tower', 'timing', 'stall-tickets', 'stall-kiosk', 'stall-container', 'stall-twin', 'gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'flag-post', 'connected', 'footprint-l', 'footprint-u', 'footprint-t']) {
+    await host.locator('[data-bd-preset="' + id + '"]').click();
+    await idle();
+    await noError(id);
+    await snap('presets/' + id);
+  }
   assert.deepEqual(errors, []);
   console.log('PASS: sign text, wall lettering raised and cut (shown in Draw, named in the README), a carved roof billboard and a lettered billboard.');
 } finally {

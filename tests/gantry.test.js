@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Module from 'manifold-3d';
 import { GANTRY, buildGantry, gantryLayout, stairOf, validateGantry } from '../src/geometry/gantry.js';
-import { fitsPlate, printPose, printSize } from '../src/geometry/building.js';
+import { buildGarage, fitsPlate, printPose, printSize } from '../src/geometry/building.js';
 import { OVER_CLEAR, overGantry, overPose, overlap, straightAcross, toPlan } from '../src/planner-buildings.js';
 
 const wasm = await Module();
@@ -212,6 +212,20 @@ test('a half gantry can carry a box sign on its leg instead of a beam', async ()
       assert.match(kitNotes('Gantry', g, gantryLayout(g, plate).parts, {}), /Glue the box sign on top of the leg/);
     } finally {
       kit.forEach((p) => p.solid.delete());
+    }
+  }
+});
+
+// Found 2026-11-26: the beam prints on its back, its front up, the sockets for the legs' pins across
+// it; a square socket's front printed over air. The pin and its socket are pointed at 45° to the front.
+test('a solid beam prints with nothing over air: its pin sockets pointed to the front', async () => {
+  const { checkKit } = await import('./print-checks.js');
+  for (const type of ['start', 'half']) {
+    const parts = buildGarage(wasm, { kind: 'gantry', type, members: 'solid', span: 180, reach: 160 }, { width: 200, depth: 200, margin: 0 });
+    try {
+      checkKit(parts, { width: 200, depth: 200, margin: 0 }, type + ': ');
+    } finally {
+      parts.forEach((p) => p.solid.delete());
     }
   }
 });

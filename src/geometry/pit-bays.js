@@ -17,6 +17,7 @@
 // numbers, the podiums and the railings are parts glued on. x along the row,
 // y from the front of the garages back (the pit lane at negative y), z up.
 
+import { LETTERING, checkText, nameBoard, nameBoardText } from './lettering.js';
 import { kitShapes } from './kit-shapes.js';
 import { sevenSegments } from './pit-module.js';
 
@@ -46,6 +47,7 @@ export const PIT_BAYS_DEFAULTS = Object.freeze({
   roofRailing: true, // a truss railing round the back and the sides of each roof
   numbers: true,
   firstNumber: 1,
+  text: '', // a name board on the wall over the doors, its letters raised, in place of the numbers
 });
 export const PIT_BAYS_LIMITS = Object.freeze({
   bayWidth: [70, 200],
@@ -115,6 +117,9 @@ export function validatePitBays(input) {
   if (!Number.isInteger(m.firstNumber)) throw Error('The first number is a whole number.');
   if (!['panel', 'roller'].includes(m.door)) throw Error('Choose an up-and-over or a roller door.');
   for (const key of ['pillars', 'balconyRailing', 'roofRailing', 'numbers']) if (typeof m[key] !== 'boolean') throw Error('Choose whether the pit building has ' + key + '.');
+  m.text = checkText(m.text, 'The name board');
+  if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the wall over the doors: choose one.');
+  if (m.text && nameBoardText(m.text, m.types.length * m.bayWidth - 10, m.groundHeight - m.doorHeight - 2) < LETTERING.height[0]) throw Error('There is no room for “' + m.text + '” over the doors: make the ground floor higher, the doors lower, or the text shorter.');
   const room = m.bayWidth - 2 * (BAYS.column + m.recess + 1) - BAYS.side;
   if (m.doorWidth > room) throw Error('The door is too wide for a bay of ' + m.bayWidth + ' mm: at most ' + room + ' mm.');
   if (m.doorHeight > m.groundHeight - 12) throw Error('The door is too high for the ground floor: at most ' + (m.groundHeight - 12) + ' mm, room left over it for a number.');
@@ -162,6 +167,7 @@ export function pitBaysLayout(input) {
   parts.push({ id: 'end', name: 'End panel', role: 'wall' });
   for (let i = 0; i < n; i++) parts.push({ id: 'door-' + (i + 1), name: (m.door === 'panel' ? 'Up-and-over door ' : 'Roller door ') + (i + 1), role: 'door' });
   if (m.numbers) for (let i = 0; i < n; i++) parts.push({ id: 'number-' + (i + 1), name: 'Bay number ' + (m.firstNumber + i), role: 'frame' });
+  if (m.text) parts.push({ id: 'name', name: 'Name board', role: 'frame' });
   m.types.forEach((t, i) => {
     if (t === 'podium') parts.push({ id: 'podium-' + (i + 1), name: 'Podium ' + (i + 1), role: 'floor' });
   });
@@ -270,6 +276,11 @@ export function buildPitBays(wasm, input) {
       else for (let z = L.floor + 2.5; z + 1.6 <= L.door; z += 5) marks.push(box(dx0 + 0.5, m.recess - BAYS.insert - 1, z, dx1 - 0.5, m.recess - BAYS.insert + 0.01, z + 1.6));
       plate = m.door === 'panel' ? own(plate.subtract(own(Manifold.union(marks)))) : own(plate.add(own(Manifold.union(marks))));
       parts.push({ id: 'door-' + (i + 1), name: '', role: 'door', solid: plate, outward: [0, -1, 0], apart: [0, 20, 0] });
+    }
+    // A name board on the front wall over the doors, in the middle of the row.
+    if (m.text) {
+      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, n * W - 10, L.slab0 - L.door - 2));
+      parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, (n * W + F) / 2, 0, (L.door + L.slab0) / 2 - height / 2, 1])), outward: [0, -1, 0], apart: [0, -12, 0] });
     }
     // Numbers: a plaque on the front wall over each door, its number raised in seven segments.
     if (m.numbers) {

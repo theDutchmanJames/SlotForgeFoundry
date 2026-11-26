@@ -11,6 +11,7 @@
 // x along the row, y from the front of the columns back (the pit lane at
 // negative y), z up.
 
+import { LETTERING, checkText, nameBoard, nameBoardText } from './lettering.js';
 import { kitShapes } from './kit-shapes.js';
 
 export const PIT_MODULE_DEFAULTS = Object.freeze({
@@ -32,7 +33,10 @@ export const PIT_MODULE_DEFAULTS = Object.freeze({
   roofRailing: true, // front and back of the roof
   numbers: true,
   firstNumber: 1,
+  text: '', // a name board along the fascia, its letters raised, in place of the numbers
 });
+// The fascia, measured up its slope: the name board's room.
+const FASCIA_UP = Math.hypot(6, 8);
 export const PIT_MODULE_LIMITS = Object.freeze({
   bays: [1, 24],
   bayWidth: [70, 200],
@@ -89,6 +93,9 @@ export function validatePitModule(input) {
   if (!Number.isInteger(m.bays) || !Number.isInteger(m.firstNumber)) throw Error('Bays and the first number are whole numbers.');
   if (!['panel', 'roller'].includes(m.door)) throw Error('Choose an up-and-over or a roller door.');
   for (const key of ['railing', 'roofRailing', 'numbers']) if (typeof m[key] !== 'boolean') throw Error('Choose whether the pit building has ' + key + '.');
+  m.text = checkText(m.text, 'The name board');
+  if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the fascia: choose one.');
+  if (m.text && nameBoardText(m.text, m.bays * m.bayWidth - 10, FASCIA_UP - 1) < LETTERING.height[0]) throw Error('The fascia is too short for “' + m.text + '”: add bays, or make the text shorter.');
   const room = m.bayWidth - 2 * (PIT.column + m.recess + 1);
   if (m.doorWidth > room) throw Error('The door is too wide for a bay of ' + m.bayWidth + ' mm with its reveal: at most ' + room + ' mm.');
   if (m.doorHeight > m.groundHeight - 8) throw Error('The door is too high for the ground floor: at most ' + (m.groundHeight - 8) + ' mm.');
@@ -115,6 +122,7 @@ export function pitModuleLayout(input) {
   parts.push({ id: 'end', name: 'End panel', role: 'wall' });
   for (let i = 0; i < m.bays; i++) parts.push({ id: 'door-' + (i + 1), name: (m.door === 'panel' ? 'Up-and-over door ' : 'Roller door ') + (i + 1), role: 'door' });
   if (m.numbers) for (let i = 0; i < m.bays; i++) parts.push({ id: 'number-' + (i + 1), name: 'Bay number ' + (m.firstNumber + i), role: 'frame' });
+  if (m.text) parts.push({ id: 'name', name: 'Name board', role: 'frame' });
   for (let i = 0; i < m.bays; i++) {
     if (m.railing) parts.push({ id: 'rail-' + (i + 1), name: 'Balcony railing ' + (i + 1), role: 'frame' });
     if (m.roofRailing) {
@@ -243,6 +251,18 @@ export function buildPitModule(wasm, input) {
       else for (let z = L.floor + 2.5; z + 1.6 <= L.door; z += 5) marks.push(box(dx0 + 0.5, m.recess - PIT.insert - 1, z, dx1 - 0.5, m.recess - PIT.insert + 0.01, z + 1.6));
       plate = m.door === 'panel' ? own(plate.subtract(own(Manifold.union(marks)))) : own(plate.add(own(Manifold.union(marks))));
       parts.push({ id: 'door-' + (i + 1), name: (m.door === 'panel' ? 'Up-and-over door ' : 'Roller door ') + (i + 1), role: 'door', solid: plate, outward: [0, -1, 0], apart: [0, 20, 0] });
+    }
+    // A name board along the fascia, as high as it, in the middle of the row: placed like a bay number.
+    if (m.text) {
+      const z0 = L.slab0 - PIT.fascia + PIT.slab,
+        y0 = -bal + 6;
+      const up = [0, -6, L.slab1 - z0],
+        ul = Math.hypot(up[1], up[2]);
+      const v = [0, up[1] / ul, up[2] / ul],
+        n = [0, -v[2], v[1]];
+      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, m.bays * W - 10, ul - 1));
+      const placed = own(solid.transform([1, 0, 0, 0, ...v, 0, ...n, 0, (m.bays * W) / 2, y0 + v[1] * ((ul - height) / 2), z0 + v[2] * ((ul - height) / 2), 1]));
+      parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: placed, lie: [(Math.atan2(n[1], n[2]) * 180) / Math.PI, 0, 0], apart: [0, -12, 0] });
     }
     // Bay numbers: a plaque on the angled fascia of the balcony, over each door, its number raised in seven segments.
     if (m.numbers) {

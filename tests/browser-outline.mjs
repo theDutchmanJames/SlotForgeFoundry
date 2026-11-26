@@ -39,11 +39,22 @@ try {
   await page.locator('[data-action="mode-buildings"]').first().click();
   await idle();
 
-  // An L: its front wall dragged out (up the screen), so it becomes a drawn outline.
+  // An L: its windows and doors taken off, wall by wall, with Choose all and Remove.
   await host.locator('[data-bd-preset="footprint-l"]').click();
   await idle();
-  const before = await saved();
   await host.locator('[data-bd-view="draw"]').click();
+  await host.locator('[data-canvas-mode="wall"]').click();
+  for (const id of await host.locator('[data-canvas-wall] option').evaluateAll((os) => os.map((o) => o.value))) {
+    await host.locator('[data-canvas-wall]').selectOption(id);
+    if (!(await host.locator('[data-opening]').count())) continue;
+    await host.locator('[data-opening] > rect:not(.bd-drawing-frame)').first().click();
+    await host.locator('[data-canvas-group="all"]').click();
+    await host.locator('[data-canvas-delete]').click();
+    await idle();
+  }
+  assert.equal((await saved()).openings.length, 0, 'all taken off');
+  // Its front wall dragged out (up the screen), so it becomes a drawn outline.
+  const before = await saved();
   await host.locator('[data-canvas-mode="plan"]').click();
   await drag(host.locator('[data-edge="0"]'), 0, -40, true);
   let b = await saved();

@@ -68,11 +68,13 @@ try {
   await edit('width', 300); await snap('wall-editor');
   await host.locator('[data-bd-preset="footprint-l"]').click(); await idle();
   assert.equal((await saved()).kind, 'footprint');
+  // The preset comes with its own windows and door: a door and a window are added to them.
+  const had = (await saved()).openings.length;
   await host.locator('[data-bd-view="draw"]').click();
   await host.locator('[data-canvas-add="door"]').click(); await idle();
   await host.locator('[data-canvas-wall]').selectOption('edge-3');
   await host.locator('[data-canvas-add="window"]').click(); await idle();
-  assert.equal((await saved()).openings.length,2);
+  assert.equal((await saved()).openings.length,had + 2);
   await host.locator('[data-canvas-mode="plan"]').click();
   const handle = await host.locator('[data-shape="size"]').boundingBox();
   await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2); await page.mouse.down();

@@ -9,6 +9,7 @@
 
 import { JOINT, seamRegion, tabPlaces } from './building-cuts.js';
 import { kitShapes } from './kit-shapes.js';
+import { LETTERING, checkText, fitHeight, raisedText, textWidth } from './lettering.js';
 
 export const GANTRY_TYPES = Object.freeze([
   ['start', 'Start gantry'],
@@ -22,6 +23,7 @@ export const GANTRY_DEFAULTS = Object.freeze({
   clearance: 70, // clear under the beam or the walkway
   lights: 5, // start lights in the beam
   board: true, // an advertising board on top of the beam
+  text: '', // lettered on the board, raised: START, FINISH
   boardHeight: 20,
   reach: 140, // a half gantry: how far its beam reaches from its leg
   deckWidth: 30, // a footbridge: its walkway, outside its walls
@@ -92,9 +94,38 @@ export function validateGantry(input) {
   if (typeof g.sign !== 'boolean') throw Error('Choose whether the half gantry has a box sign.');
   if (g.sign && g.type !== 'half') throw Error('A box sign is for a half gantry.');
   if (g.sign && g.boardHeight < 20) throw Error('A box sign is at least 20 mm high: set the board height.');
+  g.text = checkText(g.text, 'The gantry text');
+  if (g.text) {
+    if (g.type === 'bridge') throw Error('A footbridge has no board for text.');
+    if (g.sign) throw Error('A box sign carries posters on its panels: text goes on the board of a beam.');
+    if (!g.board) throw Error('Text goes on the board: give the gantry its board.');
+    const { wide, high } = textRoom(g);
+    if (fitHeight(g.text, wide, high) < LETTERING.height[0]) throw Error('The board is too small for “' + g.text + '”: make it higher, the span longer, or the text shorter.');
+  }
   if (g.type === 'start' && g.lights * 8 > g.span) throw Error('There is no room for ' + g.lights + ' start lights on a beam of ' + g.span + ' mm: at most ' + Math.floor(g.span / 8) + '.');
   return g;
 }
+
+/**
+ * Where the text goes on the board: how wide and high it may be, and its
+ * middle above the bottom of the board. A lattice or timber board carries the
+ * start lights across its middle: then the text goes above them.
+ */
+export function textRoom(g) {
+  const open = openOf(g);
+  if (!open) return { wide: (g.type === 'half' ? g.reach : g.span) - 10, high: g.boardHeight - 4, up: g.boardHeight / 2 };
+  const span = g.type === 'half' ? g.reach : g.span;
+  const w = Math.min(span * 0.6, 160),
+    h = Math.max(g.boardHeight, open.girder[0] - 4);
+  if (g.type === 'start' && g.lights) {
+    const from = h / 2 + GANTRY.light[0] + 1.5,
+      to = h - 1.5;
+    return { wide: w - 6, high: to - from, up: (from + to) / 2 };
+  }
+  return { wide: w - 6, high: h - 4, up: h / 2 };
+}
+// Raised text on a face that looks to the front (negative y), its plane at y, its middle at x, z.
+const frontText = (wasm, own, text, height, x, y, z) => own(raisedText(wasm, own, text, height, [0, 0]).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, x, y, z, 1]));
 
 /** How many steps a footbridge staircase has, and how far it runs out from the track. */
 export function stairOf(g) {
@@ -336,7 +367,19 @@ export function buildGantry(wasm, input, plate = null) {
           const [pw, gw, gd] = GANTRY.plank;
           const grooves = [];
           for (let z = zc - h / 2 + pw; z < zc + h / 2 - pw / 2; z += pw) grooves.push(B(mid - w / 2 - 1, y1 - GANTRY.board - 1, z - gw / 2, mid + w / 2 + 1, y1 - GANTRY.board + gd, z + gw / 2));
+          // Behind the text the board is smooth: a letter across a groove would print over it.
+          if (g.text) {
+            const { wide, high, up } = textRoom(g),
+              th = fitHeight(g.text, wide, high),
+              half = textWidth(g.text, th) / 2 + 1;
+            const behind = B(mid - half, y1 - GANTRY.board - 2, zc - h / 2 + up - th / 2 - 1, mid + half, y1 - GANTRY.board + gd + 1, zc - h / 2 + up + th / 2 + 1);
+            for (let k = 0; k < grooves.length; k++) grooves[k] = minus(grooves[k], behind);
+          }
           board = minus(board, ...grooves);
+        }
+        if (g.text) {
+          const { wide, high, up } = textRoom(g);
+          board = own(board.add(frontText(wasm, own, g.text, fitHeight(g.text, wide, high), mid, y1 - GANTRY.board, zc - h / 2 + up)));
         }
         parts.push({ id: 'board', name: 'Board', role: 'wall', solid: board, outward: [0, -1, 0], apart: [0, -15, 20] });
       }
@@ -349,9 +392,17 @@ export function buildGantry(wasm, input, plate = null) {
       const [bd, bh] = GANTRY.beam;
       const legX = half ? [o] : [o, o + L + g.span];
       const zBeam = g.clearance;
+      // The pin on a leg, and its socket under the beam (`play` wider): square at the back, pointed at
+      // 45° to the front, because the beam prints on its back, its front up, the socket across it: a
+      // square socket's front would print over air.
+      const { poly } = kitShapes(wasm, own);
+      const house = (cx, cy, play, z0, z1) => {
+        const h = pinW / 2 + play;
+        return own(own(poly([[cx - h, cy + h], [cx - h, cy], [cx, cy - h], [cx + h, cy], [cx + h, cy + h]]).extrude(z1 - z0)).translate([0, 0, z0]));
+      };
       // Legs: a column on a foot plate, a pin on top that the beam drops onto.
       legX.forEach((x, i) => {
-        const leg = own(Manifold.union([B(x - o, 0, 0, x - o + f, f, ft), B(x, o, 0, x + L, o + L, zBeam), B(x + (L - pinW) / 2, o + (L - pinW) / 2, zBeam - 0.01, x + (L + pinW) / 2, o + (L + pinW) / 2, zBeam + pinH)]));
+        const leg = own(Manifold.union([B(x - o, 0, 0, x - o + f, f, ft), B(x, o, 0, x + L, o + L, zBeam), house(x + L / 2, o + L / 2, 0, zBeam - 0.01, zBeam + pinH)]));
         parts.push({ id: 'leg-' + (i + 1), name: half ? 'Leg' : i ? 'Leg, right' : 'Leg, left', role: 'frame', solid: leg, lie: [0, 0, 0], apart: [i ? 12 : -12, 0, 0] });
       });
       if (!g.sign) {
@@ -363,7 +414,12 @@ export function buildGantry(wasm, input, plate = null) {
         by1 = by0 + bd;
       let beam = B(bx0, by0, zBeam, bx1, by1, zBeam + bh);
       if (g.board) beam = own(beam.add(B(bx0, by1 - GANTRY.board, zBeam + bh - 0.01, bx1, by1, zBeam + bh + g.boardHeight)));
-      const sockets = legX.map((x) => B(x + (L - pinW) / 2 - pl, o + (L - pinW) / 2 - pl, zBeam - 1, x + (L + pinW) / 2 + pl, o + (L + pinW) / 2 + pl, zBeam + pinH + 0.2));
+      // The text on the board, over the middle of the road.
+      if (g.board && g.text) {
+        const { wide, high, up } = textRoom(g);
+        beam = own(beam.add(frontText(wasm, own, g.text, fitHeight(g.text, wide, high), half ? o + L + g.reach / 2 : o + L + g.span / 2, by1 - GANTRY.board, zBeam + bh + up)));
+      }
+      const sockets = legX.map((x) => house(x + L / 2, o + L / 2, pl, zBeam - 1, zBeam + pinH + 0.2));
       const lights = [];
       if (g.type === 'start' && g.lights) {
         const [r, depth] = GANTRY.light;

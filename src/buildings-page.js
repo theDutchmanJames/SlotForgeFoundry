@@ -213,6 +213,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('pRecess', 'Set back', 8, PIT_MODULE_LIMITS.recess)}
       <label class="bd-check"><input type="checkbox" name="pNumbers"><span>Bay numbers on the balcony</span></label>
       ${field('pFirst', 'First number', 1, PIT_MODULE_LIMITS.firstNumber, '')}
+      <label class="bd-row"><span>Name board</span><input name="pText" maxlength="${LETTERING.longest}" placeholder="None: untick the bay numbers first"></label>
       <p class="bd-hint">Each door stands back in a reveal between two columns, its sides at 45°: wider at the front than at the door, so the bays print standing without supports.</p></section>
     <section class="bd-box" data-bd-card="pitsUpper" data-bd-pits hidden><h3>Balcony and lounge</h3>
       ${field('pGround', 'Ground floor height', 65, PIT_MODULE_LIMITS.groundHeight)}
@@ -237,6 +238,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('bRecess', 'Set back', 4, PIT_BAYS_LIMITS.recess)}
       <label class="bd-check"><input type="checkbox" name="bNumbers"><span>Bay numbers over the doors</span></label>
       ${field('bFirst', 'First number', 1, PIT_BAYS_LIMITS.firstNumber, '')}
+      <label class="bd-row"><span>Name board</span><input name="bText" maxlength="${LETTERING.longest}" placeholder="None: untick the bay numbers first"></label>
       </section>
     <section class="bd-box" data-bd-card="baysUpper" data-bd-bays hidden><h3>Boxes and podiums</h3>
       ${field('bGround', 'Ground floor height', 65, PIT_BAYS_LIMITS.groundHeight)}
@@ -299,6 +301,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('fRail', 'Handrail height', 18, FLAG_POST_LIMITS.railHeight)}
       <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
+      <label class="bd-row"><span>Board text</span><input name="fText" maxlength="${LETTERING.longest}" placeholder="None, or its number"></label>
       <p class="bd-hint" data-bd-flag-size></p></section>
     <section class="bd-box" data-bd-card="picnic" data-bd-picnic hidden><h3>Picnic tables</h3>
       ${field('qCount', 'Tables in the row', 1, PICNIC_LIMITS.count, '')}
@@ -359,6 +362,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="tBoard"><span>An advertising board on top</span></label>
       <label class="bd-check" data-bd-half-extras><input type="checkbox" name="tSign"><span>A box sign on top of the leg instead of a beam</span></label>
       ${field('tBoardHeight', 'Board height', 20, GANTRY_LIMITS.boardHeight)}
+      <label class="bd-row"><span>Board text</span><input name="tText" maxlength="${LETTERING.longest}" placeholder="None, or START, FINISH"></label>
       <p class="bd-hint">The beam drops onto a pin on top of each leg. It prints on its back: the board flat on the plate, the start lights facing up. Legs stand on their foot plates to print. A half gantry can carry a box sign on top of its leg instead, as high as the board height, a panel sunk in each face for a poster; it prints standing.</p></section>
     <section class="bd-box" data-bd-card="gantryBridge" data-bd-gantry data-bd-bridge hidden><h3>Walkway</h3>
       ${field('tDeck', 'Width', 30, GANTRY_LIMITS.deckWidth)}
@@ -645,6 +649,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [k, key] of FLAG_FIELDS) e[k].value = f[key];
     e.fBoard.checked = f.board;
+    e.fText.value = f.text;
     drawFlag();
   }
   function drawFlag() {
@@ -656,7 +661,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readFlag() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const f = { kind: 'flagpost', board: e.fBoard.checked };
+    const f = { kind: 'flagpost', board: e.fBoard.checked, text: e.fText.value };
     for (const [k, key] of FLAG_FIELDS) f[key] = num(e[k]);
     return f;
   }
@@ -667,6 +672,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [k, key] of BAYS_FIELDS) e[k].value = m[key];
     for (const [k, key] of BAYS_CHECKS) e[k].checked = m[key];
     e.bDoor.value = m.door;
+    e.bText.value = m.text;
     drawBays();
   }
   // Each bay a row: its type, and a button to take it out.
@@ -684,7 +690,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readBays() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const m = { kind: 'pitbays', types: building.types.map((t, i) => e['bType-' + i]?.value ?? t), door: e.bDoor.value };
+    const m = { kind: 'pitbays', types: building.types.map((t, i) => e['bType-' + i]?.value ?? t), door: e.bDoor.value, text: e.bText.value };
     for (const [k, key] of BAYS_FIELDS) m[key] = num(e[k]);
     for (const [k, key] of BAYS_CHECKS) m[key] = e[k].checked;
     return m;
@@ -769,6 +775,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const e = form.elements;
     for (const [k, key] of PIT_FIELDS) e[k].value = m[key];
     for (const [k, key] of PIT_CHECKS) e[k].checked = m[key];
+    e.pText.value = m.text;
     drawPits();
   }
   function drawPits() {
@@ -782,7 +789,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readPits() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const m = { kind: 'pitmodule', door: building.door };
+    const m = { kind: 'pitmodule', door: building.door, text: e.pText.value };
     for (const [k, key] of PIT_FIELDS) m[key] = num(e[k]);
     for (const [k, key] of PIT_CHECKS) m[key] = e[k].checked;
     return m;
@@ -793,6 +800,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.tBoard.checked = g.board;
     e.tSign.checked = g.sign;
     e.tMembers.value = g.members;
+    e.tText.value = g.text;
     drawGantry();
   }
   function drawGantry() {
@@ -826,6 +834,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       boardHeight: num(e.tBoardHeight),
       deckWidth: num(e.tDeck),
       wallHeight: num(e.tWalls),
+      text: e.tText.value,
     };
   }
   function fillStand(g) {
@@ -1653,8 +1662,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       } else if (b.dataset.bdGantryType) {
         fitted = false;
         const type = b.dataset.bdGantryType;
-        // A box sign belongs to a half gantry only.
-        await rebuild({ ...readGantry(), type, ...(type !== 'half' && { sign: false }) });
+        // A box sign belongs to a half gantry only; a footbridge has no board, so no text.
+        await rebuild({ ...readGantry(), type, ...(type !== 'half' && { sign: false }), ...(type === 'bridge' && { text: '' }) });
+        form.elements.tText.value = building.text ?? '';
         drawGantry();
       } else if (b.dataset.bdStandShape) {
         const next = readStand();
