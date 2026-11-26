@@ -1678,7 +1678,8 @@ export function createPlanner({ host, call, download, current, promote }) {
   function homePanel(entry) {
     const b = entry.building,
       stand = b.kind === 'grandstand' || b.kind === 'gantry',
-      storeys = stand ? 0 : b.upper.length + 1;
+      pits = b.kind === 'pitmodule',
+      storeys = stand || pits ? 0 : b.upper.length + 1;
     if (entry.over)
       return (
         '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' + esc(sizeLine(b)) + ' · over a straight</p>' +
@@ -1701,7 +1702,7 @@ export function createPlanner({ host, call, download, current, promote }) {
     const degrees = Math.round((((entry.pose.a * 180) / Math.PI) % 360 + 360) % 360 * 10) / 10;
     return (
       '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' +
-      (stand ? esc(sizeLine(b)) : fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys')) + '</p>' +
+      (stand || pits ? esc(sizeLine(b)) : fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys')) + '</p>' +
       '<div class="pl-selection-actions">' + btn('b-turn', 'Turn 90°', 'reset') + btn('b-snap', 'Stand along the track', 'join') + btn('remove', 'Delete', 'close') + '</div>' +
       '<div class="pl-group">This building</div>' +
       '<details class="pl-bridge pl-home-place" open><summary><span>Place</span><small' + (onTrack ? ' class="warn"' : '') + '>' + (onTrack ? 'On the track' : 'Clear of the track') + '</small></summary><div>' +

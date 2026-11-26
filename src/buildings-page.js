@@ -11,6 +11,7 @@ import { kitNotes } from './building-kit.js';
 import { BUILDING_PRESETS } from './building-presets.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
+import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import {
   BUILDING_DEFAULTS,
   BUILDING_LIMITS,
@@ -154,6 +155,29 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 <aside class="bd-panel" aria-label="Settings">
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <form class="bd-form" autocomplete="off">
+    <section class="bd-box" data-bd-card="pits" data-bd-pits hidden><h3>Pit building</h3>
+      ${field('pBays', 'Bays', 3, PIT_MODULE_LIMITS.bays, '')}
+      ${field('pBayWidth', 'Bay width', 110, PIT_MODULE_LIMITS.bayWidth)}
+      ${field('pDepth', 'Depth', 150, PIT_MODULE_LIMITS.depth)}
+      ${field('pBase', 'Base height', 10, PIT_MODULE_LIMITS.baseHeight)}
+      <p class="bd-hint" data-bd-pits-size></p></section>
+    <section class="bd-box" data-bd-card="pitsDoors" data-bd-pits hidden><h3>Garage doors</h3>
+      <div class="bd-seg bd-wide" role="group" aria-label="Door"><button type="button" data-bd-pits-door="panel">Up-and-over</button><button type="button" data-bd-pits-door="roller">Roller</button></div>
+      ${field('pDoorWidth', 'Door width', 82, PIT_MODULE_LIMITS.doorWidth)}
+      ${field('pDoorHeight', 'Door height', 52, PIT_MODULE_LIMITS.doorHeight)}
+      ${field('pRecess', 'Set back', 8, PIT_MODULE_LIMITS.recess)}
+      <label class="bd-check"><input type="checkbox" name="pNumbers"><span>Bay numbers on the balcony</span></label>
+      ${field('pFirst', 'First number', 1, PIT_MODULE_LIMITS.firstNumber, '')}
+      <p class="bd-hint">Each door stands back in a reveal between two columns, its sides at 45°: wider at the front than at the door, so the bays print standing without supports.</p></section>
+    <section class="bd-box" data-bd-card="pitsUpper" data-bd-pits hidden><h3>Balcony and lounge</h3>
+      ${field('pGround', 'Ground floor height', 65, PIT_MODULE_LIMITS.groundHeight)}
+      ${field('pBalcony', 'Balcony', 25, PIT_MODULE_LIMITS.balcony)}
+      ${field('pLounge', 'Lounge height', 50, PIT_MODULE_LIMITS.loungeHeight)}
+      ${field('pLean', 'Glazing lean', 15, PIT_MODULE_LIMITS.lean, '°')}
+      ${field('pVisor', 'Visor', 12, PIT_MODULE_LIMITS.visor)}
+      <label class="bd-check"><input type="checkbox" name="pRailing"><span>Railing along the balcony</span></label>
+      <label class="bd-check"><input type="checkbox" name="pRoofRailing"><span>Railing round the roof</span></label>
+      <p class="bd-hint">The balcony reaches out over the pit lane, its front an angled fascia. Above it the lounge's glazing leans out towards the roof, and the roof's visor reaches out beyond it.</p></section>
     <section class="bd-box" data-bd-card="gantry" data-bd-gantry hidden><h3>Over the track</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Type">${GANTRY_TYPES.map(([id, label]) => `<button type="button" data-bd-gantry-type="${id}">${label}</button>`).join('')}</div>
       ${field('tSpan', 'Span', 220, GANTRY_LIMITS.span)}
@@ -257,16 +281,43 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
 
   const isStand = () => building.kind === 'grandstand';
   const isGantry = () => building.kind === 'gantry';
-  // A garage's cards, a grandstand's or a gantry's.
+  const isPits = () => building.kind === 'pitmodule';
+  const isGarage = () => !isStand() && !isGantry() && !isPits();
+  // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const stand = box.hasAttribute('data-bd-stand'),
-        gantry = box.hasAttribute('data-bd-gantry');
-      box.hidden = isStand() ? !stand : isGantry() ? !gantry : stand || gantry;
+      const own = ['stand', 'gantry', 'pits'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      box.hidden = own !== kind;
     }
-    if (isStand() || isGantry()) $('[data-bd-fitting]').hidden = true;
+    if (!isGarage()) $('[data-bd-fitting]').hidden = true;
     if (isGantry()) drawGantry();
+    if (isPits()) drawPits();
+  }
+  const PIT_FIELDS = [['pBays', 'bays'], ['pBayWidth', 'bayWidth'], ['pDepth', 'depth'], ['pBase', 'baseHeight'], ['pDoorWidth', 'doorWidth'], ['pDoorHeight', 'doorHeight'], ['pRecess', 'recess'], ['pFirst', 'firstNumber'], ['pGround', 'groundHeight'], ['pBalcony', 'balcony'], ['pLounge', 'loungeHeight'], ['pLean', 'lean'], ['pVisor', 'visor']];
+  const PIT_CHECKS = [['pNumbers', 'numbers'], ['pRailing', 'railing'], ['pRoofRailing', 'roofRailing']];
+  function fillPits(m) {
+    const e = form.elements;
+    for (const [k, key] of PIT_FIELDS) e[k].value = m[key];
+    for (const [k, key] of PIT_CHECKS) e[k].checked = m[key];
+    drawPits();
+  }
+  function drawPits() {
+    const m = building;
+    for (const b of host.querySelectorAll('[data-bd-pits-door]')) b.setAttribute('aria-pressed', String(b.dataset.bdPitsDoor === m.door));
+    form.elements.pFirst.closest('label').hidden = !m.numbers;
+    const L = pitLevels(m);
+    $('[data-bd-pits-size]').textContent =
+      m.bays + (m.bays === 1 ? ' bay, ' : ' bays, ') + fmt(m.bays * m.bayWidth + 3) + ' mm long and ' + fmt(m.depth) + ' mm deep on the table, ' + fmt(L.roof1) + ' mm high; the balcony and the visor reach ' + fmt(-L.front) + ' mm out over the pit lane. Each bay prints standing on its end and joins the next with two tabs.';
+  }
+  function readPits() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const m = { kind: 'pitmodule', door: building.door };
+    for (const [k, key] of PIT_FIELDS) m[key] = num(e[k]);
+    for (const [k, key] of PIT_CHECKS) m[key] = e[k].checked;
+    return m;
   }
   function fillGantry(g) {
     const e = form.elements;
@@ -423,6 +474,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readForm() {
     if (isStand()) return readStand();
     if (isGantry()) return readGantry();
+    if (isPits()) return readPits();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -485,6 +537,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const b of host.querySelectorAll('[data-bd-view]')) b.setAttribute('aria-pressed', String(b.dataset.bdView === view));
     if (isStand()) drawStand();
     else if (isGantry()) drawGantry();
+    else if (isPits()) drawPits();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
@@ -620,7 +673,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     showError('');
     // The width or depth the rooms make, without redrawing the room fields.
-    if (!isStand() && !isGantry() && building.rooms) {
+    if (isGarage() && building.rooms) {
       const along = building.rooms.along;
       form.elements[along].value = building[along];
       const sum = $('.bd-rooms .bd-hint');
@@ -666,6 +719,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       opening = null;
     if (isStand()) card = /^canopy|^post/.test(id) ? 'standRoof' : 'stand';
     else if (isGantry()) card = /^beam/.test(id) ? 'gantryBeam' : /^deck/.test(id) ? 'gantryBridge' : 'gantry';
+    else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
       w = wallOf[1];
@@ -687,7 +741,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       card = 'walls';
     }
     if (!card) return;
-    if (!isStand() && !isGantry() && (k !== storey || w !== wall)) {
+    if (isGarage() && (k !== storey || w !== wall)) {
       // Keep what is typed, as the storey and wall buttons do.
       try {
         building = validateBuilding(readForm());
@@ -726,6 +780,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[name="buildingName"]').value = name;
     if (b.kind === 'grandstand') return fillStand(b);
     if (b.kind === 'gantry') return fillGantry(b);
+    if (b.kind === 'pitmodule') return fillPits(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth'])
       form.elements[k].value = b[k];
     for (const k of ['door', 'ridge', 'rises', 'roofLip']) form.elements[k].value = b[k];
@@ -821,6 +876,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         drawStoreys();
         drawOpenings();
         sync();
+      } else if (b.dataset.bdPitsDoor) {
+        await rebuild({ ...readPits(), door: b.dataset.bdPitsDoor });
+        drawPits();
       } else if (b.dataset.bdGantryType) {
         fitted = false;
         await rebuild({ ...readGantry(), type: b.dataset.bdGantryType });

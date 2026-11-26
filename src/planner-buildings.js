@@ -8,6 +8,7 @@ import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth } from './geometry/grandstand.js';
 import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
+import { PIT } from './geometry/pit-module.js';
 
 export const MAX_BUILDINGS = 100;
 export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
@@ -68,6 +69,11 @@ export function shapeOf(b) {
     const [w, d] = gantrySize(b);
     outline = rect(0, 0, w, d);
     front = null;
+  } else if (b.kind === 'pitmodule') {
+    // On the table it stands on its bays and the end panel; the balcony and
+    // the visor reach out over the pit lane above the cars.
+    outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
+    front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
   } else if (b.kind === 'grandstand') {
     const D = standDepth(b),
       ahead = b.roof === 'canopy' ? STAND.reach : 0;
@@ -98,7 +104,7 @@ export function shapeOf(b) {
 }
 /** A point of the building, in its own coordinates, on the plan: turned by a round its middle. */
 export function toPlan({ building: b, pose }, [x, y]) {
-  const [cx, cy] = b.kind === 'grandstand' || b.kind === 'gantry' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
+  const [cx, cy] = ['grandstand', 'gantry', 'pitmodule'].includes(b.kind) ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
   const u = x - cx,
     v = y - cy,
     c = Math.cos(pose.a),
@@ -117,6 +123,15 @@ export function planShapes(entry) {
     const [w, d] = gantrySize(b);
     const across = [[0, d / 2], [w, d / 2]].map((p) => toPlan(entry, p));
     return { base: footprint(entry), storeys: gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p))), dividers: [across], doors: [] };
+  }
+  if (b.kind === 'pitmodule') {
+    // Its bays, a line between each two, and the doors in their reveals.
+    const joins = Array.from({ length: b.bays - 1 }, (_, i) => [[(i + 1) * b.bayWidth, 0], [(i + 1) * b.bayWidth, b.depth]].map((p) => toPlan(entry, p)));
+    const doors = Array.from({ length: b.bays }, (_, i) => {
+      const cx = (i + 0.5) * b.bayWidth;
+      return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
+    });
+    return { base: footprint(entry), storeys: [], dividers: joins, doors };
   }
   if (b.kind === 'grandstand') {
     // Its rows, as lines along it.

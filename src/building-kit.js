@@ -12,6 +12,7 @@ const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1
 export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'grandstand') return standNotes(name, b, parts, sizes);
   if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
+  if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -157,5 +158,38 @@ function gantryNotes(name, g, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the start lights red, or put a sticker on the board.',
+  ].join('\n');
+}
+
+// The notes of a pit building made of bays.
+function pitNotes(name, m, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const door = m.door === 'panel' ? 'up-and-over door' : 'roller door';
+  const rails = [m.railing && 'the balcony', m.roofRailing && 'the front and the back of the roof'].filter(Boolean);
+  const steps = [
+    ...(m.bays > 1 ? ['Join the bays end to end in their order, bay 1 first: push the two tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table.'] : []),
+    'Glue the end panel on the open end of the last bay.',
+    'Glue ' + (m.door === 'panel' ? 'an ' : 'a ') + door + ' into each doorway, against the wall at the back of its reveal, standing on the floor.',
+    ...(m.numbers ? ['Glue the bay numbers on the angled front of the balcony, one over each door, ' + m.firstNumber + ' at bay 1.'] : []),
+    ...(rails.length ? ['Push the railings into the pockets along ' + rails.join(' and ') + ', their tabs down, and glue them.'] : []),
+    'Stand the building beside the pit lane, the doors towards it; the balcony and the visor reach out over the lane.',
+  ];
+  return [
+    name + ' · SlotForge Foundry pit building kit',
+    '',
+    m.bays + (m.bays === 1 ? ' bay, ' : ' bays, each ') + fmt(m.bayWidth) + ' mm wide; ' + fmt(m.depth) + ' mm deep. The ' + door + 's are ' + fmt(m.doorWidth) + ' × ' + fmt(m.doorHeight) + ' mm, set back ' + fmt(m.recess) + ' mm; the glazing leans out ' + fmt(m.lean) + '°.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- Each bay stands on its end: the side of the building lies on the plate, the angled fascia, the leaning glazing and the visor rise straight up. It is a hollow shell, 3 mm thick, open underneath.',
+    '- The end panel, the doors, the numbers and the railings lie flat.',
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the panes of the glazing dark before you put it together, or print the bays in two colours.',
   ].join('\n');
 }

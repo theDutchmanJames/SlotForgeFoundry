@@ -11,6 +11,7 @@ import { DRAWN, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, WALL_TEXTURES, 
 import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
 import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
+import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
@@ -222,6 +223,7 @@ function checkOpenings(list, dims, blocks, where) {
 export function validateBuilding(input) {
   if (input?.kind === 'grandstand') return validateGrandstand(input);
   if (input?.kind === 'gantry') return validateGantry(input);
+  if (input?.kind === 'pitmodule') return validatePitModule(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -544,6 +546,7 @@ function ceilingAt(b, s, shape, x, y) {
 export function buildingLayout(input) {
   if (input?.kind === 'grandstand') return { ...grandstandLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'gantry') return { ...gantryLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
@@ -598,8 +601,8 @@ function wallOpenings(s, doors) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
-  // A grandstand comes in sections already, each no longer than set.
-  if (input?.kind === 'grandstand' || input?.kind === 'gantry') return {};
+  // A grandstand comes in sections already, each no longer than set; a pit building in bays.
+  if (['grandstand', 'gantry', 'pitmodule'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -661,6 +664,7 @@ export function buildingCuts(input, plate) {
 export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'grandstand') return buildGrandstand(wasm, input);
   if (input?.kind === 'gantry') return buildGantry(wasm, input, plate);
+  if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;

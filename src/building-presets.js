@@ -73,6 +73,18 @@ export const BUILDING_PRESETS = Object.freeze([
     building: modernPits(3, 80),
   },
   {
+    id: 'pit-building',
+    name: 'Pit building',
+    note: 'Doors set back between columns, a balcony, glazing that leans out, a visor',
+    building: { kind: 'pitmodule', bays: 3 },
+  },
+  {
+    id: 'pit-building-low',
+    name: 'Pit building, low relief',
+    note: 'The same front, 70 mm deep, to stand against a wall',
+    building: { kind: 'pitmodule', bays: 3, depth: 70 },
+  },
+  {
     id: 'tower',
     name: 'Control tower',
     note: 'Three storeys, glazed on top',

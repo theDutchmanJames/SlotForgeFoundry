@@ -228,6 +228,20 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-part="number-3"]').waitFor();
   assert.ok(await host.locator('[data-bd-part^="railing2-front"]').count());
   assert.ok(await setting('numbers').isChecked());
+  // The pit building in bays: its own cards, a door to choose, a part opening its card.
+  await host.locator('[data-bd-preset="pit-building"]').click();
+  await host.locator('[data-bd-part="roofback-3"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="pits"]').isVisible());
+  assert.ok(await host.locator('[data-bd-card="size"]').isHidden(), 'the garage cards are put away');
+  assert.match(await host.locator('[data-bd-pits-size]').textContent(), /3 bays, 333 mm long/);
+  await host.locator('[data-bd-pits-door="roller"]').click();
+  await page.waitForFunction(() => /Roller door 1/.test(document.querySelector('[data-bd-part="door-1"]')?.textContent));
+  await setting('pBays').fill('2');
+  await setting('pBays').press('Tab');
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="bay-3"]'));
+  assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
+  await host.locator('[data-bd-part="number-2"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="pitsDoors"]').classList.contains('bd-flash'));
   // A gantry over the track: a type to choose, its own cards.
   await host.locator('[data-bd-preset="gantry-start"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();
