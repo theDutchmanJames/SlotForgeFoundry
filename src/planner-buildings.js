@@ -8,6 +8,7 @@ import polygonClipping from 'polygon-clipping';
 import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth } from './geometry/grandstand.js';
 import { GANTRY, gantryFeet, gantrySize } from './geometry/gantry.js';
+import { marshalFootprint } from './geometry/marshal-post.js';
 import { PIT } from './geometry/pit-module.js';
 
 export const MAX_BUILDINGS = 100;
@@ -74,6 +75,11 @@ export function shapeOf(b) {
     // the visor reach out over the pit lane above the cars.
     outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
     front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
+  } else if (b.kind === 'marshalpost') {
+    // On its base plate, or on the ground on its floor; the cabin faces the track.
+    const [x0, y0, x1, y1] = marshalFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [b.width / 2, y0], f: [0, -1] };
   } else if (b.kind === 'grandstand') {
     const D = standDepth(b),
       ahead = b.roof === 'canopy' ? STAND.reach : 0;
@@ -104,7 +110,7 @@ export function shapeOf(b) {
 }
 /** A point of the building, in its own coordinates, on the plan: turned by a round its middle. */
 export function toPlan({ building: b, pose }, [x, y]) {
-  const [cx, cy] = ['grandstand', 'gantry', 'pitmodule'].includes(b.kind) ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
+  const [cx, cy] = b.kind !== 'garage' ? shapeOf(b).centre : [b.width / 2, b.depth / 2];
   const u = x - cx,
     v = y - cy,
     c = Math.cos(pose.a),
@@ -132,6 +138,10 @@ export function planShapes(entry) {
       return [toPlan(entry, [cx - b.doorWidth / 2, b.recess]), toPlan(entry, [cx + b.doorWidth / 2, b.recess])];
     });
     return { base: footprint(entry), storeys: [], dividers: joins, doors };
+  }
+  if (b.kind === 'marshalpost') {
+    // Its base, and the cabin on it.
+    return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
   if (b.kind === 'grandstand') {
     // Its rows, as lines along it.

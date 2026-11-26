@@ -12,6 +12,7 @@ import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building
 import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
 import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
+import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
 
 export const WALLS = Object.freeze(['front', 'left', 'back', 'right']);
 export const WALL_NAMES = Object.freeze({ front: 'Front', back: 'Back', left: 'Left', right: 'Right' });
@@ -224,6 +225,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'grandstand') return validateGrandstand(input);
   if (input?.kind === 'gantry') return validateGantry(input);
   if (input?.kind === 'pitmodule') return validatePitModule(input);
+  if (input?.kind === 'marshalpost') return validateMarshalPost(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -547,6 +549,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'grandstand') return { ...grandstandLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'gantry') return { ...gantryLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitmodule') return { ...pitModuleLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }];
@@ -601,8 +604,8 @@ function wallOpenings(s, doors) {
  * its cuts and the range each may move in. Without a plate, nothing is cut.
  */
 export function buildingCuts(input, plate) {
-  // A grandstand comes in sections already, each no longer than set; a pit building in bays.
-  if (['grandstand', 'gantry', 'pitmodule'].includes(input?.kind)) return {};
+  // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -665,6 +668,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'grandstand') return buildGrandstand(wasm, input);
   if (input?.kind === 'gantry') return buildGantry(wasm, input, plate);
   if (input?.kind === 'pitmodule') return buildPitModule(wasm, input);
+  if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
   const { Manifold } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, play: c, shell, deck, roof: rt } = KIT;

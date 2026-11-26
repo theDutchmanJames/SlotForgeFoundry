@@ -125,6 +125,26 @@ export function pitModuleLayout(input) {
 
 const SEGMENTS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
 
+/**
+ * A number in seven segments, as boxes made by `box(u0, v0, w0, u1, v1, w1)`:
+ * digits dw wide and dh high, strokes st thick, gap apart, centred on
+ * (cu, cv), standing from w0 to w1.
+ */
+export function sevenSegments(text, box, { cu = 0, cv, dw, dh, st, gap, w0, w1 }) {
+  const total = text.length * dw + (text.length - 1) * gap;
+  const bits = [];
+  [...text].forEach((ch, k) => {
+    const x = cu - total / 2 + k * (dw + gap),
+      zz = cv - dh / 2;
+    const seg = { a: [x, zz + dh - st, x + dw, zz + dh], g: [x, zz + dh / 2 - st / 2, x + dw, zz + dh / 2 + st / 2], d: [x, zz, x + dw, zz + st], f: [x, zz + dh / 2, x + st, zz + dh], b: [x + dw - st, zz + dh / 2, x + dw, zz + dh], e: [x, zz, x + st, zz + dh / 2], c: [x + dw - st, zz, x + dw, zz + dh / 2] };
+    for (const name of SEGMENTS[Number(ch)]) {
+      const [u0, v0, u1, v1] = seg[name];
+      bits.push(box(u0, v0, w0, u1, v1, w1));
+    }
+  });
+  return bits;
+}
+
 /** The pit building, built: each bay in its place along the row. */
 export function buildPitModule(wasm, input) {
   const { Manifold, CrossSection } = wasm;
@@ -236,21 +256,7 @@ export function buildPitModule(wasm, input) {
         const number = String(m.firstNumber + i);
         const cx = i * W + W / 2;
         const B = (u0, v0, w0, u1, v1, w1) => own(Manifold.cube([u1 - u0, v1 - v0, w1 - w0]).translate([u0, v0, w0]));
-        const bits = [B(-pw / 2, (ul - ph) / 2, 0, pw / 2, (ul + ph) / 2, pt)];
-        const dw = 4,
-          dh = 5,
-          st = 0.9,
-          gap = 1.4;
-        const total = number.length * dw + (number.length - 1) * gap;
-        [...number].forEach((ch, k) => {
-          const x = -total / 2 + k * (dw + gap),
-            zz = (ul - dh) / 2;
-          const seg = { a: [x, zz + dh - st, x + dw, zz + dh], g: [x, zz + dh / 2 - st / 2, x + dw, zz + dh / 2 + st / 2], d: [x, zz, x + dw, zz + st], f: [x, zz + dh / 2, x + st, zz + dh], b: [x + dw - st, zz + dh / 2, x + dw, zz + dh], e: [x, zz, x + st, zz + dh / 2], c: [x + dw - st, zz, x + dw, zz + dh / 2] };
-          for (const name of SEGMENTS[Number(ch)]) {
-            const [u0, v0, u1, v1] = seg[name];
-            bits.push(B(u0, v0, pt - 0.01, u1, v1, pt + 0.8));
-          }
-        });
+        const bits = [B(-pw / 2, (ul - ph) / 2, 0, pw / 2, (ul + ph) / 2, pt), ...sevenSegments(number, B, { cv: ul / 2, dw: 4, dh: 5, st: 0.9, gap: 1.4, w0: pt - 0.01, w1: pt + 0.8 })];
         const local = own(Manifold.union(bits));
         // u along x, v up the fascia, w out of it.
         const placed = own(local.transform([1, 0, 0, 0, ...v, 0, ...n, 0, cx, y0, z0, 1]));

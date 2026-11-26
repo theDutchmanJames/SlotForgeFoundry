@@ -1,6 +1,7 @@
 // The notes that come with a building kit: its parts, how they print and
 // how they go together.
 import { fmt } from './ui.js';
+import { marshalLevels } from './geometry/marshal-post.js';
 
 /**
  * How the parts of a kit are printed and put together, for the kit's notes.
@@ -13,6 +14,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'grandstand') return standNotes(name, b, parts, sizes);
   if (b.kind === 'gantry') return gantryNotes(name, b, parts, sizes);
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
+  if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -191,5 +193,39 @@ function pitNotes(name, m, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     'Paint the panes of the glazing dark before you put it together, or print the bays in two colours.',
+  ].join('\n');
+}
+
+// The notes of a marshal post or a marshal shelter.
+function marshalNotes(name, m, parts, sizes) {
+  const L = marshalLevels(m);
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const what = !L.raised ? 'A marshal shelter' : m.deckHeight >= 80 ? 'A tall marshal post' : 'A low marshal post';
+  const walls = { slats: 'slatted', boards: 'boarded', plain: 'plain' }[m.walls];
+  const steps = [
+    ...(L.raised ? ['Push the cabin onto the pegs on top of the legs, each into its socket under the floor, with a drop of glue in each.'] : []),
+    'Lay the roof on the corner posts, the pin on top of each post up through its hole, ' + (m.fall > 0 ? 'the low edge at the back' : 'level') + ', and glue it.',
+    ...(L.ladder ? ['Glue the ladder with its foot on the base behind the cabin and its top against the floor in the opening of the back wall.'] : []),
+    ...(m.numbers ? ['Glue the number disc in the middle of the front wall.'] : []),
+    'Stand it beside the track, its front towards the road.',
+  ];
+  return [
+    name + ' · SlotForge Foundry marshal post kit',
+    '',
+    what + ': a cabin ' + fmt(m.width) + ' × ' + fmt(m.depth) + ' mm with a ' + walls + ' wall ' + fmt(m.wallHeight) + ' mm high' + (L.raised ? ', its floor ' + fmt(m.deckHeight) + ' mm above the table' : ', on the ground') + '; about ' + fmt(Math.round(L.high)) + ' mm high to the top of the roof.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- The cabin prints the right way up, its floor on the plate; ' + (m.walls === 'slats' ? 'each gap between the slats closes in a point, so it prints.' : 'its walls rise straight up.'),
+    ...(L.raised ? ['- The legs stand on their base plate.'] : []),
+    '- The roof lies on its underside' + (m.roof === 'tin' ? ', its corrugations on top' : '') + (L.ladder ? '; the ladder' : '') + (m.numbers ? (L.ladder ? ' and' : ';') + ' the number disc' : '') + (L.ladder || m.numbers ? ' lie flat.' : '.'),
+    '',
+    'Putting it together',
+    ...steps.map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the number before you glue the disc on, or print it in two colours.',
   ].join('\n');
 }

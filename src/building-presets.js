@@ -148,6 +148,24 @@ export const BUILDING_PRESETS = Object.freeze([
     },
   },
   {
+    id: 'marshal-low',
+    name: 'Low marshal post',
+    note: 'A slatted cabin on legs, a ladder at the back, a tin roof on posts',
+    building: { kind: 'marshalpost' },
+  },
+  {
+    id: 'marshal-shelter',
+    name: 'Marshal shelter',
+    note: 'A boarded waist wall on the ground, a tin roof on posts',
+    building: { kind: 'marshalpost', width: 75, depth: 72, deckHeight: 0, wallHeight: 24, roomHeight: 55, walls: 'boards', ladder: false, numbers: false },
+  },
+  {
+    id: 'marshal-tall',
+    name: 'Tall marshal post',
+    note: 'A cabin high on legs, a board all round for a sign, a ladder',
+    building: { kind: 'marshalpost', width: 72, depth: 65, deckHeight: 120, wallHeight: 26, roomHeight: 48, fall: 6, walls: 'plain', roof: 'flat', number: 5 },
+  },
+  {
     id: 'timing',
     name: 'Timing box',
     note: 'Raised, with a wide window onto the track',

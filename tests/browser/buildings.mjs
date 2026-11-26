@@ -242,6 +242,20 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
   await host.locator('[data-bd-part="number-2"]').click();
   await page.waitForFunction(() => document.querySelector('[data-bd-card="pitsDoors"]').classList.contains('bd-flash'));
+  // A marshal post: raised on legs with a ladder, or on the ground without them.
+  await host.locator('[data-bd-preset="marshal-low"]').click();
+  await host.locator('[data-bd-part="ladder"]').waitFor();
+  assert.ok(await host.locator('[data-bd-card="marshal"]').isVisible() && (await host.locator('[data-bd-card="pits"]').isHidden()));
+  assert.match(await host.locator('[data-bd-marshal-size]').textContent(), /A cabin on four legs, its floor 40 mm above the table/);
+  await host.locator('[data-bd-marshal-walls="boards"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-marshal-walls="boards"]').getAttribute('aria-pressed') === 'true');
+  await setting('mDeck').fill('0');
+  await setting('mDeck').press('Tab');
+  await page.waitForFunction(() => !document.querySelector('[data-bd-part="stand"]') && !document.querySelector('[data-bd-part="ladder"]'));
+  assert.ok(await host.locator('[data-bd-raised]').isHidden(), 'no ladder on the ground');
+  assert.match(await host.locator('[data-bd-chips]').textContent(), /No supports/);
+  await host.locator('[data-bd-part="roof"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-bd-card="marshalRoof"]').classList.contains('bd-flash'));
   // A gantry over the track: a type to choose, its own cards.
   await host.locator('[data-bd-preset="gantry-start"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();
