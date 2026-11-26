@@ -379,6 +379,18 @@ export const BUILDING_PRESETS = Object.freeze([
     },
   },
   {
+    id: 'billboard',
+    name: 'Billboard',
+    note: 'A board on two posts for a poster, struts behind',
+    building: { kind: 'billboard' },
+  },
+  {
+    id: 'hoarding',
+    name: 'Hoarding',
+    note: 'A long low board along the track on posts, in pieces',
+    building: { kind: 'billboard', style: 'hoarding', length: 400, height: 18, clearance: 3 },
+  },
+  {
     id: 'flag-post',
     name: "Flag waver's post",
     note: 'Steps up to a landing, handrails each side, a board on the front rail',

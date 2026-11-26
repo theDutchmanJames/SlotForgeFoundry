@@ -14,6 +14,7 @@ import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
 import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
+import { BILLBOARD_LIMITS, billboardPieces, billboardPosts } from './geometry/billboard.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -269,6 +270,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="fBoard"><span>A board on the front rail</span></label>
       ${field('fBoardHeight', 'Board height', 9, FLAG_POST_LIMITS.boardHeight)}
       <p class="bd-hint" data-bd-flag-size></p></section>
+    <section class="bd-box" data-bd-card="billboard" data-bd-billboard hidden><h3>Billboard</h3>
+      <label class="bd-row"><span>Kind</span><select name="kStyle"><option value="board">A billboard on two posts</option><option value="hoarding">A hoarding along the track</option></select></label>
+      ${field('kLength', 'Length', 120, BILLBOARD_LIMITS.length)}
+      ${field('kHeight', 'Board height', 40, BILLBOARD_LIMITS.height)}
+      ${field('kClearance', 'Above the table', 45, BILLBOARD_LIMITS.clearance)}
+      <label class="bd-check"><input type="checkbox" name="kBorder"><span>A raised border round the face</span></label>
+      <p class="bd-hint" data-bd-billboard-size></p></section>
     <section class="bd-box" data-bd-card="marshalWalls" data-bd-marshal hidden><h3>Wall</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Wall"><button type="button" data-bd-marshal-walls="slats">Slats</button><button type="button" data-bd-marshal-walls="boards">Boards</button><button type="button" data-bd-marshal-walls="plain">Plain</button></div>
       ${field('mWall', 'Wall height', 22, MARSHAL_POST_LIMITS.wallHeight)}
@@ -423,16 +431,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isPits = () => building.kind === 'pitmodule';
   const isMarshal = () => building.kind === 'marshalpost';
   const isFlag = () => building.kind === 'flagpost';
+  const isBillboard = () => building.kind === 'billboard';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
-  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isPlatform() && !isWalkway() && !isBays();
+  const isGarage = () => !isStand() && !isGantry() && !isPits() && !isMarshal() && !isFlag() && !isBillboard() && !isPlatform() && !isWalkway() && !isBays();
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
-    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -440,7 +449,31 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPits()) drawPits();
     if (isMarshal()) drawMarshal();
     if (isFlag()) drawFlag();
+    if (isBillboard()) drawBillboard();
     if (isPlatform()) drawPlatform();
+  }
+  const BILLBOARD_FIELDS = [['kLength', 'length'], ['kHeight', 'height'], ['kClearance', 'clearance']];
+  function fillBillboard(k) {
+    const e = form.elements;
+    for (const [n, key] of BILLBOARD_FIELDS) e[n].value = k[key];
+    e.kStyle.value = k.style;
+    e.kBorder.checked = k.border;
+    drawBillboard();
+  }
+  function drawBillboard() {
+    const k = building;
+    const posts = billboardPosts(k).length,
+      pieces = billboardPieces(k).length;
+    $('[data-bd-billboard-size]').textContent =
+      (k.style === 'board' ? 'A board on two posts' : 'A hoarding on ' + posts + ' posts, in ' + pieces + (pieces === 1 ? ' piece' : ' pieces')) +
+      ', a strut behind each post. Each board prints on its back, its face up, the struts flat. Paint the face or glue a poster on it.';
+  }
+  function readBillboard() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const k = { kind: 'billboard', style: e.kStyle.value, border: e.kBorder.checked };
+    for (const [n, key] of BILLBOARD_FIELDS) k[key] = num(e[n]);
+    return k;
   }
   const FLAG_FIELDS = [['fWidth', 'width'], ['fHeight', 'height'], ['fSteps', 'steps'], ['fTread', 'tread'], ['fLanding', 'landing'], ['fRail', 'railHeight'], ['fBoardHeight', 'boardHeight']];
   function fillFlag(f) {
@@ -804,6 +837,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPits()) return readPits();
     if (isMarshal()) return readMarshal();
     if (isFlag()) return readFlag();
+    if (isBillboard()) return readBillboard();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
@@ -888,6 +922,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPits()) drawPits();
     else if (isMarshal()) drawMarshal();
     else if (isFlag()) drawFlag();
+    else if (isBillboard()) drawBillboard();
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
     else if (isBays()) drawBays();
@@ -1083,6 +1118,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPits()) card = /^(door|number)/.test(id) ? 'pitsDoors' : /rail|roofback/.test(id) ? 'pitsUpper' : 'pits';
     else if (isMarshal()) card = id === 'roof' ? 'marshalRoof' : id === 'number' ? 'marshalWalls' : 'marshal';
     else if (isFlag()) card = 'flag';
+    else if (isBillboard()) card = 'billboard';
     else if (isWalkway()) card = 'walkway';
     else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
@@ -1155,6 +1191,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'pitmodule') return fillPits(b);
     if (b.kind === 'marshalpost') return fillMarshal(b);
     if (b.kind === 'flagpost') return fillFlag(b);
+    if (b.kind === 'billboard') return fillBillboard(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);

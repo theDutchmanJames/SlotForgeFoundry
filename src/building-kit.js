@@ -2,6 +2,7 @@
 // how they go together.
 import { fmt } from './ui.js';
 import { marshalLevels } from './geometry/marshal-post.js';
+import { BILLBOARD } from './geometry/billboard.js';
 
 /**
  * How the parts of a kit are printed and put together, for the kit's notes.
@@ -16,6 +17,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'pitmodule') return pitNotes(name, b, parts, sizes);
   if (b.kind === 'marshalpost') return marshalNotes(name, b, parts, sizes);
   if (b.kind === 'flagpost') return flagNotes(name, b, parts, sizes);
+  if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
@@ -227,6 +229,33 @@ function pitNotes(name, m, parts, sizes) {
 }
 
 // The notes of a marshal post or a marshal shelter.
+// The notes of a billboard or a hoarding: its board pieces and the struts behind its posts.
+function billboardNotes(name, b, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const pieces = parts.filter((p) => /^board/.test(p.id)).length;
+  return [
+    name + ' · SlotForge Foundry ' + (b.style === 'board' ? 'billboard' : 'hoarding') + ' kit',
+    '',
+    (b.style === 'board' ? 'A billboard on two posts, ' : 'A hoarding on a post every ' + fmt(BILLBOARD.pitch) + ' mm at most, ') + fmt(b.length) + ' mm long; the board ' + fmt(b.height) + ' mm high, ' + fmt(b.clearance) + ' mm above the table.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports.',
+    '- Each board prints on its back, the face up' + (b.border ? ', its border raised round it' : '') + '; the struts lie flat.',
+    '',
+    'Putting it together',
+    ...[
+      ...(pieces > 1 ? ['Lay the boards face down in their order, 1 of ' + pieces + ' first, and glue each against the post at the start of the next.'] : []),
+      'Stand the board up and glue a strut behind each post, its foot on the table and its upright against the post.',
+      'Stand it beside the track, its face towards the road.',
+    ].map((s, i) => i + 1 + '. ' + s),
+    '',
+    'Paint the face, or glue a printed poster on it.',
+  ].join('\n');
+}
+
 // The notes of a flag waver's post: the steps, their cheeks and the front rail.
 function flagNotes(name, f, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');

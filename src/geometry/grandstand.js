@@ -111,6 +111,7 @@ export function sizeLine(b) {
   if (b.kind === 'pitbays') return b.types.length + (b.types.length === 1 ? ' bay' : ' bays') + ' · ' + Math.round(b.types.length * b.bayWidth + 5) + ' × ' + Math.round(b.depth) + ' mm';
   if (b.kind === 'walkway') return 'Walkway · ' + Math.round(b.length) + ' mm, ' + Math.round(b.clearance) + ' mm up';
   if (b.kind === 'platform') return 'Viewing platform · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
+  if (b.kind === 'billboard') return (b.style === 'board' ? 'Billboard' : 'Hoarding') + ' · ' + Math.round(b.length) + ' × ' + Math.round(b.height) + ' mm';
   if (b.kind === 'flagpost') return "Flag waver's post · " + Math.round(b.width) + ' wide, ' + Math.round(b.height) + ' mm up';
   if (b.kind === 'marshalpost') return (b.deckHeight > 0 ? 'Marshal post' : 'Marshal shelter') + ' · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
   if (b.kind !== 'grandstand') return Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
