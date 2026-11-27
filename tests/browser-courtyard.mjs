@@ -51,11 +51,29 @@ try {
   let zip = await exportZip();
   assert.ok(Object.keys(zip).some((n) => /Courtyard 1, wall 1/.test(n)), Object.keys(zip).join(', '));
   assert.match(strFromU8(zip['README.txt']), /Round a courtyard, open to the sky/);
-  // Draw shows it.
+  // Draw shows it; a courtyard wall chosen there and moved makes it a drawn courtyard.
   await host.locator('[data-bd-view="draw"]').click();
   await host.locator('[data-canvas-mode="plan"]').click();
   assert.equal(await host.locator('.bd-drawing-court').count(), 1);
+  const firstCourtWall = await page.evaluate(() => [...document.querySelectorAll('#buildings-page .bd-edge')].findIndex((l) => l.nextElementSibling?.textContent === '1' && Number(l.dataset.edge) >= 4));
+  assert.ok(firstCourtWall >= 0);
+  await host.locator('.bd-edge').nth(firstCourtWall).click({ force: true });
+  await page.waitForFunction(() => /Courtyard 1, wall 1/.test(document.querySelector('#buildings-page .bd-drawing-properties')?.textContent ?? ''));
+  await host.locator('[data-outline-depth]').fill('10');
+  await host.locator('[data-outline="out"]').click();
+  await idle();
+  assert.equal(await setting('fc-shape-0').inputValue(), 'custom');
+  assert.equal(await setting('fc-w-0').inputValue(), '90');
+  assert.equal(await setting('fc-w-0').isDisabled(), true);
   await host.locator('[data-bd-view="model"]').click();
+  // Back to a rectangle over its size; an octagon is refused while its walls have a door and windows too wide for its short sides.
+  await setting('fc-shape-0').selectOption('rectangle');
+  await idle();
+  await setting('fc-shape-0').selectOption('octagon');
+  await host.locator('.bd-error').waitFor({ state: 'visible' });
+  assert.match(await host.locator('.bd-error').textContent(), /Courtyard 1, wall \d: keep the opening/);
+  await setting('fc-shape-0').selectOption('rectangle');
+  await idle();
   // Removed, with the door and windows into it; added again in the middle.
   await host.locator('[data-bd-fp-remove-court="0"]').click();
   await idle();
@@ -65,6 +83,10 @@ try {
   await host.locator('[data-bd-fp-add-court]').click();
   await idle();
   assert.equal(await setting('fc-w-0').count(), 1);
+  // The new one, with no openings yet, made an octagon: eight walls.
+  await setting('fc-shape-0').selectOption('octagon');
+  await idle();
+  assert.ok((await host.locator('[data-bd-fp-finish]').textContent()).includes('Courtyard 1, wall 8'));
   // A hip roof is refused round a courtyard.
   await setting('fpRoofShape').selectOption('hip');
   await page.waitForFunction(() => /takes a flat roof/.test(document.querySelector('#buildings-page .bd-error')?.textContent ?? ''));
@@ -79,7 +101,7 @@ try {
   assert.equal(await setting('fc-w-0').count(), 1, 'a courtyard in the octagon');
   assert.equal(await setting('fpRoofShape').inputValue(), 'flat');
   assert.deepEqual(errors, []);
-  console.log('PASS: a building round a courtyard: on a hip-roofed octagon one added and the roof made flat; made wider, refused too wide, in the kit and in Draw; removed with its openings, added again; no hip roof round it.');
+  console.log('PASS: a building round a courtyard: made wider, refused too wide, in the kit; a courtyard wall moved in Draw, drawn; an octagon refused over its openings; removed with them, added again and made an octagon; no hip roof round it; one added to a hip-roofed octagon, its roof made flat.');
 } finally {
   await browser.close();
 }

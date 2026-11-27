@@ -1,16 +1,35 @@
-// Drawing a shaped building's outline wall by wall: move a wall in or out,
-// pull out a bay or push in a recess, cut a corner, curve a wall. Walls are named by
-// their place round the outline (edge-1 the first), so when walls come in
-// between, the windows and doors and the walls' own textures move with them.
+// Drawing a shaped building's outline, or a courtyard's, wall by wall: move a
+// wall in or out, pull out a bay or push in a recess, cut a corner, curve a
+// wall. Walls are named by their place round their ring (edge-1 the first of
+// the outline, court-1-1 of courtyard 1), so when walls come in between, the
+// windows and doors and the walls' own textures move with them.
 import { validateBuilding } from './geometry/building.js';
-import { footprintPoints, footprintWalls } from './geometry/footprint-building.js';
+import { footprintPoints, footprintRings, footprintWalls } from './geometry/footprint-building.js';
 
 export const BAY = Object.freeze({ depth: 15, chamfer: 15, bulge: 15, facets: 6 });
 
-const id = (i) => 'edge-' + (i + 1);
-// The walls round the outline; a courtyard's are moved with its own settings.
-const outerWalls = (b) => footprintWalls(b).filter((w) => !w.ring);
-const onOutline = (wall) => /^edge-\d+$/.test(wall);
+// A wall's ring and its place round it: the outline's edge-N (ring 0), or courtyard K's court-K-N (ring K).
+function ringOf(wall) {
+  const m = /^(?:edge-(\d+)|court-(\d+)-(\d+))$/.exec(wall ?? '');
+  if (!m) return null;
+  return m[1] ? { ring: 0, i: Number(m[1]) - 1 } : { ring: Number(m[2]), i: Number(m[3]) - 1 };
+}
+const idOf = (ring, i) => (ring ? 'court-' + ring + '-' : 'edge-') + (i + 1);
+const ringWalls = (b, ring) => footprintWalls(b).filter((w) => w.ring === ring);
+const ringPoints = (b, ring) => footprintRings(b)[ring].map((p) => [...p]);
+// The building ready to draw a ring of: its outline drawn as it is; a courtyard's ring as it is.
+function drawable(b, ring) {
+  if (!ring) return asOutline(b);
+  if (b.kind !== 'footprint' || !b.courtyards?.[ring - 1]) throw Error('Select a wall first.');
+  return b;
+}
+// The wall chosen: its ring, and the building ready to draw it.
+function chosen(input, wall) {
+  const r = ringOf(wall);
+  if (!r) throw Error('Select a wall first.');
+  const b = drawable(input, r.ring);
+  return { b, ring: r.ring, walls: ringWalls(b, r.ring) };
+}
 const at = (p, d, k) => [p[0] + d[0] * k, p[1] + d[1] * k];
 // Where two lines meet, each through a point along a direction; null if they run side by side.
 function meet(p, d, q, e) {
@@ -29,36 +48,37 @@ export function asOutline(b) {
  * the old wall i went, as a function of an opening's place along it giving
  * the new wall and its place, or null when it is gone.
  */
-function renamed(b, points, where) {
-  // Every storey's windows and doors, and its walls' own textures.
+function renamed(b, ring, points, where) {
+  // Every storey's windows and doors, and its walls' own textures, on this ring.
+  const mine = (wall) => ringOf(wall)?.ring === ring;
   const storey = (s) => {
     const openings = s.openings.map((o) => {
-      if (!onOutline(o.wall)) return o;
-      const i = Number(o.wall.slice(5)) - 1,
-        [j, u] = where(i, o.at);
-      return { ...o, wall: id(j), at: Math.round(u * 1e6) / 1e6 };
+      if (!mine(o.wall)) return o;
+      const [j, u] = where(ringOf(o.wall).i, o.at);
+      return { ...o, wall: idOf(ring, j), at: Math.round(u * 1e6) / 1e6 };
     });
     const wallTextures = {};
     for (const [w, t] of Object.entries(s.wallTextures ?? {})) {
-      if (!onOutline(w)) {
+      if (!mine(w)) {
         wallTextures[w] = t;
         continue;
       }
-      const i = Number(w.slice(5)) - 1;
+      const i = ringOf(w).i;
       // A wall cut in pieces: each piece keeps its texture.
-      for (const j of where.pieces?.(i) ?? [where(i, 0)[0]]) wallTextures[id(j)] = t;
+      for (const j of where.pieces?.(i) ?? [where(i, 0)[0]]) wallTextures[idOf(ring, j)] = t;
     }
     return { openings, wallTextures };
   };
-  return validateBuilding({ ...b, points, ...storey(b), upper: (b.upper ?? []).map((u) => ({ ...u, ...storey(u) })) });
+  // The outline drawn; or the courtyard drawn, its other settings following from its ring.
+  const shape = ring ? { courtyards: b.courtyards.map((c, k) => (k === ring - 1 ? { shape: 'custom', points } : c)) } : { points };
+  return validateBuilding({ ...b, ...shape, ...storey(b), upper: (b.upper ?? []).map((u) => ({ ...u, ...storey(u) })) });
 }
 // Every storey's windows and doors on a wall: a wall about to change shape must have none.
 const openingsOn = (b, wall) => [b, ...(b.upper ?? [])].flatMap((s) => s.openings.filter((o) => o.wall === wall));
 
 /** Moves a wall straight out (or in, when negative), its neighbours longer or shorter; its windows stay where they are. */
 export function moveWall(input, wall, by) {
-  const b = asOutline(input),
-    walls = outerWalls(b),
+  const { b, ring, walls } = chosen(input, wall),
     n = walls.length,
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
@@ -71,13 +91,13 @@ export function moveWall(input, wall, by) {
   const a = meet(prev.a, prev.dir, from, w.dir),
     e = meet(from, w.dir, next.a, next.dir);
   if (!a || !e) throw Error('This wall cannot move.');
-  const points = footprintPoints(b).map((p) => [...p]);
+  const points = ringPoints(b, ring);
   points[i] = a;
   points[(i + 1) % n] = e;
   // The wall moves along its neighbours: its start slides along the one before it.
   const shift = (a[0] - w.a[0]) * w.dir[0] + (a[1] - w.a[1]) * w.dir[1];
   const grow = Math.hypot(next.end[0] - e[0], next.end[1] - e[1]) - next.length;
-  return renamed(b, points, (j, u) => [j, j === i ? u - shift : j === (i + 1) % n ? u + grow : u]);
+  return renamed(b, ring, points, (j, u) => [j, j === i ? u - shift : j === (i + 1) % n ? u + grow : u]);
 }
 
 /**
@@ -85,8 +105,7 @@ export function moveWall(input, wall, by) {
  * the wall becomes five, its middle moved out, two short walls at its sides.
  */
 export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 3]) {
-  const b = asOutline(input),
-    walls = outerWalls(b),
+  const { b, ring, walls } = chosen(input, wall),
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
   if (!Number.isFinite(depth) || !depth) throw Error('Give how far the bay comes out, or the recess goes in.');
@@ -104,28 +123,28 @@ export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 
   );
   const p1 = at(w.a, w.dir, u0),
     p4 = at(w.a, w.dir, u1);
-  const points = footprintPoints(b);
+  const points = ringPoints(b, ring);
   points.splice(i + 1, 0, p1, at(p1, out, depth), at(p4, out, depth), p4);
   const where = (j, u) => (j < i ? [j, u] : j > i ? [j + 4, u] : u <= u0 ? [i, u] : u >= u1 ? [i + 4, u - u1] : [i + 2, u - u0]);
   where.pieces = (j) => (j === i ? [i, i + 1, i + 2, i + 3, i + 4] : [where(j, 0)[0]]);
-  return renamed(b, points, where);
+  return renamed(b, ring, points, where);
 }
 
-/** Cuts a corner off, `size` along each wall (at 45° on a square corner): corner k is where wall k starts. */
-export function chamferCorner(input, corner, size = BAY.chamfer) {
-  const b = asOutline(input),
-    walls = outerWalls(b),
+/** Cuts a corner off, `size` along each wall (at 45° on a square corner): corner k of a ring (0 the outline) is where its wall k starts. */
+export function chamferCorner(input, corner, size = BAY.chamfer, ring = 0) {
+  const b = drawable(input, ring),
+    walls = ringWalls(b, ring),
     n = walls.length,
     k = corner;
   if (!Number.isInteger(k) || k < 0 || k >= n) throw Error('Select a corner first.');
   if (!Number.isFinite(size) || size <= 0) throw Error('Give how much of the corner to cut off.');
   const w = walls[k],
     prev = walls[(k + n - 1) % n];
-  const points = footprintPoints(b);
+  const points = ringPoints(b, ring);
   points.splice(k, 1, at(w.a, prev.dir, -size), at(w.a, w.dir, size));
   // The wall before ends sooner; the wall after starts later; a new wall between.
   const where = (j, u) => (j < k ? [j, u] : j === k ? [k + 1, u - size] : [j + 1, u]);
-  return renamed(b, points, where);
+  return renamed(b, ring, points, where);
 }
 
 /**
@@ -134,8 +153,7 @@ export function chamferCorner(input, corner, size = BAY.chamfer) {
  * no windows or doors on any storey; its texture goes to every facet.
  */
 export function curveWall(input, wall, bulge = BAY.bulge, facets = BAY.facets) {
-  const b = asOutline(input),
-    walls = outerWalls(b),
+  const { b, ring, walls } = chosen(input, wall),
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
   if (!Number.isFinite(bulge) || !bulge) throw Error('Give how far the curve bulges out, or in.');
@@ -159,10 +177,10 @@ export function curveWall(input, wall, bulge = BAY.bulge, facets = BAY.facets) {
     const along = w.dir;
     pts.push([centre[0] + R * (toBulge[0] * Math.cos(ang) + along[0] * Math.sin(ang)), centre[1] + R * (toBulge[1] * Math.cos(ang) + along[1] * Math.sin(ang))]);
   }
-  const points = footprintPoints(b);
+  const points = ringPoints(b, ring);
   points.splice(i + 1, 0, ...pts);
   const added = facets - 1;
   const where = (j, u) => (j <= i ? [j, u] : [j + added, u]);
   where.pieces = (j) => (j === i ? Array.from({ length: facets }, (_, k) => i + k) : [where(j, 0)[0]]);
-  return renamed(b, points, where);
+  return renamed(b, ring, points, where);
 }

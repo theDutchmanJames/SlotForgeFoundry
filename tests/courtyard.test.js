@@ -6,7 +6,7 @@ import test from 'node:test';
 import Module from 'manifold-3d';
 import { buildGarage, validateBuilding } from '../src/geometry/building.js';
 import { COURTYARD, footprintRings, footprintWalls, ringsOffset } from '../src/geometry/footprint-building.js';
-import { moveWall } from '../src/building-outline.js';
+import { addBay, chamferCorner, curveWall, moveWall } from '../src/building-outline.js';
 import { planShapes } from '../src/planner-buildings.js';
 import { kitNotes } from '../src/building-kit.js';
 import { BUILDING_PRESETS } from '../src/building-presets.js';
@@ -96,6 +96,51 @@ test('in the planner and the kit notes', () => {
   // The standard one.
   const preset = BUILDING_PRESETS.find((p) => p.id === 'footprint-court');
   const parts = buildGarage(wasm, preset.building, PLATE);
+  try {
+    checkKit(parts, PLATE);
+  } finally {
+    parts.forEach((p) => p.solid.delete());
+  }
+});
+
+test('a courtyard can be an octagon or round, as an outline can', () => {
+  for (const c of [court({ shape: 'octagon', width: 70, depth: 70 }), court({ shape: 'round', width: 70, depth: 60, sides: 12 })]) {
+    const b = validateBuilding({ ...RECT, courtyards: [c] });
+    const walls = footprintWalls(b).filter((w) => w.ring === 1);
+    assert.equal(walls.length, c.shape === 'octagon' ? 8 : 12);
+    const parts = buildGarage(wasm, b, PLATE);
+    try {
+      checkKit(parts, PLATE, c.shape + ' ');
+    } finally {
+      parts.forEach((p) => p.solid.delete());
+    }
+  }
+  assert.throws(() => validateBuilding({ ...RECT, courtyards: [court({ shape: 'oval' })] }), /choose a rectangular, octagonal or round courtyard/);
+  assert.throws(() => validateBuilding({ ...RECT, courtyards: [court({ shape: 'round', sides: 40 })] }), /6 to 32 sides/);
+});
+
+test('a courtyard is drawn wall by wall as the outline is: moved, a bay, a corner cut, curved', () => {
+  const b = validateBuilding({ ...RECT, courtyards: [court()], openings: [{ wall: 'court-1-2', type: 'window', at: 40, width: 20, height: 20, sill: 20, frame: false }] });
+  // Its left wall moved out into the courtyard by 10: narrower, drawn now.
+  let next = moveWall(b, 'court-1-1', 10);
+  assert.equal(next.courtyards[0].shape, 'custom');
+  assert.equal(next.courtyards[0].x, 60);
+  assert.equal(next.courtyards[0].width, 70);
+  assert.equal(next.shape, 'rectangle', 'the outline as it was');
+  // The window on the wall beside it stays where it was on the plan.
+  assert.equal(next.openings[0].wall, 'court-1-2');
+  assert.ok(Math.abs(next.openings[0].at - 30) < 1e-6, 'measured from the moved corner');
+  // A corner cut: five walls, the window's wall renumbered after it.
+  next = chamferCorner(b, 1, 10, 1);
+  assert.equal(footprintWalls(next).filter((w) => w.ring === 1).length, 5);
+  assert.equal(next.openings[0].wall, 'court-1-3');
+  // Curved, a bay: more walls; the outline is not touched.
+  assert.equal(footprintWalls(curveWall(b, 'court-1-3', -8, 4)).filter((w) => w.ring === 1).length, 7);
+  assert.equal(footprintWalls(addBay(b, 'court-1-4', 12)).filter((w) => w.ring === 1).length, 8);
+  // Too far in, it is refused.
+  assert.throws(() => moveWall(b, 'court-1-1', 70), /./);
+  // A drawn courtyard prints clean.
+  const parts = buildGarage(wasm, chamferCorner(b, 0, 12, 1), PLATE);
   try {
     checkKit(parts, PLATE);
   } finally {

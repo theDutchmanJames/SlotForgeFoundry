@@ -1,7 +1,7 @@
 import { DOOR_LEAVES, OPENING_SHAPES, TRIM, outlineOf } from './geometry/opening-shapes.js';
 import { sectionPlan, sectionElevation } from './building-section-drawing.js';
 import { editStorey, editWalls, changeOpening, repeatOpening, alignOpenings, patchStorey, placeOpening, mirrorOpenings, spaceOpenings, centreOpenings, moveOpenings, copyOpenings, removeOpenings } from './building-edit.js';
-import { footprintPoints, footprintWalls } from './geometry/footprint-building.js';
+import { footprintPoints, footprintRings, footprintWalls } from './geometry/footprint-building.js';
 import { BAY, addBay, chamferCorner, curveWall, moveWall } from './building-outline.js';
 import { validateBuilding, garageDoors } from './geometry/building.js';
 import { SHELL_FRAME } from './geometry/shell-details.js';
@@ -33,7 +33,8 @@ const barsPath = (o, H) => {
 // The lightweight SVG preview never builds meshes while dragging. Release commits one edit.
 export function createBuildingCanvas(host, { getState, commit, onWall, onSection, error }) {
   let mode = 'wall', selected = null, drag = null, preview = null, valid = true;
-  // In the footprint of a shaped building: the wall (by index) or the corner chosen.
+  // In the footprint of a shaped building: the wall (by its index among all the
+  // walls, the outline's first, then each courtyard's) or the corner chosen, { ring, k }.
   let edge = null, corner = null;
   // The windows and doors chosen on the wall shown; `selected` is the last one clicked, whose sizes are shown.
   let chosen = new Set();
@@ -56,15 +57,15 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
     const outline = b.kind === 'footprint' ? footprintPoints(b) : [[0, 0], [s.width, 0], [s.width, s.depth], [0, s.depth]];
     const shaped = b.kind === 'footprint';
     if (shaped) {
-      const n = outline.length;
-      if (edge !== null && edge >= n) edge = null;
-      if (corner !== null && corner >= n) corner = null;
+      const rings = footprintRings(b);
+      if (edge !== null && edge >= footprintWalls(b).length) edge = null;
+      if (corner !== null && (!rings[corner.ring] || corner.k >= rings[corner.ring].length)) corner = null;
     }
     const parts = mode === 'plan'
       ? connected ? plan.html : shaped ? outlineHtml(b, outline) : `<polygon class="bd-drawing-wall" points="${outline.map(p => p.join(',')).join(' ')}"/><circle class="bd-shape-handle" data-shape="size" cx="${W}" cy="${H}" r="5"/><text x="${W / 2}" y="-9" text-anchor="middle">${number(W)} mm</text><text x="${W + 8}" y="${H / 2}">${number(H)} mm</text>${b.kind === 'footprint' && b.shape !== 'rectangle' ? `<circle class="bd-shape-handle" data-shape="wing" cx="${b.wing}" cy="${b.wing}" r="5"/><text x="${b.wing + 8}" y="${b.wing - 8}">Wing ${number(b.wing)} mm</text>` : ''}`
       : `${elevation?.html ?? `<rect class="bd-drawing-wall" width="${W}" height="${H}"/>`}${b.kind === 'garage' && level === 0 && wall === 'front' ? garageDoors(b).map(d => `<rect class="bd-fixed-opening" x="${d.x}" y="${H - d.height}" width="${d.width}" height="${d.height}"/>`).join('') : ''}${s.openings.map((o, i) => o.wall !== current.id ? '' : `<g data-opening="${i}" class="bd-drawing-opening${chosen.has(i) ? ' selected' : ''}">${trimsSvg(o, H)}${o.frame && (o.shape ?? 'square') === 'square' ? framePath(o, H) : ''}${(o.shape ?? 'square') === 'square' ? '' : `<polygon class="bd-drawing-shape" points="${outlineOf(o).map(([a, z]) => (o.at + a) + ',' + (H - o.sill - z)).join(' ')}"/>`}<rect x="${o.at - o.width / 2}" y="${H - o.sill - o.height}" width="${o.width}" height="${o.height}"${(o.shape ?? 'square') === 'square' ? '' : ' style="fill:transparent;stroke:none"'}/>${o.frame ? barsPath(o, H) : ''}<text x="${o.at}" y="${H - o.sill - o.height / 2}" text-anchor="middle">${i + 1}</text>${selected === i && chosen.size === 1 ? `<rect data-resize="${i}" class="bd-resize" x="${o.at + o.width / 2 - 3}" y="${H - o.sill - o.height - 3}" width="6" height="6"/>` : ''}</g>`).join('')}${(s.lettering ?? []).filter((l) => l.wall === current.id).map((l) => `<text class="bd-drawing-letters" x="${l.at}" y="${H - l.up}" style="font-size:${l.height}px" text-anchor="middle" dominant-baseline="central">${escText(l.text)}</text>`).join('')}<text x="${W / 2}" y="-9" text-anchor="middle">${current.name} · ${number(W)} × ${number(H)} mm</text>`;
     host.innerHTML = `<div class="bd-drawing-toolbar"><div class="bd-seg"><button type="button" data-canvas-mode="wall" aria-pressed="${mode === 'wall'}">Wall elevation</button><button type="button" data-canvas-mode="plan" aria-pressed="${mode === 'plan'}">Footprint</button></div><label>Wall <select data-canvas-wall>${walls.map(w => `<option value="${w.id}"${w.id === current.id ? ' selected' : ''}>${w.name} · ${number(w.length)} mm</option>`).join('')}</select></label><button type="button" data-canvas-add="window">Add window</button><button type="button" data-canvas-add="door">Add door</button></div>
-      <p class="bd-hint">${mode === 'plan' && b.kind === 'footprint' ? 'Click a wall to choose it and drag it in or out; its neighbours follow. Click a corner to cut it at 45°. Hold Shift to snap to 5 mm. The round handles set the size and wing of an L, U or T; moving a wall makes it a drawn outline.' : mode === 'wall' ? 'Drag an opening to move it; drag its corner to resize. Arrow keys move the selected opening 1 mm; Shift moves 5 mm. Red outlines cannot be applied.' : connected ? 'Select a section in the plan. Drag its corner to resize; the orange handle slides it along its parent. Shared connections are shaded in elevation. Roof profiles are shown; openings stay below the eaves.' : 'Drag the round handles to change the overall size or wing width. Hold Shift to snap to 5 mm. Openings stay at their measured positions; invalid changes are not applied.'}</p>
+      <p class="bd-hint">${mode === 'plan' && b.kind === 'footprint' ? 'Click a wall, of the outline or of a courtyard, to choose it and drag it in or out; its neighbours follow. Click a corner to cut it at 45°. A courtyard drawn so becomes a drawn courtyard. Hold Shift to snap to 5 mm. The round handles set the size and wing of an L, U or T; moving a wall makes it a drawn outline.' : mode === 'wall' ? 'Drag an opening to move it; drag its corner to resize. Arrow keys move the selected opening 1 mm; Shift moves 5 mm. Red outlines cannot be applied.' : connected ? 'Select a section in the plan. Drag its corner to resize; the orange handle slides it along its parent. Shared connections are shaded in elevation. Roof profiles are shown; openings stay below the eaves.' : 'Drag the round handles to change the overall size or wing width. Hold Shift to snap to 5 mm. Openings stay at their measured positions; invalid changes are not applied.'}</p>
       <svg class="bd-drawing${valid ? '' : ' invalid'}" tabindex="0" role="img" aria-label="${mode === 'wall' ? 'Wall elevation editor' : 'Building footprint editor'}" viewBox="${(mode === 'plan' && connected ? plan.min[0] : 0)-margin} ${(mode === 'plan' && connected ? plan.min[1] : 0)-margin} ${W + margin * 3} ${H + margin * 2}">${parts}</svg>
       <div class="bd-drawing-properties">${mode === 'plan' && b.kind === 'footprint' ? outlineTools(b, outline) : op ? `<strong>${op.type === 'door' ? 'Door' : 'Window'} ${selected + 1}</strong>${[['at','Centre',op.at],['width','Width',op.width],['height','Height',op.height],...(op.type === 'window' ? [['sill','Sill',op.sill]] : [])].map(([key,label,value]) => `<label>${label} <input type="number" step="1" data-opening-field="${key}" value="${value}"> mm</label>`).join('')}<label><input type="checkbox" data-opening-frame${op.frame ? ' checked' : ''}> Frame</label><label>Shape <select data-opening-choice="shape">${OPENING_SHAPES.filter(([id]) => op.type === 'window' || id !== 'round').map(([id, label]) => `<option value="${id}"${(op.shape ?? 'square') === id ? ' selected' : ''}>${label}</option>`).join('')}</select></label>${op.type === 'window' ? `<label><input type="checkbox" data-opening-flag="ledge"${op.ledge ? ' checked' : ''}> Sill</label>` : ''}<label><input type="checkbox" data-opening-flag="lintel"${op.lintel ? ' checked' : ''}> Lintel</label>${op.type === 'window' && (op.shape ?? 'square') === 'square' ? `<label><input type="checkbox" data-opening-flag="shutters"${op.shutters ? ' checked' : ''}> Shutters</label>` : ''}${op.type === 'door' ? `<label>Door <select data-opening-choice="leaf">${DOOR_LEAVES.map(([id, label]) => `<option value="${id}"${(op.leaf ?? 'open') === id ? ' selected' : ''}>${label}</option>`).join('')}</select></label>` : ''}${op.type === 'window' && op.frame ? [['across','Panes across',op.across ?? 1],['up','Panes up',op.up ?? 1]].map(([key,label,value]) => `<label>${label} <input type="number" step="1" min="1" max="6" data-opening-field="${key}" value="${value}"></label>`).join('') : ''}${groupTools(walls, current)}<label>Row count <input type="number" data-repeat-count min="2" max="16" value="3"></label><label>Gap <input type="number" data-repeat-gap min="6" value="10"> mm</label><button type="button" data-canvas-repeat>Repeat to the right</button>` : '<span>Select an opening to resize it, remove it or repeat it. Shift-click to choose several.</span>'}<button type="button" data-canvas-align="top">Align window tops</button><button type="button" data-canvas-align="bottom">Align window sills</button></div>`;
   }
@@ -75,21 +76,25 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
   }
   // The outline: each wall a line to pick and drag, each corner a dot; the size and wing handles for an L, U or T.
   function outlineHtml(b, pts) {
-    const n = pts.length, line = (i) => [pts[i], pts[(i + 1) % n]];
-    const walls = pts.map((_, i) => { const [p, q] = line(i); return `<line class="bd-edge${edge === i ? ' selected' : ''}" data-shape="edge" data-edge="${i}" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}"/><text class="bd-edge-name" x="${(p[0] + q[0]) / 2}" y="${(p[1] + q[1]) / 2}" text-anchor="middle">${i + 1}</text>`; }).join('');
-    const corners = pts.map((p, k) => `<circle class="bd-corner${corner === k ? ' selected' : ''}" data-corner="${k}" cx="${p[0]}" cy="${p[1]}" r="3.5"/>`).join('');
+    // Every wall of every ring a line to pick and drag, numbered round its ring; every corner a dot.
+    const rings = footprintRings(b);
+    const walls = footprintWalls(b).map((w, g) => `<line class="bd-edge${edge === g ? ' selected' : ''}" data-shape="edge" data-edge="${g}" x1="${w.a[0]}" y1="${w.a[1]}" x2="${w.end[0]}" y2="${w.end[1]}"/><text class="bd-edge-name" x="${(w.a[0] + w.end[0]) / 2}" y="${(w.a[1] + w.end[1]) / 2}" text-anchor="middle">${w.index + 1}</text>`).join('');
+    const corners = rings.flatMap((r, ring) => r.map((p, k) => `<circle class="bd-corner${corner?.ring === ring && corner.k === k ? ' selected' : ''}" data-corner="${k}" data-ring="${ring}" cx="${p[0]}" cy="${p[1]}" r="3.5"/>`)).join('');
     const handles = b.shape === 'custom' ? '' : `<circle class="bd-shape-handle" data-shape="size" cx="${b.width}" cy="${b.depth}" r="5"/>${b.shape !== 'rectangle' ? `<circle class="bd-shape-handle" data-shape="wing" cx="${b.wing}" cy="${b.wing}" r="5"/>` : ''}`;
-    // The courtyards, open in the middle: set under Courtyards.
-    const courts = (b.courtyards ?? []).map((c, k) => `<rect class="bd-drawing-court" x="${c.x}" y="${c.y}" width="${c.width}" height="${c.depth}"/><text class="bd-edge-name" x="${c.x + c.width / 2}" y="${c.y + c.depth / 2}" text-anchor="middle">Courtyard ${k + 1}</text>`).join('');
+    // The courtyards, open in the middle.
+    const courts = rings.slice(1).map((r, k) => {
+      const cx = r.reduce((t, p) => t + p[0], 0) / r.length, cy = r.reduce((t, p) => t + p[1], 0) / r.length;
+      return `<polygon class="bd-drawing-court" points="${r.map((p) => p.join(',')).join(' ')}"/><text class="bd-edge-name" x="${cx}" y="${cy}" text-anchor="middle">Courtyard ${k + 1}</text>`;
+    }).join('');
     return `<polygon class="bd-drawing-wall" points="${pts.map((p) => p.join(',')).join(' ')}"/>${courts}${walls}${corners}${handles}<text x="${b.width / 2}" y="-9" text-anchor="middle">${number(b.width)} × ${number(b.depth)} mm</text>`;
   }
   function outlineTools(b, pts) {
     if (edge !== null) {
       const w = footprintWalls(b)[edge];
-      return `<strong>Wall ${edge + 1} · ${number(w.length)} mm</strong><label>Out by <input type="number" step="1" data-outline-depth value="${BAY.depth}"> mm</label><button type="button" data-outline="bay">Pull out a bay</button><button type="button" data-outline="recess">Push in a recess</button><button type="button" data-outline="out">Move the wall out</button><button type="button" data-outline="in">Move the wall in</button><label>Bulge <input type="number" step="1" data-outline-bulge value="${BAY.bulge}"> mm</label><label>in <input type="number" step="1" min="2" max="16" data-outline-facets value="${BAY.facets}"> walls</label><button type="button" data-outline="curve">Curve the wall</button>`;
+      return `<strong>${w.name} · ${number(w.length)} mm</strong><label>Out by <input type="number" step="1" data-outline-depth value="${BAY.depth}"> mm</label><button type="button" data-outline="bay">Pull out a bay</button><button type="button" data-outline="recess">Push in a recess</button><button type="button" data-outline="out">Move the wall out</button><button type="button" data-outline="in">Move the wall in</button><label>Bulge <input type="number" step="1" data-outline-bulge value="${BAY.bulge}"> mm</label><label>in <input type="number" step="1" min="2" max="16" data-outline-facets value="${BAY.facets}"> walls</label><button type="button" data-outline="curve">Curve the wall</button>`;
     }
-    if (corner !== null) return `<strong>Corner ${corner + 1}</strong><label>Cut <input type="number" step="1" data-outline-cut value="${BAY.chamfer}"> mm</label><button type="button" data-outline="chamfer">Cut the corner</button>`;
-    return `<span>Click a wall or a corner of the outline.</span><span>${pts.length} walls</span>`;
+    if (corner !== null) return `<strong>${corner.ring ? 'Courtyard ' + corner.ring + ', corner ' : 'Corner '}${corner.k + 1}</strong><label>Cut <input type="number" step="1" data-outline-cut value="${BAY.chamfer}"> mm</label><button type="button" data-outline="chamfer">Cut the corner</button>`;
+    return `<span>Click a wall or a corner of the outline or of a courtyard.</span><span>${pts.length} walls</span>`;
   }
   function apply(next) { preview = null; valid = true; const focusCanvas = host.contains(document.activeElement) && !document.activeElement.matches('input,select'); return commit(next).then(() => { if (focusCanvas) host.querySelector('svg')?.focus(); }).catch(e => error(e.message)); }
   function act(fn) { try { return apply(fn()); } catch (e) { error(e.message); } }
@@ -97,19 +102,20 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
     const section = e.target.closest('[data-select-section]');
     if (section && !e.target.hasAttribute('data-shape')) { selected = null; onSection?.(Number(section.dataset.selectSection)); return; }
     const dot = e.target.closest('[data-corner]');
-    if (dot) { corner = Number(dot.dataset.corner); edge = null; render(); return; }
+    if (dot) { corner = { ring: Number(dot.dataset.ring ?? 0), k: Number(dot.dataset.corner) }; edge = null; render(); return; }
     const t = e.target.closest('button'); if (!t) return;
     const { building: b, level, wall } = getState();
     if (t.dataset.outline) {
-      const w = edge !== null && 'edge-' + (edge + 1), by = Number(host.querySelector('[data-outline-depth]')?.value), cut = Number(host.querySelector('[data-outline-cut]')?.value);
+      const w = edge !== null && footprintWalls(b)[edge]?.id, by = Number(host.querySelector('[data-outline-depth]')?.value), cut = Number(host.querySelector('[data-outline-cut]')?.value);
       const kind = t.dataset.outline;
       let next;
       const bulge = Number(host.querySelector('[data-outline-bulge]')?.value), facets = Number(host.querySelector('[data-outline-facets]')?.value);
-      try { next = kind === 'chamfer' ? chamferCorner(b, corner, cut) : kind === 'curve' ? curveWall(b, w, bulge, facets) : kind === 'bay' || kind === 'recess' ? addBay(b, w, kind === 'bay' ? by : -by) : moveWall(b, w, kind === 'out' ? by : -by); }
+      try { next = kind === 'chamfer' ? chamferCorner(b, corner.k, cut, corner.ring) : kind === 'curve' ? curveWall(b, w, bulge, facets) : kind === 'bay' || kind === 'recess' ? addBay(b, w, kind === 'bay' ? by : -by) : moveWall(b, w, kind === 'out' ? by : -by); }
       catch (err) { error(err.message); return; }
       // A bay's face is its third wall, chosen next to drag it further; a cut corner, its new wall.
       if (kind === 'bay' || kind === 'recess') edge += 2;
-      if (kind === 'chamfer') { edge = corner; corner = null; }
+      // The cut corner's new wall: the wall that started there, among all the walls.
+      if (kind === 'chamfer') { edge = footprintWalls(b).findIndex((x) => x.ring === corner.ring) + corner.k; corner = null; }
       apply(next);
       return;
     }
@@ -149,7 +155,7 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
       } else if (!chosen.has(i)) chosen = new Set([i]);
       selected = i;
     }
-    if (shape?.dataset.shape === 'edge') { edge = Number(shape.dataset.edge); corner = null; onWall?.('edge-' + (edge + 1)); }
+    if (shape?.dataset.shape === 'edge') { edge = Number(shape.dataset.edge); corner = null; onWall?.(footprintWalls(snapshot.building)[edge]?.id); }
     drag = { ...snapshot, start: p, index: selected, group: opening && chosen.size > 1 ? [...chosen] : null, adding: e.shiftKey || e.ctrlKey || e.metaKey, edge, resize: e.target.hasAttribute('data-resize'), shape: shape?.dataset.shape, matrix: svg.getScreenCTM().inverse(), moved: false };
     host.setPointerCapture(e.pointerId); render();
   });

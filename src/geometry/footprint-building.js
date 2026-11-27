@@ -43,8 +43,19 @@ export function footprintPoints(b) {
   }
   return [[0, 0], [W, 0], [W, a], [(W + a) / 2, a], [(W + a) / 2, D], [(W - a) / 2, D], [(W - a) / 2, a], [0, a]];
 }
-/** A courtyard's outline: its corners the other way round from the outline's, so its walls' inside faces the building. */
-export const courtyardPoints = ({ x, y, width, depth }) => [[x, y], [x, y + depth], [x + width, y + depth], [x + width, y]];
+/** A courtyard's shapes: as an outline's, or drawn in Draw. */
+export const COURTYARD_SHAPES = Object.freeze(['rectangle', 'octagon', 'round', 'custom']);
+/**
+ * A courtyard's ring on the plan: its corners the other way round from the
+ * outline's, so its walls' inside faces the building, wall 1 running from
+ * its corner nearest the left front along its left side. A drawn one keeps
+ * its corners as they were drawn.
+ */
+export function courtyardPoints(c) {
+  if (c.shape === 'custom') return c.points.map(([x, y]) => [x, y]);
+  const pts = footprintPoints({ shape: c.shape ?? 'rectangle', width: c.width, depth: c.depth, sides: c.sides ?? 16 }).map(([x, y]) => [x + c.x, y + c.y]);
+  return [pts[0], ...pts.slice(1).reverse()];
+}
 /** The rings of the plan: the outline, then each courtyard's. */
 export function footprintRings(b) {
   return [footprintPoints(b), ...(b.courtyards ?? []).map(courtyardPoints)];
@@ -118,25 +129,34 @@ export function checkOutline(points, wall) {
   const x0 = Math.min(...points.map((p) => p[0])), y0 = Math.min(...points.map((p) => p[1]));
   // Clear of the arithmetic's dust, so walls that meet square stay square, and 45° stays 45°.
   const pts = points.map(([x, y]) => [Math.round((x - x0) * 1e6) / 1e6, Math.round((y - y0) * 1e6) / 1e6]);
+  checkRing(pts, wall, '', 'The outline');
+  const w = Math.max(...pts.map((p) => p[0])), d = Math.max(...pts.map((p) => p[1]));
+  if (Math.min(w, d) < OUTLINE.size[0] || Math.max(w, d) > OUTLINE.size[1]) throw Error('A drawn building is ' + OUTLINE.size[0] + ' to ' + OUTLINE.size[1] + ' mm across.');
+  return { points: pts, width: w, depth: d };
+}
+/**
+ * A ring of walls, wound so its inside is the building's: each wall at least
+ * OUTLINE.shortest long, each corner turning at least a few degrees and at
+ * most 90° so a wall's mitred end prints without supports, nothing crossing,
+ * and room inside the walls, `wall` thick. `where` names whose walls they are.
+ */
+function checkRing(pts, wall, where, what) {
   const n = pts.length;
   const turns = cornerTurns(pts);
   for (let i = 0; i < n; i++) {
     const q = pts[(i + 1) % n], len = Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]);
-    if (len < OUTLINE.shortest - 1e-6) throw Error('Wall ' + (i + 1) + ' is ' + (Math.round(len * 10) / 10) + ' mm: each wall is at least ' + OUTLINE.shortest + ' mm long.');
-    if (Math.abs(turns[i]) < OUTLINE.least) throw Error('Walls ' + (i ? i : n) + ' and ' + (i + 1) + ' run on in one line: make them one wall.');
-    if (Math.abs(turns[i]) > OUTLINE.turn + 1e-6) throw Error('The corner between walls ' + (i ? i : n) + ' and ' + (i + 1) + ' is too sharp: corners turn at most ' + OUTLINE.turn + '°.');
+    if (len < OUTLINE.shortest - 1e-6) throw Error(where + 'Wall ' + (i + 1) + ' is ' + (Math.round(len * 10) / 10) + ' mm: each wall is at least ' + OUTLINE.shortest + ' mm long.');
+    if (Math.abs(turns[i]) < OUTLINE.least) throw Error(where + 'Walls ' + (i ? i : n) + ' and ' + (i + 1) + ' run on in one line: make them one wall.');
+    if (Math.abs(turns[i]) > OUTLINE.turn + 1e-6) throw Error(where + 'The corner between walls ' + (i ? i : n) + ' and ' + (i + 1) + ' is too sharp: corners turn at most ' + OUTLINE.turn + '°.');
   }
-  if (area(pts) <= 0 || !simple(pts)) throw Error('The outline crosses itself.');
-  const w = Math.max(...pts.map((p) => p[0])), d = Math.max(...pts.map((p) => p[1]));
-  if (Math.min(w, d) < OUTLINE.size[0] || Math.max(w, d) > OUTLINE.size[1]) throw Error('A drawn building is ' + OUTLINE.size[0] + ' to ' + OUTLINE.size[1] + ' mm across.');
+  if (area(pts) <= 0 || !simple(pts)) throw Error(what + ' crosses itself.');
   // The inside of the walls: each wall still runs the same way, and nothing crosses.
   const inner = offsetPoints(pts, -wall - 1);
   for (let i = 0; i < n; i++) {
     const a = pts[i], b = pts[(i + 1) % n], c = inner[i], e = inner[(i + 1) % n];
-    if ((b[0] - a[0]) * (e[0] - c[0]) + (b[1] - a[1]) * (e[1] - c[1]) <= 1) throw Error('Wall ' + (i + 1) + ' is too short for the walls beside it: there is no room inside.');
+    if ((b[0] - a[0]) * (e[0] - c[0]) + (b[1] - a[1]) * (e[1] - c[1]) <= 1) throw Error(where + 'Wall ' + (i + 1) + ' is too short for the walls beside it: there is no room inside.');
   }
-  if (!simple(inner)) throw Error('Two walls are too close together: there is no room between them inside.');
-  return { points: pts, width: w, depth: d };
+  if (!simple(inner)) throw Error(where + 'Two walls are too close together: there is no room between them inside.');
 }
 /** The storeys of a shaped building, ground floor first: each its height, openings and finish, the height of its floor and of its top. */
 export function footprintStoreys(b) {
@@ -211,9 +231,12 @@ export function validateFootprint(input) {
   return b;
 }
 /**
- * The courtyards, each a rectangle { x, y, width, depth } on the plan: at
- * least COURTYARD.least across, inside the walls with room for its own and
- * COURTYARD.clear more, and as far from every other courtyard.
+ * The courtyards on the plan: each a rectangle, an octagon or a round one of
+ * so many sides, { shape, x, y, width, depth, sides }, or drawn, { shape:
+ * 'custom', points } (its ring, its place and size following from it). Each
+ * at least COURTYARD.least across, its walls as an outline's, inside the
+ * building's walls with room for its own and COURTYARD.clear more, and as far
+ * from every other courtyard.
  */
 function checkCourtyards(b) {
   const list = b.courtyards ?? [];
@@ -222,12 +245,27 @@ function checkCourtyards(b) {
   const grown = [];
   return list.map((c, k) => {
     const name = 'Courtyard ' + (k + 1);
-    if (!c || typeof c !== 'object' || Object.keys(c).some((key) => !['x', 'y', 'width', 'depth'].includes(key)) || !['x', 'y', 'width', 'depth'].every((key) => Number.isFinite(c[key]))) throw Error(name + ' has a place and a size.');
-    const q = { x: c.x, y: c.y, width: c.width, depth: c.depth };
+    if (!c || typeof c !== 'object' || Object.keys(c).some((key) => !['shape', 'x', 'y', 'width', 'depth', 'sides', 'points'].includes(key))) throw Error(name + ' has a shape, a place and a size.');
+    const shape = c.shape ?? 'rectangle';
+    if (!COURTYARD_SHAPES.includes(shape)) throw Error(name + ': choose a rectangular, octagonal or round courtyard, or draw one.');
+    let q;
+    if (shape === 'custom') {
+      if (!Array.isArray(c.points) || c.points.length < 3 || c.points.length > OUTLINE.most || c.points.some((p) => !Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite))) throw Error(name + ' is drawn with 3 to ' + OUTLINE.most + ' corners.');
+      const points = c.points.map(([x, y]) => [Math.round(x * 1e6) / 1e6, Math.round(y * 1e6) / 1e6]);
+      const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+      q = { shape, x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys) - Math.min(...ys), points };
+    } else {
+      if (!['x', 'y', 'width', 'depth'].every((key) => Number.isFinite(c[key]))) throw Error(name + ' has a place and a size.');
+      q = { shape, x: c.x, y: c.y, width: c.width, depth: c.depth, ...(shape === 'round' && { sides: c.sides ?? 16 }) };
+      if (shape === 'round' && (!Number.isInteger(q.sides) || q.sides < 6 || q.sides > 32)) throw Error(name + ': a round courtyard has 6 to 32 sides.');
+    }
     if (q.width < COURTYARD.least || q.depth < COURTYARD.least) throw Error(name + ' is at least ' + COURTYARD.least + ' mm across each way.');
-    const square = [closed(courtyardPoints(q))];
-    if (areaOf(polygonClipping.difference(square, inside)) > 1e-6) throw Error(name + ' is too near a wall: keep it ' + COURTYARD.clear + ' mm inside the walls round it, with room for its own.');
-    const mine = [closed(courtyardPoints({ x: q.x - b.wall - COURTYARD.clear / 2, y: q.y - b.wall - COURTYARD.clear / 2, width: q.width + 2 * b.wall + COURTYARD.clear, depth: q.depth + 2 * b.wall + COURTYARD.clear }))];
+    // Its walls as an outline's: its ring wound back the outline's way to check.
+    const ring = courtyardPoints(q);
+    checkRing([...ring].reverse(), b.wall, name + ': ', name);
+    if (areaOf(polygonClipping.difference([closed(ring)], inside)) > 1e-6) throw Error(name + ' is too near a wall: keep it ' + COURTYARD.clear + ' mm inside the walls round it, with room for its own.');
+    // Out to the outside of its walls and half the clearance more: none of these may meet.
+    const mine = [closed(offsetPoints(ring, -(b.wall + COURTYARD.clear / 2)))];
     for (const [j, other] of grown.entries()) if (areaOf(polygonClipping.intersection(mine, other)) > 1e-6) throw Error(name + ' is too near courtyard ' + (j + 1) + ': keep their walls ' + COURTYARD.clear + ' mm apart.');
     grown.push(mine);
     return q;

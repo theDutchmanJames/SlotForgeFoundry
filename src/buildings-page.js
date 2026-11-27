@@ -638,16 +638,31 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readCourtyards() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    return (building.courtyards ?? []).map((c, k) => (e['fc-x-' + k] ? { x: num(e['fc-x-' + k]), y: num(e['fc-y-' + k]), width: num(e['fc-w-' + k]), depth: num(e['fc-d-' + k]) } : c));
+    return (building.courtyards ?? []).map((c, k) => {
+      const shape = e['fc-shape-' + k]?.value ?? c.shape;
+      // A drawn courtyard is changed in Draw; chosen as another shape, it takes that shape over its size.
+      if (!e['fc-x-' + k] || (shape === 'custom' && c.shape === 'custom')) return c;
+      return { shape, x: num(e['fc-x-' + k]), y: num(e['fc-y-' + k]), width: num(e['fc-w-' + k]), depth: num(e['fc-d-' + k]), ...(shape === 'round' && { sides: e['fc-sides-' + k] ? num(e['fc-sides-' + k]) : c.sides ?? 16 }) };
+    });
   }
   // Its courtyards: a row for each, where it is and how big.
+  // What the courtyard rows are drawn for: a new shape or count draws them afresh.
+  let courtRows = '';
+  const courtSignature = (b) => JSON.stringify((b.courtyards ?? []).map((c) => c.shape));
   function drawFpCourts() {
     const box = $('[data-bd-fp-courts]');
     if (!box) return;
     const list = building.courtyards ?? [];
+    courtRows = courtSignature(building);
     box.innerHTML = list
-      .map((c, k) => `<div class="bd-sub">Courtyard ${k + 1}<button type="button" class="bd-remove" data-bd-fp-remove-court="${k}" title="Remove" aria-label="Remove courtyard ${k + 1}">${icon('close')}</button></div><div class="bd-sides">${field('fc-x-' + k, 'From the left', c.x, [0, 1200])}${field('fc-y-' + k, 'From the front', c.y, [0, 1200])}${field('fc-w-' + k, 'Width', c.width, [COURTYARD.least, 1200])}${field('fc-d-' + k, 'Depth', c.depth, [COURTYARD.least, 1200])}</div>`)
+      .map((c, k) => {
+        const drawn = c.shape === 'custom';
+        const shapes = [['rectangle', 'Rectangle'], ['octagon', 'Octagon'], ['round', 'Round'], ['custom', 'Drawn in Draw']].map(([v, label]) => `<option value="${v}"${v === (c.shape ?? 'rectangle') ? ' selected' : ''}${v === 'custom' && !drawn ? ' disabled' : ''}>${label}</option>`).join('');
+        const sizes = field('fc-x-' + k, 'From the left', Math.round(c.x * 10) / 10, [0, 1200]) + field('fc-y-' + k, 'From the front', Math.round(c.y * 10) / 10, [0, 1200]) + field('fc-w-' + k, 'Width', Math.round(c.width * 10) / 10, [COURTYARD.least, 1200]) + field('fc-d-' + k, 'Depth', Math.round(c.depth * 10) / 10, [COURTYARD.least, 1200]);
+        return `<div class="bd-sub">Courtyard ${k + 1}<button type="button" class="bd-remove" data-bd-fp-remove-court="${k}" title="Remove" aria-label="Remove courtyard ${k + 1}">${icon('close')}</button></div><label class="bd-row"><span>Shape</span><select name="fc-shape-${k}">${shapes}</select></label>${c.shape === 'round' ? field('fc-sides-' + k, 'Sides', c.sides ?? 16, [6, 32], '') : ''}<div class="bd-sides"${drawn ? ' data-bd-court-drawn' : ''}>${sizes}</div>${drawn ? '<p class="bd-hint">Drawn: change its walls and corners in Draw → Footprint, or choose another shape to start again over its size.</p>' : ''}`;
+      })
       .join('');
+    for (const el of box.querySelectorAll('[data-bd-court-drawn] input')) el.disabled = true;
     $('[data-bd-fp-add-court]').hidden = list.length >= COURTYARD.most;
   }
   // A courtyard where one fits: in the middle of the building, as big as fits up to half of it.
@@ -1385,6 +1400,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       // Its walls follow its shape: a new shape, their fields drawn afresh.
       const walls = fpWalls(building);
       if (form.querySelectorAll('[name^="ff-wall-"]').length !== walls.length || $('[data-bd-fp-storeys]').children.length !== building.upper.length + 1) drawFpStoreys();
+      if (courtSignature(building) !== courtRows) drawFpCourts();
       for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = building.shape === 'custom';
       form.elements['fp-wing'].closest('label').hidden = !['L', 'U', 'T'].includes(building.shape);
       form.elements['fp-sides'].closest('label').hidden = building.shape !== 'round';
