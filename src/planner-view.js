@@ -5,6 +5,8 @@ import { creaseLineIndices, isTrackSurface } from './surface-features.js';
 import { slotTitle } from './slot-position.js';
 import { planShapes } from './planner-buildings.js';
 
+// The colours a placed building's part carries (placeParts gives each its tint).
+const PAINT_TINT = (part) => part.tint ?? null;
 const digits = (n) => Number(n.toFixed(3));
 const points = (path) =>
   path.map(([x, y]) => digits(x) + ',' + digits(-y)).join(' ');
@@ -130,7 +132,11 @@ export function createPlanView(host, onPick, onMoveBuilding = () => {}) {
   ) {
     current = { rows, ends, chosen, selected, defs, blocks, blocked, marked, buildings, building, homes };
     if (mode === 'solid') {
-      viewport ??= new Viewport(solid, (id) => onPick(id.split('/')[0]));
+      if (!viewport) {
+        viewport = new Viewport(solid, (id) => onPick(id.split('/')[0]));
+        // A building's parts in its colours, as placed; the track in the colours of its parts.
+        viewport.setPaint(PAINT_TINT, false);
+      }
       const free = new Set(ends.map((e) => e.key));
       const parts = rows.flatMap(({ n, def }) =>
         def.sections[n.index].parts

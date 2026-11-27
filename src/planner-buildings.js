@@ -26,11 +26,12 @@ import { platformFootprint } from './geometry/viewing-platform.js';
 import { WALKWAY, WALKWAY_LIMITS, walkwayFeet, walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
 import { PIT } from './geometry/pit-module.js';
+import { buildingPaint, checkColours } from './building-colours.js';
 
 export const MAX_BUILDINGS = 100;
 export const SNAP = 40; // a building snaps to an edge this close to its front, in mm
 export const GAP = 1; // and stands this far from it
-const ENTRY_KEYS = ['id', 'name', 'libraryId', 'building', 'pose', 'bay', 'over'];
+const ENTRY_KEYS = ['id', 'name', 'libraryId', 'building', 'colours', 'pose', 'bay', 'over'];
 
 /** The buildings of a layout as kept: each checked, or an error. */
 export function validateBuildings(list) {
@@ -49,6 +50,7 @@ export function validateBuildings(list) {
       (e.libraryId !== undefined && (typeof e.libraryId !== 'string' || e.libraryId.length > 100)) ||
       (e.bay !== undefined && !/^[\w-]{1,100}$/.test(e.bay)) ||
       (e.over !== undefined && !/^[\w-]{1,100}$/.test(e.over)) ||
+      (e.colours !== undefined && (!e.colours || typeof e.colours !== 'object' || Array.isArray(e.colours))) ||
       ![e.pose?.x, e.pose?.y, e.pose?.a].every((v) => Number.isFinite(v) && Math.abs(v) < 1e8)
     )
       throw Error('Invalid building in the layout file.');
@@ -63,7 +65,7 @@ export function validateBuildings(list) {
 
 /** A building ready to place, from one saved in the Library. */
 export function layoutBuilding(saved, pose, id) {
-  return { id, name: saved.name, ...(saved.id && { libraryId: saved.id }), building: validateBuilding(saved.building), pose };
+  return { id, name: saved.name, ...(saved.id && { libraryId: saved.id }), building: validateBuilding(saved.building), ...(saved.colours && { colours: checkColours(saved.colours) }), pose };
 }
 
 const rect = (x0, y0, x1, y1) => [
@@ -392,6 +394,8 @@ export function planShapes(entry) {
 
 /** The parts of a building (as the Buildings page gets them) where it stands in the layout. */
 export function placeParts(parts, entry) {
+  // Each part in the building's colours (by material when it has none), for the 3D view.
+  const paint = buildingPaint(entry.colours, parts);
   return parts.map((p) => {
     const positions = new Float32Array(p.positions.length);
     for (let i = 0; i < positions.length; i += 3) {
@@ -400,7 +404,7 @@ export function placeParts(parts, entry) {
       positions[i + 1] = y;
       positions[i + 2] = p.positions[i + 2];
     }
-    return { ...p, id: entry.id + '/' + p.id, positions, bounds: undefined };
+    return { ...p, id: entry.id + '/' + p.id, positions, bounds: undefined, tint: paint(p) };
   });
 }
 
