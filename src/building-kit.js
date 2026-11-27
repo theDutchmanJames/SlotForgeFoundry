@@ -129,6 +129,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...(parts.some((p) => /^step-/.test(p.id))
       ? ['Glue each step against the side of the base, in front of its door, its foot on the table.']
       : []),
+    ...(b.rooflights?.length ? ['Glue clear sheet under each rooflight, 3 mm bigger than its hole all round, before the roof goes on.'] : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
       ? b.roof === 'sawtooth'
@@ -143,6 +144,9 @@ export function kitNotes(name, b, parts, sizes) {
       : framed2
         ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
         : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
+    ...(b.chimney ? ['Stand the chimney on the roof, its cap up, its foot fitting the roof under it, ' + fmt(b.chimney.x) + ' mm from the left wall and ' + fmt(b.chimney.y) + ' mm from the front wall to its middle, and glue it.'] : []),
+    ...(b.gutters ? ['Glue each gutter along its eave, open side up, against the edge of the roof, its top just under the top of the roof.'] : []),
+    ...(b.downpipes && b.downpipes !== 'none' ? ['Push the top of each downpipe up into the hole in its gutter, its foot on the base, and glue it to the wall.'] : []),
   ];
   const storeys = upper.length
     ? ' ' + (upper.length + 1) + ' storeys: ' + upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.width) + ' × ' + fmt(u.depth) + ' mm, ' + fmt(u.height) + ' mm high').join('; ') + '.'
@@ -165,6 +169,8 @@ export function kitNotes(name, b, parts, sizes) {
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
     ...(b.roof === 'vault' ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
     ...(b.roof === 'sawtooth' ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
+    ...(b.chimney ? ['- The chimney prints upside down, standing on its cap; its flue is a pointed pocket.'] : []),
+    ...(b.gutters ? ['- The gutters print as they hang, open side up' + (b.downpipes && b.downpipes !== 'none' ? '; each downpipe on its side, its swan neck flat on the plate' : '') + '.'] : []),
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),

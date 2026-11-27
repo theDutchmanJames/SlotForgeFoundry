@@ -76,8 +76,40 @@ try {
   await host.locator('[data-bd-view="plate"]').click();
   await idle();
   await snap('vault-plate');
+  // Fittings on a two-sided roof: a chimney, a rooflight, gutters and downpipes.
+  await host.locator('[data-bd-view="model"]').click();
+  await host.locator('[data-bd-roof="gable"]').click();
+  await idle();
+  assert.equal(await setting('downpipes').isVisible(), false, 'no downpipes without gutters');
+  await setting('hasChimney').check();
+  await idle();
+  assert.ok(await setting('chimneyX').isVisible(), 'the chimney has its fields');
+  await edit('chimneyHeight', 20);
+  await host.locator('[data-bd-add-light]').click();
+  await idle();
+  assert.ok(await setting('light-x-0').isVisible(), 'the rooflight has its fields');
+  await setting('gutters').check();
+  await idle();
+  await setting('downpipes').selectOption('left');
+  await idle();
+  await noError('fittings');
+  b = await saved();
+  assert.equal(b.chimney.height, 20);
+  assert.equal(b.rooflights.length, 1);
+  assert.deepEqual([b.gutters, b.downpipes], [true, 'left']);
+  assert.match(await host.locator('.bd-col').innerText(), /Downpipe, left/);
+  await snap('fittings');
+  // To a flat roof: the gutters go, the chimney and the rooflight stay.
+  await host.locator('[data-bd-roof="flat"]').click();
+  await idle();
+  b = await saved();
+  assert.deepEqual([b.gutters, b.downpipes, !!b.chimney], [false, 'none', true]);
+  // The rooflight removed.
+  await host.locator('[data-bd-remove-light="0"]').click();
+  await idle();
+  assert.equal((await saved()).rooflights.length, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS: a sawtooth with its north lights and a corrugated barrel vault, set on the Buildings page, checked and drawn.');
+  console.log('PASS: a sawtooth with its north lights, a corrugated barrel vault, and a chimney, rooflight, gutters and downpipes, set on the Buildings page, checked and drawn.');
 } finally {
   await browser.close();
 }

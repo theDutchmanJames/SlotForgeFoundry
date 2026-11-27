@@ -48,6 +48,7 @@ import {
   OPENING_DEFAULTS,
   UPPER_DEFAULTS,
   ROOFS,
+  FITTINGS,
   WALLS,
   WALL_NAMES,
   buildingCuts,
@@ -162,6 +163,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   building = safe(building);
   const history = createBuildingHistory({ building, name });
   let accepted = structuredClone(building), buildingBusy = false, invalid = false;
+  // Which fittings the roof card's fields were last drawn for.
+  let fitted2 = '';
 
   function load() {
     try {
@@ -458,9 +461,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
       <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option><option value="solid">Solid, a parapet</option></select></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
+      <div class="bd-sub">On the roof</div>
+      <label class="bd-check"><input type="checkbox" name="hasChimney"><span>A chimney</span></label>
+      <div class="bd-chimney"></div>
+      <div class="bd-lights"></div>
+      <label class="bd-check" data-bd-for="slope gable hip"><input type="checkbox" name="gutters"><span>Gutters along the eaves</span></label>
+      <label class="bd-row" data-bd-pipes><span>Downpipes</span><select name="downpipes"><option value="none">None</option><option value="left">At the left end</option><option value="right">At the right end</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
-      <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
+      <p class="bd-hint">A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
     <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
@@ -1164,6 +1173,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       standTaper: num(e.standTaper),
       standBraces: e.standType.value === 'legs' && e.standBraces.checked,
       arch: building.roof === 'flat' ? num(e.arch) : 0,
+      chimney: e.hasChimney.checked
+        ? building.chimney && e.chimneyX
+          ? { x: num(e.chimneyX), y: num(e.chimneyY), width: num(e.chimneyWidth), depth: num(e.chimneyDepth), height: num(e.chimneyHeight) }
+          : { x: Math.round(topOf(building).width * 0.7), y: Math.round(topOf(building).depth * 0.6), width: 12, depth: 10, height: 15 }
+        : null,
+      rooflights: (building.rooflights ?? []).map((l, i) => (e['light-x-' + i] ? { x: num(e['light-x-' + i]), y: num(e['light-y-' + i]), width: num(e['light-w-' + i]), depth: num(e['light-d-' + i]) } : l)),
+      gutters: e.gutters.checked,
+      downpipes: e.gutters.checked ? e.downpipes.value : 'none',
       signWidth: num(e.signWidth),
       signHeight: num(e.signHeight),
       signText: e.signText.value,
@@ -1228,6 +1245,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isBays()) drawBays();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
+      // The fittings' fields as the building has them: redrawn only when one comes or goes, not while typing.
+      const fits = [!!building.chimney, building.rooflights?.length ?? 0, building.gutters, building.roof].join();
+      if (fits !== fitted2) {
+        fitted2 = fits;
+        drawFittings();
+      }
       $('[data-bd-sign-size]').hidden = building.sign === 'none';
       $('[data-bd-stand-size]').hidden = building.standType === 'none';
       $('[data-bd-column]').hidden = building.standType !== 'column';
@@ -1560,6 +1583,51 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     drawRooms();
     drawStoreys();
     drawOpenings();
+    drawFittings();
+  }
+  // The chimney's place and size, and a row for each rooflight.
+  function drawFittings() {
+    const b = building;
+    fitted2 = [!!b.chimney, b.rooflights?.length ?? 0, b.gutters, b.roof].join();
+    if (!form.elements.hasChimney) return;
+    const F = FITTINGS;
+    form.elements.hasChimney.checked = !!b.chimney;
+    const c = b.chimney;
+    $('.bd-chimney').innerHTML = c
+      ? `<div class="bd-sides">${field('chimneyX', 'From the left', c.x, [0, 1500])}${field('chimneyY', 'From the front', c.y, [0, 1500])}${field('chimneyWidth', 'Width', c.width, F.size)}${field('chimneyDepth', 'Depth', c.depth, F.size)}</div>${field('chimneyHeight', 'Over the roof', c.height, F.high)}`
+      : '';
+    const lights = b.rooflights ?? [];
+    $('.bd-lights').innerHTML =
+      lights
+        .map(
+          (l, i) =>
+            `<div class="bd-sub">Rooflight ${i + 1}<button type="button" class="bd-remove" data-bd-remove-light="${i}" title="Remove" aria-label="Remove rooflight ${i + 1}">${icon('close')}</button></div><div class="bd-sides">${field('light-x-' + i, 'From the left', l.x, [0, 1500])}${field('light-y-' + i, 'From the front', l.y, [0, 1500])}${field('light-w-' + i, 'Width', l.width, F.light)}${field('light-d-' + i, 'Depth', l.depth, F.light)}</div>`,
+        )
+        .join('') + (lights.length < F.lightsMost && b.roof !== 'vault' ? `<div class="bd-adds"><button type="button" class="bd-add" data-bd-add-light>${icon('plus')}Rooflight</button></div>` : '');
+    form.elements.gutters.checked = b.gutters;
+    form.elements.downpipes.value = b.downpipes;
+    $('[data-bd-pipes]').hidden = !b.gutters || !['slope', 'gable', 'hip'].includes(b.roof);
+  }
+  // The top storey's size, where the fittings stand.
+  const topOf = (b) => {
+    const u = b.upper.at(-1);
+    return { width: u?.width ?? b.width, depth: u?.depth ?? b.depth };
+  };
+  // A rooflight where one fits: the first place on a grid of the top storey that passes the checks.
+  function freeRooflight(b) {
+    const { width: W, depth: D } = topOf(b);
+    for (const fy of [0.5, 0.3, 0.7, 0.2, 0.8])
+      for (const fx of [0.5, 0.25, 0.75, 0.35, 0.65])
+        for (const size of [20, 14, 10]) {
+          const l = { x: Math.round(W * fx), y: Math.round(D * fy), width: size, depth: size };
+          try {
+            validateBuilding({ ...b, rooflights: [...b.rooflights, l] });
+            return l;
+          } catch {
+            // Not here: the next place.
+          }
+        }
+    return null;
   }
   async function exportKit() {
     clearTimeout(timer);
@@ -1733,6 +1801,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const next = { ...readForm(), roof: b.dataset.bdRoof };
         // Only a flat roof is arched.
         if (next.roof !== 'flat') next.arch = 0;
+        // Gutters only along eaves; no rooflights in a vault.
+        if (!['slope', 'gable', 'hip'].includes(next.roof)) Object.assign(next, { gutters: false, downpipes: 'none' });
+        if (next.roof === 'vault') next.rooflights = [];
         // A vault is plain or corrugated, and at most a half round over its span.
         if (next.roof === 'vault') {
           if (!['plain', 'metal'].includes(next.roofTexture)) next.roofTexture = 'plain';
@@ -1804,6 +1875,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         await rebuild(next);
         drawRooms();
         form.elements.doorWidth.value = building.doorWidth;
+      } else if (b.dataset.bdAddLight !== undefined) {
+        const base = readForm();
+        const light = freeRooflight(base);
+        if (!light) showError('There is no room for another rooflight on this roof.');
+        else {
+          await rebuild({ ...base, rooflights: [...base.rooflights, light] });
+          drawFittings();
+        }
+      } else if (b.dataset.bdRemoveLight !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, rooflights: base.rooflights.filter((_, i) => i !== Number(b.dataset.bdRemoveLight)) });
+        drawFittings();
       } else if (b.dataset.bdAddRoom !== undefined) {
         const base = readForm();
         const sizes = [...base.rooms.sizes, base.rooms.sizes.at(-1)];
