@@ -49,11 +49,16 @@ export function kitNotes(name, b, parts, sizes) {
   ].join('\n');
   if (b.kind === 'footprint') return [
     name + ' · SlotForge Foundry shaped building kit',
-    `${b.shape} footprint, ${b.width} × ${b.depth} mm; walls ${b.height} mm tall, ${b.wall} mm thick.`,
-    'Print the base and roof flat, and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
+    `${{ L: 'L-shaped', U: 'U-shaped', T: 'T-shaped', custom: 'Drawn', octagon: 'Octagonal', round: 'Round' }[b.shape] ?? 'Rectangular'} footprint${b.shape === 'round' ? ' of ' + b.sides + ' sides' : ''}, ${fmt(b.width)} × ${fmt(b.depth)} mm; walls ${b.height} mm tall, ${b.wall} mm thick.` +
+      (b.upper?.length ? ' ' + (b.upper.length + 1) + ' storeys: ' + b.upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.height) + ' mm').join(', ') + ', each on a floor.' : '') +
+      (b.roofShape === 'hip' ? ' A hip roof at ' + b.pitch + '°, a panel over each wall.' : ''),
+    'Print the base' + (b.upper?.length ? ', the floors, their frames' : '') + ' and ' + (b.roofShape === 'hip' ? 'each roof panel flat on its underside' : 'the roof flat') + ', and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
     'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
     'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners. Glue the wall seams and feet.',
-    'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
+    ...(b.upper?.length ? ['Glue each floor frame under its floor, its outside a little inside the walls. Lay the floor on the walls below, its frame dropping inside them, and stand the next storey\'s walls in the groove on top, in the same order as the walls below.'] : []),
+    b.roofShape === 'hip'
+      ? 'Lay the roof panels on the tops of the walls, each over its own wall, numbered as the walls; they meet along the hips at the top. Glue them to the walls and to each other.'
+      : 'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
     ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
     ...glazingNote(b),
     'Check fit on your printer before printing the complete kit. The groove clearance is ' + b.play + ' mm per side.',

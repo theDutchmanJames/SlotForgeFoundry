@@ -1,7 +1,7 @@
 import { sectionPlan, sectionElevation } from './building-section-drawing.js';
 import { editStorey, editWalls, changeOpening, repeatOpening, alignOpenings, patchStorey, placeOpening, mirrorOpenings, spaceOpenings, centreOpenings, moveOpenings, copyOpenings, removeOpenings } from './building-edit.js';
 import { footprintPoints, footprintWalls } from './geometry/footprint-building.js';
-import { BAY, addBay, chamferCorner, moveWall } from './building-outline.js';
+import { BAY, addBay, chamferCorner, curveWall, moveWall } from './building-outline.js';
 import { validateBuilding, garageDoors } from './geometry/building.js';
 import { SHELL_FRAME } from './geometry/shell-details.js';
 
@@ -73,9 +73,9 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
   function outlineTools(b, pts) {
     if (edge !== null) {
       const w = footprintWalls(b)[edge];
-      return `<strong>Wall ${edge + 1} · ${number(w.length)} mm</strong><label>Out by <input type="number" step="1" data-outline-depth value="${BAY.depth}"> mm</label><button type="button" data-outline="bay">Pull out a bay</button><button type="button" data-outline="recess">Push in a recess</button><button type="button" data-outline="out">Move the wall out</button><button type="button" data-outline="in">Move the wall in</button>`;
+      return `<strong>Wall ${edge + 1} · ${number(w.length)} mm</strong><label>Out by <input type="number" step="1" data-outline-depth value="${BAY.depth}"> mm</label><button type="button" data-outline="bay">Pull out a bay</button><button type="button" data-outline="recess">Push in a recess</button><button type="button" data-outline="out">Move the wall out</button><button type="button" data-outline="in">Move the wall in</button><label>Bulge <input type="number" step="1" data-outline-bulge value="${BAY.bulge}"> mm</label><label>in <input type="number" step="1" min="2" max="16" data-outline-facets value="${BAY.facets}"> walls</label><button type="button" data-outline="curve">Curve the wall</button>`;
     }
-    if (corner !== null) return `<strong>Corner ${corner + 1}</strong><label>Cut <input type="number" step="1" data-outline-cut value="${BAY.chamfer}"> mm</label><button type="button" data-outline="chamfer">Cut the corner at 45°</button>`;
+    if (corner !== null) return `<strong>Corner ${corner + 1}</strong><label>Cut <input type="number" step="1" data-outline-cut value="${BAY.chamfer}"> mm</label><button type="button" data-outline="chamfer">Cut the corner</button>`;
     return `<span>Click a wall or a corner of the outline.</span><span>${pts.length} walls</span>`;
   }
   function apply(next) { preview = null; valid = true; const focusCanvas = host.contains(document.activeElement) && !document.activeElement.matches('input,select'); return commit(next).then(() => { if (focusCanvas) host.querySelector('svg')?.focus(); }).catch(e => error(e.message)); }
@@ -91,7 +91,8 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
       const w = edge !== null && 'edge-' + (edge + 1), by = Number(host.querySelector('[data-outline-depth]')?.value), cut = Number(host.querySelector('[data-outline-cut]')?.value);
       const kind = t.dataset.outline;
       let next;
-      try { next = kind === 'chamfer' ? chamferCorner(b, corner, cut) : kind === 'bay' || kind === 'recess' ? addBay(b, w, kind === 'bay' ? by : -by) : moveWall(b, w, kind === 'out' ? by : -by); }
+      const bulge = Number(host.querySelector('[data-outline-bulge]')?.value), facets = Number(host.querySelector('[data-outline-facets]')?.value);
+      try { next = kind === 'chamfer' ? chamferCorner(b, corner, cut) : kind === 'curve' ? curveWall(b, w, bulge, facets) : kind === 'bay' || kind === 'recess' ? addBay(b, w, kind === 'bay' ? by : -by) : moveWall(b, w, kind === 'out' ? by : -by); }
       catch (err) { error(err.message); return; }
       // A bay's face is its third wall, chosen next to drag it further; a cut corner, its new wall.
       if (kind === 'bay' || kind === 'recess') edge += 2;

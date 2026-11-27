@@ -1,11 +1,11 @@
 // Drawing a shaped building's outline wall by wall: move a wall in or out,
-// pull out a bay or push in a recess, cut a corner at 45°. Walls are named by
+// pull out a bay or push in a recess, cut a corner, curve a wall. Walls are named by
 // their place round the outline (edge-1 the first), so when walls come in
 // between, the windows and doors and the walls' own textures move with them.
 import { validateBuilding } from './geometry/building.js';
 import { footprintPoints, footprintWalls } from './geometry/footprint-building.js';
 
-export const BAY = Object.freeze({ depth: 15, chamfer: 15 });
+export const BAY = Object.freeze({ depth: 15, chamfer: 15, bulge: 15, facets: 6 });
 
 const id = (i) => 'edge-' + (i + 1);
 const at = (p, d, k) => [p[0] + d[0] * k, p[1] + d[1] * k];
@@ -27,19 +27,25 @@ export function asOutline(b) {
  * the new wall and its place, or null when it is gone.
  */
 function renamed(b, points, where) {
-  const openings = b.openings.map((o) => {
-    const i = Number(o.wall.slice(5)) - 1,
-      [j, u] = where(i, o.at);
-    return { ...o, wall: id(j), at: Math.round(u * 1e6) / 1e6 };
-  });
-  const wallTextures = {};
-  for (const [w, t] of Object.entries(b.wallTextures ?? {})) {
-    const i = Number(w.slice(5)) - 1;
-    // A wall cut in pieces: each piece keeps its texture.
-    for (const j of where.pieces?.(i) ?? [where(i, 0)[0]]) wallTextures[id(j)] = t;
-  }
-  return validateBuilding({ ...b, points, openings, wallTextures });
+  // Every storey's windows and doors, and its walls' own textures.
+  const storey = (s) => {
+    const openings = s.openings.map((o) => {
+      const i = Number(o.wall.slice(5)) - 1,
+        [j, u] = where(i, o.at);
+      return { ...o, wall: id(j), at: Math.round(u * 1e6) / 1e6 };
+    });
+    const wallTextures = {};
+    for (const [w, t] of Object.entries(s.wallTextures ?? {})) {
+      const i = Number(w.slice(5)) - 1;
+      // A wall cut in pieces: each piece keeps its texture.
+      for (const j of where.pieces?.(i) ?? [where(i, 0)[0]]) wallTextures[id(j)] = t;
+    }
+    return { openings, wallTextures };
+  };
+  return validateBuilding({ ...b, points, ...storey(b), upper: (b.upper ?? []).map((u) => ({ ...u, ...storey(u) })) });
 }
+// Every storey's windows and doors on a wall: a wall about to change shape must have none.
+const openingsOn = (b, wall) => [b, ...(b.upper ?? [])].flatMap((s) => s.openings.filter((o) => o.wall === wall));
 
 /** Moves a wall straight out (or in, when negative), its neighbours longer or shorter; its windows stay where they are. */
 export function moveWall(input, wall, by) {
@@ -82,10 +88,12 @@ export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 
     u0 = L * from,
     u1 = L * to;
   // A window or door where the bay starts or ends would be cut in two.
-  b.openings.forEach((o, k) => {
-    if (o.wall === wall && [u0, u1].some((u) => Math.abs(o.at - u) < o.width / 2 + 9))
-      throw Error((o.type === 'door' ? 'Door ' : 'Window ') + (k + 1) + ' is where the ' + (depth > 0 ? 'bay' : 'recess') + ' would start or end: move it first.');
-  });
+  [b, ...(b.upper ?? [])].forEach((st, n) =>
+    st.openings.forEach((o, k) => {
+      if (o.wall === wall && [u0, u1].some((u) => Math.abs(o.at - u) < o.width / 2 + 9))
+        throw Error((o.type === 'door' ? 'Door ' : 'Window ') + (k + 1) + (n ? ' of storey ' + (n + 1) : '') + ' is where the ' + (depth > 0 ? 'bay' : 'recess') + ' would start or end: move it first.');
+    }),
+  );
   const p1 = at(w.a, w.dir, u0),
     p4 = at(w.a, w.dir, u1);
   const points = footprintPoints(b);
@@ -95,7 +103,7 @@ export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 
   return renamed(b, points, where);
 }
 
-/** Cuts a square corner off at 45°, `size` along each wall: corner k is where wall k starts. */
+/** Cuts a corner off, `size` along each wall (at 45° on a square corner): corner k is where wall k starts. */
 export function chamferCorner(input, corner, size = BAY.chamfer) {
   const b = asOutline(input),
     walls = footprintWalls(b),
@@ -105,10 +113,48 @@ export function chamferCorner(input, corner, size = BAY.chamfer) {
   if (!Number.isFinite(size) || size <= 0) throw Error('Give how much of the corner to cut off.');
   const w = walls[k],
     prev = walls[(k + n - 1) % n];
-  if (Math.abs(prev.dir[0] * w.dir[0] + prev.dir[1] * w.dir[1]) > 1e-6) throw Error('Only a square corner can be cut at 45°.');
   const points = footprintPoints(b);
   points.splice(k, 1, at(w.a, prev.dir, -size), at(w.a, w.dir, size));
   // The wall before ends sooner; the wall after starts later; a new wall between.
   const where = (j, u) => (j < k ? [j, u] : j === k ? [k + 1, u - size] : [j + 1, u]);
+  return renamed(b, points, where);
+}
+
+/**
+ * Curves a wall: in its place `facets` walls along an arc through its ends,
+ * bulging out by `bulge` at its middle (in, when negative). The wall must have
+ * no windows or doors on any storey; its texture goes to every facet.
+ */
+export function curveWall(input, wall, bulge = BAY.bulge, facets = BAY.facets) {
+  const b = asOutline(input),
+    walls = footprintWalls(b),
+    i = walls.findIndex((w) => w.id === wall);
+  if (i < 0) throw Error('Select a wall first.');
+  if (!Number.isFinite(bulge) || !bulge) throw Error('Give how far the curve bulges out, or in.');
+  if (!Number.isInteger(facets) || facets < 2 || facets > 16) throw Error('A curved wall has 2 to 16 facets.');
+  if (openingsOn(b, wall).length) throw Error('Take the windows and doors off this wall first: a curved wall is made of new walls.');
+  const w = walls[i],
+    L = w.length,
+    out = w.inward.map((v) => -v);
+  if (Math.abs(bulge) > L / 2) throw Error('A curve bulges at most half as far as its wall is long: ' + Math.floor(L / 2) + ' mm.');
+  // The arc through both ends and the bulge, its centre on the wall's middle line.
+  const h = bulge,
+    R = (L * L) / (8 * Math.abs(h)) + Math.abs(h) / 2;
+  const mid = at(w.a, w.dir, L / 2),
+    centre = at(mid, out, h - Math.sign(h) * R);
+  const half = Math.asin(Math.min(1, L / (2 * R)));
+  const pts = [];
+  for (let k = 1; k < facets; k++) {
+    const ang = -half + (2 * half * k) / facets;
+    // Measured from the centre towards the bulge, turning along the wall.
+    const toBulge = out.map((v) => v * Math.sign(h));
+    const along = w.dir;
+    pts.push([centre[0] + R * (toBulge[0] * Math.cos(ang) + along[0] * Math.sin(ang)), centre[1] + R * (toBulge[1] * Math.cos(ang) + along[1] * Math.sin(ang))]);
+  }
+  const points = footprintPoints(b);
+  points.splice(i + 1, 0, ...pts);
+  const added = facets - 1;
+  const where = (j, u) => (j <= i ? [j, u] : [j + added, u]);
+  where.pieces = (j) => (j === i ? Array.from({ length: facets }, (_, k) => i + k) : [where(j, 0)[0]]);
   return renamed(b, points, where);
 }

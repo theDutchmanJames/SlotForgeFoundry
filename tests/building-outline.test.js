@@ -18,9 +18,11 @@ const places = (b) => {
 };
 const near = (a, b, label) => assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6, label + ': ' + a + ' and ' + b);
 
-test('a drawn outline: square and 45° walls, long enough, turning 45° or 90°, not crossing; moved to the origin', () => {
+test('a drawn outline: walls at any angle, long enough, turning at most 90°, not crossing; moved to the origin', () => {
   assert.deepEqual(checkOutline([[10, 5], [110, 5], [110, 85], [10, 85]], 3), { points: [[0, 0], [100, 0], [100, 80], [0, 80]], width: 100, depth: 80 });
-  assert.throws(() => checkOutline([[0, 0], [100, 0], [100, 80], [10, 85]], 3), /at an angle/);
+  // A wall at any angle is fine; a corner turning more than 90° is too sharp to print its mitre.
+  assert.doesNotThrow(() => checkOutline([[0, 0], [100, 0], [120, 40], [100, 80], [0, 80]], 3));
+  assert.throws(() => checkOutline([[0, 0], [100, 0], [100, 80], [10, 85]], 3), /too sharp/);
   assert.throws(() => checkOutline([[0, 0], [100, 0], [100, 80], [95, 80], [0, 80]], 3), /at least 10 mm/);
   assert.throws(() => checkOutline([[0, 0], [50, 0], [100, 0], [100, 80], [0, 80]], 3), /one line/);
   assert.throws(() => checkOutline([[0, 0], [100, 0], [0, 80], [100, 80]], 3), /angle|crosses|sharp/);
@@ -75,7 +77,8 @@ test('a square corner cut at 45°: a new wall, the windows of the wall after it 
   assert.ok(Math.abs(walls[1].length - 20 * Math.SQRT2) < 1e-6);
   assert.deepEqual(cut.openings.map((o) => o.wall), ['edge-1', 'edge-3', 'edge-5']);
   places(cut).forEach((p, k) => near(p, before[k], 'window ' + (k + 1)));
-  assert.throws(() => chamferCorner(cut, 2, 10), /Only a square corner/);
+  // Any corner can be cut: a cut corner's corner too, its new wall halfway between.
+  assert.doesNotThrow(() => chamferCorner(cut, 2, 14));
   // The first corner: the last wall is the one before it.
   const first = chamferCorner(b, 0, 15);
   assert.deepEqual(first.openings.map((o) => o.wall), ['edge-2', 'edge-3', 'edge-5']);

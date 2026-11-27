@@ -8,7 +8,7 @@ import { createBuildingHistory, editWalls } from './building-edit.js';
 import { createBuildingCanvas } from './building-canvas.js';
 import { addSection, removeSection } from './geometry/connected-building.js';
 import { sectionFields, readSectionFields } from './building-sections.js';
-import { FOOTPRINT_DEFAULTS, footprintWalls } from './geometry/footprint-building.js';
+import { FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, footprintWalls } from './geometry/footprint-building.js';
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
@@ -222,11 +222,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <form class="bd-form" autocomplete="off">
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
-      <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="custom" disabled>Drawn outline</option></select></label>
-      ${[['width','Width',100,1200],['depth','Depth',100,1200],['wing','Wing width',40,500],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max])).join('')}
+      <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="octagon">Octagon</option><option value="round">Round</option><option value="custom" disabled>Drawn outline</option></select></label>
+      ${[['width','Width',60,1200],['depth','Depth',60,1200],['wing','Wing width',40,500],['sides','Sides',6,32],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max],key === 'sides' ? '' : 'mm')).join('')}
+      <label class="bd-row"><span>Roof</span><select name="fpRoofShape"><option value="flat">Flat</option><option value="hip">Hip, a cone on a round plan</option></select></label>
+      ${field('fp-pitch', 'Roof pitch', FOOTPRINT_DEFAULTS.pitch, [10, 45], '°')}
+      <div class="bd-sub">Storeys</div>
+      <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-fp-storeys></div>
+      <div data-bd-fp-storey></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-fp-add-storey>${icon('plus')}Storey</button></div>
+      <div class="bd-sub" data-bd-fp-walls-of>Walls</div>
       <div data-bd-fp-finish></div>
       ${textureSize('fp-', FOOTPRINT_DEFAULTS)}
-      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. Shaped buildings have one storey and a flat roof; the walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise. In Draw → Footprint, drag any wall in or out, pull out a bay, push in a recess or cut a corner at 45°: the shape becomes a drawn outline, its width and depth set by its walls. Choose a shape here to start again from it.</p>
+      <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. An octagon has eight equal sides on a square; a round building so many sides round its width and depth. Walls may run at any angle, each corner turning at most 90° so its mitre prints without supports. A shaped building has up to three storeys above the ground floor, each on a floor with a frame under it, with its own windows, doors and finish: choose the storey here, then its walls in Draw. Its roof is flat, or on an outline without inside corners a hip roof, a panel over each wall printing flat, a cone on a round building; a hip roof prints whole, so each panel must fit the plate. The walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise. In Draw → Footprint, drag any wall in or out, pull out a bay, push in a recess, cut a corner or curve a wall: the shape becomes a drawn outline, its width and depth set by its walls. Choose a shape here to start again from it.</p>
     </section>
     <section class="bd-box" data-bd-card="pits" data-bd-pits hidden><h3>Pit building</h3>
       ${field('pBays', 'Bays', 3, PIT_MODULE_LIMITS.bays, '')}
@@ -566,7 +573,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isFootprint = () => building.kind === 'footprint';
   const isGarage = () => building.kind === 'garage';
   const canvas = createBuildingCanvas($('.bd-canvas'), {
-    getState: () => ({ building, level: isSections() ? section : isGarage() ? storey : 0, wall }),
+    getState: () => ({ building, level: isSections() ? section : isGarage() || isFootprint() ? storey : 0, wall }),
     error: text => showError(text),
     onSection: async value => { clearTimeout(timer); await rebuild(); if (invalid) return; section = value; fillSections(); sync(); },
     onWall: value => { wall = value; if (isGarage()) drawOpenings(); },
@@ -574,12 +581,31 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   });
   const fpWalls = (b) => footprintWalls(b).map((w) => ({ id: w.id, name: w.name }));
   function readFootprint() {
-    const next = { ...building, shape: form.elements.fpShape.value, ...readFinish(form, 'ff', building, fpWalls(building)) };
+    const finish = readFinish(form, 'ff', storeyOf(building, storey), fpWalls(building));
+    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish) };
     for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
       const value = form.elements['fp-' + key].value;
       next[key] = value === '' ? NaN : Number(value);
     }
+    // The storey chosen above the ground floor: its height and its finish.
+    if (storey) {
+      const el = form.elements['fp-st-height'];
+      next.upper = building.upper.map((u, i) => (i === storey - 1 ? { ...u, ...finish, height: el && el.value !== '' ? Number(el.value) : NaN } : u));
+    }
     return next;
+  }
+  // The storeys of a shaped building to choose from, the chosen one's height, its walls' finish.
+  function drawFpStoreys() {
+    const count = building.upper.length + 1;
+    storey = Math.min(storey, count - 1);
+    $('[data-bd-fp-storeys]').innerHTML = Array.from({ length: count }, (_, k) => `<button type="button" data-bd-fp-storey="${k}" aria-pressed="${k === storey}">${k ? 'Storey ' + (k + 1) : 'Ground floor'}</button>`).join('');
+    $('[data-bd-fp-add-storey]').hidden = building.upper.length >= FLOORS.most;
+    const s = storeyOf(building, storey);
+    $('[data-bd-fp-storey]').innerHTML = storey
+      ? `<div class="bd-op-head">${icon('building')}<b>Storey ${storey + 1}</b><span class="bd-grow"></span><button type="button" class="bd-remove" data-bd-fp-remove-storey title="Remove this storey and every storey above it" aria-label="Remove storey ${storey + 1} and every storey above it">${icon('close')}</button></div>${field('fp-st-height', 'Wall height', s.height, [30, 180])}`
+      : '';
+    $('[data-bd-fp-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
+    $('[data-bd-fp-finish]').innerHTML = finishFields('ff', s, fpWalls(building), { main: true });
   }
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
@@ -1227,8 +1253,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isFootprint()) {
       // Its walls follow its shape: a new shape, their fields drawn afresh.
       const walls = fpWalls(building);
-      if (form.querySelectorAll('[name^="ff-wall-"]').length !== walls.length) $('[data-bd-fp-finish]').innerHTML = finishFields('ff', building, walls, { main: true });
+      if (form.querySelectorAll('[name^="ff-wall-"]').length !== walls.length || $('[data-bd-fp-storeys]').children.length !== building.upper.length + 1) drawFpStoreys();
       for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = building.shape === 'custom';
+      form.elements['fp-wing'].closest('label').hidden = !['L', 'U', 'T'].includes(building.shape);
+      form.elements['fp-sides'].closest('label').hidden = building.shape !== 'round';
+      form.elements['fp-pitch'].closest('label').hidden = building.roofShape !== 'hip';
+      form.elements.fpRoofShape.value = building.roofShape;
       form.elements.fpShape.value = building.shape;
       if (building.shape === 'custom') for (const key of ['width', 'depth']) form.elements['fp-' + key].value = building[key];
     }
@@ -1551,8 +1581,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) form.elements['fp-' + key].value = b[key];
       // A drawn outline sets its own width and depth, and has no wing: its walls are drawn in Draw.
       for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = b.shape === 'custom';
-      // Its walls change with its shape: their fields are drawn afresh.
-      $('[data-bd-fp-finish]').innerHTML = finishFields('ff', b, fpWalls(b), { main: true });
+      form.elements.fpRoofShape.value = b.roofShape;
+      // Its walls change with its shape: their fields are drawn afresh, for the storey chosen.
+      drawFpStoreys();
       return;
     }
     if (b.kind === 'grandstand') return fillStand(b);
@@ -1914,6 +1945,23 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         await rebuild(next);
         drawRooms();
         form.elements.doorWidth.value = building.doorWidth;
+      } else if (b.dataset.bdFpStorey !== undefined) {
+        storey = Number(b.dataset.bdFpStorey);
+        drawFpStoreys();
+        canvas?.render?.();
+      } else if (b.dataset.bdFpAddStorey !== undefined) {
+        const base = readForm();
+        fitted = false;
+        storey = base.upper.length + 1;
+        await rebuild({ ...base, upper: [...base.upper, { ...FOOTPRINT_UPPER, openings: [] }] });
+        drawFpStoreys();
+      } else if (b.dataset.bdFpRemoveStorey !== undefined) {
+        const base = readForm();
+        const keep = storey - 1;
+        fitted = false;
+        storey = keep;
+        await rebuild({ ...base, upper: base.upper.slice(0, keep) });
+        drawFpStoreys();
       } else if (b.dataset.bdAddDormer !== undefined) {
         const base = readForm();
         const dormer = freeDormer(base);

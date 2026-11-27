@@ -35,9 +35,11 @@ export function placeOpening(b, level, wall, type = 'window') {
   if (!length) throw Error('Select a wall first.');
   const o = ['footprint','sections'].includes(b.kind) ? { type, wall, width: type === 'door' ? 28 : 40, height: type === 'door' ? 48 : 30, sill: type === 'door' ? 0 : 20 } : { ...OPENING_DEFAULTS[type], wall };
   if (o.type === 'window') o.sill = Math.max(0, Math.min(o.sill, s.height - o.height - 6));
-  for (let at = o.width / 2 + 9; at <= length - o.width / 2 - 9; at++) {
-    try { return validateBuilding(patchStorey(b, level, { openings: [...s.openings, { ...o, at }] })); } catch { /* Try the next millimetre. */ }
-  }
+  // On a short wall, a narrower one: down to 10 mm wide.
+  for (const width of [o.width, 30, 20, 14, 10].filter((w, i) => !i || w < o.width))
+    for (let at = width / 2 + 9; at <= length - width / 2 - 9; at++) {
+      try { return validateBuilding(patchStorey(b, level, { openings: [...s.openings, { ...o, width, at }] })); } catch { /* Try the next millimetre. */ }
+    }
   throw Error('There is no room for this opening. Enlarge the wall or move an existing opening.');
 }
 
