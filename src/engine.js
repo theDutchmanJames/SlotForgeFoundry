@@ -2,6 +2,7 @@ import { validateLibraryTrack } from './library-profile.js';
 import { plannerSource, plannerSupports, plannerPrint } from './planner-source.js';
 import { crossingCoupon } from './special-print.js';
 import { buildGarage, printPose, printSize } from './geometry/building.js';
+import { jointMarks } from './geometry/building-texture.js';
 import {
   buildTrack,
   fitPlate,
@@ -655,6 +656,8 @@ export function createEngine(wasm) {
         bounds,
         fit,
         volume: solid.volume(),
+        // A building part: the joints of its texture, to shade them in the view.
+        joints: jointMarks(mesh) ?? undefined,
       };
     });
   }

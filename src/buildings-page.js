@@ -68,8 +68,18 @@ import { ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-te
 import { LETTERING, textWidth } from './geometry/lettering.js';
 import { finishFields, fillFinish, readFinish, showBands } from './building-finish.js';
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
+import { COLOUR_SETS, SURFACES, buildingPaint, checkColours, hexText, setColours, textHex } from './building-colours.js';
 
 const KEY = 'foundry.building';
+// Whether the model shows its colours or each part by its role, remembered in this browser.
+const PAINT = 'foundry.buildings.paint';
+const paintShown = () => {
+  try {
+    return localStorage.getItem(PAINT) !== 'parts';
+  } catch {
+    return true;
+  }
+};
 // Which folds of the page are shut, remembered in this browser: the side list's groups and the settings' cards.
 const FOLDS = 'foundry.buildings.folds';
 const shutFolds = () => {
@@ -171,8 +181,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     timer = 0,
     apart = 0,
     fitted = false;
+  let colours = checkColours(building.colours),
+    painted = paintShown();
   delete building.name;
   delete building.savedId;
+  delete building.colours;
   building = safe(building);
   const history = createBuildingHistory({ building, name });
   let accepted = structuredClone(building), buildingBusy = false, invalid = false;
@@ -195,7 +208,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   }
   function remember() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ ...accepted, name, savedId }));
+      localStorage.setItem(KEY, JSON.stringify({ ...accepted, name, savedId, colours }));
     } catch {
       // Storage can be off; the building is still on the page.
     }
@@ -227,6 +240,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <div class="bd-viewbar" data-bd-viewbar>
       <div class="bd-seg" role="group" aria-label="Look from">${[['iso', 'Iso'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right'], ['top', 'Top']].map(([v, label]) => `<button type="button" data-bd-look="${v}">${label}</button>`).join('')}</div>
       <label class="bd-cutaway" title="Cut away everything above this height, to look inside"><span>Cut away</span><input type="range" name="cutaway" min="0" max="100" step="1" value="100" aria-label="Cut away above: 100 keeps it all"></label>
+      <button type="button" class="sf-btn ghost" data-bd-paint aria-pressed="${painted}" title="Show the building in its colours, or each part in the colour of what it is">Colours</button>
       <button type="button" class="sf-btn ghost" data-bd-measure aria-pressed="false" title="Click two points on the model to measure between them">Measure</button>
       <span class="bd-measured" data-bd-measured role="status"></span>
       <span class="bd-grow"></span>
@@ -243,6 +257,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <div class="sf-eyebrow">Building</div><h2 data-bd-name></h2>
   <div class="bd-folds"><button type="button" data-bd-fold-all="shut">Fold all</button><button type="button" data-bd-fold-all="open">Open all</button></div>
   <form class="bd-form" autocomplete="off">
+    <section class="bd-box" data-bd-card="colours" data-bd-colours><h3>Colours</h3>
+      <label class="bd-row"><span>Colour set</span><select name="col-set">${COLOUR_SETS.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}<option value="custom">Your own</option></select></label>
+      ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${key === 'walls' || key === 'roof' ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
+      <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls and roof by their texture</span></label>
+      <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta; or pick a colour of your own for each. The colours are for the view: the parts print in the filament you load.</p></section>
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
       <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="octagon">Octagon</option><option value="round">Round</option><option value="custom" disabled>Drawn outline</option></select></label>
@@ -742,7 +761,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     foldCards();
     const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isCanopy() ? 'canopy' : isDeck() ? 'deck' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
-      if (box.hasAttribute('data-bd-fitting')) continue;
+      // Fittings show as the roof has them; colours for every kind.
+      if (box.hasAttribute('data-bd-fitting') || box.hasAttribute('data-bd-colours')) continue;
       // A card for more than one kind.
       if (box.dataset.bdKinds) {
         box.hidden = !box.dataset.bdKinds.split(' ').includes(kind);
@@ -1831,6 +1851,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function show() {
     viewport ??= new Viewport($('.bd-model'), (id, face, point) => (measuring ? measureAt(point) : choose(id)));
     viewport.resize();
+    // New parts are drawn by setParts, in the paint for them.
+    viewport.setPaint(paint(), false);
     viewport.setParts(parts, !fitted);
     fitted = true;
     viewport.setApart(apart);
@@ -1839,6 +1861,44 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const id of hiddenParts) if (!ids.has(id)) hiddenParts.delete(id);
     viewport.select(selected ?? undefined, hiddenParts);
     cutaway();
+  }
+  // The paint the view uses: the building's colours, or none for the role colours.
+  let paintFor = null,
+    paintKey = '',
+    paintParts = null;
+  // A new paint for new colours or new parts, so the view draws them again; the same one otherwise.
+  function paint() {
+    if (!painted) return null;
+    const key = JSON.stringify(colours);
+    if (key !== paintKey || parts !== paintParts) {
+      paintKey = key;
+      paintParts = parts;
+      paintFor = buildingPaint(colours, parts);
+    }
+    return paintFor;
+  }
+  // The Colours card as the colours are.
+  function fillColours() {
+    const e = form.elements;
+    e['col-set'].value = colours.set;
+    const auto = colours.walls === null && colours.roof === null;
+    e['col-auto'].checked = auto;
+    for (const [key] of SURFACES) {
+      const v = colours[key];
+      const input = e['col-' + key];
+      const byTexture = v === null;
+      input.hidden = byTexture;
+      if (!byTexture) input.value = hexText(v);
+      const note = host.querySelector(`[data-bd-col-auto="${key}"]`);
+      if (note) note.hidden = !byTexture;
+    }
+  }
+  function setPaint(next) {
+    colours = checkColours(next);
+    fillColours();
+    remember();
+    // Drawn again in the new colours, the part chosen and the cut-away as they were.
+    if (viewport && view === 'model') show();
   }
   // The cut-away slider, as a height between the lowest and the highest point shown.
   function cutaway() {
@@ -2217,12 +2277,39 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     viewport?.setApart(apart);
     cutaway();
   });
+  // The Colours card: its fields change the colours, not the building.
+  const colourCard = $('[data-bd-colours]');
+  const onColours = (e) => {
+    e.stopPropagation();
+    const t = e.target;
+    if (t.name === 'col-set') setPaint(t.value === 'custom' ? { ...colours, set: 'custom' } : setColours(t.value));
+    else if (t.name === 'col-auto') {
+      const base = setColours(colours.set === 'custom' ? 'redbrick' : colours.set);
+      setPaint(t.checked ? { ...colours, walls: null, roof: null } : { ...colours, set: 'custom', walls: colours.walls ?? base.walls ?? 0xa4533c, roof: colours.roof ?? base.roof ?? 0x4b5058 });
+    } else if (t.name?.startsWith('col-')) {
+      const v = textHex(t.value);
+      if (v !== null) setPaint({ ...colours, set: 'custom', [t.name.slice(4)]: v });
+    }
+  };
+  colourCard.addEventListener('input', onColours);
+  colourCard.addEventListener('change', onColours);
+  fillColours();
   // The view bar: look from a side, cut away, measure, hide and show parts.
   $('[name="cutaway"]').addEventListener('input', cutaway);
   $('[data-bd-viewbar]').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.bdLook) viewport?.view(b.dataset.bdLook);
+    else if (b.hasAttribute('data-bd-paint')) {
+      painted = !painted;
+      b.setAttribute('aria-pressed', String(painted));
+      try {
+        localStorage.setItem(PAINT, painted ? 'colours' : 'parts');
+      } catch {
+        // Storage can be off: the view keeps it until the page is left.
+      }
+      if (viewport && view === 'model') show();
+    }
     else if (b.hasAttribute('data-bd-measure')) setMeasuring(!measuring);
     else if (b.hasAttribute('data-bd-hide') && selected) {
       hiddenParts.add(selected);

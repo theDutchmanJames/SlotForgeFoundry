@@ -279,6 +279,35 @@ function removeOverlay(overlay) {
   overlay.material.dispose();
 }
 
+// A part in its colours: each triangle its own three corners, coloured as
+// a face, a joint or a grain line (part.joints.marks: 0, 1, 2).
+function paintedGeometry(part, paint) {
+  const { positions, indices } = part,
+    marks = part.joints.marks;
+  const n = indices.length;
+  const out = new Float32Array(n * 3),
+    colours = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  const rgb = [paint.face, paint.joint ?? paint.face, paint.grain ?? paint.face].map((hex) => c.setHex(hex).toArray());
+  for (let i = 0; i < n; i++) {
+    const v = indices[i] * 3;
+    out[i * 3] = positions[v];
+    out[i * 3 + 1] = positions[v + 1];
+    out[i * 3 + 2] = positions[v + 2];
+    const [r, g, b] = rgb[marks[(i / 3) | 0]] ?? rgb[0];
+    colours[i * 3] = r;
+    colours[i * 3 + 1] = g;
+    colours[i * 3 + 2] = b;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(out, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+  if (part.bounds) geometry.boundingBox = new THREE.Box3(new THREE.Vector3(...part.bounds.min), new THREE.Vector3(...part.bounds.max));
+  else geometry.computeBoundingBox();
+  geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+  return geometry;
+}
+
 function partGeometry(part) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
@@ -670,11 +699,26 @@ export class Viewport {
     this.referenceCar.visible = !this.sectionGroup;
     this.draw();
   }
+  /**
+   * Colours parts by what they are made of (a building's bricks, its wood)
+   * instead of by their role: paint(part) gives { face, joint, grain } as
+   * hex colours, or null to keep a part's role colour. null turns it off.
+   */
+  setPaint(paint, redraw = true) {
+    if (paint === this.paint) return;
+    this.paint = paint;
+    // Every part is drawn again in its new colours: now, or by the next setParts (redraw false).
+    for (const mesh of this.group.children) mesh.userData.part = null;
+    if (redraw && this.sourceParts) this.setParts(this.sourceParts, false, this.hidden);
+  }
   displayMesh(p, budget) {
-    const geometry = partGeometry(p);
-    const color = COLORS[p.role] ?? COLORS.body;
+    const paint = (p.role !== 'section' && this.paint?.(p)) || null;
+    const jointed = Boolean(paint && p.joints && this.renderer);
+    const geometry = jointed ? paintedGeometry(p, paint) : partGeometry(p);
+    const color = paint ? paint.face : COLORS[p.role] ?? COLORS.body;
     const material = new THREE.MeshStandardMaterial({
-      color,
+      color: jointed ? 0xffffff : color,
+      vertexColors: jointed,
       roughness: 0.82,
       metalness: 0.08,
       flatShading: true,
@@ -703,7 +747,8 @@ export class Viewport {
       const lines = p.creaseLines ?? creaseLineIndices(p);
       if (lines.length) {
         const edgeGeo = new THREE.BufferGeometry();
-        edgeGeo.setAttribute('position', geometry.getAttribute('position'));
+        // A painted part has a corner of its own for each triangle: its edges keep the part's corners.
+        edgeGeo.setAttribute('position', jointed ? new THREE.BufferAttribute(p.positions, 3) : geometry.getAttribute('position'));
         edgeGeo.setIndex(new THREE.BufferAttribute(lines, 1));
         edgeGeo.boundingSphere = geometry.boundingSphere;
         const edge = new THREE.LineSegments(
@@ -715,7 +760,7 @@ export class Viewport {
             depthWrite: false,
           }),
         );
-        edge.userData.sharedPosition = true;
+        edge.userData.sharedPosition = !jointed;
         mesh.add(edge);
       }
     }
@@ -787,6 +832,7 @@ export class Viewport {
             creaseLines: undefined,
             previewIndices: undefined,
             previewMarks: undefined,
+            joints: undefined,
             kerbMarkings,
           },
           budgets[i * 2],

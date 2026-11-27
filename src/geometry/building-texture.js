@@ -55,6 +55,46 @@ export const DRAWN = {
 export const LAPPED = Object.freeze(['planks', 'shingle']);
 const CLEAR = 1; // joints keep this far from an opening and from a frame
 
+// The faces a joint or a grain line cuts keep the id of the solid that cut
+// them, so the 3D view can find them in a part and shade them darker, like
+// mortar between bricks. Each cutting solid is listed here by its id; the
+// list keeps only the most recent, it is for the view and nothing else.
+export const JOINT_TAGS = new Map(); // id → { kind, mark: 1 joint | 2 grain, surface: 'wall' | 'roof' }
+const MOST_TAGS = 20000;
+function tagged(own, solid, kind, mark, surface = 'wall') {
+  const s = own(solid.asOriginal());
+  JOINT_TAGS.set(s.originalID(), { kind, mark, surface });
+  if (JOINT_TAGS.size > MOST_TAGS) JOINT_TAGS.delete(JOINT_TAGS.keys().next().value);
+  return s;
+}
+/**
+ * The joints of a part's mesh: a mark for each triangle (0 face, 1 joint,
+ * 2 grain) and the texture most of its joints belong to, or null when no
+ * joint was cut into it.
+ */
+export function jointMarks(mesh) {
+  const ids = mesh.runOriginalID,
+    runs = mesh.runIndex;
+  if (!ids?.length || !JOINT_TAGS.size) return null;
+  let marks = null;
+  const count = new Map();
+  for (let r = 0; r < ids.length; r++) {
+    const tag = JOINT_TAGS.get(ids[r]);
+    if (!tag) continue;
+    const a = runs[r] / 3,
+      z = runs[r + 1] / 3;
+    if (z <= a) continue;
+    marks ??= new Uint8Array(mesh.triVerts.length / 3);
+    marks.fill(tag.mark, a, z);
+    const key = tag.surface + ':' + tag.kind;
+    count.set(key, (count.get(key) ?? 0) + (z - a) * (tag.mark === 1 ? 1 : 0.25));
+  }
+  if (!marks) return null;
+  const [key] = [...count].sort((p, q) => q[1] - p[1])[0];
+  const [surface, kind] = key.split(':');
+  return { marks, surface, kind };
+}
+
 // Rectangles as polygons, in the 2D frame of a face.
 const rect = (x0, y0, x1, y1) => [
   [x0, y0],
@@ -287,13 +327,13 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, f
     : { ...DIRS[wall], O: DIRS[wall].origin(W, D) };
   const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, O)));
   const cuts = [];
-  if (!section.isEmpty()) cuts.push(place(own(section.extrude(settings.textureDepth + 1))));
+  if (!section.isEmpty()) cuts.push(tagged(own, place(own(section.extrude(settings.textureDepth + 1))), kind, 1));
   // The grain, a third as deep, clear of the ends and the openings like the joints.
   const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, seed);
   if (grain.length) {
     let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, ceil)], 'Positive'))));
     if (clear) g = own(g.subtract(clear));
-    if (!g.isEmpty()) cuts.push(place(own(g.extrude(1 + settings.textureDepth / 3))));
+    if (!g.isEmpty()) cuts.push(tagged(own, place(own(g.extrude(1 + settings.textureDepth / 3))), kind, 2));
   }
   // Planks: each row slopes into the wall, the rows running on round the corner.
   if (LAPPED.includes(kind)) {
@@ -348,9 +388,9 @@ export function roofJoints(wasm, own, panel, { dir: [dx, dy], t, eave: [ex, ey],
   const alongR = [Math.min(...along) - 2, Math.max(...along) + 2],
     upR = [Math.min(...up) - 2, Math.max(...up) + 2];
   const cuts = [];
-  if (polys.length) cuts.push(own(own(own(new wasm.CrossSection(polys, 'Positive')).extrude(settings.textureDepth + 1)).transform(matrix(A, S, Nin, O))));
+  if (polys.length) cuts.push(tagged(own, own(own(own(new wasm.CrossSection(polys, 'Positive')).extrude(settings.textureDepth + 1)).transform(matrix(A, S, Nin, O))), kind, 1, 'roof'));
   const grain = grainPolygons(kind === 'shingle' ? 'boards' : kind, alongR, upR, settings, 3);
-  if (grain.length) cuts.push(own(own(own(new wasm.CrossSection(grain, 'NonZero')).extrude(1 + settings.textureDepth / 3)).transform(matrix(A, S, Nin, O))));
+  if (grain.length) cuts.push(tagged(own, own(own(own(new wasm.CrossSection(grain, 'NonZero')).extrude(1 + settings.textureDepth / 3)).transform(matrix(A, S, Nin, O))), kind, 2, 'roof'));
   // Shingles: each row slopes into the roof from its lower edge, so the row
   // above lies proud of it, its lower edge facing down the slope.
   if (LAPPED.includes(kind)) {
