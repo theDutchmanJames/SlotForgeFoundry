@@ -114,9 +114,33 @@ export function validateConnected(input) {
   if(Math.max(...xs)-Math.min(...xs)>1800 || Math.max(...ys)-Math.min(...ys)>1800) throw Error('Keep the whole building within 1800 × 1800 mm.');
   return b;
 }
+/**
+ * Whether a section's wall is all taken up by the sections beside it: joined
+ * to them along its whole length and nowhere higher than their roofs, on its
+ * outside face and its inside one. Such a wall is not built.
+ */
+export function wallCovered(b, index, wallId) {
+  const s = sectionPositions(b)[index], w = sectionWalls(s).find(w => w.id === wallId);
+  const contacts = sectionContacts(b, index).filter(c => c.wall === wallId).sort((p, q) => p.lo - q.lo);
+  let reach = 0;
+  for (const c of contacts) { if (c.lo > reach + 1e-7) return false; reach = Math.max(reach, c.hi); }
+  if (reach < w.length - 1e-7) return false;
+  // The tops are the lowest of planes: sampled closely, both faces, along each join.
+  const N = 64;
+  for (const c of contacts)
+    for (let k = 0; k <= N; k++) {
+      const u = c.lo + (c.hi - c.lo) * k / N;
+      for (const n of [0, b.wall]) {
+        if (n && (u < b.wall || u > w.length - b.wall)) continue;
+        const p = [w.a[0] + w.dir[0] * u + w.inward[0] * n, w.a[1] + w.dir[1] * u + w.inward[1] * n];
+        if (sectionTop(s, ...p) > sectionTop(c.other, ...p) + 1e-6) return false;
+      }
+    }
+  return true;
+}
 export function connectedLayout(input) {
   const b=validateConnected(input);
-  return {building:b,storeys:[],doors:[],parts:[{id:'base',name:'Connected base',role:'buildingBase'},...b.sections.flatMap(s=>[...SIDES.map(w=>({id:s.id+'-'+w,name:s.name+' '+w+' wall',role:'wall'})),...s.openings.flatMap((o,i)=>o.frame?[{id:s.id+'-frame-'+(i+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(i+1)+' frame',role:'frame'}]:[]),...sectionRoofPlanes({...s,x:0,y:0}).map(p=>({id:s.id+'-roof-'+p.id,name:s.name+' roof '+p.id,role:'roof'}))])]};
+  return {building:b,storeys:[],doors:[],parts:[{id:'base',name:'Connected base',role:'buildingBase'},...b.sections.flatMap((s,i)=>[...SIDES.filter(w=>!wallCovered(b,i,w)).map(w=>({id:s.id+'-'+w,name:s.name+' '+w+' wall',role:'wall'})),...s.openings.flatMap((o,i)=>o.frame?[{id:s.id+'-frame-'+(i+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(i+1)+' frame',role:'frame'}]:[]),...sectionRoofPlanes({...s,x:0,y:0}).map(p=>({id:s.id+'-roof-'+p.id,name:s.name+' roof '+p.id,role:'roof'}))])]};
 }
 export function addSection(input, parentIndex, side='back') {
   const b=validateConnected(input), p=b.sections[parentIndex];
@@ -172,6 +196,10 @@ export function buildConnected(wasm,input,plate=null) {
         // Eaves stop at adjoining footprints; the higher wall closes the step in the roof.
         for(const o of sections) if(o.id!==s.id) panel=own(panel.subtract(box(o.x,o.y,-1,o.x+o.width,o.y+o.depth,2001)));
         for(const r of roofs) panel=own(panel.subtract(r.solid));
+        // A corner of the eaves cut loose by the roof beside it lies under that
+        // roof: the panel is the piece over its section, one part as laid out.
+        const bodies=panel.decompose().map(own);
+        if(bodies.length>1) panel=bodies.reduce((p,q)=>q.volume()>p.volume()?q:p);
         const deg=Math.atan(Math.hypot(a,c))*180/Math.PI;
         roofs.push({solid:panel,id:s.id+'-roof-'+face.id,name:s.name+' roof '+face.id,role:'roof',lie:c?[-Math.sign(c)*deg,0,0]:[0,Math.sign(a)*deg,0],apart:[0,0,35]});
       }
@@ -194,7 +222,10 @@ export function buildConnected(wasm,input,plate=null) {
         }
         // The texture, clear of the openings, their frames and the joins to other sections; up to the ridge.
         const rise=s.roofType==='flat'?0:Math.tan(s.pitch*Math.PI/180)*Math.max(s.width,s.depth);
-        solid=finishShellWall(wasm,own,solid,w,{floor:b.baseHeight,top:b.baseHeight+s.height+rise,openings:s.openings.filter(o=>o.wall===w.id),avoid:contacts.filter(c=>c.wall===w.id).map(c=>[c.lo,c.hi])},b,s);
+        // A texture only cuts grooves: where it would leave nothing of the wall (its joints all
+        // kept clear, as on a wall joined along its length, come back empty), the wall stays plain.
+        const finished=finishShellWall(wasm,own,solid,w,{floor:b.baseHeight,top:b.baseHeight+s.height+rise,openings:s.openings.filter(o=>o.wall===w.id),avoid:contacts.filter(c=>c.wall===w.id).map(c=>[c.lo,c.hi])},b,s);
+        if(!(finished.isEmpty() && !solid.isEmpty())) solid=finished;
         solid=shellExtras(wasm,own,solid,w,{floor:b.baseHeight,wall:b.wall,openings:s.openings.filter(o=>o.wall===w.id)},b,s,sweep);
         for(const r of roofs) solid=own(solid.subtract(r.solid));
         const lie=w.inward[1]>0?[-90,0,0]:w.inward[1]<0?[90,0,0]:w.inward[0]>0?[0,90,0]:[0,-90,0];

@@ -143,9 +143,9 @@ test('a pit bay ends where its end stop is closed; a garage stands over it, the 
   assert.ok(near(back[0], 150 + GAP, 1e-6) && near(back[1], 4, 1e-6), 'back wall inside face: ' + back);
   const door = toPlan(entry, [building.width / 2, 0]);
   assert.ok(door[0] < back[0] && near(door[1], 4, 1e-6), 'the door faces the incoming track');
-  // Bays side by side: the room across each is the distance to the next, less 1 mm.
+  // Bays side by side: the room across each is the distance to the next, less 1 mm and both bases' ledges.
   const ends = [0, 150, 300].map((y) => ({ at: [500, y], dir: [1, 0] }));
-  assert.deepEqual(bayRoom(ends, 180), [149, 149, 149]);
+  assert.deepEqual(bayRoom(ends, 180), [143, 143, 143]);
   assert.deepEqual(bayRoom([ends[0], { at: [2000, 150], dir: [1, 0] }], 180), [Infinity, Infinity], 'a bay far ahead is not beside it');
   // A layout keeps which bay a garage stands over.
   assert.doesNotThrow(() => validateBuildings([{ ...garage({ x: 0, y: 0, a: 0 }), bay: 'node-1' }]));

@@ -18,7 +18,7 @@ test('the finish-line bridge stands over a straight on its legs: its feet clear 
   const entry = place(preset('finish-bridge'), { x: 0, y: 0, a: Math.PI / 2 });
   const rows = [straight(150)];
   // Its outline lies over the track, its feet do not.
-  assert.equal(baseParts(entry).length, 4, 'four feet');
+  assert.equal(baseParts(entry).length, 5, 'four feet, and the foot of its ladder');
   assert.ok(overlap(entry, loopsOf(rows)) < 0.5, 'its feet clear of the track');
   const head = headroomOver(entry, rows, roadOf);
   assert.ok(head, 'over the track');

@@ -7,9 +7,10 @@
 import polygonClipping from 'polygon-clipping';
 import { connectedOutline, sectionPositions, sectionRect, sectionWalls } from './geometry/connected-building.js';
 import { footprintOffset, footprintRings, footprintWalls } from './geometry/footprint-building.js';
-import { KIT, dividers, garageDoors, standFeet, storeyStack, validateBuilding } from './geometry/building.js';
+import { ACCESS, KIT, RELIEF, STAND as LEGS, dividers, garageDoors, standFeet, storeyStack, validateBuilding } from './geometry/building.js';
+import { propFootprint } from './geometry/props.js';
 import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
-import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
+import { GANTRY, footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { flagFootprint } from './geometry/flag-post.js';
 import { billboardFootprint } from './geometry/billboard.js';
@@ -71,6 +72,87 @@ const rect = (x0, y0, x1, y1) => [
   [x1, y1],
   [x0, y1],
 ];
+const boxRect = (rs) => [Math.min(...rs.map((r) => r[0])), Math.min(...rs.map((r) => r[1])), Math.max(...rs.map((r) => r[2])), Math.max(...rs.map((r) => r[3]))];
+// A rectangle against a wall of a storey W × D: from u0 to u1 along it (from
+// its left end as you look at it), from n0 to n1 out from its face.
+function wallRect(wall, W, D, u0, u1, n0, n1) {
+  const r = wall === 'front' ? [u0, -n0, u1, -n1] : wall === 'back' ? [W - u0, D + n0, W - u1, D + n1] : wall === 'left' ? [-n0, D - u0, -n1, D - u1] : [W + n0, u0, W + n1, u1];
+  return [Math.min(r[0], r[2]), Math.min(r[1], r[3]), Math.max(r[0], r[2]), Math.max(r[1], r[3])];
+}
+// The way up the outside of a garage, as the kit builds it: the storey whose
+// wall it stands against, how high it climbs and how far out it stands.
+function accessPlace(b) {
+  const all = [b, ...b.upper],
+    stack = storeyStack(b);
+  const H = b.standType === 'none' ? 0 : b.standHeight,
+    w = b.accessWall;
+  if (b.accessTo === 'base') return { against: stack[0], rise: H + b.baseHeight, out: 0 };
+  if (b.accessTo === 'roof') {
+    const top = stack.at(-1);
+    const over = { front: b.overhangFront, back: b.overhangBack, left: b.overhangLeft, right: b.overhangRight }[w];
+    return { against: top, rise: H + top.eave + KIT.roof, out: over + (b.roofRailing ? KIT.railInset + KIT.railThick + b.play : 0) };
+  }
+  const k = Number(b.accessTo);
+  const balcony = w === 'front' || all[k - 1].balconyAll ? all[k - 1].balcony ?? 0 : 0;
+  return { against: stack[k - 2], rise: H + stack[k - 1].floor, out: balcony };
+}
+/**
+ * What a garage stands on the table with beyond its base plate, each
+ * [x0, y0, x1, y1] in its own coordinates, as the kit builds them: the steps
+ * at its doors (on the base, so in the air on a stand), the ladder or the
+ * staircase up the outside, the props on the table, and a stand's feet.
+ */
+export function garageExtras(b) {
+  const steps = [],
+    stand = [];
+  const ground = storeyStack(b)[0];
+  for (const o of ground.openings) {
+    if (!o.step) continue;
+    const [reach, wider] = KIT.step;
+    const [x0, y0, x1, y1] = wallRect(o.wall, ground.width, ground.depth, o.at - o.width / 2 - wider, o.at + o.width / 2 + wider, KIT.ledge, KIT.ledge + reach);
+    steps.push([x0 + ground.ox, y0 + ground.oy, x1 + ground.ox, y1 + ground.oy]);
+  }
+  const way = [];
+  if (b.access !== 'none') {
+    const { against: s, rise, out } = accessPlace(b);
+    const relief = s.relief.plinth || s.relief.cornice || s.relief.pilasters ? RELIEF.depth : 0;
+    const off = Math.max(KIT.ledge, out, relief) + 0.2;
+    let r;
+    if (b.access === 'ladder') {
+      // Leaning on the wall, its foot out on the table: its thickness there across the slope.
+      const Q = ACCESS.ladder,
+        a = (Q.angle * Math.PI) / 180;
+      r = wallRect(b.accessWall, s.width, s.depth, b.accessAt - Q.width / 2, b.accessAt + Q.width / 2, off, off + rise / Math.tan(a) + Q.thick / Math.sin(a));
+    } else {
+      const S = ACCESS.stairs,
+        run = (Math.max(2, Math.ceil(rise / S.rise)) - 1) * S.tread + S.landing;
+      r = wallRect(b.accessWall, s.width, s.depth, b.accessAt, b.accessAt + run, off, off + S.width);
+    }
+    way.push([r[0] + s.ox, r[1] + s.oy, r[2] + s.ox, r[3] + s.oy]);
+  }
+  const props = (b.props ?? [])
+    .filter((p) => p.storey < 0)
+    .map((p) => {
+      const [fw, fd] = propFootprint(p.type, p.rotation ?? 0);
+      return [p.x, p.y, p.x + fw, p.y + fd];
+    });
+  // A stand's foot plates, out past the hollow of the base.
+  const pad = LEGS.foot[1];
+  const lo = -KIT.ledge + KIT.shell + b.play;
+  if (b.standType === 'legs') stand.push(...standFeet(b));
+  if (b.standType === 'frames') stand.push([lo - pad, lo - pad, b.width - lo + pad, b.depth - lo + pad]);
+  if (b.standType === 'tower' || b.standType === 'column') {
+    const r = (b.standType === 'tower' ? b.standSize : b.standSize * (1 + b.standTaper / 100)) / 2 + pad;
+    stand.push([b.width / 2 - r, b.depth / 2 - r, b.width / 2 + r, b.depth / 2 + r]);
+  }
+  return { steps, way, props, stand };
+}
+// A garage on the table: its base plate with the ledge, and all that stands beside it.
+function garageRects(b) {
+  const m = KIT.ledge,
+    { steps, way, props, stand } = garageExtras(b);
+  return [[-m, -m, b.width + m, b.depth + m], ...steps, ...way, ...props, ...stand];
+}
 /**
  * The shape of a building on the table, in its own coordinates (as its
  * parts are built): its outline, the box round it, and its front, the middle
@@ -79,7 +161,8 @@ const rect = (x0, y0, x1, y1) => [
  * round the middle of its curve, its front an arc.
  */
 export function shapeOf(b) {
-  let outline, front;
+  // mid: the point it turns round, where that is not the middle of its outline.
+  let outline, front, mid;
   if (b.kind === 'sections') {
     outline = connectedOutline(b, 3);
     const edges = outline.map((p,i) => [p,outline[(i+1)%outline.length]]).filter(([a,c]) => Math.abs(a[1]-c[1])<1e-7);
@@ -99,9 +182,14 @@ export function shapeOf(b) {
     outline = rect(0, 0, b.bays * b.bayWidth + PIT.shell, b.depth);
     front = { p: [(b.bays * b.bayWidth) / 2, 0], f: [0, -1] };
   } else if (b.kind === 'pitbays') {
-    // On the table it stands on its bays and the end panel; the frames and balconies reach out over the lane.
-    outline = rect(0, 0, b.types.length * b.bayWidth + BAYS.side, b.depth);
-    front = { p: [(b.types.length * b.bayWidth) / 2, 0], f: [0, -1] };
+    // On the table it stands on its bays and the end panel, its pillars out
+    // in front of them; the frames and balconies reach out over the lane.
+    const w = b.types.length * b.bayWidth + BAYS.side,
+      y0 = b.pillars ? -BAYS.pillar : 0;
+    outline = rect(0, y0, w, b.depth);
+    front = { p: [(b.types.length * b.bayWidth) / 2, y0], f: [0, -1] };
+    // It turns round the middle of its bays, as it always has: a layout keeps it in place.
+    mid = [w / 2, b.depth / 2];
   } else if (b.kind === 'walkway') {
     // Between two buildings: it is placed by hand, its front side along x.
     const [x0, y0, x1, y1] = walkwayFootprint(b);
@@ -165,10 +253,12 @@ export function shapeOf(b) {
     const D = standDepth(b),
       ahead = b.roof === 'canopy' ? STAND.reach : 0;
     if (!b.curve) {
-      // With its staircases beside it and its back railing.
+      // With its staircases beside it, its back railing and the panel closing its far end.
       const [x0, y0, x1, y1] = standExtent(b);
-      outline = rect(x0, y0, x1, y1);
+      outline = rect(x0, y0, Math.max(x1, b.length + STAND.shell), y1);
       front = { p: [b.length / 2, y0], f: [0, -1] };
+      // It turns round the middle of the stand without the end panel, as it always has.
+      mid = [(x0 + x1) / 2, (y0 + y1) / 2];
     } else {
       const { radius: R, angle, facing } = b.curve;
       const A = (angle * Math.PI) / 180,
@@ -176,20 +266,33 @@ export function shapeOf(b) {
       const near = inward ? R - ahead : R + ahead,
         far = inward ? R + D : R - D;
       const steps = Math.max(4, Math.ceil(angle / 3));
-      const arc = (r) => Array.from({ length: steps + 1 }, (_, k) => [r * Math.cos((A * k) / steps), r * Math.sin((A * k) / steps)]);
-      outline = [...arc(near), ...arc(far).reverse()];
-      const mid = [Math.cos(A / 2), Math.sin(A / 2)];
-      front = { p: [near * mid[0], near * mid[1]], f: inward ? [-mid[0], -mid[1]] : mid };
+      // On to the far side of the end panel, round the curve beyond its end.
+      const E = A + STAND.shell / R;
+      const arc = (r, to) => Array.from({ length: steps + 1 }, (_, k) => [r * Math.cos((to * k) / steps), r * Math.sin((to * k) / steps)]);
+      // Its chords round the arcs, not cutting across them: the outer arc's
+      // points out by the sag of a chord, the inner one's in by as much.
+      const sag = Math.cos(E / steps / 2);
+      outline = [...arc(near > far ? near / sag : near * sag, E), ...arc(far > near ? far / sag : far * sag, E).reverse()];
+      const half = [Math.cos(A / 2), Math.sin(A / 2)];
+      front = { p: [near * half[0], near * half[1]], f: inward ? [-half[0], -half[1]] : half };
+      // It turns round the middle of the curve without the end panel, as it always has.
+      const old = [...arc(near, A), ...arc(far, A)],
+        [l, t, r, u] = boxRect(old.map(([x, y]) => [x, y, x, y]));
+      mid = [(l + r) / 2, (t + u) / 2];
     }
   } else {
-    const m = KIT.ledge;
-    outline = rect(-m, -m, b.width + m, b.depth + m);
-    front = { p: [b.width / 2, -m], f: [0, -1] };
+    // Its base with the ledge, and what stands beside it: door steps, the way
+    // up, props on the table, a stand's feet. Its front is the frontmost of them.
+    const [x0, y0, x1, y1] = boxRect(garageRects(b));
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [b.width / 2, y0], f: [0, -1] };
+    // It turns round the middle of its walls, whatever stands beside it.
+    mid = [b.width / 2, b.depth / 2];
   }
   const xs = outline.map(([x]) => x),
     ys = outline.map(([, y]) => y);
   const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-  return { outline, box, centre: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], front };
+  return { outline, box, centre: mid ?? [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], front };
 }
 /** A point of the building, in its own coordinates, on the plan: turned by a round its middle. */
 export function toPlan({ building: b, pose }, [x, y]) {
@@ -318,15 +421,58 @@ const area = (multi) =>
 export const CAR_HEADROOM = 50;
 /**
  * What can stand over the track, on legs, towers or an arch: where it meets
- * the table, [x0, y0, x1, y1] each in its own coordinates, and how high its
- * underside is above the table at a point of it. Null for what stands on
- * its whole outline.
+ * the table, [x0, y0, x1, y1] each in its own coordinates; how high its
+ * underside is above the table at a point of it; and where something hangs
+ * lower than that, its zones: each a rectangle and the underside in it. Null
+ * for what stands on its whole outline.
  */
 export function spanOf(b) {
-  if (b.kind === 'gantry') return { feet: gantryFeet(b), under: () => b.clearance };
-  if (b.kind === 'garage' && b.standType === 'legs') return { feet: standFeet(b), under: () => b.standHeight };
-  if (b.kind === 'tyrebridge') return { feet: tyreFeet(b), under: (x) => tyreHeadroom(b, x) };
-  if (b.kind === 'walkway') return { feet: walkwayFeet(b), under: () => b.clearance - WALKWAY.deck };
+  if (b.kind === 'gantry') {
+    // A lattice or timber beam's board is centred on the girders: deeper than them, it hangs below.
+    const open = b.members !== 'solid' && b.type !== 'bridge' && b.board ? GANTRY[b.members] : null;
+    const drop = open ? Math.max(0, (Math.max(b.boardHeight, open.girder[0] - 4) - open.girder[0]) / 2) : 0;
+    return { feet: gantryFeet(b), under: () => b.clearance - drop, zones: [] };
+  }
+  if (b.kind === 'garage' && b.standType === 'legs') {
+    // On the table: the feet, the way up, the props. Knee braces reach out
+    // from each leg below the base, lowest where they leave its foot.
+    const { way, props } = garageExtras(b);
+    const feet = standFeet(b),
+      zones = [];
+    if (b.standBraces) {
+      const S = b.standSize,
+        { reach, angle, thick } = LEGS.knee,
+        a = (angle * Math.PI) / 180,
+        tan = Math.tan(a);
+      const rise = reach * tan,
+        k = (S * thick) / 2,
+        d = k / Math.cos(a),
+        s0 = S / 2 - 0.3,
+        low = b.standHeight + b.baseHeight - KIT.deck - rise - d,
+        end = s0 + (rise + d) / tan,
+        r = S / 2 + LEGS.foot[1];
+      for (const [x0, y0, x1, y1] of feet) {
+        const cx = (x0 + x1) / 2,
+          cy = (y0 + y1) / 2,
+          sx = cx < b.width / 2 ? 1 : -1,
+          sy = cy < b.depth / 2 ? 1 : -1;
+        if (end <= r) continue;
+        const along = (u0, u1) => [Math.min(u0, u1), Math.max(u0, u1)];
+        const [ax0, ax1] = along(cx + sx * r, cx + sx * end),
+          [ay0, ay1] = along(cy + sy * r, cy + sy * end);
+        zones.push({ rect: [ax0, cy - k, ax1, cy + k], under: (x) => low + (Math.abs(x - cx) - s0) * tan });
+        zones.push({ rect: [cx - k, ay0, cx + k, ay1], under: (x, y) => low + (Math.abs(y - cy) - s0) * tan });
+      }
+    }
+    return { feet: [...feet, ...way, ...props], under: () => b.standHeight, zones };
+  }
+  if (b.kind === 'tyrebridge') return { feet: tyreFeet(b), under: (x) => tyreHeadroom(b, x), zones: [] };
+  if (b.kind === 'walkway') {
+    // A tower is a building: its base plate reaches out past its walls.
+    const m = KIT.ledge,
+      feet = walkwayFeet(b).map(([x0, y0, x1, y1]) => (b.towers ? [x0 - m, y0 - m, x1 + m, y1 + m] : [x0, y0, x1, y1]));
+    return { feet, under: () => b.clearance - WALKWAY.deck, zones: [] };
+  }
   return null;
 }
 /**
@@ -348,6 +494,12 @@ export function headroomOver(entry, rows, roadOf) {
       if (area(cut) < 0.5) continue;
       road = Math.max(road, roadOf(row));
       for (const poly of cut) for (const ring of poly) for (const p of ring) under = Math.min(under, span.under(...fromPlan(entry, p)));
+      // Where something hangs lower over the track: its underside where it is over it.
+      for (const zone of span.zones) {
+        const over = polygonClipping.intersection(cut, [rect(...zone.rect).map((p) => toPlan(entry, p))]);
+        if (area(over) < 0.01) continue;
+        for (const poly of over) for (const ring of poly) for (const p of ring) under = Math.min(under, zone.under(...fromPlan(entry, p)));
+      }
     }
   return under === Infinity ? null : { under, road, room: under - road };
 }
@@ -362,13 +514,21 @@ export function baseParts(entry) {
   // A gantry meets the table only where its feet stand: its beam spans the track.
   if (b.kind === 'gantry') return gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
   const span = spanOf(b);
-  if (span) return span.feet.map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
-  if (!b.lane) return [footprint(entry)];
+  if (span) return pieces(entry, span.feet);
+  if (b.kind !== 'garage') return [footprint(entry)];
+  if (!b.lane) {
+    const rects = garageRects(b);
+    return rects.length === 1 ? [footprint(entry)] : pieces(entry, rects);
+  }
   const half = b.lane.width / 2 + KIT.lanePlay,
     end = b.depth - KIT.wall - (b.play ?? KIT.play);
-  return [rect(-m, -m, b.width / 2 - half, b.depth + m), rect(b.width / 2 + half, -m, b.width + m, b.depth + m), rect(b.width / 2 - half, end, b.width / 2 + half, b.depth + m)].map(
-    (loop) => loop.map((p) => toPlan(entry, p)),
-  );
+  const { steps, way, props, stand } = garageExtras(b);
+  return pieces(entry, [[-m, -m, b.width / 2 - half, b.depth + m], [b.width / 2 + half, -m, b.width + m, b.depth + m], [b.width / 2 - half, end, b.width / 2 + half, b.depth + m], ...steps, ...way, ...props, ...stand]);
+}
+// Rectangles in a building's own coordinates, joined where they meet, on the plan: each piece's outline.
+function pieces(entry, rects) {
+  if (!rects.length) return [];
+  return polygonClipping.union(...rects.map(([x0, y0, x1, y1]) => [rect(x0, y0, x1, y1)])).map(([outer]) => outer.slice(0, -1).map((p) => toPlan(entry, p)));
 }
 /** How much of the track (its outlines) lies under the building's base, in mm². */
 export function overlap(entry, loops) {
@@ -523,7 +683,11 @@ export function bayPose(building, { at, dir }) {
   return { x: at[0] - dir[0] * reach, y: at[1] - dir[1] * reach, a: Math.atan2(-dir[0], dir[1]) };
 }
 
-/** How much room each bay has across for a garage: the distance to the nearest bay beside it, less GAP. */
+/**
+ * How much room each bay has across for a garage, its walls' width: the
+ * distance to the nearest bay beside it, less GAP and the ledge of its base
+ * and its neighbour's (half the room each side, each base out past its walls).
+ */
 export function bayRoom(ends, depth) {
   return ends.map((e, i) => {
     let room = Infinity;
@@ -534,7 +698,7 @@ export function bayRoom(ends, depth) {
         dy = o.at[1] - e.at[1];
       // Beside it, not far ahead or behind.
       if (Math.abs(dx * e.dir[0] + dy * e.dir[1]) > depth) return;
-      room = Math.min(room, Math.abs(dx * across[0] + dy * across[1]) - GAP);
+      room = Math.min(room, Math.abs(dx * across[0] + dy * across[1]) - GAP - 2 * KIT.ledge);
     });
     return room;
   });
