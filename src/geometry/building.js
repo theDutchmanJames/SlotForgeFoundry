@@ -644,6 +644,8 @@ export function validateBuilding(input) {
   if (b.sign === 'fascia' && b.cornice) throw Error('The sign and the cornice both run along the top of the front wall: choose one.');
   if (b.numbers && (b.cornice || b.pilasters || b.panels)) throw Error('The bay numbers sit on the wall above the doors, where the relief would be: choose one.');
   if (b.sign === 'fascia') {
+    // A barrel vault with its ridge side to side comes down past the top of the front wall, where the sign would be.
+    if (b.roof === 'vault' && b.ridge === 'width' && !b.upper.length) throw Error('A barrel vault with its ridge side to side comes down over the front wall, where the sign goes: turn its ridge front to back, or letter the wall instead.');
     const under = signUnder(b);
     if (b.numbers && doors.length) throw Error('The sign and the bay numbers both go above the garage doors: choose one.');
     if (b.door !== 'none' && b.doorHeight > under - 1) throw Error('The garage door reaches up under the sign: at most ' + fmtMm(under - 1) + ' mm high with a sign of ' + b.signHeight + ' mm.');
@@ -1741,6 +1743,9 @@ export function buildGarage(wasm, input, plate = null) {
     const rect = (u0, v0, u1, v1) => own(new CrossSection([[[u0, v0], [u1, v0], [u1, v1], [u0, v1]]], 'Positive'));
     const top = z1 + shape.rise + rt + 1;
     let profile = own(own(circle(R + rt).subtract(circle(R))).intersect(rect(a0, Math.max(zc, z1 - 40), a1, top)));
+    // Below the eaves the arch is only past the walls: its many-sided circle,
+    // a hair inside the true one, would otherwise cut into the tops of the walls it bears on.
+    profile = own(profile.subtract(rect(0, z1 - 41, span, z1)));
     const bear = own(own(rect(0, z1, t + c, top).add(rect(span - t - c, z1, span, top))).intersect(circle(R + 0.01)));
     profile = own(profile.add(bear));
     const length = l1 - l0;

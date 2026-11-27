@@ -129,3 +129,16 @@ test('rooms under a sawtooth or a vault: the dividing wall follows the roof, wit
       probe.delete();
     });
 });
+
+test('a barrel vault keeps out of the tops of the walls it bears on, whichever way its ridge runs and however wide', () => {
+  // A long hall cut into pieces, and a square one: the arch's many-sided circle once cut a sliver into the walls under the eaves.
+  for (const b of [{ door: 'none', width: 356, depth: 175, height: 138, roof: 'vault', ridge: 'width', rise: 33 }, { door: 'none', width: 180, depth: 175, height: 138, roof: 'vault', ridge: 'width', rise: 33 }, { door: 'none', width: 175, depth: 180, height: 138, roof: 'vault', ridge: 'depth', rise: 33 }])
+    withParts(b, (parts) => checkKit(parts, PLATE, JSON.stringify(b).slice(0, 60) + ' '));
+});
+
+test('a sign along the top of the front wall is refused under a vault that comes down over it', () => {
+  const hall = { door: 'none', width: 180, depth: 175, height: 138, roof: 'vault', rise: 33, sign: 'fascia', signWidth: 120, signHeight: 14, signText: 'HALL' };
+  assert.throws(() => validateBuilding({ ...hall, ridge: 'width' }), /comes down over the front wall, where the sign goes/);
+  // Its ridge front to back, the arch's ends are over the end walls: the sign stands on the front wall.
+  withParts({ ...hall, ridge: 'depth' }, (parts) => checkKit(parts, PLATE, 'vault and sign '));
+});
