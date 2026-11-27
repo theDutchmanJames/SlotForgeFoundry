@@ -132,7 +132,8 @@ test('on the plan and in the notes', () => {
   const m = validatePitBays({ types: ['single', 'box', 'podium', 'box'] });
   const { outline, front } = shapeOf(m);
   assert.deepEqual(outline.at(2), [4 * 110 + BAYS.side, 150]);
-  assert.deepEqual(front, { p: [220, 0], f: [0, -1] });
+  // Its front is the front of its pillars, which stand on the table ahead of the bays.
+  assert.deepEqual(front, { p: [220, m.pillars ? -BAYS.pillar : 0], f: [0, -1] });
   const shapes = planShapes({ id: 'b-1', name: 'P', building: m, pose: { x: 0, y: 0, a: 0 } });
   assert.equal(shapes.dividers.length, 3);
   assert.equal(shapes.doors.length, 4);
