@@ -304,7 +304,9 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, f
     let allowed = own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, ceil)], 'Positive'));
     if (clear) allowed = own(allowed.subtract(clear));
     const within = place(own(allowed.extrude(settings.textureDepth + 1)));
-    cuts.push(own(across.intersect(within)));
+    // With the whole wall kept clear nothing is left to cut: an empty cut would empty the wall.
+    const planks = own(across.intersect(within));
+    if (!planks.isEmpty()) cuts.push(planks);
   }
   if (!cuts.length) return null;
   return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];

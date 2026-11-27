@@ -22,7 +22,8 @@ export function validateFitTest(input) {
 }
 /** The three clearances tried: a step less than the one set, it, a step more. */
 export const fitClearances = (b) => [-FIT.step, 0, FIT.step].map((d) => Math.round(Math.max(0.05, b.play + d) * 100) / 100);
-export const fitFootprint = () => [0, 0, FIT.length, FIT.depth];
+// The block and the strip of wall lying behind it, as the kit builds them.
+export const fitFootprint = () => [0, 0, FIT.length, FIT.depth + 8 + KIT.wall];
 export function fitTestLayout(input) {
   const b = validateFitTest(input);
   return { building: b, parts: [{ id: 'block', name: 'Groove block', role: 'buildingBase' }, { id: 'strip', name: 'Wall strip', role: 'wall' }] };
