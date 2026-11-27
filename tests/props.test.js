@@ -64,7 +64,7 @@ test('a kit of props: so many of each in a row, named, on the plate, with its no
   const notes = kitNotes('Pit props', validateBuilding(b), buildingLayout(b).parts, {});
   assert.match(notes, /3 × stack of tyres, 1 × workbench, 2 × pit board/);
   assert.match(notes, /A workbench: stand its two end frames up/);
-  assert.throws(() => validateBuilding({ kind: 'props', items: [] }), /1 to 22 kinds/);
+  assert.throws(() => validateBuilding({ kind: 'props', items: [] }), /1 to 24 kinds/);
   assert.throws(() => validateBuilding({ kind: 'props', items: [{ type: 'cone', count: 13 }] }), /1 to 12/);
   assert.throws(() => validateBuilding({ kind: 'props', items: [{ type: 'cone', count: 1 }, { type: 'cone', count: 2 }] }), /twice/);
 });

@@ -152,6 +152,8 @@ export function sizeLine(b) {
   if (b.kind === 'tyrebridge') return 'Tyre bridge · ' + Math.round(b.span) + ' × ' + Math.round(b.height) + ' mm';
   if (b.kind === 'bench') return (b.count === 1 ? 'Bench' : b.count + ' benches') + ' · ' + Math.round(b.length) + ' mm each';
   if (b.kind === 'switchback') return 'Switchback stairs · ' + Math.round(b.height) + ' mm up';
+  if (b.kind === 'canopy') return 'Canopy · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm, ' + Math.round(b.height) + ' mm up';
+  if (b.kind === 'stage') return 'Stage · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm, ' + Math.round(b.height) + ' mm high';
   if (b.kind === 'billboard') return (b.style === 'board' ? 'Billboard' : 'Hoarding') + ' · ' + Math.round(b.length) + ' × ' + Math.round(b.height) + ' mm';
   if (b.kind === 'flagpost') return "Flag waver's post · " + Math.round(b.width) + ' wide, ' + Math.round(b.height) + ' mm up';
   if (b.kind === 'marshalpost') return (b.deckHeight > 0 ? 'Marshal post' : 'Marshal shelter') + ' · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';

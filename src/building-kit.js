@@ -92,6 +92,8 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
   if (b.kind === 'walkway') return walkwayNotes(name, b, parts, sizes);
   if (b.kind === 'pitbays') return pitBaysNotes(name, b, parts, sizes);
+  if (b.kind === 'canopy') return canopyNotes(name, b, parts, sizes);
+  if (b.kind === 'stage') return stageNotes(name, b, parts, sizes);
   const cut = parts.some((p) => / \d+ of \d+$/.test(p.name));
   const list = parts
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
@@ -443,6 +445,59 @@ function fitNotes(name, b, parts, sizes) {
     '- The block has three grooves, with a clearance of ' + lo + ', ' + mid + ' and ' + hi + ' mm each side, raised in front of each.',
     '- Push the wall strip into each groove from the back. The one it slides into with a little push, and stays in without falling out, is right for your printer.',
     '- Set Joint clearance on your buildings to that number. Too tight in all three: print the test again at a larger clearance; too loose in all three: at a smaller one.',
+  ].join('\n');
+}
+// The notes of a canopy: its slab, posts and roof, its screens, sign and props.
+function canopyNotes(name, c, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const pieces = (re) => parts.filter((p) => re.test(p.id)).length > 1;
+  const steps = [
+    ...(c.base ? ['Lay the slab' + (pieces(/^slab/) ? ' pieces end to end on a flat table and glue them' : ' on the table') + '.'] : []),
+    c.base ? 'Push each post into its socket in the slab, its pin at the top, the pins all to the back.' : 'Stand the posts on the table where they go, their pins at the top, all to the back.',
+    c.roof === 'flat'
+      ? 'Lower the roof' + (pieces(/^roof/) ? ', its pieces glued end to end,' : '') + ' onto the pins, each up into its socket, and glue it.'
+      : 'Lower the front and the back rail onto the pins, each up into its socket, and glue them; then lay the two slopes of the tent on the rails, meeting at the ridge, and glue them along it.',
+    ...(parts.some((p) => /^screen/.test(p.id)) ? ['Glue the screens between the end posts' + (parts.some((p) => /^screen-back/.test(p.id)) ? ', and the back one against the back posts' : '') + '.'] : []),
+    ...(c.text ? ['Glue the sign along the front' + (c.roof === 'flat' ? ' of the roof, its top flush with the roof' : ', under the front rail, against the front posts') + '.'] : []),
+    ...(c.props.length ? ['Glue the props on the ' + (c.base ? 'slab' : 'table') + ' where they stand. ' + propLines(c.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
+  ];
+  return [
+    name + ' · SlotForge Foundry canopy kit',
+    '',
+    'A canopy ' + fmt(c.width) + ' × ' + fmt(c.depth) + ' mm on ' + 2 * (c.bays + 1) + ' posts, ' + fmt(c.height) + ' mm up to the underside of its ' + (c.roof === 'flat' ? 'flat roof' : 'tent') + '.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports: the slab as it is, the posts on their side, the roof' + (c.roof === 'flat' ? '' : "'s rails") + ' upside down' + (c.roof === 'flat' ? '' : ', the tent on its underside') + ', the screens and the sign on their back.',
+    '',
+    'Putting it together',
+    ...steps.map((line, i) => i + 1 + '. ' + line),
+  ].join('\n');
+}
+// The notes of a stage: its deck and ramps, its portal and backdrop.
+function stageNotes(name, s, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  const steps = [
+    'Stand the deck on the table, its open side down.',
+    ...(s.ramps === 'ends' ? ['Glue a ramp against each end of the deck, its top level with the deck.'] : []),
+    ...(s.portal ? ['Glue the piers upright at the ends of the deck, across its middle, and the header across their tops, its letters to the front.'] : []),
+    ...(s.backdrop ? ['Stand the feet in a row behind the deck and push a backdrop panel down into each slot, the lettered one in the middle, its checks to the front.'] : []),
+  ];
+  return [
+    name + ' · SlotForge Foundry stage kit',
+    '',
+    'A deck ' + fmt(s.width) + ' × ' + fmt(s.depth) + ' mm, ' + fmt(s.height) + ' mm high' + (s.ramps === 'ends' ? ', a ramp ' + fmt(s.rampLength) + ' mm long up to each end' : '') + '.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing',
+    '- Every part prints without supports: the deck upside down, the ramps on their side, the piers, the header and the panels flat with their letters and checks up, the feet as they stand.',
+    '',
+    'Putting it together',
+    ...steps.map((line, i) => i + 1 + '. ' + line),
   ].join('\n');
 }
 function propsNotes(name, b, parts, sizes) {

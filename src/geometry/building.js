@@ -15,6 +15,8 @@ import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module
 import { buildMarshalPost, marshalPostLayout, validateMarshalPost } from './marshal-post.js';
 import { buildFlagPost, flagPostLayout, validateFlagPost } from './flag-post.js';
 import { billboardLayout, buildBillboard, validateBillboard } from './billboard.js';
+import { buildCanopy, canopyLayout, validateCanopy } from './canopy.js';
+import { buildStage, stageLayout, validateStage } from './stage.js';
 import { buildSwitchback, switchbackLayout, validateSwitchback } from './switchback.js';
 import { benchLayout, buildBench, validateBench } from './bench.js';
 import { buildTyreBridge, tyreBridgeLayout, validateTyreBridge } from './tyre-bridge.js';
@@ -122,6 +124,14 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // on the plan of the ground floor, turned by `rotation`, standing on the
   // floor of `storey` (0 the ground floor), or on the table outside (-1).
   props: Object.freeze([]),
+  // Parts left out of the kit: 'roof' (open to the sky, like a ruin or a
+  // room box) and any of the walls, 'front', 'back', 'left' or 'right', on
+  // every storey (open on that side), with their corner braces.
+  leaveOut: Object.freeze([]),
+  // Breaches in the walls of the top storey, the roof left out: each { wall,
+  // at, width, depth } a ragged gap down from the top of the wall, `at` its
+  // middle along the wall (as for a window), `depth` how far down it reaches.
+  damage: Object.freeze([]),
   gutters: false,
   downpipes: 'none',
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -530,6 +540,8 @@ export function validateBuilding(input) {
   if (input?.kind === 'marshalpost') return validateMarshalPost(input);
   if (input?.kind === 'flagpost') return validateFlagPost(input);
   if (input?.kind === 'billboard') return validateBillboard(input);
+  if (input?.kind === 'canopy') return validateCanopy(input);
+  if (input?.kind === 'stage') return validateStage(input);
   if (input?.kind === 'switchback') return validateSwitchback(input);
   if (input?.kind === 'bench') return validateBench(input);
   if (input?.kind === 'tyrebridge') return validateTyreBridge(input);
@@ -716,7 +728,101 @@ export function validateBuilding(input) {
   const out = { ...b, openings, lettering, upper, cuts: validateCuts(b.cuts) };
   checkRoof(out);
   out.props = checkProps(out);
+  out.leaveOut = checkLeaveOut(out);
+  out.damage = checkDamage(out);
   return out;
+}
+
+/** Breaches: at most so many; each at least `least` wide and deep, and `keep` of the wall left under it. */
+export const DAMAGE = Object.freeze({ most: 6, least: 10, keep: 10 });
+/**
+ * The breaches, checked: in a wall of the top storey that is there, with the
+ * roof left out, inside the wall clear of its corners, not as low as the
+ * floor, clear of the windows and doors.
+ */
+function checkDamage(b) {
+  const list = b.damage ?? [];
+  if (!Array.isArray(list) || list.length > DAMAGE.most) throw Error('A building has at most ' + DAMAGE.most + ' breaches.');
+  if (list.length && !b.leaveOut.includes('roof')) throw Error('A breach comes down from the top of a wall: leave the roof out first.');
+  const all = storeyStack(b),
+    top = all[all.length - 1];
+  return list.map((d, i) => {
+    const name = 'Breach ' + (i + 1);
+    if (!d || typeof d !== 'object' || Object.keys(d).some((k) => !['wall', 'at', 'width', 'depth'].includes(k))) throw Error(name + ' has a wall, a place, a width and a depth.');
+    if (!['front', 'back', 'left', 'right'].includes(d.wall)) throw Error(name + ': choose the front, back, left or right wall.');
+    if (b.leaveOut.includes(d.wall)) throw Error(name + ' is in a wall that is left out.');
+    const L = d.wall === 'front' || d.wall === 'back' ? top.width : top.depth;
+    const q = { wall: d.wall, at: d.at, width: d.width, depth: d.depth };
+    if (![q.at, q.width, q.depth].every(Number.isFinite)) throw Error(name + ' has a place, a width and a depth.');
+    if (q.width < DAMAGE.least || q.depth < DAMAGE.least) throw Error(name + ' is at least ' + DAMAGE.least + ' mm wide and deep.');
+    const edge = KIT.wall + KIT.frame;
+    if (q.at - q.width / 2 < edge || q.at + q.width / 2 > L - edge) throw Error(name + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
+    if (q.depth > top.height - DAMAGE.keep) throw Error(name + ' reaches too far down: at most ' + fmtMm(top.height - DAMAGE.keep) + ' mm, leaving ' + DAMAGE.keep + ' mm of wall.');
+    for (const o of top.openings.filter((o) => o.wall === d.wall)) {
+      const across = Math.abs(o.at - q.at) < o.width / 2 + q.width / 2 + KIT.trim + 2;
+      if (across && o.sill + o.height + KIT.trim + 2 > top.height - q.depth) throw Error(name + ' reaches into the ' + openingName(o, top.openings).toLowerCase() + ' under it: make it shallower or move it along.');
+    }
+    return q;
+  });
+}
+/**
+ * A breach's ragged gap, in the plane of its wall: u along the wall from its
+ * left end as seen from outside, z up; from above the top down, its foot
+ * jagged, the same every time for the same breach.
+ */
+export function breachOutline(d, zTop) {
+  const u0 = d.at - d.width / 2,
+    u1 = d.at + d.width / 2,
+    n = Math.max(3, Math.round(d.width / 7));
+  // A steady, uneven run of depths: from the size and the place, no randomness.
+  const jag = (k) => 0.62 + 0.38 * Math.abs(Math.sin(k * 12.9898 + d.at * 0.7 + d.width * 0.31));
+  const foot = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    // Shallower at its sides, deepest in its middle, ragged all along.
+    const shape = Math.sin(Math.PI * (0.15 + 0.7 * t));
+    foot.push([u0 + (u1 - u0) * t, zTop - d.depth * (k === 0 || k === n ? 0.25 : shape * jag(k))]);
+  }
+  return [[u0, zTop + 1], ...foot, [u1, zTop + 1]].reverse();
+}
+
+const LEAVE_OUT = ['roof', 'front', 'back', 'left', 'right'];
+/**
+ * What is left out, checked: the roof, with nothing on it or up to it; walls,
+ * at most three, with no window, door, sign, number, lettering or way up on
+ * them on any storey, and on the front no garage door.
+ */
+function checkLeaveOut(b) {
+  const list = b.leaveOut ?? [];
+  if (!Array.isArray(list) || list.some((k) => !LEAVE_OUT.includes(k)) || new Set(list).size !== list.length) throw Error('Leave out the roof or a wall, each once.');
+  const walls = list.filter((k) => k !== 'roof');
+  if (walls.length > 3) throw Error('Keep at least one wall.');
+  if (list.includes('roof')) {
+    if (b.chimney || b.dormers.length || b.rooflights?.length || b.gutters || b.roofRailing || b.sign === 'billboard' || (b.access !== 'none' && b.accessTo === 'roof'))
+      throw Error('With the roof left out there is nothing for a chimney, dormers, rooflights, gutters, a roof railing, a billboard or a way up onto the roof.');
+  }
+  for (const w of walls) {
+    const name = WALL_NAMES[w].toLowerCase() + ' wall';
+    const storeys = [b, ...b.upper];
+    if (storeys.some((st) => st.openings.some((o) => o.wall === w))) throw Error('The ' + name + ' is left out: take its windows and doors off first.');
+    if (storeys.some((st) => (st.lettering ?? []).some((l) => l.wall === w))) throw Error('The ' + name + ' is left out: take the lettering off it first.');
+    if (b.access !== 'none' && b.accessWall === w) throw Error('The ' + name + ' is left out: the way up climbs another wall.');
+    if (w === 'front' && (b.door !== 'none' || b.sign === 'fascia' || b.numbers)) throw Error('The front wall is left out: it has no garage door, sign or bay numbers.');
+  }
+  return [...list];
+}
+/** Whether a part of the kit is kept, or left out with the roof or its wall. */
+export function keptPart(b, id) {
+  const out = b.leaveOut ?? [];
+  if (!out.length) return true;
+  if (out.includes('roof') && /^(roof|light-)/.test(id)) return false;
+  const corners = { front: ['fl', 'fr'], back: ['bl', 'br'], left: ['fl', 'bl'], right: ['fr', 'br'] };
+  for (const w of out) {
+    if (w === 'roof') continue;
+    if (new RegExp('^' + w + '\\d?(-\\d+)?$').test(id)) return false;
+    if (new RegExp('^brace\\d?-(' + corners[w].join('|') + ')$').test(id)) return false;
+  }
+  return true;
 }
 
 /**
@@ -1440,6 +1546,8 @@ export function buildingLayout(input) {
   if (input?.kind === 'marshalpost') return { ...marshalPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'flagpost') return { ...flagPostLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'billboard') return { ...billboardLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'canopy') return { ...canopyLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'stage') return { ...stageLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'switchback') return { ...switchbackLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'bench') return { ...benchLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'tyrebridge') return { ...tyreBridgeLayout(input), storeys: [], doors: [] };
@@ -1490,6 +1598,8 @@ export function buildingLayout(input) {
     });
   if (b.sign !== 'none') parts.push({ id: 'sign', name: b.sign === 'billboard' ? 'Billboard' : 'Sign', role: 'wall' });
   if (b.sign === 'billboard') parts.push({ id: 'sign-fin-1', name: 'Billboard fin 1', role: 'frame' }, { id: 'sign-fin-2', name: 'Billboard fin 2', role: 'frame' });
+  // What is left out: the roof, or a wall and its corner braces.
+  for (let i = parts.length - 1; i >= 0; i--) if (!keptPart(b, parts[i].id)) parts.splice(i, 1);
   return { building: b, storeys, parts, doors };
 }
 
@@ -1526,7 +1636,7 @@ export function buildingCuts(input, plate) {
   if (input?.kind === 'sections') return {};
   if (input?.kind === 'footprint') return {};
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props', 'fittest'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props', 'fittest', 'canopy', 'stage'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1616,6 +1726,8 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'marshalpost') return buildMarshalPost(wasm, input);
   if (input?.kind === 'flagpost') return buildFlagPost(wasm, input);
   if (input?.kind === 'billboard') return buildBillboard(wasm, input);
+  if (input?.kind === 'canopy') return buildCanopy(wasm, input);
+  if (input?.kind === 'stage') return buildStage(wasm, input);
   if (input?.kind === 'switchback') return buildSwitchback(wasm, input);
   if (input?.kind === 'bench') return buildBench(wasm, input);
   if (input?.kind === 'tyrebridge') return buildTyreBridge(wasm, input);
@@ -2858,6 +2970,36 @@ export function buildGarage(wasm, input, plate = null) {
     if (b.access !== 'none') parts.push(buildAccess());
     // Props on the table stay on it, whatever the building stands on.
     parts.push(...propParts('table'));
+    // What is left out goes: the roof, or a wall and its corner braces.
+    for (let i = parts.length - 1; i >= 0; i--) if (!keptPart(b, parts[i].id)) parts.splice(i, 1);
+    // The breaches: each a ragged gap cut down from the top of its wall on the top storey.
+    if (b.damage.length) {
+      const top = storeys[storeys.length - 1],
+        lift = b.standType === 'none' ? 0 : b.standHeight;
+      const t = KIT.wall,
+        Wt = top.width,
+        Dt = top.depth;
+      const ALONG = { front: [[0, 0], [1, 0]], back: [[Wt, Dt], [-1, 0]], left: [[0, Dt], [0, -1]], right: [[Wt, 0], [0, 1]] };
+      for (const d of b.damage) {
+        const [[x0, y0], dir] = ALONG[d.wall],
+          inward = OUTWARD[d.wall].map((v) => -v);
+        const cutter = sweep(breachOutline(d, top.eave + lift), [...dir, 0], [0, 0, 1], [x0 + top.ox, y0 + top.oy, 0], [inward[0], inward[1], 0], -1, t + 1);
+        const mine = new RegExp('^' + d.wall + (top.n > 1 ? top.n : '') + '(-\\d+)?$');
+        for (const [i, q] of parts.entries()) {
+          if (!mine.test(q.id)) continue;
+          let solid = own(q.solid.subtract(cutter));
+          // Crumbs left where a breach meets a cut between two pieces are broken away with it; a piece broken in two is not kept.
+          const bodies = solid.decompose().map(own);
+          if (bodies.length > 1) {
+            const biggest = Math.max(...bodies.map((x) => x.volume()));
+            const kept = bodies.filter((x) => x.volume() > 0.05 * biggest);
+            if (kept.length > 1) throw Error('A breach in the ' + d.wall + ' wall breaks ' + q.name.toLowerCase() + ' in two: move it along the wall, or make it shallower.');
+            solid = kept[0];
+          }
+          parts[i] = { ...q, solid };
+        }
+      }
+    }
     // Keep the parts in the order of the kit; free everything else.
     const order = buildingLayout(b).parts.map((p) => p.id);
     const rank = (id) => order.indexOf(order.includes(id) ? id : id.replace(/-\d+$/, ''));

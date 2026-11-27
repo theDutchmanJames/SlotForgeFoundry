@@ -26,6 +26,8 @@ export const PROPS = Object.freeze([
   { id: 'crate', name: 'Crate', group: 'Paddock', size: [24, 18, 16] },
   { id: 'table', name: 'Table', group: 'Paddock', size: [30, 16, 23] },
   { id: 'counter', name: 'Counter', group: 'Paddock', size: [42, 12, 18] },
+  { id: 'rubble', name: 'Rubble', group: 'Paddock', size: [28, 22, 12] },
+  { id: 'fuel-pump', name: 'Fuel pump', group: 'Paddock', size: [10, 9, 24] },
   { id: 'brake-150', name: 'Braking board 150', group: 'Signs', size: [22, 10, 42] },
   { id: 'brake-100', name: 'Braking board 100', group: 'Signs', size: [22, 10, 42] },
   { id: 'brake-50', name: 'Braking board 50', group: 'Signs', size: [22, 10, 42] },
@@ -61,7 +63,7 @@ export function propFootprint(type, rotation = 0) {
  */
 export function propParts(wasm, own, type) {
   const { Manifold, CrossSection } = wasm;
-  const { box } = kitShapes(wasm, own);
+  const { box, sweep } = kitShapes(wasm, own);
   const prop = propOf(type);
   if (!prop) throw Error('There is no prop called ' + type + '.');
   const [W, D, H] = prop.size;
@@ -104,6 +106,17 @@ export function propParts(wasm, own, type) {
     const foot = box(0, 0, 0, W, D, 1.2);
     const body = own(own(Manifold.cylinder(H - 1.2, W / 2 - 1, 1.2, 48)).translate([W / 2, D / 2, 1.2]));
     add('', prop.name, union(foot, body));
+  } else if (type === 'fuel-pump') {
+    // On a plinth, its head standing out at the front over a 45° shoulder, so it prints standing. Seen from its side, swept across.
+    const side = [[0, 0], [D, 0], [D, 2], [D - 1, 2], [D - 1, 16], [D, 17], [D, H], [0, H]].map(([y, z]) => [D - y, z]);
+    add('', prop.name, sweep(side, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], 0, W));
+  } else if (type === 'rubble') {
+    // A heap of broken blocks, each lying on the one under it, inside its top: nothing over air.
+    const heap = [box(0, 0, 0, W, D, 4), box(2, 1.5, 3.99, W - 5, D - 3, 8), box(6, 4, 7.99, W - 11, D - 8, H)];
+    // Chunks turned about the upright, each inside the top of the block under it.
+    const chunk = (x, y, w, d, z0, z1, deg) => own(own(box(-w / 2, -d / 2, z0, w / 2, d / 2, z1).rotate([0, 0, deg])).translate([x, y, 0]));
+    heap.push(chunk(W - 4.5, D / 2, 4, 6, 3.99, 7, 25), chunk(5, D - 4, 5, 3.5, 3.99, 6.5, -20), chunk(W / 2 + 2, D / 2 + 1, 4, 3, 7.99, 10.5, 35));
+    add('', prop.name, union(...heap));
   } else if (type === 'crate') {
     // A box of upright boards: grooves down each side.
     let crate = box(0, 0, 0, W, D, H);

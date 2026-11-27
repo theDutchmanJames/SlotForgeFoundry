@@ -31,6 +31,8 @@ import { PROPS_KIT } from './geometry/props-kit.js';
 import { FIT_LIMITS, fitClearances } from './geometry/fit-test.js';
 import { TYRE_BRIDGE_LIMITS, tyreOpening } from './geometry/tyre-bridge.js';
 import { PERGOLA, PICNIC_LIMITS } from './geometry/picnic.js';
+import { CANOPY_LIMITS } from './geometry/canopy.js';
+import { STAGE_LIMITS } from './geometry/stage.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -371,6 +373,31 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('qGap', 'Gap between them', 15, PICNIC_LIMITS.gap)}
       <label class="bd-check"><input type="checkbox" name="qPergola"><span>A pergola over them</span></label>
       <p class="bd-hint">A top and a seat each side, of planks with gaps between them, joined by cleats underneath, on two A-frame ends set in from the ends. The top and the seats print upside down, their planks on the plate; the ends print flat. A pergola stands over the row: a frame of posts under a beam along each side and a roof of slats across them, in bays of at most ${PERGOLA.longest} mm, all printing flat.</p></section>
+    <section class="bd-box" data-bd-card="canopy" data-bd-canopy hidden><h3>Canopy</h3>
+      ${field('cWidth', 'Width', 160, CANOPY_LIMITS.width)}
+      ${field('cDepth', 'Depth', 110, CANOPY_LIMITS.depth)}
+      ${field('cHeight', 'Height to the roof', 100, CANOPY_LIMITS.height)}
+      ${field('cBays', 'Bays', 1, CANOPY_LIMITS.bays, '')}
+      <label class="bd-row"><span>Roof</span><select name="cRoof"><option value="flat">Flat</option><option value="tent">A tent, two slopes</option></select></label>
+      ${field('cPitch', 'Tent pitch', 25, CANOPY_LIMITS.pitch, '°')}
+      ${field('cOverhang', 'Overhang', 8, CANOPY_LIMITS.overhang)}
+      <label class="bd-row"><span>Screens</span><select name="cScreens"><option value="none">None, open all round</option><option value="ends">Across the ends</option><option value="back">Along the back</option><option value="three">The ends and the back</option></select></label>
+      <label class="bd-row"><span>Sign</span><input name="cText" maxlength="${LETTERING.longest}" placeholder="None"></label>
+      <label class="bd-check"><input type="checkbox" name="cBase"><span>A slab under it</span></label>
+      <p class="bd-hint">A roof on posts, a post at each end of every bay along the front and the back. The posts stand in sockets in the slab and push a pin up into the roof: a deep flat plate, or a tent of two slopes on a rail along the front and one along the back. Screens close the ends or the back; a sign hangs along the front. Everything prints flat; a long slab, roof or rail is cut at the middle of a bay.</p></section>
+    <section class="bd-box" data-bd-card="deck" data-bd-deck hidden><h3>Stage</h3>
+      ${field('sgWidth', 'Width', 150, STAGE_LIMITS.width)}
+      ${field('sgDepth', 'Depth', 100, STAGE_LIMITS.depth)}
+      ${field('sgHeight', 'Deck height', 14, STAGE_LIMITS.height)}
+      <label class="bd-row"><span>Ramps</span><select name="sgRamps"><option value="ends">Up to each end</option><option value="none">None</option></select></label>
+      ${field('sgRamp', 'Ramp length', 70, STAGE_LIMITS.rampLength)}
+      <label class="bd-check"><input type="checkbox" name="sgPortal"><span>A portal over it</span></label>
+      ${field('sgPortalHeight', 'Portal height', 100, STAGE_LIMITS.portalHeight)}
+      <label class="bd-row"><span>Portal text</span><input name="sgText" maxlength="${LETTERING.longest}" placeholder="None"></label>
+      <label class="bd-check"><input type="checkbox" name="sgBackdrop"><span>A backdrop behind it</span></label>
+      ${field('sgBackdropHeight', 'Backdrop height', 60, STAGE_LIMITS.backdropHeight)}
+      <label class="bd-row"><span>Backdrop text</span><input name="sgBackdropText" maxlength="${LETTERING.longest}" placeholder="None"></label>
+      <p class="bd-hint">A deck for the cars, a ramp up to each end at most one in three. A portal is two piers and a header lettered along its front; a backdrop is three panels of raised checks behind the deck, the middle one lettered, each standing in a foot. The deck prints upside down, the ramps on their side, the rest flat.</p></section>
     <section class="bd-box" data-bd-card="tyre" data-bd-tyre hidden><h3>Tyre bridge</h3>
       ${field('ySpan', 'Span at the table', 340, TYRE_BRIDGE_LIMITS.span)}
       ${field('yHeight', 'Height', 130, TYRE_BRIDGE_LIMITS.height)}
@@ -493,6 +520,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
+      <div class="bd-sub">Leave out</div>
+      <div class="bd-checks" data-bd-leave-out>${[['roof', 'The roof'], ['front', 'Front wall'], ['back', 'Back wall'], ['left', 'Left wall'], ['right', 'Right wall']].map(([k, label]) => `<label class="bd-check"><input type="checkbox" name="leave-${k}"><span>${label}</span></label>`).join('')}</div>
+      <div class="bd-breaches"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-breach>${icon('plus')}Breach</button></div>
       ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip sawtooth gambrel mansard"')}
       ${field('lowerPitch', 'Lower pitch', building.lowerPitch, BUILDING_LIMITS.lowerPitch, '°', ' data-bd-for="gambrel mansard"')}
       ${field('breakAt', 'Break, in from the walls', building.breakAt, BUILDING_LIMITS.breakAt, 'mm', ' data-bd-for="gambrel mansard"')}
@@ -604,6 +635,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isFitTest = () => building.kind === 'fittest';
   const isTyre = () => building.kind === 'tyrebridge';
   const isPicnic = () => building.kind === 'picnic';
+  const isCanopy = () => building.kind === 'canopy';
+  const isDeck = () => building.kind === 'stage';
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
@@ -698,7 +731,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
     foldCards();
-    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isCanopy() ? 'canopy' : isDeck() ? 'deck' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
       // A card for more than one kind.
@@ -706,7 +739,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         box.hidden = !box.dataset.bdKinds.split(' ').includes(kind);
         continue;
       }
-      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'fittest', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'fittest', 'tyre', 'picnic', 'canopy', 'deck', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -719,6 +752,51 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPlatform()) drawPlatform();
   }
   const PICNIC_FIELDS = [['qCount', 'count'], ['qLength', 'length'], ['qGap', 'gap']];
+  const CANOPY_FIELDS = [['cWidth', 'width'], ['cDepth', 'depth'], ['cHeight', 'height'], ['cBays', 'bays'], ['cPitch', 'pitch'], ['cOverhang', 'overhang']];
+  function fillCanopy(k) {
+    const e = form.elements;
+    for (const [n, key] of CANOPY_FIELDS) e[n].value = k[key];
+    e.cRoof.value = k.roof;
+    e.cScreens.value = k.screens;
+    e.cText.value = k.text;
+    e.cBase.checked = k.base;
+    drawCanopy();
+  }
+  function drawCanopy() {
+    form.elements.cPitch.closest('label').hidden = building.roof !== 'tent';
+  }
+  function readCanopy() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    const k = { kind: 'canopy', roof: e.cRoof.value, screens: e.cScreens.value, text: e.cText.value, base: e.cBase.checked, props: building.props ?? [] };
+    for (const [n, key] of CANOPY_FIELDS) k[key] = num(e[n]);
+    return k;
+  }
+  const DECK_FIELDS = [['sgWidth', 'width'], ['sgDepth', 'depth'], ['sgHeight', 'height'], ['sgRamp', 'rampLength'], ['sgPortalHeight', 'portalHeight'], ['sgBackdropHeight', 'backdropHeight']];
+  function fillDeck(k) {
+    const e = form.elements;
+    for (const [n, key] of DECK_FIELDS) e[n].value = k[key];
+    e.sgRamps.value = k.ramps;
+    e.sgPortal.checked = k.portal;
+    e.sgText.value = k.text;
+    e.sgBackdrop.checked = k.backdrop;
+    e.sgBackdropText.value = k.backdropText;
+    drawDeck();
+  }
+  function drawDeck() {
+    const e = form.elements;
+    e.sgRamp.closest('label').hidden = building.ramps !== 'ends';
+    for (const n of ['sgPortalHeight', 'sgText']) e[n].closest('label').hidden = !building.portal;
+    for (const n of ['sgBackdropHeight', 'sgBackdropText']) e[n].closest('label').hidden = !building.backdrop;
+  }
+  function readDeck() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    // Text goes with what carries it: a portal's or a backdrop's taken away goes too.
+    const k = { kind: 'stage', ramps: e.sgRamps.value, portal: e.sgPortal.checked, text: e.sgPortal.checked ? e.sgText.value : '', backdrop: e.sgBackdrop.checked, backdropText: e.sgBackdrop.checked ? e.sgBackdropText.value : '' };
+    for (const [n, key] of DECK_FIELDS) k[key] = num(e[n]);
+    return k;
+  }
   function fillPicnic(k) {
     const e = form.elements;
     for (const [n, key] of PICNIC_FIELDS) e[n].value = k[key];
@@ -769,6 +847,34 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readProps() {
     const e = form.elements;
     return { kind: 'props', items: building.items.map((it, i) => ({ type: e['pk-type-' + i]?.value ?? it.type, count: e['pk-count-' + i] ? (e['pk-count-' + i].value === '' ? NaN : Number(e['pk-count-' + i].value)) : it.count })) };
+  }
+  // The breaches in the top storey's walls: a row for each, its wall, place and size.
+  function drawBreaches() {
+    const box = $('.bd-breaches');
+    if (!box) return;
+    const walls = (sel) => ['front', 'back', 'left', 'right'].map((w) => `<option value="${w}"${w === sel ? ' selected' : ''}>${w[0].toUpperCase() + w.slice(1)} wall</option>`).join('');
+    box.innerHTML = (building.damage ?? [])
+      .map((d, i) => `<div class="bd-sub">Breach ${i + 1}<button type="button" class="bd-remove" data-bd-remove-breach="${i}" title="Remove" aria-label="Remove breach ${i + 1}">${icon('close')}</button></div><label class="bd-row"><span>In the</span><select name="br-wall-${i}">${walls(d.wall)}</select></label><div class="bd-sides">${field('br-at-' + i, 'Middle along it', d.at, [0, 1500])}${field('br-w-' + i, 'Width', d.width, [10, 1500])}${field('br-d-' + i, 'Down from the top', d.depth, [10, 200])}</div>`)
+      .join('');
+    $('[data-bd-add-breach]').hidden = !(building.leaveOut ?? []).includes('roof');
+  }
+  // A breach where one fits: along each wall still there, a third of its length wide and of the top storey's height deep, then smaller.
+  function freeBreach(b) {
+    const top = b.upper.at(-1) ?? b;
+    for (const share of [1 / 3, 1 / 5])
+      for (const wall of ['front', 'back', 'left', 'right'].filter((w) => !b.leaveOut.includes(w))) {
+        const L = wall === 'front' || wall === 'back' ? top.width ?? b.width : top.depth ?? b.depth;
+        for (const f of [0.5, 0.3, 0.7, 0.2, 0.8]) {
+          const d = { wall, at: Math.round(L * f), width: Math.max(10, Math.round(L * share)), depth: Math.max(10, Math.round(top.height * share)) };
+          try {
+            validateBuilding({ ...b, damage: [...(b.damage ?? []), d] });
+            return d;
+          } catch {
+            // Not here: the next place.
+          }
+        }
+      }
+    return null;
   }
   // A building's props as the form has them.
   function readBuildingProps() {
@@ -1276,6 +1382,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isFitTest()) return { kind: 'fittest', play: form.elements.ftPlay.value === '' ? NaN : Number(form.elements.ftPlay.value) };
     if (isTyre()) return readTyre();
     if (isPicnic()) return readPicnic();
+    if (isCanopy()) return readCanopy();
+    if (isDeck()) return readDeck();
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
@@ -1320,6 +1428,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       lowerPitch: num(e.lowerPitch),
       breakAt: num(e.breakAt),
       props: readBuildingProps(),
+      leaveOut: ['roof', 'front', 'back', 'left', 'right'].filter((k) => e['leave-' + k]?.checked),
+      damage: (building.damage ?? []).map((d, i) => (e['br-wall-' + i] ? { wall: e['br-wall-' + i].value, at: num(e['br-at-' + i]), width: num(e['br-w-' + i]), depth: num(e['br-d-' + i]) } : d)),
       dormers: (building.dormers ?? []).map((d, i) => (e['dormer-x-' + i] ? { x: num(e['dormer-x-' + i]), y: num(e['dormer-y-' + i]), width: num(e['dormer-w-' + i]), height: num(e['dormer-h-' + i]) } : d)),
       overhangFront: num(e.overhangFront),
       overhangBack: num(e.overhangBack),
@@ -1420,6 +1530,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPicnic()) {
       // Nothing of its own to redraw: its card is all fields.
     }
+    else if (isCanopy()) drawCanopy();
+    else if (isDeck()) drawDeck();
     else if (isBench()) {
       // Nothing of its own to redraw: its card is all fields.
     }
@@ -1450,6 +1562,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       const walls = storeyOf(building, storey);
       for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
       fillFinish(form, 'fw', walls, FOUR);
+      // Breaches come down from the top of a wall: only with the roof left out.
+      $('[data-bd-add-breach]').hidden = !(building.leaveOut ?? []).includes('roof');
+      if (!(building.damage ?? []).length) $('.bd-breaches').innerHTML = '';
       $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
       for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
       $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
@@ -1703,6 +1818,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isBench()) card = 'bench';
     else if (isProps()) card = 'propsKit';
     else if (isFitTest()) card = 'fitTest';
+    else if (isCanopy()) card = 'canopy';
+    else if (isDeck()) card = 'deck';
     else if (/^prop-/.test(id)) card = 'buildingProps';
     else if (isTyre()) card = 'tyre';
     else if (isPicnic()) card = 'picnic';
@@ -1801,6 +1918,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     if (b.kind === 'tyrebridge') return fillTyre(b);
     if (b.kind === 'picnic') return fillPicnic(b);
+    if (b.kind === 'canopy') return fillCanopy(b);
+    if (b.kind === 'stage') return fillDeck(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
@@ -1821,6 +1940,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.signHeight.value = b.signHeight;
     form.elements.signText.value = b.signText;
     form.elements.signCut.checked = b.signCut;
+    for (const k of ['roof', 'front', 'back', 'left', 'right']) form.elements['leave-' + k].checked = (b.leaveOut ?? []).includes(k);
+    drawBreaches();
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();
@@ -2248,6 +2369,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
           await rebuild({ ...base, props: [...base.props, prop] });
           drawBuildingProps();
         }
+      } else if (b.dataset.bdAddBreach !== undefined) {
+        const base = readForm();
+        const breach = freeBreach(base);
+        if (!breach) showError('There is no room for a breach: each wall of the top storey has windows or doors where it would come down.');
+        else {
+          await rebuild({ ...base, damage: [...(base.damage ?? []), breach] });
+          drawBreaches();
+        }
+      } else if (b.dataset.bdRemoveBreach !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, damage: base.damage.filter((_, i) => i !== Number(b.dataset.bdRemoveBreach)) });
+        drawBreaches();
       } else if (b.dataset.bdRemoveProp !== undefined) {
         const base = readForm();
         await rebuild({ ...base, props: base.props.filter((_, i) => i !== Number(b.dataset.bdRemoveProp)) });

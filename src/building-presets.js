@@ -1341,6 +1341,48 @@ const PRESETS = [
     note: 'A small diner with its corners cut, two serving hatches to the cars in front, windows at the sides, a door at the back',
     building: {'kind': 'footprint', 'shape': 'custom', 'points': [[13.0, 0.0], [137.0, 0.0], [150.0, 13.0], [150.0, 85.5], [137.0, 98.5], [13.0, 98.5], [0.0, 85.5], [0.0, 13.0]], 'height': 84.5, 'baseHeight': 6, 'overhang': 6, 'wallTexture': 'metal', 'openings': [{'wall': 'edge-1', 'type': 'window', 'at': 33.5, 'width': 39.5, 'height': 33.0, 'sill': 32.0, 'frame': true, 'across': 1, 'up': 1}, {'wall': 'edge-1', 'type': 'window', 'at': 90.5, 'width': 39.5, 'height': 33.0, 'sill': 32.0, 'frame': true, 'across': 1, 'up': 1}, {'wall': 'edge-3', 'type': 'window', 'at': 36.0, 'width': 41.0, 'height': 29.0, 'sill': 32.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-7', 'type': 'window', 'at': 36.0, 'width': 41.0, 'height': 29.0, 'sill': 32.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-5', 'type': 'door', 'at': 38.5, 'width': 27.5, 'height': 62.5, 'sill': 0, 'frame': true}, {'wall': 'edge-5', 'type': 'window', 'at': 93.0, 'width': 31.0, 'height': 24.0, 'sill': 38.0, 'frame': true, 'across': 1, 'up': 1}]},
   },
+  {
+    id: 'ruined-townhouse',
+    name: 'Ruined townhouse',
+    note: 'Two plastered storeys open to the sky, the top of the front wall broken away, rubble before it',
+    building: {'width': 219.0, 'depth': 156.0, 'height': 97.0, 'baseHeight': 6, 'door': 'none', 'roofLip': 'none', 'openings': [{'wall': 'front', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'front', 'type': 'door', 'at': 164.0, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true, 'leaf': 'planks'}, {'wall': 'right', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 164.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'upper': [{'height': 87.5, 'openings': [{'wall': 'front', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'right', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 164.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}]}], 'leaveOut': ['roof'], 'damage': [{'wall': 'front', 'at': 149, 'width': 80, 'depth': 60}, {'wall': 'left', 'at': 60, 'width': 50, 'depth': 30}], 'props': [{'type': 'rubble', 'x': 120, 'y': -40, 'storey': -1}, {'type': 'rubble', 'x': 150, 'y': 100, 'rotation': 90, 'storey': 0}]},
+  },
+  {
+    id: 'room-box',
+    name: 'Open room box',
+    note: 'A room with its front wall and its roof left out, to furnish and look into: a window in each wall, a table and a counter',
+    building: {'width': 156.0, 'depth': 125.0, 'height': 100.0, 'baseHeight': 6, 'door': 'none', 'wallTexture': 'planks', 'roofLip': 'none', 'openings': [{'wall': 'right', 'type': 'window', 'at': 62.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 62.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'leaveOut': ['roof', 'front'], 'props': [{'type': 'table', 'x': 40, 'y': 40, 'storey': 0}, {'type': 'counter', 'x': 70, 'y': 95, 'storey': 0}]},
+  },
+  {
+    id: 'filling-station',
+    name: 'Filling station shop',
+    note: 'The shop of a filling station: concrete blocks, a door and windows, SHOP over them, a flat roof',
+    building: {'width': 231.0, 'depth': 150.0, 'height': 94.0, 'baseHeight': 6, 'door': 'none', 'wallTexture': 'block', 'roof': 'flat', 'overhangFront': 5, 'overhangBack': 4, 'overhangLeft': 4, 'overhangRight': 4, 'openings': [{'wall': 'front', 'type': 'window', 'at': 58.0, 'width': 69.0, 'height': 42.0, 'sill': 22.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'front', 'type': 'door', 'at': 166.5, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true, 'leaf': 'glazed'}, {'wall': 'right', 'type': 'window', 'at': 75.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'left', 'type': 'window', 'at': 75.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'back', 'type': 'window', 'at': 58.0, 'width': 40.0, 'height': 31.0, 'sill': 37.5, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'back', 'type': 'window', 'at': 173.0, 'width': 40.0, 'height': 31.0, 'sill': 37.5, 'frame': true, 'across': 2, 'up': 1}], 'sign': 'fascia', 'signWidth': 110, 'signHeight': 12, 'signText': 'SHOP'},
+  },
+  {
+    id: 'forecourt-canopy',
+    name: 'Filling station forecourt',
+    note: 'The canopy over a filling station forecourt on six posts, FUEL along its front, two fuel pumps under it',
+    building: {'kind': 'canopy', 'width': 231.0, 'depth': 144.0, 'height': 115.5, 'bays': 2, 'roof': 'flat', 'overhang': 6, 'text': 'FUEL', 'props': [{'type': 'fuel-pump', 'x': 53, 'y': 66, 'rotation': 0}, {'type': 'fuel-pump', 'x': 176, 'y': 66, 'rotation': 0}]},
+  },
+  {
+    id: 'rally-service-tent',
+    name: 'Rally service tent',
+    note: 'A two-bay tent for a rally team: screened ends, RALLY 01 along its front, a workbench, tyres and a tool chest under it',
+    building: {'kind': 'canopy', 'width': 265.5, 'depth': 156.0, 'height': 82.5, 'bays': 2, 'roof': 'tent', 'pitch': 25, 'overhang': 6, 'screens': 'ends', 'text': 'RALLY 01', 'props': [{'type': 'workbench', 'x': 16, 'y': 50, 'rotation': 90}, {'type': 'tyre-stack', 'x': 110, 'y': 110}, {'type': 'tyre-stack', 'x': 140, 'y': 110}, {'type': 'tool-chest', 'x': 235, 'y': 20, 'rotation': 90}]},
+  },
+  {
+    id: 'rally-start-ramp',
+    name: 'Rally start ramp',
+    note: 'A ceremonial start ramp: a deck with a ramp up to each end and a portal over it, RALLY START along its header',
+    building: {'kind': 'stage', 'width': 137.5, 'depth': 152.5, 'height': 20, 'ramps': 'ends', 'rampLength': 160, 'portal': true, 'portalHeight': 90, 'text': 'RALLY START'},
+  },
+  {
+    id: 'victory-lane',
+    name: 'Victory Lane podium',
+    note: 'A low presentation deck for the winning car, a ramp up to each end, a checked backdrop behind, WINNER on its middle panel',
+    building: {'kind': 'stage', 'width': 162.0, 'depth': 104.0, 'height': 13, 'ramps': 'ends', 'rampLength': 100, 'backdrop': true, 'backdropHeight': 75, 'backdropText': 'WINNER'},
+  },
   // Scaleform town and car buildings: end
 ];
 
@@ -1392,7 +1434,7 @@ export const PRESET_GROUPS = Object.freeze([
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
   ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon', 'ticket-office', 'endurance-pits']],
   // Scaleform town and car groups
-  ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'courtyard-inn', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'guildhall']],
-  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'wind-tunnel', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-audio-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner']],
+  ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'courtyard-inn', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'guildhall', 'ruined-townhouse', 'room-box']],
+  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'wind-tunnel', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-audio-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane']],
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
 ]);

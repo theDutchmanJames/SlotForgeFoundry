@@ -13,6 +13,8 @@ import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
 import { flagFootprint } from './geometry/flag-post.js';
 import { billboardFootprint } from './geometry/billboard.js';
+import { canopyFootprint } from './geometry/canopy.js';
+import { stageFootprint } from './geometry/stage.js';
 import { switchbackFootprint } from './geometry/switchback.js';
 import { benchFootprint } from './geometry/bench.js';
 import { propsFootprint } from './geometry/props-kit.js';
@@ -139,6 +141,11 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = switchbackFootprint(b);
     outline = rect(x0, y0, x1, y1);
     front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
+  } else if (b.kind === 'canopy' || b.kind === 'stage') {
+    // A canopy out to its roof or slab, its front towards the track; a stage with its ramps and backdrop.
+    const [x0, y0, x1, y1] = b.kind === 'canopy' ? canopyFootprint(b) : stageFootprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
   } else if (b.kind === 'billboard') {
     // The board along its front, its struts behind it.
     const [x0, y0, x1, y1] = billboardFootprint(b);
@@ -248,7 +255,7 @@ export function planShapes(entry) {
     // The deck over its frames.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
-  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'props', 'fittest'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
+  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'props', 'fittest', 'canopy', 'stage'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
