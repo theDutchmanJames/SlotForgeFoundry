@@ -111,3 +111,12 @@ test('the kit notes say how the fittings go on and print', async () => {
   assert.match(notes, /The chimney prints upside down/);
   assert.match(notes, /each downpipe on its side/);
 });
+
+test('a gutter longer than the plate comes in lengths that fit it, end to end', () => {
+  withParts({ roof: 'gable', door: 'none', width: 120, depth: 260, gutters: true, downpipes: 'left' }, (parts) => {
+    const left = parts.filter((p) => /^gutter-left/.test(p.id));
+    assert.ok(left.length >= 2, 'in pieces');
+    checkKit(parts, PLATE, 'long gutters: ');
+    for (const p of left) assert.ok(overAir(p) < 0.5);
+  });
+});

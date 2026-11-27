@@ -1985,7 +1985,20 @@ export function buildGarage(wasm, input, plate = null) {
         const origin = [base[0] + (sign < 0 ? alongV[0] * P : 0), base[1] + (sign < 0 ? alongV[1] * P : 0), 0];
         pipe = own(prism.transform([...outV, 0, 0, 0, 1, 0, ...e, 0, ...origin, 1]));
       }
-      out.push({ id: 'gutter-' + side, name: 'Gutter, ' + side, role: 'frame', solid: whole(gutter), lie: [0, 0, 0], apart: add3(apart, scale3(OUTWARD[side], 15)) });
+      // Longer than the plate: in lengths that fit it, glued end to end.
+      gutter = whole(gutter);
+      const { min, max } = gutter.boundingBox();
+      const k = alongX ? 0 : 1,
+        long = max[k] - min[k],
+        room = plate ? plateRoom(plate).long : Infinity,
+        n = Math.max(1, Math.ceil(long / room - 1e-9));
+      const axis = alongX ? [1, 0, 0] : [0, 1, 0];
+      for (let i = 0; i < n; i++) {
+        let piece = gutter;
+        if (i) piece = trim(piece, axis, min[k] + (i * long) / n);
+        if (i < n - 1) piece = trim(piece, axis.map((v) => -v), -(min[k] + ((i + 1) * long) / n));
+        out.push({ id: 'gutter-' + side + (n > 1 ? '-' + (i + 1) : ''), name: 'Gutter, ' + side + (n > 1 ? ', ' + (i + 1) + ' of ' + n : ''), role: 'frame', solid: piece, lie: [0, 0, 0], apart: add3(apart, add3(scale3(OUTWARD[side], 15), scale3(axis, (i - (n - 1) / 2) * APART.piece))) });
+      }
       if (pipe) out.push({ id: 'downpipe-' + side, name: 'Downpipe, ' + side, role: 'frame', solid: pipe, lie: alongX ? [0, 90, 0] : [90, 0, 0], apart: add3(apart, add3(scale3(OUTWARD[side], 25), [0, 0, -APART.roof])) });
     }
     return out;

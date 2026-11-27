@@ -805,6 +805,182 @@ const PRESETS = [
     note: 'Round the outside of a bend, facing into it',
     building: { kind: 'grandstand', rows: 5, aisles: 2, curve: { radius: 450, angle: 45, facing: 'in' } },
   },
+  // Circuit buildings after the Scaleform library's racing templates, at 1:32.
+  {
+    id: 'scrutineering',
+    name: 'Scrutineering bay',
+    note: 'A drive-through bay under a sawtooth roof, concrete blocks, an inspection desk and a tool chest',
+    building: {
+      width: 147, depth: 188, height: 105, baseHeight: 6, door: 'none', wallTexture: 'block',
+      roof: 'sawtooth', rises: 'back', teeth: 2, pitch: 12, roofTexture: 'seam',
+      overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      openings: [
+        { wall: 'front', type: 'door', at: 73.5, width: 99, height: 85, sill: 0, frame: true },
+        { wall: 'back', type: 'door', at: 73.5, width: 99, height: 85, sill: 0, frame: true },
+        { ...panes('left', 68, 66, 28, 46, 2, 1), ledge: true },
+        { ...door('right', 41), height: 62, leaf: 'panels' },
+        { ...panes('right', 126, 55, 29, 45, 2, 1), ledge: true },
+      ],
+      sign: 'fascia', signWidth: 110, signHeight: 12, signText: 'SCRUTINEERING',
+      props: [{ type: 'tool-chest', x: 8, y: 80, rotation: 90, storey: 0 }, { type: 'counter', x: 126, y: 112, rotation: 90, storey: 0 }],
+    },
+  },
+  {
+    id: 'tyre-depot',
+    name: 'Tyre service depot',
+    note: 'A fitting bay and a door under a three-tooth sawtooth roof, corrugated walls, tyre stacks and a balancing bench',
+    building: {
+      width: 181, depth: 142, height: 105, baseHeight: 6, door: 'none', wallTexture: 'metal',
+      roof: 'sawtooth', rises: 'back', teeth: 3, pitch: 20, roofTexture: 'seam',
+      overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      openings: [
+        { wall: 'front', type: 'door', at: 61.5, width: 90, height: 83, sill: 0, frame: true },
+        { ...door('front', 148), height: 62, leaf: 'plain' },
+        panes('back', 83, 81, 25, 47, 3, 1),
+        panes('right', 82, 52, 25, 47, 2, 1),
+      ],
+      sign: 'fascia', signWidth: 92, signHeight: 12, signText: 'TYRES',
+      props: [
+        { type: 'tyre-stack', x: 150, y: 30, storey: 0 }, { type: 'tyre-stack', x: 150, y: 70, storey: 0 },
+        { type: 'workbench', x: 20, y: 118, storey: 0 }, { type: 'tyre-stack', x: 192, y: 20, storey: -1 },
+      ],
+    },
+  },
+  {
+    id: 'briefing-hall',
+    name: 'Drivers’ briefing hall',
+    note: 'A brick hall under a corrugated barrel vault, a double door, paired windows down both sides and rows of tables',
+    building: {
+      width: 161, depth: 188, height: 98, baseHeight: 6, door: 'none', wallTexture: 'brick',
+      roof: 'vault', ridge: 'depth', rise: 32, roofTexture: 'metal',
+      overhangFront: 5, overhangBack: 5, overhangLeft: 3, overhangRight: 3,
+      openings: [
+        { ...door('front', 80.5), width: 42, height: 69, leaf: 'panels', lintel: true },
+        ...['left', 'right'].flatMap((w) => [49, 135].map((at) => ({ ...panes(w, at, 56, 34, 36, 2, 2), ledge: true, lintel: true }))),
+      ],
+      sign: 'fascia', signWidth: 90, signHeight: 12, signText: 'BRIEFING',
+      props: [46, 86, 126].flatMap((y) => [{ type: 'table', x: 25, y, storey: 0 }, { type: 'table', x: 106, y, storey: 0 }]),
+    },
+  },
+  {
+    id: 'recovery-garage',
+    name: 'Recovery garage',
+    note: 'A tall corrugated garage for the recovery truck: a wide bay, a side door, high windows, a tool chest and a crate',
+    building: {
+      width: 177, depth: 191, height: 131, baseHeight: 6, door: 'none', wallTexture: 'metal',
+      roof: 'gable', ridge: 'depth', pitch: 22, roofTexture: 'metal',
+      overhangFront: 6, overhangBack: 6, overhangLeft: 5, overhangRight: 5,
+      openings: [
+        { wall: 'front', type: 'door', at: 74, width: 113, height: 105, sill: 0, frame: true },
+        { ...door('front', 152), width: 27, height: 68, leaf: 'plain' },
+        panes('left', 103, 81, 27, 80, 3, 1),
+        panes('right', 103, 81, 27, 80, 3, 1),
+      ],
+      sign: 'fascia', signWidth: 115, signHeight: 13, signText: 'RESCUE',
+      gutters: true, downpipes: 'right',
+      props: [{ type: 'tool-chest', x: 20, y: 160, storey: 0 }, { type: 'crate', x: 135, y: 160, storey: 0 }],
+    },
+  },
+  {
+    id: 'paddock-club',
+    name: 'Paddock clubhouse',
+    note: 'Brick, arched windows and an arched panelled door, a tiled roof, a chimney, gutters and a downpipe',
+    building: {
+      width: 188, depth: 119, height: 94, baseHeight: 6, door: 'none', wallTexture: 'brick',
+      roof: 'gable', ridge: 'width', pitch: 36, roofTexture: 'tile',
+      overhangFront: 7, overhangBack: 7, overhangLeft: 6, overhangRight: 6,
+      openings: [
+        { ...panes('front', 41, 42, 45, 24, 2, 2), shape: 'arch', ledge: true, lintel: true },
+        { ...panes('front', 147, 42, 45, 24, 2, 2), shape: 'arch', ledge: true, lintel: true },
+        { ...door('front', 94), width: 33, height: 66, shape: 'arch', leaf: 'panels', lintel: true, step: true },
+        { ...panes('left', 59.5, 43, 39, 25, 2, 2), ledge: true },
+        { ...panes('right', 59.5, 43, 39, 25, 2, 2), ledge: true },
+        { ...door('back', 143), leaf: 'planks' },
+        { ...panes('back', 68, 45, 36, 27, 2, 2), ledge: true },
+      ],
+      chimney: { x: 150, y: 59.5, width: 14, depth: 10, height: 16 }, gutters: true, downpipes: 'left',
+    },
+  },
+  {
+    id: 'podium-pavilion',
+    name: 'Podium pavilion',
+    note: 'An open pavilion of concrete blocks under a corrugated lean-to roof, the winners’ podium inside',
+    building: {
+      width: 186, depth: 102, height: 105, baseHeight: 6, door: 'none', wallTexture: 'block',
+      roof: 'slope', rises: 'back', pitch: 10, roofTexture: 'metal',
+      overhangFront: 10, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      openings: [
+        { wall: 'front', type: 'door', at: 93, width: 166, height: 86, sill: 0, frame: false },
+        window('left', 51, 75, 52, 23, false),
+        window('right', 51, 75, 52, 23, false),
+      ],
+      sign: 'fascia', signWidth: 97, signHeight: 11, signText: 'PODIUM',
+      props: [{ type: 'podium', x: 72, y: 40, storey: 0 }],
+    },
+  },
+  {
+    id: 'parc-ferme',
+    name: 'Parc fermé checkpoint',
+    note: 'A small planked checkpoint under a shingled roof, crowd barriers and a pit board beside it',
+    building: {
+      width: 83, depth: 72, height: 86, baseHeight: 6, door: 'none', wallTexture: 'planks',
+      roof: 'gable', ridge: 'width', pitch: 32, roofTexture: 'shingle',
+      overhangFront: 5, overhangBack: 5, overhangLeft: 4, overhangRight: 4,
+      openings: [
+        { ...panes('front', 41.5, 53, 34, 32, 2, 1), ledge: true },
+        { ...door('right', 44), width: 27, height: 62, leaf: 'planks' },
+        panes('left', 36, 36, 31, 33, 1, 1),
+      ],
+      sign: 'fascia', signWidth: 60, signHeight: 10, signText: 'PARC FERME',
+      props: [
+        { type: 'barrier', x: 93, y: 0, rotation: 90, storey: -1 },
+        { type: 'barrier', x: 93, y: 44, rotation: 90, storey: -1 },
+        { type: 'pit-board', x: 108, y: 30, storey: -1 },
+      ],
+    },
+  },
+  {
+    id: 'medical-centre',
+    name: 'Medical centre',
+    note: 'An L-shaped plastered building with a flat roof: a wide entrance, a ward window, a back door',
+    building: {
+      kind: 'footprint', shape: 'L', width: 188, depth: 145, wing: 75, height: 94, baseHeight: 6, overhang: 4,
+      openings: [
+        shell('edge-1', 'door', 55, 44, 67, 0),
+        shell('edge-1', 'window', 137, 61, 32, 32, 2, 1),
+        shell('edge-6', 'window', 72, 49, 31, 33, 2, 1),
+        shell('edge-4', 'door', 35, 31, 62, 0),
+      ],
+    },
+  },
+  {
+    id: 'paddock-diner',
+    name: 'Paddock diner',
+    note: 'An eight-sided diner of corrugated metal, a window in every side but its door, a flat roof',
+    building: {
+      kind: 'footprint', shape: 'octagon', width: 153, depth: 133, height: 91, baseHeight: 6, overhang: 5, wallTexture: 'metal',
+      openings: [
+        shell('edge-1', 'window', 37.5, 48, 32, 32, 2, 1),
+        ...[2, 4, 6, 8].map((k) => shell('edge-' + k, 'window', 27.5, 30, 32, 32, 1, 1)),
+        shell('edge-3', 'door', 27.5, 30, 67, 0),
+        shell('edge-5', 'window', 37.5, 48, 32, 32, 2, 1),
+        shell('edge-7', 'window', 27.5, 30, 32, 32, 1, 1),
+      ],
+    },
+  },
+  {
+    id: 'timing-rotunda',
+    name: 'Timing rotunda',
+    note: 'An eight-sided brick tower of three storeys, arched windows all round, a cone roof',
+    building: {
+      kind: 'footprint', shape: 'octagon', width: 169, depth: 169, height: 86, baseHeight: 6, overhang: 6, wallTexture: 'brick', roofShape: 'hip', pitch: 35,
+      openings: [
+        { ...shell('edge-1', 'door', 35, 30, 66, 0), shape: 'arch', leaf: 'panels' },
+        ...[3, 5, 7].map((k) => ({ ...shell('edge-' + k, 'window', 35, 30, 44, 22, 2, 2), shape: 'arch', ledge: true })),
+      ],
+      upper: [74, 74].map(() => ({ height: 74, wallTexture: 'brick', openings: [1, 2, 3, 4, 5, 6, 7, 8].map((k) => ({ ...shell('edge-' + k, 'window', 35, 30, 40, 20, 2, 2), shape: 'arch', ledge: true })) })),
+    },
+  },
 ];
 
 // The words on them: plain names of what they are, as a circuit letters its
@@ -853,5 +1029,6 @@ export const PRESET_GROUPS = Object.freeze([
   ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
   ['Over the track', ['gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
+  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda']],
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
 ]);

@@ -28,7 +28,8 @@ try {
     await host.locator('[data-bd-preset="' + p.id + '"]').click();
     await idle();
     await page.waitForTimeout(150);
-    const png = (await host.locator('.bd-model').screenshot()).toString('base64');
+    // The model alone: the view bar over it kept out of the picture.
+    const png = (await host.locator('.bd-model').screenshot({ mask: [], style: '[data-bd-viewbar] { visibility: hidden !important; }' })).toString('base64');
     // In the page: crop to what differs from the background, make the background clear, scale down.
     const webp = await page.evaluate(async ({ png, size: [W, H] }) => {
       const img = new Image();
