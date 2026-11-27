@@ -53,6 +53,13 @@ try {
   await idle();
   assert.equal((await saved()).items.length, 5);
 
+  // The braking boards, chevrons and pit signs.
+  await host.locator('[data-bd-preset="props-braking"]').click();
+  await idle();
+  await noError('braking boards');
+  assert.match(await host.locator('.bd-col').innerText(), /Chevrons, right, board/);
+  await snap('braking-boards');
+
   // A garage with props inside and a tyre stack outside.
   await host.locator('[data-bd-preset="garage"]').click();
   await idle();

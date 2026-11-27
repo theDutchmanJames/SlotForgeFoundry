@@ -399,13 +399,14 @@ const PROP_HOW = {
   table: 'A table: stand its two end frames up and glue the top on them.',
   'pit-board': 'A pit board: push its pole into the socket in its foot and glue it.',
   parasol: 'A parasol: push the pole into its foot, and the canopy onto the pole, its flat side down.',
+  sign: 'A sign: push its two posts into the sockets in its foot and glue them; paint the board white and the legend black, chevrons black on yellow.',
 };
 /** The props' lines in a kit's notes: how they print, how those of several parts go together. */
 export function propLines(types) {
   const has = (t) => types.includes(t);
   return [
-    '- Props print as they lie, without supports: round ones on their bases, a tool chest, a counter and a pit board on their backs, a crowd barrier on its front, tops and frames flat.',
-    ...Object.entries(PROP_HOW).filter(([t]) => has(t)).map(([, how]) => '- ' + how),
+    '- Props print as they lie, without supports: round ones on their bases, a tool chest, a counter, a pit board and a sign on their backs, a crowd barrier on its front, tops and frames flat.',
+    ...Object.entries(PROP_HOW).filter(([t]) => has(t) || (t === 'sign' && types.some((x) => /^(brake|chevron|pit-(in|out))/.test(x)))).map(([, how]) => '- ' + how),
   ];
 }
 function propsNotes(name, b, parts, sizes) {

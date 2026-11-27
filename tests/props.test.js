@@ -30,6 +30,8 @@ test('every prop, turned any way, is whole, clear of itself and prints without s
       try {
         const parts = placeProp(wasm, own, { type: p.id, x: 10, y: 20, rotation }, 5).map((q) => ({ id: 'prop-' + q.key, name: p.name + ' ' + q.name, solid: q.solid, turn: q.pose }));
         checkKit(parts, PLATE, p.id + ' at ' + rotation + '°: ');
+        // A real solid each: an invalid one would pass as one body.
+        for (const q of parts) assert.ok(q.solid.status() === 'NoError' && q.solid.volume() > 1, p.id + ' ' + q.name + ' is a solid at ' + rotation + '°');
         for (const q of parts) assert.ok(overAir(q) < 0.5, p.id + ' ' + q.name + ' prints over air at ' + rotation + '°');
         // On its footprint, standing on the floor.
         const [fw, fd] = propFootprint(p.id, rotation);
@@ -62,7 +64,7 @@ test('a kit of props: so many of each in a row, named, on the plate, with its no
   const notes = kitNotes('Pit props', validateBuilding(b), buildingLayout(b).parts, {});
   assert.match(notes, /3 × stack of tyres, 1 × workbench, 2 × pit board/);
   assert.match(notes, /A workbench: stand its two end frames up/);
-  assert.throws(() => validateBuilding({ kind: 'props', items: [] }), /1 to 15 kinds/);
+  assert.throws(() => validateBuilding({ kind: 'props', items: [] }), /1 to 22 kinds/);
   assert.throws(() => validateBuilding({ kind: 'props', items: [{ type: 'cone', count: 13 }] }), /1 to 12/);
   assert.throws(() => validateBuilding({ kind: 'props', items: [{ type: 'cone', count: 1 }, { type: 'cone', count: 2 }] }), /twice/);
 });
@@ -104,4 +106,14 @@ test('props that do not fit are refused, saying why', () => {
   assert.throws(() => v([{ type: 'crate', x: 30, y: 30, rotation: 45 }]), /0, 90, 180 or 270/);
   // Into a dividing wall: refused when the building is made.
   assert.throws(() => withParts({ door: 'none', rooms: { along: 'width', sizes: [60, 60] }, props: [{ type: 'crate', x: 50, y: 60 }] }, () => {}), /runs into the dividing wall: move it/);
+});
+
+test('the braking boards kit: its signs, and how they go together', () => {
+  const b = { kind: 'props', items: [{ type: 'brake-150', count: 2 }, { type: 'chevron-left', count: 1 }, { type: 'pit-in', count: 1 }] };
+  const ids = buildingLayout(b).parts.map((p) => p.id);
+  assert.deepEqual(ids, ['brake-150-1-board', 'brake-150-1-foot', 'brake-150-2-board', 'brake-150-2-foot', 'chevron-left-1-board', 'chevron-left-1-foot', 'pit-in-1-board', 'pit-in-1-foot']);
+  withParts(b, (parts) => checkKit(parts, PLATE, 'signs: '));
+  const notes = kitNotes('Braking boards', validateBuilding(b), buildingLayout(b).parts, {});
+  assert.match(notes, /A sign: push its two posts into the sockets in its foot/);
+  assert.match(notes, /a pit board and a sign on their backs/);
 });

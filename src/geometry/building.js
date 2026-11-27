@@ -25,7 +25,7 @@ import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
 import { TRIM, checkOpeningShape, openingShapes, outlineOf, overOf, sideOf, underOf } from './opening-shapes.js';
-import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf } from './props.js';
+import { PROP_GAP, PROP_PARTS, checkPropList, placeProp, propFootprint, propOf } from './props.js';
 import { PROPS_DEFAULTS, buildPropsKit, propsLayout, validatePropsKit } from './props-kit.js';
 import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
@@ -862,7 +862,7 @@ function onePanel(shape, p, [x0, y0, x1, y1], margin) {
 
 /** The parts of a list of props: one each, or for a prop of several parts each of them. */
 export function propPartIds(props) {
-  const MANY = { workbench: ['top', 'end-1', 'end-2', 'shelf'], table: ['top', 'end-1', 'end-2'], 'pit-board': ['board', 'foot'], parasol: ['canopy', 'pole', 'foot'] };
+  const MANY = PROP_PARTS;
   return props.flatMap((p, i) => {
     const name = 'Prop ' + (i + 1) + ', ' + propOf(p.type).name.toLowerCase();
     return (MANY[p.type] ?? ['']).map((key) => ({ id: 'prop-' + (i + 1) + (key ? '-' + key : ''), name: name + (key ? ', ' + key.replace('-', ' ') : ''), role: 'frame' }));

@@ -7,7 +7,7 @@
 // how it lies to print, [turn about z, then over about x], in that frame.
 
 import { kitShapes } from './kit-shapes.js';
-import { LETTERING, raisedText, textWidth } from './lettering.js';
+import { LETTERING, fitHeight, raisedText, textWidth } from './lettering.js';
 
 /** The props: id, name, group, size [width, depth, height] in mm. */
 export const PROPS = Object.freeze([
@@ -26,7 +26,22 @@ export const PROPS = Object.freeze([
   { id: 'crate', name: 'Crate', group: 'Paddock', size: [24, 18, 16] },
   { id: 'table', name: 'Table', group: 'Paddock', size: [30, 16, 23] },
   { id: 'counter', name: 'Counter', group: 'Paddock', size: [42, 12, 18] },
+  { id: 'brake-150', name: 'Braking board 150', group: 'Signs', size: [22, 10, 42] },
+  { id: 'brake-100', name: 'Braking board 100', group: 'Signs', size: [22, 10, 42] },
+  { id: 'brake-50', name: 'Braking board 50', group: 'Signs', size: [22, 10, 42] },
+  { id: 'chevron-left', name: 'Chevrons, left', group: 'Signs', size: [30, 10, 26] },
+  { id: 'chevron-right', name: 'Chevrons, right', group: 'Signs', size: [30, 10, 26] },
+  { id: 'pit-in', name: 'Pit in sign', group: 'Signs', size: [36, 10, 28] },
+  { id: 'pit-out', name: 'Pit out sign', group: 'Signs', size: [36, 10, 28] },
 ]);
+/** The props of several parts, and what each part is called. */
+export const PROP_PARTS = Object.freeze({
+  workbench: ['top', 'end-1', 'end-2', 'shelf'],
+  table: ['top', 'end-1', 'end-2'],
+  'pit-board': ['board', 'foot'],
+  parasol: ['canopy', 'pole', 'foot'],
+  ...Object.fromEntries(['brake-150', 'brake-100', 'brake-50', 'chevron-left', 'chevron-right', 'pit-in', 'pit-out'].map((id) => [id, ['board', 'foot']])),
+});
 export const PROP_IDS = PROPS.map((p) => p.id);
 export const propOf = (id) => PROPS.find((p) => p.id === id);
 /** How much room props keep between them, and to whatever stands near. */
@@ -145,15 +160,55 @@ export function propParts(wasm, own, type) {
     // The pole in the middle of the foot, the board's back flush with it.
     const px = (W - pole) / 2,
       py = (D - pole) / 2;
-    const board = box(0, py + 0.5, H - 12, W, py + pole, H);
+    const board = box(0, py, H - 12, W, py + pole, H);
     const stick = box(px, py, 0, px + pole, py + pole, H);
     let sign = union(board, stick);
     const text = 'P1',
       h = Math.max(LETTERING.height[0], Math.min(8, (W - 3) / (textWidth(text, 1) || 1)));
-    const letters = own(raisedText(wasm, own, text, h, [0, 0], -0.1, 0.6).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, W / 2, py + 0.5, H - 6, 1]));
+    const letters = own(raisedText(wasm, own, text, h, [0, 0], -0.1, 0.6).transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, W / 2, py, H - 6, 1]));
     sign = union(sign, letters);
     add('board', 'board', sign, onBack);
     const base = minus(box(W / 2 - 6, D / 2 - 5, 0, W / 2 + 6, D / 2 + 5, foot), box(px - PLAY, py - PLAY, -1, px + pole + PLAY, py + pole + PLAY, foot + 1));
+    add('foot', 'foot', base);
+  } else if (/^(brake|chevron|pit-(in|out))/.test(type)) {
+    // A sign on two posts: its board on top, its legend raised on its front;
+    // it lies on its back to print, the posts' backs flush with the board's.
+    // The posts stand in sockets in a foot along the bottom.
+    // The board as thick as the posts, so they keep behind it.
+    const post = 2,
+      foot = 1.5,
+      th = post,
+      bh = type.startsWith('brake') ? 26 : 12;
+    const py = (D - post) / 2;
+    const posts = [3, W - 3 - post];
+    const bits = [box(0, py + post - th, H - bh, W, py + post, H), ...posts.map((x) => box(x, py, 0, x + post, py + post, H - 0.5))];
+    // The legend, in the board's frame: across it from its middle, up it from its middle.
+    const face = py + post - th;
+    const onFace = (solid) => own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, W / 2, face, H - bh / 2, 1]));
+    if (type.startsWith('chevron')) {
+      // Three chevrons pointing the way, each a V of two bars.
+      const left = type.endsWith('left'),
+        h = bh - 4,
+        bar = 1.6,
+        step = 7;
+      for (const k of [-1, 0, 1]) {
+        const c = k * step,
+          tip = left ? -2.5 : 2.5;
+        const pts = left
+          ? [[c + tip, 0], [c + tip + h / 2, h / 2], [c + tip + h / 2 + bar, h / 2], [c + tip + bar, 0], [c + tip + h / 2 + bar, -h / 2], [c + tip + h / 2, -h / 2]]
+          : [[c + tip, 0], [c + tip - h / 2, -h / 2], [c + tip - h / 2 - bar, -h / 2], [c + tip - bar, 0], [c + tip - h / 2 - bar, h / 2], [c + tip - h / 2, h / 2]];
+        // Counter-clockwise, as the fill wants it, whichever way it points.
+        let twice = 0;
+        for (let i = 0; i < pts.length; i++) twice += pts[i][0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * pts[i][1];
+        bits.push(onFace(own(own(new CrossSection([twice < 0 ? pts.reverse() : pts], 'Positive')).extrude(0.7)).translate([0, 0, -0.1])));
+      }
+    } else {
+      const text = { 'brake-150': '150', 'brake-100': '100', 'brake-50': '50', 'pit-in': 'PIT IN', 'pit-out': 'PIT OUT' }[type];
+      const h = fitHeight(text, W - 4, bh - 4);
+      bits.push(onFace(raisedText(wasm, own, text, h, [0, 0], -0.1, 0.6)));
+    }
+    add('board', 'board', union(...bits), onBack);
+    const base = minus(box(0, 0, 0, W, D, foot), ...posts.map((x) => box(x - PLAY, py - PLAY, -1, x + post + PLAY, py + post + PLAY, foot + 1)));
     add('foot', 'foot', base);
   } else if (type === 'barrier') {
     // A crowd barrier: a frame of bars and its feet behind it; it lies on its front.

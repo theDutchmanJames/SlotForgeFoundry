@@ -470,6 +470,12 @@ const PRESETS = [
     building: { kind: 'props', items: [{ type: 'cone', count: 6 }, { type: 'barrier', count: 3 }, { type: 'pit-board', count: 1 }, { type: 'extinguisher', count: 2 }, { type: 'podium', count: 1 }] },
   },
   {
+    id: 'props-braking',
+    name: 'Braking boards',
+    note: 'Braking boards 150, 100 and 50 for both sides, chevrons each way, and pit in and out signs',
+    building: { kind: 'props', items: [{ type: 'brake-150', count: 2 }, { type: 'brake-100', count: 2 }, { type: 'brake-50', count: 2 }, { type: 'chevron-left', count: 1 }, { type: 'chevron-right', count: 1 }, { type: 'pit-in', count: 1 }, { type: 'pit-out', count: 1 }] },
+  },
+  {
     id: 'props-paddock',
     name: 'Paddock props',
     note: 'A parasol, tables, a counter and crates for a paddock café',
@@ -839,5 +845,5 @@ export const PRESET_GROUPS = Object.freeze([
   ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
   ['Over the track', ['gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
-  ['Props', ['props-pit', 'props-trackside', 'props-paddock']],
+  ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
 ]);

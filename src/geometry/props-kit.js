@@ -1,14 +1,14 @@
 // A kit of props on their own, to stand beside the track: so many of each,
 // laid in a row on the table, each part printing flat as props do.
 
-import { PROP_IDS, placeProp, propOf } from './props.js';
+import { PROP_IDS, PROP_PARTS, placeProp, propOf } from './props.js';
 
 export const PROPS_DEFAULTS = Object.freeze({
   kind: 'props',
   items: Object.freeze([Object.freeze({ type: 'tyre-stack', count: 3 }), Object.freeze({ type: 'cone', count: 4 })]),
 });
-export const PROPS_KIT = Object.freeze({ kinds: 15, most: 12, gap: 4 });
-const MANY = { workbench: ['top', 'end-1', 'end-2', 'shelf'], table: ['top', 'end-1', 'end-2'], 'pit-board': ['board', 'foot'], parasol: ['canopy', 'pole', 'foot'] };
+export const PROPS_KIT = Object.freeze({ kinds: PROP_IDS.length, most: 12, gap: 4 });
+const MANY = PROP_PARTS;
 
 /** The kit as kept: each item a known prop and how many, at most twelve of each. */
 export function validatePropsKit(input) {
