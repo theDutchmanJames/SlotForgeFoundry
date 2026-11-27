@@ -102,6 +102,8 @@ const LABELS = {
   firstNumber: 'First number',
 };
 const upper = (t) => t !== 'single';
+/** How long the name board may be: the row less a little, no longer than it prints flat on the plate. */
+const boardWide = (m) => Math.min(m.types.length * m.bayWidth - 10, BAYS.across);
 
 /** The pit building as kept: known settings only, each checked. */
 export function validatePitBays(input) {
@@ -121,7 +123,7 @@ export function validatePitBays(input) {
   m.text = checkText(m.text, 'The name board');
   if (typeof m.textCut !== 'boolean') throw Error('Choose raised or cut letters for the name board.');
   if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the wall over the doors: choose one.');
-  if (m.text && nameBoardText(m.text, m.types.length * m.bayWidth - 10, m.groundHeight - m.doorHeight - 2) < LETTERING.height[0]) throw Error('There is no room for “' + m.text + '” over the doors: make the ground floor higher, the doors lower, or the text shorter.');
+  if (m.text && nameBoardText(m.text, boardWide(m), m.groundHeight - m.doorHeight - 2) < LETTERING.height[0]) throw Error('There is no room for “' + m.text + '” over the doors: make the ground floor higher, the doors lower, or the text shorter.');
   const room = m.bayWidth - 2 * (BAYS.column + m.recess + 1) - BAYS.side;
   if (m.doorWidth > room) throw Error('The door is too wide for a bay of ' + m.bayWidth + ' mm: at most ' + room + ' mm.');
   if (m.doorHeight > m.groundHeight - 12) throw Error('The door is too high for the ground floor: at most ' + (m.groundHeight - 12) + ' mm, room left over it for a number.');
@@ -133,6 +135,9 @@ export function validatePitBays(input) {
   }
   const out = Math.max(m.pillars ? BAYS.pillar : 0, m.types.some(upper) ? Math.max(m.jut, m.balcony) : 0, m.types.includes('podium') ? m.balcony + BAYS.podium[0] : 0);
   if (out + m.depth > BAYS.across) throw Error('A bay stands on its end to print and would be ' + Math.round(out + m.depth) + ' mm long: at most ' + BAYS.across + ' mm, make it less deep or reach out less.');
+  const L = pitBaysLevels(m),
+    tall = (m.types.some(upper) ? L.roof1 : L.slab1) + BAYS.upstand;
+  if (tall > BAYS.across) throw Error('A bay stands on its end to print and would be ' + Math.round(tall) + ' mm high: at most ' + BAYS.across + ' mm, make the base or the storeys lower.');
   if (m.types.includes('podium') && m.balcony < 8) throw Error('A podium needs a balcony of at least 8 mm to stand on.');
   return m;
 }
@@ -279,10 +284,15 @@ export function buildPitBays(wasm, input) {
       plate = m.door === 'panel' ? own(plate.subtract(own(Manifold.union(marks)))) : own(plate.add(own(Manifold.union(marks))));
       parts.push({ id: 'door-' + (i + 1), name: '', role: 'door', solid: plate, outward: [0, -1, 0], apart: [0, 20, 0] });
     }
-    // A name board on the front wall over the doors, in the middle of the row.
+    // A name board over the doors, in the middle of the row: on the front
+    // wall, or where it reaches across a pillar between two garages, on the
+    // fronts of the pillars, so it does not run through them.
     if (m.text) {
-      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, n * W - 10, L.slab0 - L.door - 2), m.textCut);
-      parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, (n * W + F) / 2, 0, (L.door + L.slab0) / 2 - height / 2, 1])), outward: [0, -1, 0], apart: [0, -12, 0] });
+      const { solid, width, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, boardWide(m), L.slab0 - L.door - 2), m.textCut);
+      const mid = (n * W + F) / 2;
+      const across = m.pillars && Array.from({ length: n - 1 }, (_, i) => (i + 1) * W).some((x) => mid - width / 2 < x + F && mid + width / 2 > x);
+      const y0 = across ? -BAYS.pillar : 0;
+      parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: own(solid.transform([1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, mid, y0, (L.door + L.slab0) / 2 - height / 2, 1])), outward: [0, -1, 0], apart: [0, -12, 0] });
     }
     // Numbers: a plaque on the front wall over each door, its number raised in seven segments.
     if (m.numbers) {

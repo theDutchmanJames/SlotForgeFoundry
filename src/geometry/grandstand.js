@@ -72,6 +72,7 @@ export const STAND = Object.freeze({
   frame: { member: 4, brace: 3, bay: 40, play: 0.15 }, // the frames under a raised stand
   rail: { height: 14, bar: 2.5, glue: 10 }, // railings: above the walls, their bars, the back railing's band glued on
   stair: { width: 24, rise: 8, tread: [6, 10], slab: 5, post: 5, wall: [3, 12] }, // a staircase up an end
+  across: 190, // a part that grows with the rows and the height: at most this much each way on the plate
 });
 const LABELS = {
   length: 'Length',
@@ -136,7 +137,37 @@ export function validateGrandstand(input) {
   }
   const room = (g.length - g.aisles * STAND.aisle) / (g.aisles + 1);
   if (room < 20) throw Error('Too many aisles for a grandstand ' + g.length + ' mm long: at most ' + Math.max(0, Math.floor((g.length - 20) / (STAND.aisle + 20))) + '.');
+  // What grows with the rows and the height must still lie on the plate.
+  const tierParts = g.upperTier ? [['', tiers(g).lower], ['the upper tier: ', tiers(g).upper]] : [['', g]];
+  for (const [tier, t] of tierParts)
+    for (const [what, a, b] of printedSpans(t))
+      if (a > STAND.across || b > STAND.across) {
+        const name = tier ? tier[0].toUpperCase() + tier.slice(1) + what[0].toLowerCase() + what.slice(1) : what;
+        throw Error(name + ' would print ' + Math.round(a) + ' × ' + Math.round(b) + ' mm: at most ' + STAND.across + ' mm each way. Give it fewer or shallower rows, or make it lower.');
+      }
   return g;
+}
+
+/**
+ * The parts of a stand that grow with its rows and its height, as they lie to
+ * print: [what, one way, the other] in mm. A section stands on its end, the
+ * profile on the plate; the frames, the canopy and its posts and a staircase
+ * lie flat or on their sides.
+ */
+function printedSpans(g) {
+  const s = STAND.shell,
+    D = standDepth(g);
+  if (g.build === 'frames') return [['A base board', D - s, Math.min(g.length, STAND.framed.longest)]];
+  const p = profile(g, false);
+  const high = Math.max(...[...p.solid, ...p.top].map((r) => r[3])) + (g.railings ? STAND.rail.height : 0);
+  const out = [['A grandstand section', D, high]];
+  if (g.roof === 'canopy') out.push(['The canopy', D + STAND.reach, 0], ['A canopy post', standHeight(g), 0]);
+  if (g.raised > 0) out.push(['A cross frame', D - 2 * s, g.raised + Math.max(0, ...p.hollow.map((r) => r[3]))]);
+  if (g.stairs !== 'none') {
+    const { top, y0 } = standStair(g);
+    out.push(['A staircase', D - y0, top + STAND.stair.wall[1]]);
+  }
+  return out;
 }
 
 /** A building's size in a line: a garage's outside, a grandstand's rows and length. */

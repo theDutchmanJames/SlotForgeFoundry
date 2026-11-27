@@ -67,6 +67,7 @@ export const PIT = Object.freeze({
   plaque: [18, 7, 1.5],
   railBalcony: 2.5, // the balcony railing stands back from the edge, where the fascia slopes away under it
   rail: { height: 15, thick: 3, band: 4, post: 3, pitch: 20, inset: 1, tab: 1.2 },
+  across: 190, // a bay on its end: from the front of what reaches out to the back, and its height, at most
 });
 const LABELS = {
   bays: 'Bays',
@@ -83,6 +84,8 @@ const LABELS = {
   visor: 'Visor',
   firstNumber: 'First number',
 };
+/** How long the name board may be: the row less a little, no longer than it prints flat on the plate. */
+const boardWide = (m) => Math.min(m.bays * m.bayWidth - 10, PIT.across);
 
 /** The pit building as kept: known settings only, each checked. */
 export function validatePitModule(input) {
@@ -97,11 +100,21 @@ export function validatePitModule(input) {
   m.text = checkText(m.text, 'The name board');
   if (typeof m.textCut !== 'boolean') throw Error('Choose raised or cut letters for the name board.');
   if (m.text && m.numbers) throw Error('The name board and the bay numbers both go on the fascia: choose one.');
-  if (m.text && nameBoardText(m.text, m.bays * m.bayWidth - 10, FASCIA_UP - 1) < LETTERING.height[0]) throw Error('The fascia is too short for “' + m.text + '”: add bays, or make the text shorter.');
+  if (m.text && nameBoardText(m.text, boardWide(m), FASCIA_UP - 1) < LETTERING.height[0]) throw Error('The fascia is too short for “' + m.text + '”: add bays, or make the text shorter.');
   const room = m.bayWidth - 2 * (PIT.column + m.recess + 1);
   if (m.doorWidth > room) throw Error('The door is too wide for a bay of ' + m.bayWidth + ' mm with its reveal: at most ' + room + ' mm.');
   if (m.doorHeight > m.groundHeight - 8) throw Error('The door is too high for the ground floor: at most ' + (m.groundHeight - 8) + ' mm.');
   if (m.depth < m.recess + 3 * PIT.shell + 20) throw Error('The pit building must be at least ' + (m.recess + 3 * PIT.shell + 20) + ' mm deep.');
+  // The balcony railing stands at the front of the balcony, the glazing leaning out over it behind: clear of each other.
+  const lean = Math.tan((m.lean * Math.PI) / 180);
+  if (m.railing) {
+    const least = PIT.railBalcony + PIT.rail.thick + PIT.rail.height * lean + 0.5;
+    if (m.balcony < least) throw Error('The balcony is too short for its railing in front of the leaning glazing: at least ' + Math.ceil(least) + ' mm, or lean the glazing less, or leave the railing off.');
+  }
+  // A bay stands on its end to print, its profile on the plate.
+  const L = pitLevels(m);
+  if (m.depth - L.front > PIT.across) throw Error('A bay stands on its end to print and would be ' + Math.round(m.depth - L.front) + ' mm long: at most ' + PIT.across + ' mm, make it less deep or reach out less.');
+  if (L.roof1 > PIT.across) throw Error('A bay stands on its end to print and would be ' + Math.round(L.roof1) + ' mm high: at most ' + PIT.across + ' mm, make the base, the ground floor or the lounge lower.');
   return m;
 }
 
@@ -262,7 +275,7 @@ export function buildPitModule(wasm, input) {
         ul = Math.hypot(up[1], up[2]);
       const v = [0, up[1] / ul, up[2] / ul],
         n = [0, -v[2], v[1]];
-      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, m.bays * W - 10, ul - 1), m.textCut);
+      const { solid, height } = nameBoard(wasm, own, m.text, nameBoardText(m.text, boardWide(m), ul - 1), m.textCut);
       const placed = own(solid.transform([1, 0, 0, 0, ...v, 0, ...n, 0, (m.bays * W) / 2, y0 + v[1] * ((ul - height) / 2), z0 + v[2] * ((ul - height) / 2), 1]));
       parts.push({ id: 'name', name: 'Name board', role: 'frame', solid: placed, lie: [(Math.atan2(n[1], n[2]) * 180) / Math.PI, 0, 0], apart: [0, -12, 0] });
     }
