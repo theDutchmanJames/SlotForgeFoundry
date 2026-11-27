@@ -2,6 +2,7 @@
 // how they go together.
 import { glazingSheets } from './building-glazing.js';
 import { fmt } from './ui.js';
+import { propOf } from './geometry/props.js';
 import { marshalLevels } from './geometry/marshal-post.js';
 import { BILLBOARD } from './geometry/billboard.js';
 import { tyreOpening } from './geometry/tyre-bridge.js';
@@ -81,6 +82,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
+  if (b.kind === 'props') return propsNotes(name, b, parts, sizes);
   if (b.kind === 'tyrebridge') return tyreNotes(name, b, parts, sizes);
   if (b.kind === 'picnic') return picnicNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
@@ -160,6 +162,7 @@ export function kitNotes(name, b, parts, sizes) {
       : framed2
         ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
         : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
+    ...(b.props?.length ? ['Glue each prop where it stands, on its floor before the storey above goes on, or on the table outside. ' + propLines(b.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
     ...(b.dormers?.length ? ['Stand each dormer over its opening in the roof, facing down the roof, its cheeks and roof ending on the roof, and glue it. Glue clear sheet behind its window first.'] : []),
     ...(b.chimney ? ['Stand the chimney on the roof, its cap up, its foot fitting the roof under it, ' + fmt(b.chimney.x) + ' mm from the left wall and ' + fmt(b.chimney.y) + ' mm from the front wall to its middle, and glue it.'] : []),
     ...(b.gutters ? ['Glue each gutter along its eave, open side up, against the edge of the roof, its top just under the top of the roof.'] : []),
@@ -186,6 +189,7 @@ export function kitNotes(name, b, parts, sizes) {
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
     ...(b.roof === 'vault' ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
     ...(b.roof === 'sawtooth' ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
+    ...(b.props?.length ? [propLines(b.props.map((p) => p.type))[0]] : []),
     ...(b.dormers?.length ? ['- Each dormer prints standing on its front, its window on the plate, open at the back and underneath.'] : []),
     ...(b.chimney ? ['- The chimney prints upside down, standing on its cap; its flue is a pointed pocket.'] : []),
     ...(b.gutters ? ['- The gutters print as they hang, open side up' + (b.downpipes && b.downpipes !== 'none' ? '; each downpipe on its side, its swan neck flat on the plate' : '') + '.'] : []),
@@ -389,6 +393,36 @@ function tyreNotes(name, t, parts, sizes) {
 }
 
 // The notes of benches: a seat and two end frames each.
+// How each prop prints and goes together, by its parts.
+const PROP_HOW = {
+  workbench: 'A workbench: stand its two end frames up, their ledges inward, lay the shelf on the ledges and the top on the frames, and glue them.',
+  table: 'A table: stand its two end frames up and glue the top on them.',
+  'pit-board': 'A pit board: push its pole into the socket in its foot and glue it.',
+  parasol: 'A parasol: push the pole into its foot, and the canopy onto the pole, its flat side down.',
+};
+/** The props' lines in a kit's notes: how they print, how those of several parts go together. */
+export function propLines(types) {
+  const has = (t) => types.includes(t);
+  return [
+    '- Props print as they lie, without supports: round ones on their bases, a tool chest, a counter and a pit board on their backs, a crowd barrier on its front, tops and frames flat.',
+    ...Object.entries(PROP_HOW).filter(([t]) => has(t)).map(([, how]) => '- ' + how),
+  ];
+}
+function propsNotes(name, b, parts, sizes) {
+  const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
+  return [
+    name + ' · SlotForge Foundry props kit',
+    '',
+    b.items.map((it) => it.count + ' × ' + propOf(it.type).name.toLowerCase()).join(', ') + ', at 1:32.',
+    '',
+    'Parts, as they lie on the plate:',
+    list,
+    '',
+    'Printing and putting together',
+    ...propLines(b.items.map((it) => it.type)),
+    '- Paint them before gluing: tyres black, cones orange and white, drums and bottles in bright colours.',
+  ].join('\n');
+}
 function benchNotes(name, b, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
   return [

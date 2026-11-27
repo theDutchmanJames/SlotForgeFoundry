@@ -25,6 +25,8 @@ import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
 import { TRIM, checkOpeningShape, openingShapes, outlineOf, overOf, sideOf, underOf } from './opening-shapes.js';
+import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf } from './props.js';
+import { PROPS_DEFAULTS, buildPropsKit, propsLayout, validatePropsKit } from './props-kit.js';
 import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
@@ -114,6 +116,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // plan of the top storey, its width, and the height of its front wall over
   // the roof; on a sloped panel, facing down it.
   dormers: Object.freeze([]),
+  // Props: each { type, x, y } its footprint's corner nearest the left front,
+  // on the plan of the ground floor, turned by `rotation`, standing on the
+  // floor of `storey` (0 the ground floor), or on the table outside (-1).
+  props: Object.freeze([]),
   gutters: false,
   downpipes: 'none',
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -529,6 +535,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'platform') return validatePlatform(input);
   if (input?.kind === 'walkway') return validateWalkway(input);
   if (input?.kind === 'pitbays') return validatePitBays(input);
+  if (input?.kind === 'props') return validatePropsKit(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -703,8 +710,45 @@ export function validateBuilding(input) {
   upper.forEach((u, i) => (u.lettering = checkLettering(u.lettering, u, [], Infinity, STOREY_SUFFIX[i + 2])));
   const out = { ...b, openings, lettering, upper, cuts: validateCuts(b.cuts) };
   checkRoof(out);
+  out.props = checkProps(out);
   return out;
 }
+
+/**
+ * The props of a building: each inside a storey, clear of its walls and
+ * under its ceiling, or outside on the table, clear of the base; none on
+ * another. Whatever else they meet inside is checked when the building is made.
+ */
+function checkProps(b) {
+  const props = checkPropList(b.props);
+  const all = storeyStack(b);
+  const inner = KIT.wall + b.play + PROP_GAP;
+  const placed = [];
+  props.forEach((p, i) => {
+    const name = 'Prop ' + (i + 1) + ', the ' + propOf(p.type).name.toLowerCase();
+    const [fw, fd] = propFootprint(p.type, p.rotation);
+    const box = [p.x, p.y, p.x + fw, p.y + fd];
+    if (p.storey >= all.length) throw Error(name + ' stands on a storey the building has not got.');
+    if (p.storey >= 0) {
+      const s = all[p.storey];
+      // On the plan of the ground floor: a storey above sits at its own place on it.
+      const [x0, y0] = [s.ox ?? 0, s.oy ?? 0];
+      if (box[0] < x0 + inner || box[1] < y0 + inner || box[2] > x0 + s.width - inner || box[3] > y0 + s.depth - inner)
+        throw Error(name + ' stands inside ' + (p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor') + ', ' + PROP_GAP + ' mm clear of its walls.');
+      if (propOf(p.type).size[2] > s.height - KIT.lipDepth - 1) throw Error(name + ' is too tall for ' + (p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor') + ': ' + propOf(p.type).size[2] + ' mm under a ceiling ' + s.height + ' mm high.');
+    } else {
+      const m = KIT.ledge + PROP_GAP;
+      if (box[0] < b.width + m && box[2] > -m && box[1] < b.depth + m && box[3] > -m) throw Error(name + ' stands on the table outside: keep it ' + PROP_GAP + ' mm clear of the base.');
+      if (box[0] < -150 || box[1] < -150 || box[2] > b.width + 150 || box[3] > b.depth + 150) throw Error(name + ' stands at most 150 mm from the building.');
+    }
+    for (const q of placed)
+      if (q.storey === p.storey && box[0] < q.box[2] + PROP_GAP && q.box[0] < box[2] + PROP_GAP && box[1] < q.box[3] + PROP_GAP && q.box[1] < box[3] + PROP_GAP)
+        throw Error(name + ' stands on ' + q.name + ': keep them ' + PROP_GAP + ' mm apart.');
+    placed.push({ storey: p.storey, box, name: q0(i, p) });
+  });
+  return props;
+}
+const q0 = (i, p) => 'prop ' + (i + 1) + ', the ' + propOf(p.type).name.toLowerCase();
 
 /**
  * The chimney, the rooflights, the gutters and the downpipes: each over the
@@ -814,6 +858,15 @@ function onePanel(shape, p, [x0, y0, x1, y1], margin) {
       if (roofPanelAt(shape, x, y) !== p) return false;
     }
   return true;
+}
+
+/** The parts of a list of props: one each, or for a prop of several parts each of them. */
+export function propPartIds(props) {
+  const MANY = { workbench: ['top', 'end-1', 'end-2', 'shelf'], table: ['top', 'end-1', 'end-2'], 'pit-board': ['board', 'foot'], parasol: ['canopy', 'pole', 'foot'] };
+  return props.flatMap((p, i) => {
+    const name = 'Prop ' + (i + 1) + ', ' + propOf(p.type).name.toLowerCase();
+    return (MANY[p.type] ?? ['']).map((key) => ({ id: 'prop-' + (i + 1) + (key ? '-' + key : ''), name: name + (key ? ', ' + key.replace('-', ' ') : ''), role: 'frame' }));
+  });
 }
 
 /** The eaves a gutter runs along: the wall under the low edge of a panel of a sloped, two-sided or hip roof. */
@@ -1391,6 +1444,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitbays') return { ...pitBaysLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'props') return { ...propsLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }, ...standParts(b)];
@@ -1407,6 +1461,7 @@ export function buildingLayout(input) {
   for (let k = 1; b.roof === 'sawtooth' && k < b.teeth; k++) parts.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall' });
   if (b.chimney) parts.push({ id: 'chimney', name: 'Chimney', role: 'frame' });
   b.dormers.forEach((_, i) => parts.push({ id: 'dormer-' + (i + 1), name: 'Dormer ' + (i + 1), role: 'wall' }));
+  parts.push(...propPartIds(b.props));
   if (b.gutters)
     for (const p of roofShape(b).panels) {
       const side = eaveOf(p);
@@ -1467,7 +1522,7 @@ export function buildingCuts(input, plate) {
   if (input?.kind === 'sections') return {};
   if (input?.kind === 'footprint') return {};
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1564,6 +1619,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'platform') return buildPlatform(wasm, input);
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
+  if (input?.kind === 'props') return buildPropsKit(wasm, input, plate);
   const { Manifold, CrossSection } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, shell, deck, roof: rt } = KIT;
@@ -2755,14 +2811,23 @@ export function buildGarage(wasm, input, plate = null) {
         parts.push({ id: 'sign-fin-' + (i + 1), name: 'Billboard fin ' + (i + 1), role: 'frame', solid: onRoof(fin), outward: [1, 0, 0], apart: [i ? 8 : -8, 12, APART.roof + 25] });
       });
     }
-    // A fitting runs into nothing: it says what it meets.
-    for (const f of parts.filter((q) => /^(chimney|gutter|downpipe|dormer)/.test(q.id)))
+    // Props: inside on a storey's floor, or on the table outside.
+    const propParts = (where) =>
+      b.props.flatMap((p, i) => {
+        if ((p.storey < 0) !== (where === 'table')) return [];
+        const z = p.storey < 0 ? 0 : storeys[p.storey].floor;
+        const ids = propPartIds([p]).map((q) => ({ ...q, id: q.id.replace(/^prop-1/, 'prop-' + (i + 1)), name: q.name.replace(/^Prop 1/, 'Prop ' + (i + 1)) }));
+        return placeProp(wasm, own, p, z).map((q, k) => ({ ...ids[k], solid: q.solid, turn: q.pose, apart: [0, 0, p.storey < 0 ? 0 : (p.storey) * APART.storey + 6] }));
+      });
+    parts.push(...propParts('inside'));
+    // A fitting or a prop runs into nothing: it says what it meets.
+    for (const f of parts.filter((q) => /^(chimney|gutter|downpipe|dormer|prop)/.test(q.id)))
       for (const q of parts) {
-        if (q === f || /^(chimney|gutter|downpipe|dormer)/.test(q.id) && q.id <= f.id) continue;
+        if (q === f || /^(chimney|gutter|downpipe|dormer|prop)/.test(q.id) && q.id <= f.id) continue;
         const both = f.solid.intersect(q.solid);
         const v = both.volume();
         both.delete();
-        if (v > 0.01) throw Error('The ' + f.name.toLowerCase() + ' runs into the ' + q.name.toLowerCase() + (f.id.startsWith('downpipe') ? ': put the downpipes at the other end, or move what is in the way.' : '.'));
+        if (v > 0.01) throw Error('The ' + f.name.toLowerCase() + ' runs into the ' + q.name.toLowerCase() + (f.id.startsWith('downpipe') ? ': put the downpipes at the other end, or move what is in the way.' : f.id.startsWith('prop') ? ': move it.' : '.'));
       }
     if (b.standType !== 'none') {
       const H = b.standHeight;
@@ -2770,6 +2835,8 @@ export function buildGarage(wasm, input, plate = null) {
       parts.push(...buildStand(H + b.baseHeight - deck));
     }
     if (b.access !== 'none') parts.push(buildAccess());
+    // Props on the table stay on it, whatever the building stands on.
+    parts.push(...propParts('table'));
     // Keep the parts in the order of the kit; free everything else.
     const order = buildingLayout(b).parts.map((p) => p.id);
     const rank = (id) => order.indexOf(order.includes(id) ? id : id.replace(/-\d+$/, ''));

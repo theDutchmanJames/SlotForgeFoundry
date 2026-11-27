@@ -458,6 +458,24 @@ const PRESETS = [
     building: { kind: 'tyrebridge' },
   },
   {
+    id: 'props-pit',
+    name: 'Pit props',
+    note: 'Tyre stacks, a tool chest, a workbench, gas bottles and oil drums for a pit garage',
+    building: { kind: 'props', items: [{ type: 'tyre-stack', count: 3 }, { type: 'tool-chest', count: 1 }, { type: 'workbench', count: 1 }, { type: 'gas-bottle', count: 2 }, { type: 'drum', count: 2 }] },
+  },
+  {
+    id: 'props-trackside',
+    name: 'Trackside props',
+    note: 'Cones, crowd barriers, a pit board, fire extinguishers and a podium',
+    building: { kind: 'props', items: [{ type: 'cone', count: 6 }, { type: 'barrier', count: 3 }, { type: 'pit-board', count: 1 }, { type: 'extinguisher', count: 2 }, { type: 'podium', count: 1 }] },
+  },
+  {
+    id: 'props-paddock',
+    name: 'Paddock props',
+    note: 'A parasol, tables, a counter and crates for a paddock café',
+    building: { kind: 'props', items: [{ type: 'parasol', count: 2 }, { type: 'table', count: 2 }, { type: 'counter', count: 1 }, { type: 'crate', count: 3 }] },
+  },
+  {
     id: 'benches',
     name: 'Benches',
     note: 'A row of three spectator benches with backs',
@@ -821,4 +839,5 @@ export const PRESET_GROUPS = Object.freeze([
   ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
   ['Over the track', ['gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
+  ['Props', ['props-pit', 'props-trackside', 'props-paddock']],
 ]);

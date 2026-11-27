@@ -24,6 +24,8 @@ import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
 import { BILLBOARD_LIMITS, billboardPieces, billboardPosts } from './geometry/billboard.js';
 import { SWITCHBACK_LIMITS, switchbackPlan } from './geometry/switchback.js';
 import { BENCH_LIMITS } from './geometry/bench.js';
+import { PROPS, propOf } from './geometry/props.js';
+import { PROPS_KIT } from './geometry/props-kit.js';
 import { TYRE_BRIDGE_LIMITS, tyreOpening } from './geometry/tyre-bridge.js';
 import { PICNIC_LIMITS } from './geometry/picnic.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
@@ -363,6 +365,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('eSeat', 'Seat height', 14, BENCH_LIMITS.seatHeight)}
       <label class="bd-check"><input type="checkbox" name="eBack"><span>A back on each bench</span></label>
       <p class="bd-hint">Planked, the seat and the back are planks with gaps between them, joined by cleats behind, on two end frames set in from the ends: their legs joined by a stretcher, the back leg rising to carry the back. The seat prints upside down, its planks on the plate; the back face down; the end frames flat. Plain, the seat and back are one piece between the end frames, lying on the back.</p></section>
+    <section class="bd-box" data-bd-card="propsKit" data-bd-props hidden><h3>Props</h3>
+      <div class="bd-props-items"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-item>${icon('plus')}Prop</button></div>
+      <p class="bd-hint">So many of each prop, laid in a row on the table. Every part prints as it lies, without supports: round things stand on their bases, a chest or a counter lies on its back, a table or a workbench comes as a top and two end frames, and a shelf, to glue together; a pit board and a parasol stand in a foot.</p></section>
     <section class="bd-box" data-bd-card="switchback" data-bd-switchback hidden><h3>Switchback stairs</h3>
       ${field('sHeight', 'Height of the top landing', 70, SWITCHBACK_LIMITS.height)}
       ${field('sWidth', 'Flight width', 24, SWITCHBACK_LIMITS.width)}
@@ -482,6 +488,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">A gambrel has two panels a side, steep from the eaves to the break and shallower above it; a mansard has them on all four sides. Their panels meet mitred, and lie on the walls without a frame. A dormer stands on a sloped panel, facing down it: a front wall with a window, two cheeks and a two-sided roof, one hollow piece over an opening in the panel; it prints standing on its front. A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
+    <section class="bd-box" data-bd-card="buildingProps"><h3>Props</h3>
+      <div class="bd-bprops"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-prop>${icon('plus')}Prop</button></div>
+      <p class="bd-hint">Props stand on the floor of a storey, or on the table outside: tyres, a tool chest, a workbench, cones, a counter. Each is placed by the corner of its footprint nearest the left front, on the plan of the ground floor, and turns by a quarter. They print with the kit, each part flat without supports, and are glued where they stand; one that runs into a wall, a brace or anything else says so.</p></section>
     <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
@@ -564,6 +574,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isBillboard = () => building.kind === 'billboard';
   const isSwitchback = () => building.kind === 'switchback';
   const isBench = () => building.kind === 'bench';
+  const isProps = () => building.kind === 'props';
   const isTyre = () => building.kind === 'tyrebridge';
   const isPicnic = () => building.kind === 'picnic';
   const isPlatform = () => building.kind === 'platform';
@@ -612,10 +623,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
     foldCards();
-    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -665,6 +676,45 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const [n, key] of BENCH_FIELDS) e[n].value = k[key];
     e.eBack.checked = k.backrest;
     e.eStyle.value = k.style;
+  }
+  // The props kit: a row for each kind of prop, how many.
+  const propOptions = (chosen) => PROPS.map((p) => `<option value="${p.id}"${p.id === chosen ? ' selected' : ''}>${p.name}</option>`).join('');
+  function fillProps(k) {
+    $('.bd-props-items').innerHTML = k.items
+      .map((it, i) => `<div class="bd-room"><label class="bd-row"><span>Prop</span><select name="pk-type-${i}">${propOptions(it.type)}</select></label>${field('pk-count-' + i, 'How many', it.count, [1, PROPS_KIT.most], '')}${k.items.length > 1 ? `<button type="button" class="bd-remove" data-bd-remove-item="${i}" title="Remove" aria-label="Remove prop ${i + 1}">${icon('close')}</button>` : ''}</div>`)
+      .join('');
+    $('[data-bd-add-item]').hidden = k.items.length >= PROPS_KIT.kinds;
+  }
+  function readProps() {
+    const e = form.elements;
+    return { kind: 'props', items: building.items.map((it, i) => ({ type: e['pk-type-' + i]?.value ?? it.type, count: e['pk-count-' + i] ? (e['pk-count-' + i].value === '' ? NaN : Number(e['pk-count-' + i].value)) : it.count })) };
+  }
+  // A building's props: a row for each, where it stands and how it turns.
+  function drawBuildingProps() {
+    const box = $('.bd-bprops');
+    if (!box) return;
+    const where = (sel) => [[-1, 'Outside, on the table'], [0, 'Ground floor'], ...building.upper.map((_, i) => [i + 1, 'Storey ' + (i + 2)])].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
+    box.innerHTML = (building.props ?? [])
+      .map(
+        (p, i) =>
+          `<div class="bd-sub">Prop ${i + 1}<button type="button" class="bd-remove" data-bd-remove-prop="${i}" title="Remove" aria-label="Remove prop ${i + 1}">${icon('close')}</button></div><label class="bd-row"><span>Prop</span><select name="bp-type-${i}">${propOptions(p.type)}</select></label><label class="bd-row"><span>Stands</span><select name="bp-storey-${i}">${where(p.storey)}</select></label><div class="bd-sides">${field('bp-x-' + i, 'From the left', p.x, [-150, 1500])}${field('bp-y-' + i, 'From the front', p.y, [-150, 1500])}</div><label class="bd-row"><span>Turned</span><select name="bp-rot-${i}">${[0, 90, 180, 270].map((r) => `<option value="${r}"${r === p.rotation ? ' selected' : ''}>${r}°</option>`).join('')}</select></label>`,
+      )
+      .join('');
+  }
+  // A prop where one fits on the ground floor: from the back of the room, the first place that passes the checks.
+  function freeProp(b, type) {
+    const [w, d] = propOf(type).size;
+    for (let y = b.depth - 6 - d; y >= 6; y -= 4)
+      for (let x = Math.round((b.width - w) / 2), k = 0; k < 40; k++, x += (k % 2 ? 1 : -1) * k * 4) {
+        const p = { type, x, y, rotation: 0, storey: 0 };
+        try {
+          validateBuilding({ ...b, props: [...b.props, p] });
+          return p;
+        } catch {
+          // Not here: the next place.
+        }
+      }
+    return null;
   }
   function readBench() {
     const e = form.elements;
@@ -1131,6 +1181,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isBillboard()) return readBillboard();
     if (isSwitchback()) return readSwitchback();
     if (isBench()) return readBench();
+    if (isProps()) return readProps();
     if (isTyre()) return readTyre();
     if (isPicnic()) return readPicnic();
     if (isPlatform()) return readPlatform();
@@ -1176,6 +1227,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       rise: num(e.rise),
       lowerPitch: num(e.lowerPitch),
       breakAt: num(e.breakAt),
+      props: (building.props ?? []).map((p, i) =>
+        e['bp-type-' + i] ? { type: e['bp-type-' + i].value, storey: Number(e['bp-storey-' + i].value), x: num(e['bp-x-' + i]), y: num(e['bp-y-' + i]), rotation: Number(e['bp-rot-' + i].value) } : p,
+      ),
       dormers: (building.dormers ?? []).map((d, i) => (e['dormer-x-' + i] ? { x: num(e['dormer-x-' + i]), y: num(e['dormer-y-' + i]), width: num(e['dormer-w-' + i]), height: num(e['dormer-h-' + i]) } : d)),
       overhangFront: num(e.overhangFront),
       overhangBack: num(e.overhangBack),
@@ -1277,6 +1331,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     else if (isBench()) {
       // Nothing of its own to redraw: its card is all fields.
+    }
+    else if (isProps()) {
+      // Its rows are drawn when it is filled, and when a prop comes or goes.
     }
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
@@ -1508,6 +1565,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isBillboard()) card = 'billboard';
     else if (isSwitchback()) card = 'switchback';
     else if (isBench()) card = 'bench';
+    else if (isProps()) card = 'propsKit';
+    else if (/^prop-/.test(id)) card = 'buildingProps';
     else if (isTyre()) card = 'tyre';
     else if (isPicnic()) card = 'picnic';
     else if (isWalkway()) card = 'walkway';
@@ -1596,6 +1655,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'billboard') return fillBillboard(b);
     if (b.kind === 'switchback') return fillSwitchback(b);
     if (b.kind === 'bench') return fillBench(b);
+    if (b.kind === 'props') return fillProps(b);
     if (b.kind === 'tyrebridge') return fillTyre(b);
     if (b.kind === 'picnic') return fillPicnic(b);
     if (b.kind === 'platform') return fillPlatform(b);
@@ -1623,6 +1683,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     drawStoreys();
     drawOpenings();
     drawFittings();
+    drawBuildingProps();
   }
   // The chimney's place and size, and a row for each rooflight.
   function drawFittings() {
@@ -1964,6 +2025,29 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         storey = keep;
         await rebuild({ ...base, upper: base.upper.slice(0, keep) });
         drawFpStoreys();
+      } else if (b.dataset.bdAddItem !== undefined) {
+        const base = readForm();
+        const type = PROPS.find((p) => !base.items.some((it) => it.type === p.id))?.id;
+        if (type) {
+          await rebuild({ ...base, items: [...base.items, { type, count: 1 }] });
+          fillProps(building);
+        }
+      } else if (b.dataset.bdRemoveItem !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, items: base.items.filter((_, i) => i !== Number(b.dataset.bdRemoveItem)) });
+        fillProps(building);
+      } else if (b.dataset.bdAddProp !== undefined) {
+        const base = readForm();
+        const prop = freeProp(base, 'tyre-stack') ?? freeProp(base, 'cone');
+        if (!prop) showError('There is no room for a prop on the ground floor: put one outside, on the table.');
+        else {
+          await rebuild({ ...base, props: [...base.props, prop] });
+          drawBuildingProps();
+        }
+      } else if (b.dataset.bdRemoveProp !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, props: base.props.filter((_, i) => i !== Number(b.dataset.bdRemoveProp)) });
+        drawBuildingProps();
       } else if (b.dataset.bdAddDormer !== undefined) {
         const base = readForm();
         const dormer = freeDormer(base);
