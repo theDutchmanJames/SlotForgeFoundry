@@ -6,7 +6,7 @@
 // border, so the doorstep meets the road.
 import polygonClipping from 'polygon-clipping';
 import { connectedOutline, sectionPositions, sectionRect, sectionWalls } from './geometry/connected-building.js';
-import { footprintPoints, footprintOffset, footprintWalls } from './geometry/footprint-building.js';
+import { footprintOffset, footprintRings, footprintWalls } from './geometry/footprint-building.js';
 import { KIT, dividers, garageDoors, standFeet, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
 import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
@@ -213,7 +213,7 @@ export function planShapes(entry) {
       const w = walls.find(w => w.id === o.wall);
       return [o.at - o.width / 2, o.at + o.width / 2].map(at => toPlan(entry, [w.a[0] + w.dir[0] * at, w.a[1] + w.dir[1] * at]));
     });
-    return { base: footprint(entry), storeys: [footprintPoints(b).map(p => toPlan(entry, p))], dividers: [], doors };
+    return { base: footprint(entry), storeys: footprintRings(b).map((r) => r.map((p) => toPlan(entry, p))), dividers: [], doors };
   }
   if (b.kind === 'gantry') {
     // Its feet, and the beam or the walkway across.

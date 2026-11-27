@@ -8,7 +8,7 @@ import { createBuildingHistory, editWalls } from './building-edit.js';
 import { createBuildingCanvas } from './building-canvas.js';
 import { addSection, removeSection } from './geometry/connected-building.js';
 import { sectionFields, readSectionFields } from './building-sections.js';
-import { FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, footprintWalls } from './geometry/footprint-building.js';
+import { COURTYARD, FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, footprintWalls } from './geometry/footprint-building.js';
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
@@ -251,6 +251,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-fp-storeys></div>
       <div data-bd-fp-storey></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-fp-add-storey>${icon('plus')}Storey</button></div>
+      <div class="bd-sub">Courtyards</div>
+      <div data-bd-fp-courts></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-fp-add-court>${icon('plus')}Courtyard</button></div>
       <div class="bd-sub" data-bd-fp-walls-of>Walls</div>
       <div data-bd-fp-finish></div>
       ${textureSize('fp-', FOOTPRINT_DEFAULTS)}
@@ -619,7 +622,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const fpWalls = (b) => footprintWalls(b).map((w) => ({ id: w.id, name: w.name }));
   function readFootprint() {
     const finish = readFinish(form, 'ff', storeyOf(building, storey), fpWalls(building));
-    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish), props: readBuildingProps() };
+    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish), props: readBuildingProps(), courtyards: readCourtyards() };
     for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
       const value = form.elements['fp-' + key].value;
       next[key] = value === '' ? NaN : Number(value);
@@ -630,6 +633,39 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       next.upper = building.upper.map((u, i) => (i === storey - 1 ? { ...u, ...finish, height: el && el.value !== '' ? Number(el.value) : NaN } : u));
     }
     return next;
+  }
+  // A shaped building's courtyards as the form has them.
+  function readCourtyards() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return (building.courtyards ?? []).map((c, k) => (e['fc-x-' + k] ? { x: num(e['fc-x-' + k]), y: num(e['fc-y-' + k]), width: num(e['fc-w-' + k]), depth: num(e['fc-d-' + k]) } : c));
+  }
+  // Its courtyards: a row for each, where it is and how big.
+  function drawFpCourts() {
+    const box = $('[data-bd-fp-courts]');
+    if (!box) return;
+    const list = building.courtyards ?? [];
+    box.innerHTML = list
+      .map((c, k) => `<div class="bd-sub">Courtyard ${k + 1}<button type="button" class="bd-remove" data-bd-fp-remove-court="${k}" title="Remove" aria-label="Remove courtyard ${k + 1}">${icon('close')}</button></div><div class="bd-sides">${field('fc-x-' + k, 'From the left', c.x, [0, 1200])}${field('fc-y-' + k, 'From the front', c.y, [0, 1200])}${field('fc-w-' + k, 'Width', c.width, [COURTYARD.least, 1200])}${field('fc-d-' + k, 'Depth', c.depth, [COURTYARD.least, 1200])}</div>`)
+      .join('');
+    $('[data-bd-fp-add-court]').hidden = list.length >= COURTYARD.most;
+  }
+  // A courtyard where one fits: in the middle of the building, as big as fits up to half of it.
+  function freeCourtyard(b) {
+    for (const share of [0.5, 0.4, 0.3, 0.2, 0.12])
+      for (const [fx, fy] of [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5], [0.5, 0.3], [0.5, 0.7], [0.3, 0.3], [0.7, 0.7], [0.3, 0.7], [0.7, 0.3]]) {
+        const width = Math.max(COURTYARD.least, Math.round(b.width * share)),
+          depth = Math.max(COURTYARD.least, Math.round(b.depth * share));
+        const c = { x: Math.round(b.width * fx - width / 2), y: Math.round(b.depth * fy - depth / 2), width, depth };
+        try {
+          // Round a courtyard the roof is flat: it is made so as the courtyard goes in.
+          validateBuilding({ ...b, roofShape: 'flat', courtyards: [...(b.courtyards ?? []), c] });
+          return c;
+        } catch {
+          // Not here: the next place.
+        }
+      }
+    return null;
   }
   // The storeys of a shaped building to choose from, the chosen one's height, its walls' finish.
   function drawFpStoreys() {
@@ -1730,6 +1766,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       form.elements.fpRoofShape.value = b.roofShape;
       // Its walls change with its shape: their fields are drawn afresh, for the storey chosen.
       drawFpStoreys();
+      drawFpCourts();
       drawBuildingProps();
       return;
     }
@@ -2146,6 +2183,28 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         fitted = false;
         storey = base.upper.length + 1;
         await rebuild({ ...base, upper: [...base.upper, { ...FOOTPRINT_UPPER, openings: [] }] });
+        drawFpStoreys();
+      } else if (b.dataset.bdFpAddCourt !== undefined) {
+        const base = readForm();
+        const court = freeCourtyard(base);
+        if (!court) showError('There is no room for a courtyard: it needs ' + COURTYARD.least + ' mm across inside its walls, ' + COURTYARD.clear + ' mm clear of the walls round it.');
+        else {
+          fitted = false;
+          await rebuild({ ...base, roofShape: 'flat', courtyards: [...(base.courtyards ?? []), court] });
+          form.elements.fpRoofShape.value = building.roofShape;
+          drawFpCourts();
+          drawFpStoreys();
+        }
+      } else if (b.dataset.bdFpRemoveCourt !== undefined) {
+        const base = readForm();
+        const k = Number(b.dataset.bdFpRemoveCourt);
+        const gone = new RegExp('^court-' + (k + 1) + '-');
+        // Its walls' windows and doors go with it; the courtyards after it are numbered on.
+        const renumber = (wall) => wall.replace(/^court-(\d+)-/, (m, n) => (Number(n) > k + 1 ? 'court-' + (Number(n) - 1) + '-' : m));
+        const keep = (st) => ({ ...st, openings: st.openings.filter((o) => !gone.test(o.wall)).map((o) => ({ ...o, wall: renumber(o.wall) })), wallTextures: Object.fromEntries(Object.entries(st.wallTextures ?? {}).filter(([w]) => !gone.test(w)).map(([w, t]) => [renumber(w), t])) });
+        fitted = false;
+        await rebuild({ ...base, ...keep(base), upper: base.upper.map(keep), courtyards: base.courtyards.filter((_, i) => i !== k) });
+        drawFpCourts();
         drawFpStoreys();
       } else if (b.dataset.bdFpRemoveStorey !== undefined) {
         const base = readForm();

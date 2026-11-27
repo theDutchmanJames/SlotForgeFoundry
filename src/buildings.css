@@ -11,6 +11,7 @@
 .bd-drawing { width: 100%; height: clamp(240px, 46vh, 600px); display: block; touch-action: none; border: 1px solid var(--line); border-radius: 8px; background: var(--box); }
 .bd-drawing text { fill: var(--ink); font: 8px var(--font-ui); pointer-events: none; }
 .bd-drawing-wall { fill: var(--sel); stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.bd-drawing-court { fill: var(--bg); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .bd-drawing-opening rect { fill: var(--box); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .bd-drawing-opening.selected rect { fill: var(--accent-fill); stroke-width: 3; }
 .bd-drawing-opening .bd-resize { fill: var(--accent); cursor: nesw-resize; }

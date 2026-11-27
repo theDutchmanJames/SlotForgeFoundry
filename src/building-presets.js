@@ -67,6 +67,13 @@ const PRESETS = [
     ] },
   },
   {
+    id: 'footprint-court', name: 'Building round a courtyard', note: 'Brick on a band of blocks round an open courtyard, windows looking out and into it, a door through to it',
+    building: { kind: 'footprint', shape: 'rectangle', width: 230, depth: 190, height: 75, wallTexture: 'brick', lowerTexture: 'block', lowerHeight: 14,
+      courtyards: [{ x: 70, y: 60, width: 90, depth: 70 }],
+      openings: [shell('edge-1', 'door', 115, 28, 50, 0), shell('edge-1', 'window', 50, 30, 28, 30, 2, 2), shell('edge-1', 'window', 180, 30, 28, 30, 2, 2), shell('edge-2', 'window', 95, 30, 28, 30, 2, 2), shell('edge-4', 'window', 95, 30, 28, 30, 2, 2),
+        shell('court-1-4', 'door', 45, 24, 50, 0), shell('court-1-2', 'window', 45, 30, 26, 30, 2, 2), shell('court-1-1', 'window', 35, 24, 26, 30, 1, 2), shell('court-1-3', 'window', 35, 24, 26, 30, 1, 2)] },
+  },
+  {
     id: 'footprint-l', name: 'L-shaped building', note: 'Brick on a band of blocks, framed windows: drag its walls, add a bay or cut a corner in Draw',
     building: { kind: 'footprint', shape: 'L', wallTexture: 'brick', lowerTexture: 'block', lowerHeight: 14,
       openings: [shell('edge-1', 'door', 30, 28, 50, 0), shell('edge-1', 'window', 85, 32, 26, 28, 2, 2), shell('edge-1', 'window', 135, 32, 26, 28, 2, 2), shell('edge-3', 'window', 40, 32, 26, 28, 2, 2), shell('edge-6', 'window', 90, 32, 26, 28, 2, 2)] },
@@ -1182,7 +1189,7 @@ export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
 
 /** The standard buildings in groups, for the Start from list: every preset in one. */
 export const PRESET_GROUPS = Object.freeze([
-  ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'classic', 'shed', 'container', 'fit-test']],
+  ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'footprint-court', 'classic', 'shed', 'container', 'fit-test']],
   ['Pit buildings', ['pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'pit-tower']],
   ['Towers and offices', ['tower', 'commentary-booth', 'starter-tower', 'press-gallery', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
   ['Marshal posts', ['marshal', 'marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],

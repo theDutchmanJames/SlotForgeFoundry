@@ -61,10 +61,11 @@ export function kitNotes(name, b, parts, sizes) {
     name + ' · SlotForge Foundry shaped building kit',
     `${{ L: 'L-shaped', U: 'U-shaped', T: 'T-shaped', custom: 'Drawn', octagon: 'Octagonal', round: 'Round' }[b.shape] ?? 'Rectangular'} footprint${b.shape === 'round' ? ' of ' + b.sides + ' sides' : ''}, ${fmt(b.width)} × ${fmt(b.depth)} mm; walls ${b.height} mm tall, ${b.wall} mm thick.` +
       (b.upper?.length ? ' ' + (b.upper.length + 1) + ' storeys: ' + b.upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.height) + ' mm').join(', ') + ', each on a floor.' : '') +
-      (b.roofShape === 'hip' ? ' A hip roof at ' + b.pitch + '°, a panel over each wall.' : ''),
+      (b.roofShape === 'hip' ? ' A hip roof at ' + b.pitch + '°, a panel over each wall.' : '') +
+      (b.courtyards?.length ? ' Round ' + (b.courtyards.length === 1 ? 'a courtyard' : b.courtyards.length + ' courtyards') + ', open to the sky, its walls named Courtyard 1, wall 1 and on; the base is its paving.' : ''),
     'Print the base' + (b.upper?.length ? ', the floors, their frames' : '') + ' and ' + (b.roofShape === 'hip' ? 'each roof panel flat on its underside' : 'the roof flat') + ', and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
     'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
-    'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners. Glue the wall seams and feet.',
+    'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners.' + (b.courtyards?.length ? ' Stand each courtyard’s walls in the groove round it the same way.' : '') + ' Glue the wall seams and feet.',
     ...(b.upper?.length ? ['Glue each floor frame under its floor, its outside a little inside the walls. Lay the floor on the walls below, its frame dropping inside them, and stand the next storey\'s walls in the groove on top, in the same order as the walls below.'] : []),
     ...(b.props?.length ? ['Glue each prop where it stands, on its floor before the storey above goes on, or on the table outside. ' + propLines(b.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
     b.roofShape === 'hip'

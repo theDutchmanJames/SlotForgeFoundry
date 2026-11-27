@@ -79,7 +79,9 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
     const walls = pts.map((_, i) => { const [p, q] = line(i); return `<line class="bd-edge${edge === i ? ' selected' : ''}" data-shape="edge" data-edge="${i}" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}"/><text class="bd-edge-name" x="${(p[0] + q[0]) / 2}" y="${(p[1] + q[1]) / 2}" text-anchor="middle">${i + 1}</text>`; }).join('');
     const corners = pts.map((p, k) => `<circle class="bd-corner${corner === k ? ' selected' : ''}" data-corner="${k}" cx="${p[0]}" cy="${p[1]}" r="3.5"/>`).join('');
     const handles = b.shape === 'custom' ? '' : `<circle class="bd-shape-handle" data-shape="size" cx="${b.width}" cy="${b.depth}" r="5"/>${b.shape !== 'rectangle' ? `<circle class="bd-shape-handle" data-shape="wing" cx="${b.wing}" cy="${b.wing}" r="5"/>` : ''}`;
-    return `<polygon class="bd-drawing-wall" points="${pts.map((p) => p.join(',')).join(' ')}"/>${walls}${corners}${handles}<text x="${b.width / 2}" y="-9" text-anchor="middle">${number(b.width)} × ${number(b.depth)} mm</text>`;
+    // The courtyards, open in the middle: set under Courtyards.
+    const courts = (b.courtyards ?? []).map((c, k) => `<rect class="bd-drawing-court" x="${c.x}" y="${c.y}" width="${c.width}" height="${c.depth}"/><text class="bd-edge-name" x="${c.x + c.width / 2}" y="${c.y + c.depth / 2}" text-anchor="middle">Courtyard ${k + 1}</text>`).join('');
+    return `<polygon class="bd-drawing-wall" points="${pts.map((p) => p.join(',')).join(' ')}"/>${courts}${walls}${corners}${handles}<text x="${b.width / 2}" y="-9" text-anchor="middle">${number(b.width)} × ${number(b.depth)} mm</text>`;
   }
   function outlineTools(b, pts) {
     if (edge !== null) {

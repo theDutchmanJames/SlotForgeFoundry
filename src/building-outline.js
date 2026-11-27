@@ -8,6 +8,9 @@ import { footprintPoints, footprintWalls } from './geometry/footprint-building.j
 export const BAY = Object.freeze({ depth: 15, chamfer: 15, bulge: 15, facets: 6 });
 
 const id = (i) => 'edge-' + (i + 1);
+// The walls round the outline; a courtyard's are moved with its own settings.
+const outerWalls = (b) => footprintWalls(b).filter((w) => !w.ring);
+const onOutline = (wall) => /^edge-\d+$/.test(wall);
 const at = (p, d, k) => [p[0] + d[0] * k, p[1] + d[1] * k];
 // Where two lines meet, each through a point along a direction; null if they run side by side.
 function meet(p, d, q, e) {
@@ -30,12 +33,17 @@ function renamed(b, points, where) {
   // Every storey's windows and doors, and its walls' own textures.
   const storey = (s) => {
     const openings = s.openings.map((o) => {
+      if (!onOutline(o.wall)) return o;
       const i = Number(o.wall.slice(5)) - 1,
         [j, u] = where(i, o.at);
       return { ...o, wall: id(j), at: Math.round(u * 1e6) / 1e6 };
     });
     const wallTextures = {};
     for (const [w, t] of Object.entries(s.wallTextures ?? {})) {
+      if (!onOutline(w)) {
+        wallTextures[w] = t;
+        continue;
+      }
       const i = Number(w.slice(5)) - 1;
       // A wall cut in pieces: each piece keeps its texture.
       for (const j of where.pieces?.(i) ?? [where(i, 0)[0]]) wallTextures[id(j)] = t;
@@ -50,7 +58,7 @@ const openingsOn = (b, wall) => [b, ...(b.upper ?? [])].flatMap((s) => s.opening
 /** Moves a wall straight out (or in, when negative), its neighbours longer or shorter; its windows stay where they are. */
 export function moveWall(input, wall, by) {
   const b = asOutline(input),
-    walls = footprintWalls(b),
+    walls = outerWalls(b),
     n = walls.length,
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
@@ -78,7 +86,7 @@ export function moveWall(input, wall, by) {
  */
 export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 3]) {
   const b = asOutline(input),
-    walls = footprintWalls(b),
+    walls = outerWalls(b),
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
   if (!Number.isFinite(depth) || !depth) throw Error('Give how far the bay comes out, or the recess goes in.');
@@ -106,7 +114,7 @@ export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 
 /** Cuts a corner off, `size` along each wall (at 45° on a square corner): corner k is where wall k starts. */
 export function chamferCorner(input, corner, size = BAY.chamfer) {
   const b = asOutline(input),
-    walls = footprintWalls(b),
+    walls = outerWalls(b),
     n = walls.length,
     k = corner;
   if (!Number.isInteger(k) || k < 0 || k >= n) throw Error('Select a corner first.');
@@ -127,7 +135,7 @@ export function chamferCorner(input, corner, size = BAY.chamfer) {
  */
 export function curveWall(input, wall, bulge = BAY.bulge, facets = BAY.facets) {
   const b = asOutline(input),
-    walls = footprintWalls(b),
+    walls = outerWalls(b),
     i = walls.findIndex((w) => w.id === wall);
   if (i < 0) throw Error('Select a wall first.');
   if (!Number.isFinite(bulge) || !bulge) throw Error('Give how far the curve bulges out, or in.');
