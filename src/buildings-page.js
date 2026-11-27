@@ -549,6 +549,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">A gambrel has two panels a side, steep from the eaves to the break and shallower above it; a mansard has them on all four sides. Their panels meet mitred, and lie on the walls without a frame. A dormer stands on a sloped panel, facing down it: a front wall with a window, two cheeks and a two-sided roof, one hollow piece over an opening in the panel; it prints standing on its front. A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
+    <section class="bd-box" data-bd-card="inside"><h3>Inside</h3>
+      <div class="bd-partitions"></div>
+      <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-partition>${icon('plus')}Partition</button><button type="button" class="bd-add" data-bd-add-stairs>${icon('plus')}Stairs</button></div>
+      <p class="bd-hint">A partition is a thin wall standing on a storey's floor, along the width or the depth, from one end to the other on the plan of the ground floor, up to just under the floor or the roof above; it can have a doorway in its middle. Stairs climb from a storey's floor to the next, rising to the back (or as they are turned) from the corner of their footprint, through a stairwell cut in the floor above. Each prints flat or on its side, and is glued in where it stands.</p></section>
     <section class="bd-box" data-bd-card="buildingProps" data-bd-kinds="garage footprint"><h3>Props</h3>
       <div class="bd-bprops"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-prop>${icon('plus')}Prop</button></div>
@@ -879,6 +883,62 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
           }
         }
       }
+    return null;
+  }
+  // Inside: the partitions and the stairs as the form has them, and their rows.
+  const storeyChoices = (sel, upTo) => [[0, 'Ground floor'], ...building.upper.map((_, i) => [i + 1, 'Storey ' + (i + 2)])].slice(0, upTo).map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
+  function readPartitions() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return (building.partitions ?? []).map((q, i) => {
+      if (!e['pt-x0-' + i]) return q;
+      const p = { storey: Number(e['pt-storey-' + i].value), x0: num(e['pt-x0-' + i]), y0: num(e['pt-y0-' + i]), x1: num(e['pt-x1-' + i]), y1: num(e['pt-y1-' + i]) };
+      const dw = num(e['pt-dw-' + i]);
+      // A doorway in its middle, or none at 0.
+      p.door = dw > 0 ? { at: Math.hypot(p.x1 - p.x0, p.y1 - p.y0) / 2, width: dw, height: num(e['pt-dh-' + i]) } : null;
+      return p;
+    });
+  }
+  function readStairs() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return (building.stairs ?? []).map((q, i) => (e['st-x-' + i] ? { storey: Number(e['st-storey-' + i].value), x: num(e['st-x-' + i]), y: num(e['st-y-' + i]), rotation: Number(e['st-rot-' + i].value) } : q));
+  }
+  function drawInside() {
+    const box = $('.bd-partitions');
+    if (!box) return;
+    const parts = (building.partitions ?? []).map((q, i) => `<div class="bd-sub">Partition ${i + 1}<button type="button" class="bd-remove" data-bd-remove-partition="${i}" title="Remove" aria-label="Remove partition ${i + 1}">${icon('close')}</button></div><label class="bd-row"><span>Stands on</span><select name="pt-storey-${i}">${storeyChoices(q.storey)}</select></label><div class="bd-sides">${field('pt-x0-' + i, 'From, left', q.x0, [0, 1500])}${field('pt-y0-' + i, 'From, front', q.y0, [0, 1500])}${field('pt-x1-' + i, 'To, left', q.x1, [0, 1500])}${field('pt-y1-' + i, 'To, front', q.y1, [0, 1500])}${field('pt-dw-' + i, 'Doorway width', q.door?.width ?? 0, [0, 200])}${field('pt-dh-' + i, 'Doorway height', q.door?.height ?? 45, [15, 200])}</div>`);
+    const flights = (building.stairs ?? []).map((q, i) => `<div class="bd-sub">Stairs ${i + 1}<button type="button" class="bd-remove" data-bd-remove-stairs="${i}" title="Remove" aria-label="Remove stairs ${i + 1}">${icon('close')}</button></div><label class="bd-row"><span>From</span><select name="st-storey-${i}">${storeyChoices(q.storey, building.upper.length)}</select></label><div class="bd-sides">${field('st-x-' + i, 'From the left', q.x, [0, 1500])}${field('st-y-' + i, 'From the front', q.y, [0, 1500])}</div><label class="bd-row"><span>Turned</span><select name="st-rot-${i}">${[0, 90, 180, 270].map((r) => `<option value="${r}"${r === q.rotation ? ' selected' : ''}>${r}°</option>`).join('')}</select></label>`);
+    box.innerHTML = [...parts, ...flights].join('');
+    $('[data-bd-add-stairs]').hidden = !building.upper?.length;
+  }
+  // A partition across the ground floor where one fits: across its middle, along the width, then the depth.
+  function freePartition(b) {
+    const t = 3.5;
+    for (const [x0, y0, x1, y1] of [[t, b.depth / 2, b.width - t, b.depth / 2], [b.width / 2, t, b.width / 2, b.depth - t], [t, b.depth / 3, b.width - t, b.depth / 3]]) {
+      const p = { storey: 0, x0: Math.round(x0 * 10) / 10, y0: Math.round(y0 * 10) / 10, x1: Math.round(x1 * 10) / 10, y1: Math.round(y1 * 10) / 10, door: null };
+      try {
+        validateBuilding({ ...b, partitions: [...(b.partitions ?? []), p] });
+        return p;
+      } catch {
+        // Not there: the next place.
+      }
+    }
+    return null;
+  }
+  // Stairs where they fit on the ground floor: from the back right corner inward, each way round.
+  function freeStairs(b) {
+    for (const rotation of [0, 90, 180, 270])
+      for (let y = 12; y < b.depth - 12; y += 6)
+        for (let x = b.width - 40; x >= 12; x -= 6) {
+          const q = { storey: 0, x, y, rotation };
+          try {
+            validateBuilding({ ...b, stairs: [...(b.stairs ?? []), q] });
+            return q;
+          } catch {
+            // Not there: the next place.
+          }
+        }
     return null;
   }
   // A building's props as the form has them.
@@ -1434,6 +1494,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       breakAt: num(e.breakAt),
       props: readBuildingProps(),
       leaveOut: ['roof', 'front', 'back', 'left', 'right'].filter((k) => e['leave-' + k]?.checked),
+      partitions: readPartitions(),
+      stairs: readStairs(),
       gableFront: e.gableStepped?.checked ? 'stepped' : 'none',
       gableSteps: num(e.gableSteps),
       damage: (building.damage ?? []).map((d, i) => (e['br-wall-' + i] ? { wall: e['br-wall-' + i].value, at: num(e['br-at-' + i]), width: num(e['br-w-' + i]), depth: num(e['br-d-' + i]) } : d)),
@@ -1829,6 +1891,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isFitTest()) card = 'fitTest';
     else if (isCanopy()) card = 'canopy';
     else if (isDeck()) card = 'deck';
+    else if (/^(partition|stairs)-/.test(id)) card = 'inside';
     else if (/^prop-/.test(id)) card = 'buildingProps';
     else if (isTyre()) card = 'tyre';
     else if (isPicnic()) card = 'picnic';
@@ -1953,6 +2016,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.gableStepped.checked = b.gableFront === 'stepped';
     form.elements.gableSteps.value = b.gableSteps;
     drawBreaches();
+    drawInside();
     $('[name="buildingName"]').value = name;
     drawRooms();
     drawStoreys();
@@ -2380,6 +2444,30 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
           await rebuild({ ...base, props: [...base.props, prop] });
           drawBuildingProps();
         }
+      } else if (b.dataset.bdAddPartition !== undefined) {
+        const base = readForm();
+        const p = freePartition(base);
+        if (!p) showError('There is no room for a partition across the ground floor: set one where it goes.');
+        else {
+          await rebuild({ ...base, partitions: [...(base.partitions ?? []), p] });
+          drawInside();
+        }
+      } else if (b.dataset.bdAddStairs !== undefined) {
+        const base = readForm();
+        const q = freeStairs(base);
+        if (!q) showError('There is no room for stairs on the ground floor, clear of its walls and the frame under the floor above.');
+        else {
+          await rebuild({ ...base, stairs: [...(base.stairs ?? []), q] });
+          drawInside();
+        }
+      } else if (b.dataset.bdRemovePartition !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, partitions: base.partitions.filter((_, i) => i !== Number(b.dataset.bdRemovePartition)) });
+        drawInside();
+      } else if (b.dataset.bdRemoveStairs !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, stairs: base.stairs.filter((_, i) => i !== Number(b.dataset.bdRemoveStairs)) });
+        drawInside();
       } else if (b.dataset.bdAddBreach !== undefined) {
         const base = readForm();
         const breach = freeBreach(base);

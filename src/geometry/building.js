@@ -132,6 +132,14 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // at, width, depth } a ragged gap down from the top of the wall, `at` its
   // middle along the wall (as for a window), `depth` how far down it reaches.
   damage: Object.freeze([]),
+  // Inside: partitions, each { storey, x0, y0, x1, y1, door } a thin wall standing
+  // on the floor from (x0, y0) to (x1, y1), along x or y on the plan of the ground
+  // floor, a doorway in it { at, width, height } or none; and stairs, each
+  // { storey, x, y, rotation } a flight from the storey's floor up to the next,
+  // (x, y) the corner of its footprint nearest the left front, rising to the
+  // back (turned by rotation), through a stairwell cut in the floor above.
+  partitions: Object.freeze([]),
+  stairs: Object.freeze([]),
   // A stepped gable: a board glued on the front wall of the top storey, rising
   // above a two-sided roof whose gable faces the front in so many steps a side.
   gableFront: 'none', // 'none' or 'stepped'
@@ -735,7 +743,101 @@ export function validateBuilding(input) {
   out.leaveOut = checkLeaveOut(out);
   out.damage = checkDamage(out);
   checkGableFront(out);
+  out.partitions = checkPartitions(out);
+  out.stairs = checkStairs(out);
+  checkInsideClash(out);
   return out;
+}
+/** On each storey a partition, a flight of stairs and a prop keep clear of each other, on the plan. */
+function checkInsideClash(b) {
+  const h = INSIDE.thick / 2;
+  const things = [
+    ...b.partitions.map((q, i) => ({ storey: q.storey, name: 'Partition ' + (i + 1), box: [Math.min(q.x0, q.x1) - h, Math.min(q.y0, q.y1) - h, Math.max(q.x0, q.x1) + h, Math.max(q.y0, q.y1) + h] })),
+    ...b.stairs.map((q, i) => ({ storey: q.storey, name: 'Stairs ' + (i + 1), box: flightOf(b, q).box })),
+    ...b.props.filter((p) => p.storey >= 0).map((p, i) => {
+      const [fw, fd] = propFootprint(p.type, p.rotation);
+      return { storey: p.storey, name: 'prop ' + (b.props.indexOf(p) + 1), box: [p.x, p.y, p.x + fw, p.y + fd] };
+    }),
+  ];
+  for (const [i, a] of things.entries())
+    for (const c of things.slice(i + 1))
+      if (a.storey === c.storey && a.box[0] < c.box[2] && c.box[0] < a.box[2] && a.box[1] < c.box[3] && c.box[1] < a.box[3])
+        if (!(a.name.startsWith('Partition') && c.name.startsWith('Partition'))) throw Error(a.name + ' stands on ' + c.name.toLowerCase() + ': move one of them.');
+}
+
+/**
+ * Partitions and stairs: a partition thick, at least so long, its top this far
+ * under the ceiling (clear of the frame under the floor above), its doorway at
+ * least this far from its ends; a flight of stairs wide, its steps at most this
+ * high and this deep, kept this far inside the walls, clear of the frames under
+ * the floor above, its stairwell this much bigger all round.
+ */
+export const INSIDE = Object.freeze({ thick: 2.4, least: 20, under: 1, doorEdge: 4, stair: { width: 22, rise: 8, tread: 9, slab: 4, keep: 10, well: 1 } });
+// The storey a partition or a flight stands on, and its room on the plan of the ground floor.
+function storeyRoom(b, k, name) {
+  const all = storeyStack(b);
+  if (!Number.isInteger(k) || k < 0 || k >= all.length) throw Error(name + ' stands on a storey the building has not got.');
+  const s = all[k];
+  return { s, all, x0: s.ox + KIT.wall + b.play, y0: s.oy + KIT.wall + b.play, x1: s.ox + s.width - KIT.wall - b.play, y1: s.oy + s.depth - KIT.wall - b.play };
+}
+function checkPartitions(b) {
+  const list = b.partitions ?? [];
+  if (!Array.isArray(list) || list.length > 24) throw Error('A building has at most 24 partitions.');
+  return list.map((q, i) => {
+    const name = 'Partition ' + (i + 1);
+    if (!q || typeof q !== 'object' || Object.keys(q).some((k) => !['storey', 'x0', 'y0', 'x1', 'y1', 'door'].includes(k))) throw Error(name + ' has a storey, two ends and a doorway or none.');
+    const p = { storey: q.storey ?? 0, x0: q.x0, y0: q.y0, x1: q.x1, y1: q.y1, door: q.door ?? null };
+    if (![p.x0, p.y0, p.x1, p.y1].every(Number.isFinite)) throw Error(name + ' has two ends.');
+    if (Math.abs(p.x0 - p.x1) > 1e-9 && Math.abs(p.y0 - p.y1) > 1e-9) throw Error(name + ' runs along the width or the depth, not across.');
+    const L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0);
+    if (L < INSIDE.least) throw Error(name + ' is at least ' + INSIDE.least + ' mm long.');
+    const r = storeyRoom(b, p.storey, name), h = INSIDE.thick / 2;
+    const along = Math.abs(p.y0 - p.y1) < 1e-9;
+    const [lo, hi] = [Math.min(along ? p.x0 : p.y0, along ? p.x1 : p.y1), Math.max(along ? p.x0 : p.y0, along ? p.x1 : p.y1)];
+    const ok = along ? lo >= r.x0 - 1e-6 && hi <= r.x1 + 1e-6 && p.y0 - h >= r.y0 && p.y0 + h <= r.y1 : lo >= r.y0 - 1e-6 && hi <= r.y1 + 1e-6 && p.x0 - h >= r.x0 && p.x0 + h <= r.x1;
+    if (!ok) throw Error(name + ' stands inside ' + (p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor') + ', between its walls.');
+    if (p.door !== null) {
+      const d = p.door;
+      if (typeof d !== 'object' || Object.keys(d).some((k) => !['at', 'width', 'height'].includes(k)) || ![d.at, d.width, d.height].every(Number.isFinite)) throw Error(name + ': its doorway has a place, a width and a height.');
+      if (d.width < 10 || d.at - d.width / 2 < INSIDE.doorEdge || d.at + d.width / 2 > L - INSIDE.doorEdge) throw Error(name + ': its doorway, at least 10 mm wide, keeps ' + INSIDE.doorEdge + ' mm from each end.');
+      if (d.height < 15 || d.height > r.s.height - KIT.lipDepth - INSIDE.under - 6) throw Error(name + ': its doorway is 15 to ' + Math.floor(r.s.height - KIT.lipDepth - INSIDE.under - 6) + ' mm high, under the top of the partition.');
+      p.door = { at: d.at, width: d.width, height: d.height };
+    }
+    return p;
+  });
+}
+/** A flight of stairs: how many steps, how high, its run and its footprint on the plan [x0, y0, x1, y1]. */
+export function flightOf(b, q) {
+  const all = storeyStack(b), s = all[q.storey], next = all[q.storey + 1];
+  const S = INSIDE.stair;
+  const rise = next.floor - s.floor;
+  const steps = Math.max(2, Math.ceil(rise / S.rise - 1e-9));
+  const run = steps * S.tread;
+  const [w, d] = q.rotation % 180 ? [run, S.width] : [S.width, run];
+  return { steps, rise: rise / steps, run, box: [q.x, q.y, q.x + w, q.y + d], floor: s.floor, top: next.floor };
+}
+function checkStairs(b) {
+  const list = b.stairs ?? [];
+  if (!Array.isArray(list) || list.length > 8) throw Error('A building has at most 8 flights of stairs.');
+  const all = storeyStack(b);
+  const placed = [];
+  return list.map((q, i) => {
+    const name = 'Stairs ' + (i + 1);
+    if (!q || typeof q !== 'object' || Object.keys(q).some((k) => !['storey', 'x', 'y', 'rotation'].includes(k))) throw Error(name + ' has a storey, a place and a turn.');
+    const p = { storey: q.storey ?? 0, x: q.x, y: q.y, rotation: q.rotation ?? 0 };
+    if (![p.x, p.y].every(Number.isFinite) || ![0, 90, 180, 270].includes(p.rotation)) throw Error(name + ' has a place and a turn of 0, 90, 180 or 270\u00b0.');
+    if (!Number.isInteger(p.storey) || p.storey < 0 || p.storey >= all.length - 1) throw Error(name + ' climbs to a storey above: put it on a storey with one over it.');
+    const { box } = flightOf(b, p);
+    // Inside the storey's walls and those of the one above, clear of the frames under the floor.
+    for (const st of [all[p.storey], all[p.storey + 1]]) {
+      const k = INSIDE.stair.keep;
+      if (box[0] < st.ox + k || box[1] < st.oy + k || box[2] > st.ox + st.width - k || box[3] > st.oy + st.depth - k)
+        throw Error(name + ' stands ' + k + ' mm inside the walls of ' + (p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor') + ' and of the storey above, clear of the frame under its floor.');
+    }
+    for (const o of placed) if (o.storey === p.storey && box[0] < o.box[2] && o.box[0] < box[2] && box[1] < o.box[3] && o.box[1] < box[3]) throw Error(name + ' stands on ' + o.name + '.');
+    placed.push({ storey: p.storey, box, name: name.toLowerCase() });
+    return p;
+  });
 }
 
 /** The stepped gable: its board thick, glued this far down the wall, clear of the roof by this much. */
@@ -1610,6 +1712,8 @@ export function buildingLayout(input) {
   for (let k = 1; b.roof === 'sawtooth' && k < b.teeth; k++) parts.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall' });
   if (b.chimney) parts.push({ id: 'chimney', name: 'Chimney', role: 'frame' });
   if (b.gableFront === 'stepped') parts.push({ id: 'gable-front', name: 'Stepped gable', role: 'wall' });
+  b.partitions.forEach((_, i) => parts.push({ id: 'partition-' + (i + 1), name: 'Partition ' + (i + 1), role: 'divider' }));
+  b.stairs.forEach((_, i) => parts.push({ id: 'stairs-' + (i + 1), name: 'Stairs ' + (i + 1), role: 'floor' }));
   b.dormers.forEach((_, i) => parts.push({ id: 'dormer-' + (i + 1), name: 'Dormer ' + (i + 1), role: 'wall' }));
   parts.push(...propPartIds(b.props));
   if (b.gutters)
@@ -3016,6 +3120,57 @@ export function buildGarage(wasm, input, plate = null) {
         lift = b.standType === 'none' ? 0 : b.standHeight;
       const pts = gableFrontOutline(b).map(([u, z]) => [u, z + lift]);
       parts.push({ id: 'gable-front', name: 'Stepped gable', role: 'wall', solid: sweep(pts, [1, 0, 0], [0, 0, 1], [top.ox, top.oy, 0], [0, 1, 0], -GABLE_FRONT.thick, 0), outward: [0, -1, 0], apart: [0, -20, 10] });
+    }
+    // Inside: the partitions and the stairs, standing on their floors; each stairwell cut in the floor above.
+    if (b.partitions.length || b.stairs.length) {
+      const lift = b.standType === 'none' ? 0 : b.standHeight;
+      const all = storeyStack(b),
+        inside = [];
+      b.partitions.forEach((q, i) => {
+        const s = all[q.storey],
+          h = INSIDE.thick / 2,
+          zt = s.floor + s.height - KIT.lipDepth - INSIDE.under;
+        const along = Math.abs(q.y0 - q.y1) < 1e-9;
+        const [u0, u1] = along ? [Math.min(q.x0, q.x1), Math.max(q.x0, q.x1)] : [Math.min(q.y0, q.y1), Math.max(q.y0, q.y1)];
+        let wall = along ? box(u0, q.y0 - h, s.floor + lift, u1, q.y0 + h, zt + lift) : box(q.x0 - h, u0, s.floor + lift, q.x0 + h, u1, zt + lift);
+        if (q.door) {
+          const a = u0 + q.door.at - q.door.width / 2, c = a + q.door.width, z1 = s.floor + q.door.height + lift;
+          wall = minus(wall, along ? box(a, q.y0 - h - 1, s.floor + lift - 1, c, q.y0 + h + 1, z1) : box(q.x0 - h - 1, a, s.floor + lift - 1, q.x0 + h + 1, c, z1));
+        }
+        inside.push({ id: 'partition-' + (i + 1), name: 'Partition ' + (i + 1), role: 'divider', solid: wall, outward: along ? [0, -1, 0] : [-1, 0, 0], apart: [0, 0, APART.up] });
+      });
+      b.stairs.forEach((q, i) => {
+        const f = flightOf(b, q),
+          S = INSIDE.stair;
+        // The flight in its own frame, seen from its side (v along its run, z up): its steps up from
+        // the floor, the top one level with the floor above, on a slab parallel to them; printed on its side.
+        const T = S.tread, r = f.rise, n = f.steps;
+        const slope = r / T, drop = S.slab * Math.hypot(1, slope);
+        const shape = [[0, 0]];
+        for (let k = 1; k <= n; k++) shape.push([(k - 1) * T, k * r], [k * T, k * r]);
+        shape.push([n * T, n * r - drop], [drop / slope, 0]);
+        const flight = sweep(shape, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], 0, S.width);
+        // Turned about its middle, then its footprint's corner to (x, y), on its floor.
+        const W0 = S.width, D0 = f.run;
+        const turned = own(own(own(flight.translate([-W0 / 2, -D0 / 2, 0])).rotate([0, 0, q.rotation])).translate([(f.box[0] + f.box[2]) / 2, (f.box[1] + f.box[3]) / 2, f.floor + lift]));
+        const out = { 0: [-1, 0, 0], 90: [0, -1, 0], 180: [1, 0, 0], 270: [0, 1, 0] }[q.rotation];
+        inside.push({ id: 'stairs-' + (i + 1), name: 'Stairs ' + (i + 1), role: 'floor', solid: turned, outward: out, apart: [0, 0, APART.up] });
+        // The stairwell: through the floor above, over the flight.
+        const g = S.well,
+          next = q.storey + 2;
+        const well = box(f.box[0] - g, f.box[1] - g, f.top - KIT.slab - 1 + lift, f.box[2] + g, f.box[3] + g, f.top + 1 + lift);
+        const mine = new RegExp('^floor' + next + '(-\\d+)?$');
+        for (const [k, p] of parts.entries()) if (mine.test(p.id)) parts[k] = { ...p, solid: own(p.solid.subtract(well)) };
+      });
+      // Each runs into nothing else.
+      for (const q of inside)
+        for (const p of [...parts, ...inside]) {
+          if (p === q || (inside.includes(p) && inside.indexOf(p) < inside.indexOf(q))) continue;
+          const both = q.solid.intersect(p.solid), v = both.volume();
+          both.delete();
+          if (v > 0.01) throw Error(q.name + ' runs into the ' + p.name.toLowerCase() + ': move it.');
+        }
+      parts.push(...inside);
     }
     // The breaches: each a ragged gap cut down from the top of its wall on the top storey.
     if (b.damage.length) {
