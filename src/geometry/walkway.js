@@ -168,6 +168,19 @@ function buildingPartsOf(t) {
   return layoutOf(t.building).parts.map((p) => ({ id: t.key + '-' + p.id, name: t.name + ': ' + p.name.charAt(0).toLowerCase() + p.name.slice(1), role: p.role }));
 }
 
+/**
+ * Where the walkway meets the table, as [x0, y0, x1, y1]: its towers, or the
+ * feet of its legs; none when it rests on the buildings it joins.
+ */
+export function walkwayFeet(w) {
+  if (w.towers) {
+    const y0 = (w.width - w.towerDepth) / 2;
+    return [[-w.towerWidth, y0, 0, y0 + w.towerDepth], [w.length, y0, w.length + w.towerWidth, y0 + w.towerDepth]];
+  }
+  if (!w.legs) return [];
+  const r = WALKWAY.leg / 2 + WALKWAY.foot[1];
+  return legSpots(w).map(([x, y]) => [x - r, y - r, x + r, y + r]);
+}
 // Where the legs stand under the deck, near the ends: two at each end inside the walls, or one in the middle.
 function legSpots(w) {
   const g = WALKWAY.leg / 2,

@@ -22,6 +22,8 @@ const VARIANTS = [
   { walls: 'boards', roof: 'flat', number: 12, fall: 0 },
   { walls: 'plain', ladder: false, entrance: 0, numbers: false, deckHeight: 20, overhang: 0 },
   { width: 160, depth: 40, wallHeight: 10, roomHeight: 25, fall: 5, entrance: 60, number: 88 },
+  { roof: 'pergola', deckHeight: 0, fall: 0, overhang: 0 },
+  { roof: 'pergola', width: 160, depth: 120, fall: 20 },
 ];
 const withParts = (settings, check) => {
   const parts = buildMarshalPost(wasm, settings);
@@ -58,7 +60,7 @@ test('a marshal post is checked', () => {
   const m = validateBuilding({ kind: 'marshalpost' });
   assert.deepEqual([m.width, m.depth, m.deckHeight, m.walls, m.roof], [80, 72, 40, 'slats', 'tin']);
   assert.throws(() => validateMarshalPost({ walls: 'glass' }), /slats, boards or plain/);
-  assert.throws(() => validateMarshalPost({ roof: 'gable' }), /tin or a flat roof/);
+  assert.throws(() => validateMarshalPost({ roof: 'gable' }), /tin, a flat or a pergola roof/);
   assert.throws(() => validateMarshalPost({ deckHeight: 10 }), /at least 20 mm above the table; 0 puts it on the ground/);
   assert.throws(() => validateMarshalPost({ width: 30 }), /Width must be between 40 and 160 mm\./);
   assert.throws(() => validateMarshalPost({ width: 60, entrance: 50 }), /too wide for a cabin of 60 mm: at most 44 mm/);
@@ -190,4 +192,22 @@ test('on the plan and in the notes', () => {
   assert.match(notes, /pegs on top of the legs/);
   assert.match(notes, /- Cabin: 80 × 72 × 70 mm/);
   assert.match(kitNotes('S', validateMarshalPost({ deckHeight: 0 }), [], {}), /A marshal shelter/);
+});
+
+test('a pergola roof: slats across on a rail over each side, open between them, in one piece that prints flat', () => {
+  const roofOf = (settings) => {
+    const parts = buildMarshalPost(wasm, settings);
+    const roof = parts.find((p) => p.id === 'roof');
+    const out = { name: roof.name, volume: roof.solid.volume(), bodies: roof.solid.decompose().length, air: overAir(roof) };
+    parts.forEach((p) => p.solid.delete());
+    return out;
+  };
+  const tin = roofOf({ roof: 'flat' }),
+    pergola = roofOf({ roof: 'pergola' });
+  assert.equal(pergola.name, 'Pergola roof');
+  assert.equal(pergola.bodies, 1);
+  assert.ok(pergola.air <= 0.5, 'prints flat');
+  assert.ok(pergola.volume < 0.75 * tin.volume, 'open between the slats');
+  assert.ok(pergola.volume > 0.3 * tin.volume);
+  assert.match(kitNotes('Post', validateMarshalPost({ roof: 'pergola' }), marshalPostLayout({ roof: 'pergola' }).parts, {}), /pergola roof, its rails over the posts/);
 });

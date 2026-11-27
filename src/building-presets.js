@@ -262,8 +262,8 @@ const PRESETS = [
   {
     id: 'marshal-low',
     name: 'Low marshal post',
-    note: 'A slatted cabin on legs, a ladder at the back, a tin roof on posts',
-    building: { kind: 'marshalpost' },
+    note: 'A slatted cabin on legs, a ladder at the back, a slatted pergola roof on posts',
+    building: { kind: 'marshalpost', roof: 'pergola' },
   },
   {
     id: 'marshal-shelter',

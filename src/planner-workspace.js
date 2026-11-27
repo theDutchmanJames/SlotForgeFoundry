@@ -73,7 +73,7 @@ import {
 } from './planner-kit.js';
 import { loadSettings, MATERIALS } from './settings.js';
 import { cacheKey, readPiece, storePiece } from './planner-cache.js';
-import { SNAP, bayEnd, bayPose, bayRoom, joinOptions, joinWalkway, layoutBuilding, nearestRow, overGantry, overPose, overlap, pitGarage, placeParts, snapPose, straightAcross } from './planner-buildings.js';
+import { CAR_HEADROOM, SNAP, bayEnd, bayPose, bayRoom, joinOptions, joinWalkway, layoutBuilding, headroomOver, nearestRow, overGantry, overPose, overlap, pitGarage, placeParts, snapPose, straightAcross } from './planner-buildings.js';
 import { buildingLayout, BUILDING_LIMITS, validateBuilding } from './geometry/building.js';
 import { sizeLine } from './geometry/grandstand.js';
 import { kitNotes } from './building-kit.js';
@@ -955,10 +955,12 @@ export function createPlanner({ host, call, download, current, promote }) {
     });
   }
   // The road beside a building: how high it is, if a section is near its front.
+  // The road of a row of track above the table: its highest point.
+  const roadOf = (row) => Math.max(...row.n.h) + row.def.track.params.height;
   function roadBeside(entry) {
     const near = nearestRow(entry, rows);
     if (!near || near.d > 60) return null;
-    return Math.max(...near.row.n.h) + near.row.def.track.params.height;
+    return roadOf(near.row);
   }
   async function mirrorMeshes(next, models) {
     for (const key of new Set(
@@ -1675,6 +1677,13 @@ export function createPlanner({ host, call, download, current, promote }) {
       fit,
     );
   }
+  // Under a gantry over a straight: a warning when the cars would not fit.
+  function overLow(entry) {
+    const head = headroomOver(entry, rows, roadOf);
+    return head && head.room < CAR_HEADROOM
+      ? '<p class="pl-note warn" data-pl-headroom>Too low for the cars: ' + fmt(Math.max(0, head.room)) + ' mm above the road; a 1:32 car needs ' + fmt(CAR_HEADROOM) + ' mm. Set its Clearance higher on the Buildings page.</p>'
+      : '';
+  }
   // The right panel for a building in the layout: where it stands, and its height.
   function homePanel(entry) {
     const b = entry.building,
@@ -1685,7 +1694,8 @@ export function createPlanner({ host, call, download, current, promote }) {
       return (
         '<small class="sf-eyebrow">Selected building</small><h2>' + esc(entry.name) + '</h2><p>' + esc(sizeLine(b)) + ' · over a straight</p>' +
         '<div class="pl-selection-actions">' + btn('remove', 'Delete', 'close') + '</div>' +
-        '<p class="pl-note">It spans the straight, ' + fmt(b.clearance) + ' mm clear underneath, its ' + (b.type === 'bridge' ? 'staircases' : 'legs') + ' beside the track. It moves with the straight, and takes its width. Delete it to free the straight.</p>'
+        '<p class="pl-note">It spans the straight, ' + fmt(b.clearance) + ' mm clear underneath, its ' + (b.type === 'bridge' ? 'staircases' : 'legs') + ' beside the track. It moves with the straight, and takes its width. Delete it to free the straight.</p>' +
+        overLow(entry)
       );
     if (entry.bay)
       return (
@@ -1697,6 +1707,9 @@ export function createPlanner({ host, call, download, current, promote }) {
         (overlap(entry, trackLoops()) > 0.5 ? '<p class="pl-note warn">Its base now stands on the track: the bay runs straight for less than the depth of the garage. Delete it, or make the bay longer.</p>' : '')
       );
     const onTrack = overlap(entry, trackLoops()) > 0.5;
+    // Over the track on legs, towers or an arch: the headroom for the cars under it.
+    const head = onTrack ? null : headroomOver(entry, rows, roadOf);
+    const low = head && head.room < CAR_HEADROOM;
     const road = roadBeside(entry);
     const level = stand || (road !== null && Math.abs(road - b.baseHeight) < 0.05);
     const [lo, hi] = BUILDING_LIMITS.baseHeight;
@@ -1706,7 +1719,14 @@ export function createPlanner({ host, call, download, current, promote }) {
       (stand || pits ? esc(sizeLine(b)) : fmt(b.width) + ' × ' + fmt(b.depth) + ' mm · ' + (storeys === 1 ? 'one storey' : storeys + ' storeys')) + '</p>' +
       '<div class="pl-selection-actions">' + btn('b-turn', 'Turn 90°', 'reset') + btn('b-snap', 'Stand along the track', 'join') + btn('remove', 'Delete', 'close') + '</div>' +
       '<div class="pl-group">This building</div>' +
-      '<details class="pl-bridge pl-home-place" open><summary><span>Place</span><small' + (onTrack ? ' class="warn"' : '') + '>' + (onTrack ? 'On the track' : 'Clear of the track') + '</small></summary><div>' +
+      '<details class="pl-bridge pl-home-place" open><summary><span>Place</span><small' + (onTrack || low ? ' class="warn"' : '') + '>' + (onTrack ? 'On the track' : head ? (low ? 'Too low for the cars' : 'Over the track') : 'Clear of the track') + '</small></summary><div>' +
+      (head
+        ? '<p class="pl-note' + (low ? ' warn' : '') + '" data-pl-headroom>' +
+          (low
+            ? 'Too low for the cars: over the track its underside is only ' + fmt(Math.max(0, head.room)) + ' mm above the road; a 1:32 car needs ' + fmt(CAR_HEADROOM) + ' mm. Make it higher, or move it so the track runs where it is higher.'
+            : 'It spans the track, ' + fmt(head.room) + ' mm clear above the road at its lowest over it; a 1:32 car needs ' + fmt(CAR_HEADROOM) + ' mm.') +
+          '</p>'
+        : '') +
       '<label>X · mm<input data-pl-field="homeX" type="number" step="any" value="' + Math.round(entry.pose.x * 10) / 10 + '"></label>' +
       '<label>Y · mm<input data-pl-field="homeY" type="number" step="any" value="' + Math.round(entry.pose.y * 10) / 10 + '"></label>' +
       '<label>Facing · °<input data-pl-field="homeA" type="number" step="any" value="' + degrees + '"></label>' +
@@ -1714,7 +1734,7 @@ export function createPlanner({ host, call, download, current, promote }) {
       btn('b-place', 'Apply place', 'check') +
       '</div></details>' +
       (b.kind === 'walkway' && !b.towers ? joinPanel() : '') +
-      (stand ? '' :
+      (stand || head ? '' :
       '<details class="pl-bridge pl-home-height"' + (level ? '' : ' open') + '><summary><span>Height</span><small' + (road === null || level ? '' : ' class="warn"') + '>Base ' + fmt(b.baseHeight) + ' mm</small></summary><div>' +
       '<p class="pl-note">' +
       (road === null

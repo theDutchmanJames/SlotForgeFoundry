@@ -7,7 +7,7 @@
 import polygonClipping from 'polygon-clipping';
 import { connectedOutline, sectionPositions, sectionRect, sectionWalls } from './geometry/connected-building.js';
 import { footprintPoints, footprintOffset, footprintWalls } from './geometry/footprint-building.js';
-import { KIT, dividers, garageDoors, storeyStack, validateBuilding } from './geometry/building.js';
+import { KIT, dividers, garageDoors, standFeet, storeyStack, validateBuilding } from './geometry/building.js';
 import { STAND, standDepth, standExtent } from './geometry/grandstand.js';
 import { footOf, gantryFeet, gantrySize, legOf } from './geometry/gantry.js';
 import { marshalFootprint } from './geometry/marshal-post.js';
@@ -17,10 +17,10 @@ import { switchbackFootprint } from './geometry/switchback.js';
 import { benchFootprint } from './geometry/bench.js';
 import { propsFootprint } from './geometry/props-kit.js';
 import { fitFootprint } from './geometry/fit-test.js';
-import { tyreFootprint } from './geometry/tyre-bridge.js';
+import { tyreFeet, tyreFootprint, tyreHeadroom } from './geometry/tyre-bridge.js';
 import { picnicFootprint } from './geometry/picnic.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
-import { WALKWAY_LIMITS, walkwayFootprint } from './geometry/walkway.js';
+import { WALKWAY, WALKWAY_LIMITS, walkwayFeet, walkwayFootprint } from './geometry/walkway.js';
 import { BAYS } from './geometry/pit-bays.js';
 import { PIT } from './geometry/pit-module.js';
 
@@ -307,15 +307,55 @@ const area = (multi) =>
       }, 0),
     0,
   );
+/** The room a 1:32 slot car needs above the road, under anything over the track. */
+export const CAR_HEADROOM = 50;
+/**
+ * What can stand over the track, on legs, towers or an arch: where it meets
+ * the table, [x0, y0, x1, y1] each in its own coordinates, and how high its
+ * underside is above the table at a point of it. Null for what stands on
+ * its whole outline.
+ */
+export function spanOf(b) {
+  if (b.kind === 'gantry') return { feet: gantryFeet(b), under: () => b.clearance };
+  if (b.kind === 'garage' && b.standType === 'legs') return { feet: standFeet(b), under: () => b.standHeight };
+  if (b.kind === 'tyrebridge') return { feet: tyreFeet(b), under: (x) => tyreHeadroom(b, x) };
+  if (b.kind === 'walkway') return { feet: walkwayFeet(b), under: () => b.clearance - WALKWAY.deck };
+  return null;
+}
+/**
+ * The headroom over the track under something that spans it: the lowest of
+ * its underside over the track, the highest road under it (roadOf(row), above
+ * the table), and the room between. Null when it is not over the track.
+ */
+export function headroomOver(entry, rows, roadOf) {
+  const span = spanOf(entry.building);
+  if (!span) return null;
+  const outline = footprint(entry),
+    box = boxOf(outline);
+  let under = Infinity,
+    road = -Infinity;
+  for (const row of rows)
+    for (const loop of row.polys) {
+      if (loop.length < 3 || !meets(box, boxOf(loop))) continue;
+      const cut = polygonClipping.intersection([outline], [loop]);
+      if (area(cut) < 0.5) continue;
+      road = Math.max(road, roadOf(row));
+      for (const poly of cut) for (const ring of poly) for (const p of ring) under = Math.min(under, span.under(...fromPlan(entry, p)));
+    }
+  return under === Infinity ? null : { under, road, room: under - road };
+}
 /**
  * The base on the plan as it stands on the table: one plate, or over a pit
- * bay the arms beside the track and the strip under the back wall.
+ * bay the arms beside the track and the strip under the back wall; under
+ * what spans the track, only its feet.
  */
 export function baseParts(entry) {
   const b = entry.building,
     m = KIT.ledge;
   // A gantry meets the table only where its feet stand: its beam spans the track.
   if (b.kind === 'gantry') return gantryFeet(b).map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
+  const span = spanOf(b);
+  if (span) return span.feet.map(([x0, y0, x1, y1]) => rect(x0, y0, x1, y1).map((p) => toPlan(entry, p)));
   if (!b.lane) return [footprint(entry)];
   const half = b.lane.width / 2 + KIT.lanePlay,
     end = b.depth - KIT.wall - (b.play ?? KIT.play);

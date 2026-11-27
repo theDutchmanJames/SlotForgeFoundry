@@ -98,6 +98,19 @@ export function tyreFootprint(t) {
   return [-reach, 0, reach, t.width];
 }
 
+/** Where the tyre meets the table, as [x0, y0, x1, y1]: each side of the opening under its arch. */
+export function tyreFeet(t) {
+  const [x0, y0, x1, y1] = tyreFootprint(t),
+    half = tyreOpening(t).width / 2;
+  return [[x0, y0, -half, y1], [half, y0, x1, y1]];
+}
+/** How high the arch is above the table this far from its middle; 0 outside the opening. */
+export function tyreHeadroom(t, x) {
+  const { zc, Ri } = tyreArch(t);
+  const h = zc + Math.sqrt(Math.max(0, Ri * Ri - x * x));
+  return Math.abs(x) < Ri && h > 0 ? h : 0;
+}
+
 /** The parts of a tyre bridge, without geometry. */
 export function tyreBridgeLayout(input) {
   const t = validateTyreBridge(input);

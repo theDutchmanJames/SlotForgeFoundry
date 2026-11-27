@@ -21,7 +21,7 @@ export const MARSHAL_POST_DEFAULTS = Object.freeze({
   fall: 8, // the roof lower at the back by this much
   overhang: 10, // the roof reaching out at the front; 4 mm at the sides and the back
   walls: 'slats', // 'slats', 'boards' or 'plain'
-  roof: 'tin', // 'tin' (corrugated) or 'flat'
+  roof: 'tin', // 'tin' (corrugated), 'flat' or 'pergola' (slats across on a rail over each side's posts)
   entrance: 24, // the opening in the back wall: 0 for none
   ladder: true,
   numbers: true,
@@ -55,6 +55,7 @@ export const MARSHAL = Object.freeze({
   board: [6, 0.8], // boards: pitch, groove depth
   slat: [4, 3, 4], // slats: wide, gap, the rail top and bottom
   disc: [9, 1.5], // the number disc: radius, thick
+  pergola: [5, 5, 4], // a pergola roof: its slats wide, the gap between them; the rail over the posts wider than a post by this
   ladder: { width: 16, rail: 4.5, rung: 3, pitch: 9, thick: 3, angle: 75, above: 8 },
 });
 const LABELS = {
@@ -78,7 +79,7 @@ export function validateMarshalPost(input) {
     if (!Number.isFinite(m[key]) || m[key] < min || m[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (key === 'number' ? '' : ' mm') + '.');
   if (!Number.isInteger(m.number)) throw Error('The number is a whole number.');
   if (!WALL_STYLES.includes(m.walls)) throw Error('Choose slats, boards or plain walls.');
-  if (!['tin', 'flat'].includes(m.roof)) throw Error('Choose a tin or a flat roof.');
+  if (!['tin', 'flat', 'pergola'].includes(m.roof)) throw Error('Choose a tin, a flat or a pergola roof.');
   for (const key of ['ladder', 'numbers']) if (typeof m[key] !== 'boolean') throw Error('Choose whether the marshal post has ' + (key === 'ladder' ? 'a ladder' : 'a number') + '.');
   if (m.deckHeight > 0 && m.deckHeight < 20) throw Error('A raised floor stands at least 20 mm above the table; 0 puts it on the ground.');
   const room = m.width - 2 * MARSHAL.post - 4;
@@ -89,6 +90,7 @@ export function validateMarshalPost(input) {
   return m;
 }
 
+const roofName = (m) => ({ tin: 'Tin roof', flat: 'Roof', pergola: 'Pergola roof' })[m.roof];
 /** Heights, the roof's slope and the ladder's run, from the settings. */
 export function marshalLevels(m) {
   const raised = m.deckHeight > 0;
@@ -115,7 +117,7 @@ export function marshalPostLayout(input) {
   const L = marshalLevels(m);
   const parts = [{ id: 'cabin', name: L.raised ? 'Cabin' : 'Shelter', role: 'wall' }];
   if (L.raised) parts.push({ id: 'stand', name: 'Legs and base', role: 'buildingBase' });
-  parts.push({ id: 'roof', name: m.roof === 'tin' ? 'Tin roof' : 'Roof', role: 'roof' });
+  parts.push({ id: 'roof', name: roofName(m), role: 'roof' });
   if (L.ladder) parts.push({ id: 'ladder', name: 'Ladder', role: 'frame' });
   if (m.numbers) parts.push({ id: 'number', name: 'Number ' + m.number, role: 'frame' });
   return { building: m, parts };
@@ -219,7 +221,17 @@ export function buildMarshalPost(wasm, input) {
       sn = Math.sin(beta);
     const y0 = -m.overhang,
       len = (D + S - y0) / c;
-    const flat = [box(-S, 0, 0, W + S, len, T)];
+    const flat = [];
+    if (m.roof === 'pergola') {
+      // Slats across, reaching past the sides, joined by a rail over each
+      // side's posts: one layer, printing flat; open between the slats.
+      const [sw, gap, wider] = MARSHAL.pergola,
+        R = P + wider;
+      for (const x of [P / 2, W - P / 2]) flat.push(box(x - R / 2, 0, 0, x + R / 2, len, T));
+      const n = Math.max(2, Math.floor((len - sw) / (sw + gap)) + 1),
+        step = (len - sw) / (n - 1);
+      for (let k = 0; k < n; k++) flat.push(box(-S, k * step, 0, W + S, k * step + sw, T));
+    } else flat.push(box(-S, 0, 0, W + S, len, T));
     if (m.roof === 'tin') {
       const [pitch, high] = MARSHAL.rib;
       for (let x = -S + pitch / 2; x <= W + S - pitch / 2 + 1e-6; x += pitch)
@@ -228,7 +240,7 @@ export function buildMarshalPost(wasm, input) {
     let roof = own(union(flat).transform([1, 0, 0, 0, 0, c, -sn, 0, 0, sn, c, 0, 0, y0, under(y0), 1]));
     const h = pin / 2 + MARSHAL.play;
     roof = own(roof.subtract(union(corners.map(([x, y]) => box(x - h, y - h, under(y) - 1, x + h, y + h, under(y) + T / c + 3)))));
-    parts.push({ id: 'roof', name: m.roof === 'tin' ? 'Tin roof' : 'Roof', role: 'roof', solid: roof, lie: [(beta * 180) / Math.PI, 0, 0], apart: [0, 0, 40] });
+    parts.push({ id: 'roof', name: roofName(m), role: 'roof', solid: roof, lie: [(beta * 180) / Math.PI, 0, 0], apart: [0, 0, 40] });
 
     // The ladder: two rails and rungs, leaning from the base up to the opening in the back wall.
     if (L.ladder) {

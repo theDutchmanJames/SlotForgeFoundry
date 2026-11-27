@@ -258,6 +258,13 @@ export function placeProp(wasm, own, { type, x, y, rotation = 0 }, z) {
 }
 
 /** Checks a list of props on a plan: known, turned square, each where it is meant to be. */
+/** The parts of a list of props: one each, or for a prop of several parts each of them. */
+export function propPartIds(props) {
+  return props.flatMap((p, i) => {
+    const name = 'Prop ' + (i + 1) + ', ' + propOf(p.type).name.toLowerCase();
+    return (PROP_PARTS[p.type] ?? ['']).map((key) => ({ id: 'prop-' + (i + 1) + (key ? '-' + key : ''), name: name + (key ? ', ' + key.replace('-', ' ') : ''), role: 'frame' }));
+  });
+}
 export function checkPropList(list, where = '') {
   if (!Array.isArray(list) || list.length > 40) throw Error('At most 40 props' + where + '.');
   return list.map((p, i) => {

@@ -7,8 +7,10 @@
 import { kitShapes } from './kit-shapes.js';
 import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellExtras, shellFrame, shellHole, trimOf } from './shell-details.js';
 import { overOf, sideOf, underOf } from './opening-shapes.js';
+import polygonClipping from 'polygon-clipping';
+import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf, propPartIds } from './props.js';
 
-export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [] });
+export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [], props: [] });
 export const SHAPES = Object.freeze(['rectangle', 'L', 'U', 'T', 'octagon', 'round', 'custom']);
 /** A drawn outline: its walls at least this long, its corners at most this many, each turning at least `least` and at most `most` degrees. */
 export const OUTLINE = Object.freeze({ shortest: 10, most: 48, size: [40, 1200], least: 3, turn: 90 });
@@ -184,7 +186,50 @@ export function validateFootprint(input) {
     s.openings = checkOpenings(s.openings, walls, s.height, where);
     return s;
   });
+  b.props = checkFootprintProps(b);
   return b;
+}
+/** The base's outline, out past the walls. */
+const BASE_OUT = 3;
+// The area of a polygon-clipping result.
+const areaOf = (multi) => multi.reduce((sum, poly) => sum + poly.reduce((t, ring, k) => {
+  let twice = 0;
+  for (let i = 0; i < ring.length; i++) twice += ring[i][0] * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * ring[i][1];
+  return t + (k ? -1 : 1) * Math.abs(twice / 2);
+}, 0), 0);
+const closed = (points) => [...points, points[0]];
+/**
+ * The props of a shaped building: each inside a storey, its footprint clear
+ * of the walls all round however the outline turns, and under the floor
+ * above; or outside on the table clear of the base; none on another.
+ */
+function checkFootprintProps(b) {
+  const props = checkPropList(b.props);
+  if (!props.length) return props;
+  const storeys = footprintStoreys(b);
+  const room = [closed(footprintOffset(b, -(b.wall + b.play + PROP_GAP)))],
+    base = [closed(footprintOffset(b, BASE_OUT + PROP_GAP))];
+  const placed = [];
+  props.forEach((p, i) => {
+    const name = 'Prop ' + (i + 1) + ', the ' + propOf(p.type).name.toLowerCase();
+    const [fw, fd] = propFootprint(p.type, p.rotation);
+    const box = [p.x, p.y, p.x + fw, p.y + fd];
+    const square = [closed([[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]])];
+    if (p.storey >= storeys.length) throw Error(name + ' stands on a storey the building has not got.');
+    if (p.storey >= 0) {
+      const s = storeys[p.storey], where = p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor';
+      if (areaOf(polygonClipping.difference(square, room)) > 1e-6) throw Error(name + ' stands inside ' + where + ', ' + PROP_GAP + ' mm clear of its walls.');
+      if (propOf(p.type).size[2] > s.height - FLOORS.lipDepth - 1) throw Error(name + ' is too tall for ' + where + ': ' + propOf(p.type).size[2] + ' mm under a ceiling ' + s.height + ' mm high.');
+    } else {
+      if (areaOf(polygonClipping.intersection(square, base)) > 1e-6) throw Error(name + ' stands on the table outside: keep it ' + PROP_GAP + ' mm clear of the base.');
+      if (box[0] < -150 || box[1] < -150 || box[2] > b.width + 150 || box[3] > b.depth + 150) throw Error(name + ' stands at most 150 mm from the building.');
+    }
+    for (const q of placed)
+      if (q.storey === p.storey && box[0] < q.box[2] + PROP_GAP && q.box[0] < box[2] + PROP_GAP && box[1] < q.box[3] + PROP_GAP && q.box[1] < box[3] + PROP_GAP)
+        throw Error(name + ' stands on ' + q.name + ': keep them ' + PROP_GAP + ' mm apart.');
+    placed.push({ storey: p.storey, box, name: 'prop ' + (i + 1) });
+  });
+  return props;
 }
 const frameName = (o, i, s) => (o.type === 'door' ? 'Door ' : 'Window ') + (i + 1) + ' frame' + s.label;
 // The panels of a hip roof: one over each wall.
@@ -200,6 +245,7 @@ export function footprintLayout(input) {
   }
   if (b.roofShape === 'hip') parts.push(...roofPanels(b).map((p) => ({ id: p.id, name: p.name, role: 'roof' })));
   else parts.push({ id: 'roof', name: 'Shaped flat roof', role: 'roof' });
+  parts.push(...propPartIds(b.props));
   return { building: b, storeys: [], doors: [], parts };
 }
 
@@ -260,7 +306,7 @@ export function buildFootprint(wasm, input, plate = null) {
   // A ring between two offsets of the outline, from z0 up to z1.
   const ring = (outer, innerBy, z0, z1) => own(own(own(poly(footprintOffset(b, outer)).subtract(poly(footprintOffset(b, innerBy)))).extrude(z1 - z0)).translate([0, 0, z0]));
   try {
-    const outer = poly(footprintOffset(b, 3));
+    const outer = poly(footprintOffset(b, BASE_OUT));
     const groove = ring(b.play, -b.wall - b.play, b.baseHeight - FLOORS.groove, b.baseHeight + 0.01);
     const base = own(own(outer.extrude(b.baseHeight)).subtract(groove));
     tiles(base, { id: 'base', name: 'Shaped base', role: 'buildingBase', lie: [0, 0, 0], apart: [0, 0, -12] });
@@ -335,6 +381,23 @@ export function buildFootprint(wasm, input, plate = null) {
         result.push({ ...part, solid: own(solid.translate([0, 0, 0])) });
       });
     }
+    // Props: on a storey's floor, or on the table outside; each runs into nothing.
+    const ids = propPartIds(b.props);
+    let k = 0;
+    b.props.forEach((p) => {
+      const z = p.storey < 0 ? 0 : storeys[p.storey].floor;
+      for (const q of placeProp(wasm, own, p, z)) {
+        const id = ids[k++];
+        for (const other of result) {
+          if (/^prop-/.test(other.id)) continue;
+          const both = q.solid.intersect(other.solid);
+          const v = both.volume();
+          both.delete();
+          if (v > 0.01) throw Error(id.name + ' runs into the ' + other.name.toLowerCase() + ': move it.');
+        }
+        result.push({ ...id, solid: q.solid, turn: q.pose, apart: [0, 0, p.storey < 0 ? 0 : p.storey * 40 + 6] });
+      }
+    });
     // Every solid kept in a part is the part's own: nothing freed under it.
     for (const p of result) { const i = temp.indexOf(p.solid); if (i >= 0) temp.splice(i, 1); }
     return result;

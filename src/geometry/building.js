@@ -25,7 +25,8 @@ import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
 import { TRIM, checkOpeningShape, openingShapes, outlineOf, overOf, sideOf, underOf } from './opening-shapes.js';
-import { PROP_GAP, PROP_PARTS, checkPropList, placeProp, propFootprint, propOf } from './props.js';
+import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf, propPartIds } from './props.js';
+export { propPartIds };
 import { PROPS_DEFAULTS, buildPropsKit, propsLayout, validatePropsKit } from './props-kit.js';
 import { buildFitTest, fitTestLayout, validateFitTest } from './fit-test.js';
 import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
@@ -862,14 +863,6 @@ function onePanel(shape, p, [x0, y0, x1, y1], margin) {
   return true;
 }
 
-/** The parts of a list of props: one each, or for a prop of several parts each of them. */
-export function propPartIds(props) {
-  const MANY = PROP_PARTS;
-  return props.flatMap((p, i) => {
-    const name = 'Prop ' + (i + 1) + ', ' + propOf(p.type).name.toLowerCase();
-    return (MANY[p.type] ?? ['']).map((key) => ({ id: 'prop-' + (i + 1) + (key ? '-' + key : ''), name: name + (key ? ', ' + key.replace('-', ' ') : ''), role: 'frame' }));
-  });
-}
 
 /** The eaves a gutter runs along: the wall under the low edge of a panel of a sloped, two-sided or hip roof. */
 const eaveOf = (p) => ({ '1,0': 'left', '-1,0': 'right', '0,1': 'front', '0,-1': 'back' })[p.dir.join(',')];
@@ -976,6 +969,12 @@ function towerFrames(b) {
     { id: key + '-left', name: name + ', left', from: [cx, cy + F], dir: [0, 1, 0], inward: [1, 0, 0], len: Td - 2 * F },
     { id: key + '-right', name: name + ', right', from: [cx + Tw, cy + F], dir: [0, 1, 0], inward: [-1, 0, 0], len: Td - 2 * F },
   ];
+}
+/** Where a stand of legs meets the table, as [x0, y0, x1, y1]: each leg's foot. Null for any other stand. */
+export function standFeet(b) {
+  if (b.standType !== 'legs') return null;
+  const r = b.standSize / 2 + STAND.foot[1];
+  return standLegs(b).map(([x, y]) => [x - r, y - r, x + r, y + r]);
 }
 /** The pins on top of the stand, as [x0, y0, x1, y1]: each goes up into a pocket under the base. */
 export function standPins(b) {

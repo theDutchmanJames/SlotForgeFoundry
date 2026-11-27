@@ -66,6 +66,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
     'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners. Glue the wall seams and feet.',
     ...(b.upper?.length ? ['Glue each floor frame under its floor, its outside a little inside the walls. Lay the floor on the walls below, its frame dropping inside them, and stand the next storey\'s walls in the groove on top, in the same order as the walls below.'] : []),
+    ...(b.props?.length ? ['Glue each prop where it stands, on its floor before the storey above goes on, or on the table outside. ' + propLines(b.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
     b.roofShape === 'hip'
       ? 'Lay the roof panels on the tops of the walls, each over its own wall, numbered as the walls; they meet along the hips at the top. Glue them to the walls and to each other.'
       : 'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
@@ -564,7 +565,7 @@ function marshalNotes(name, m, parts, sizes) {
   const walls = { slats: 'slatted', boards: 'boarded', plain: 'plain' }[m.walls];
   const steps = [
     ...(L.raised ? ['Push the cabin onto the pegs on top of the legs, each into its socket under the floor, with a drop of glue in each.'] : []),
-    'Lay the roof on the corner posts, the pin on top of each post up through its hole, ' + (m.fall > 0 ? 'the low edge at the back' : 'level') + ', and glue it.',
+    'Lay the ' + (m.roof === 'pergola' ? 'pergola roof, its rails over the posts and its slats across,' : 'roof') + ' on the corner posts, the pin on top of each post up through its hole, ' + (m.fall > 0 ? 'the low edge at the back' : 'level') + ', and glue it.',
     ...(L.ladder ? ['Glue the ladder with its foot on the base behind the cabin and its top against the floor in the opening of the back wall.'] : []),
     ...(m.numbers ? ['Glue the number disc in the middle of the front wall.'] : []),
     'Stand it beside the track, its front towards the road.',

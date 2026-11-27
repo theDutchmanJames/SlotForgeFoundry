@@ -414,7 +414,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('mNumber', 'Number', 3, MARSHAL_POST_LIMITS.number, '')}
       <p class="bd-hint">A waist-high wall all round the cabin. Slats have upright gaps that close in a point at the top, so they print; boards have V-grooves that run on round the corners; a plain wall takes a sign. An opening of 0 closes the back.</p></section>
     <section class="bd-box" data-bd-card="marshalRoof" data-bd-marshal hidden><h3>Roof</h3>
-      <div class="bd-seg bd-wide" role="group" aria-label="Roof"><button type="button" data-bd-marshal-roof="tin">Tin</button><button type="button" data-bd-marshal-roof="flat">Flat</button></div>
+      <div class="bd-seg bd-wide" role="group" aria-label="Roof"><button type="button" data-bd-marshal-roof="tin">Tin</button><button type="button" data-bd-marshal-roof="flat">Flat</button><button type="button" data-bd-marshal-roof="pergola">Pergola</button></div>
       ${field('mRoom', 'Height at the front', 62, MARSHAL_POST_LIMITS.roomHeight)}
       ${field('mFall', 'Lower at the back by', 8, MARSHAL_POST_LIMITS.fall)}
       ${field('mOverhang', 'Overhang at the front', 10, MARSHAL_POST_LIMITS.overhang)}
@@ -511,7 +511,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
       <p class="bd-hint">A gambrel has two panels a side, steep from the eaves to the break and shallower above it; a mansard has them on all four sides. Their panels meet mitred, and lie on the walls without a frame. A dormer stands on a sloped panel, facing down it: a front wall with a window, two cheeks and a two-sided roof, one hollow piece over an opening in the panel; it prints standing on its front. A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
-    <section class="bd-box" data-bd-card="buildingProps"><h3>Props</h3>
+    <section class="bd-box" data-bd-card="buildingProps" data-bd-kinds="garage footprint"><h3>Props</h3>
       <div class="bd-bprops"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-prop>${icon('plus')}Prop</button></div>
       <p class="bd-hint">Props stand on the floor of a storey, or on the table outside: tyres, a tool chest, a workbench, cones, a counter. Each is placed by the corner of its footprint nearest the left front, on the plan of the ground floor, and turns by a quarter. They print with the kit, each part flat without supports, and are glued where they stand; one that runs into a wall, a brace or anything else says so.</p></section>
@@ -619,7 +619,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const fpWalls = (b) => footprintWalls(b).map((w) => ({ id: w.id, name: w.name }));
   function readFootprint() {
     const finish = readFinish(form, 'ff', storeyOf(building, storey), fpWalls(building));
-    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish) };
+    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish), props: readBuildingProps() };
     for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
       const value = form.elements['fp-' + key].value;
       next[key] = value === '' ? NaN : Number(value);
@@ -650,6 +650,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
+      // A card for more than one kind.
+      if (box.dataset.bdKinds) {
+        box.hidden = !box.dataset.bdKinds.split(' ').includes(kind);
+        continue;
+      }
       const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'fittest', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
@@ -713,6 +718,14 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function readProps() {
     const e = form.elements;
     return { kind: 'props', items: building.items.map((it, i) => ({ type: e['pk-type-' + i]?.value ?? it.type, count: e['pk-count-' + i] ? (e['pk-count-' + i].value === '' ? NaN : Number(e['pk-count-' + i].value)) : it.count })) };
+  }
+  // A building's props as the form has them.
+  function readBuildingProps() {
+    const e = form.elements;
+    const num = (el) => (el.value === '' ? NaN : Number(el.value));
+    return (building.props ?? []).map((p, i) =>
+      e['bp-type-' + i] ? { type: e['bp-type-' + i].value, storey: Number(e['bp-storey-' + i].value), x: num(e['bp-x-' + i]), y: num(e['bp-y-' + i]), rotation: Number(e['bp-rot-' + i].value) } : p,
+    );
   }
   // A building's props: a row for each, where it stands and how it turns.
   function drawBuildingProps() {
@@ -1255,9 +1268,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       rise: num(e.rise),
       lowerPitch: num(e.lowerPitch),
       breakAt: num(e.breakAt),
-      props: (building.props ?? []).map((p, i) =>
-        e['bp-type-' + i] ? { type: e['bp-type-' + i].value, storey: Number(e['bp-storey-' + i].value), x: num(e['bp-x-' + i]), y: num(e['bp-y-' + i]), rotation: Number(e['bp-rot-' + i].value) } : p,
-      ),
+      props: readBuildingProps(),
       dormers: (building.dormers ?? []).map((d, i) => (e['dormer-x-' + i] ? { x: num(e['dormer-x-' + i]), y: num(e['dormer-y-' + i]), width: num(e['dormer-w-' + i]), height: num(e['dormer-h-' + i]) } : d)),
       overhangFront: num(e.overhangFront),
       overhangBack: num(e.overhangBack),
@@ -1719,6 +1730,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       form.elements.fpRoofShape.value = b.roofShape;
       // Its walls change with its shape: their fields are drawn afresh, for the storey chosen.
       drawFpStoreys();
+      drawBuildingProps();
       return;
     }
     if (b.kind === 'grandstand') return fillStand(b);
