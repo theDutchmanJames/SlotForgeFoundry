@@ -1037,6 +1037,110 @@ const PRESETS = [
       access: 'ladder', accessWall: 'back', accessAt: 75, accessTo: '2',
     },
   },
+  // More after the Scaleform library's racing templates and circuit packs.
+  {
+    id: 'commentary-booth',
+    name: 'Commentary booth',
+    note: 'A metal cabin on braced frames, wide windows to the track, a broadcast desk inside, a staircase up the back',
+    building: {
+      width: 150, depth: 78, height: 70, baseHeight: 5, door: 'none', wallTexture: 'metal',
+      roof: 'slope', rises: 'back', pitch: 10, roofTexture: 'metal',
+      overhangFront: 10, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      standType: 'frames', standHeight: 45, standSize: 10,
+      openings: [
+        panes('front', 40, 62, 26, 34, 3, 1),
+        panes('front', 110, 62, 26, 34, 3, 1),
+        panes('left', 39, 46, 26, 34, 2, 1),
+        { ...door('right', 39), leaf: 'plain' },
+      ],
+      access: 'stairs', accessWall: 'back', accessAt: 20, accessTo: 'base',
+      props: [{ type: 'counter', x: 75, y: 18, storey: 0 }],
+    },
+  },
+  {
+    id: 'ticket-office',
+    name: 'Circuit ticket office',
+    note: 'A brick office under a tiled hip roof, two ticket hatches with counters, a sign over them, a queue barrier',
+    building: {
+      width: 150, depth: 86, height: 86, baseHeight: 6, door: 'none', wallTexture: 'brick',
+      roof: 'hip', pitch: 30, roofTexture: 'tile',
+      overhangFront: 6, overhangBack: 6, overhangLeft: 6, overhangRight: 6,
+      openings: [
+        { ...hatch('front', 39, 35, 30, 30), flap: false },
+        { ...hatch('front', 111, 35, 30, 30), flap: false },
+        { ...door('right', 43), leaf: 'panels' },
+        { ...panes('left', 43, 30, 34, 30, 2, 2), ledge: true },
+        { ...panes('back', 75, 30, 34, 30, 2, 2), ledge: true },
+      ],
+      sign: 'fascia', signWidth: 100, signHeight: 12, signText: 'TICKETS',
+      props: [{ type: 'barrier', x: 45, y: -40, storey: -1 }],
+    },
+  },
+  {
+    id: 'starter-tower',
+    name: 'Flag starter’s tower',
+    note: 'Three plastered storeys, the top one open to the track behind a balcony, START lettered under it',
+    building: {
+      width: 112, depth: 94, height: 84, baseHeight: 6, door: 'none',
+      overhangFront: 6, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      openings: [{ ...door('left', 55), leaf: 'panels' }, panes('front', 56, 62, 35, 32, 2, 1), window('right', 47, 38, 36, 30)],
+      upper: [
+        { height: 84, lettering: [{ wall: 'front', text: 'START', at: 56, up: 63, height: 18 }], openings: [panes('front', 56, 66, 26, 20, 2, 1), window('left', 47, 38, 32, 30)] },
+        { height: 72, balcony: 30, railing: true, open: true, waist: 26, panes: 3 },
+      ],
+    },
+  },
+  {
+    id: 'marshal-lookout',
+    name: 'Corner marshal lookout',
+    note: 'A marshal cabin high on its post at a corner, a tin roof, sector number 4, a ladder up',
+    building: { kind: 'marshalpost', width: 108, depth: 83, deckHeight: 145, wallHeight: 26, roomHeight: 60, fall: 8, walls: 'boards', roof: 'tin', number: 4 },
+  },
+  {
+    id: 'press-gallery',
+    name: 'Pit-lane press gallery',
+    note: 'A long gallery on four legs over the pit lane, three-pane windows along the track, PRESS and RADIO lettered, a staircase up the back',
+    building: {
+      width: 325, depth: 92, height: 78, baseHeight: 5, door: 'none', wallTexture: 'metal',
+      roof: 'flat', roofTexture: 'seam',
+      overhangFront: 12, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      standType: 'legs', standHeight: 110, standSize: 14,
+      openings: [
+        panes('front', 81, 130, 25, 34, 3, 1),
+        panes('front', 244, 130, 25, 34, 3, 1),
+        panes('left', 46, 60, 25, 34, 1, 1),
+        panes('right', 46, 60, 25, 34, 1, 1),
+        { ...door('back', 280), leaf: 'plain' },
+        panes('back', 120, 92, 32, 32, 2, 1),
+      ],
+      lettering: [{ wall: 'front', text: 'PRESS', at: 81, up: 68, height: 10 }, { wall: 'front', text: 'RADIO', at: 244, up: 68, height: 10 }],
+      access: 'stairs', accessWall: 'back', accessAt: 60, accessTo: 'base',
+    },
+  },
+  {
+    id: 'endurance-pits',
+    name: 'Endurance pit building',
+    note: 'Four pit garages with a hospitality lounge over them, its balcony along the pit lane',
+    building: { kind: 'pitmodule', bays: 4, bayWidth: 97, depth: 150, doorWidth: 70, groundHeight: 80, loungeHeight: 65, lean: 0, balcony: 30, door: 'roller', railing: true, roofRailing: false },
+  },
+  {
+    id: 'finish-bridge',
+    name: 'Finish-line bridge',
+    note: 'The timekeepers’ cabin on four legs over the track, FINISH along its front, windows down both sides, a ladder up an end',
+    building: {
+      width: 300, depth: 66, height: 70, baseHeight: 6, door: 'none',
+      overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4,
+      standType: 'legs', standHeight: 139, standSize: 14,
+      openings: [
+        ...[75, 225].map((at) => panes('front', at, 65, 24, 28, 2, 1)),
+        ...[75, 225].map((at) => panes('back', at, 65, 24, 28, 2, 1)),
+        { ...door('left', 33), leaf: 'plain' },
+        window('right', 33, 36, 24, 28),
+      ],
+      sign: 'fascia', signWidth: 110, signHeight: 13, signText: 'FINISH',
+      access: 'ladder', accessWall: 'left', accessAt: 33, accessTo: 'base',
+    },
+  },
 ];
 
 // The words on them: plain names of what they are, as a circuit letters its
@@ -1080,11 +1184,11 @@ export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
 export const PRESET_GROUPS = Object.freeze([
   ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'classic', 'shed', 'container', 'fit-test']],
   ['Pit buildings', ['pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'pit-tower']],
-  ['Towers and offices', ['tower', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
-  ['Marshal posts', ['marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],
+  ['Towers and offices', ['tower', 'commentary-booth', 'starter-tower', 'press-gallery', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
+  ['Marshal posts', ['marshal', 'marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],
   ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'stand-bleachers', 'stand-terrace', 'stand-double', 'picnic-pergola', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
-  ['Over the track', ['gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
+  ['Over the track', ['gantry-start', 'finish-bridge', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
-  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon']],
+  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon', 'ticket-office', 'endurance-pits']],
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
 ]);

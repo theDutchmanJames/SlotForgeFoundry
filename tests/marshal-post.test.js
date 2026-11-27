@@ -71,8 +71,8 @@ test('a marshal post is checked', () => {
   assert.deepEqual(buildingLayout({ kind: 'marshalpost' }).parts.map((p) => p.id), ['cabin', 'stand', 'roof', 'ladder', 'number']);
   assert.deepEqual(buildingLayout({ kind: 'marshalpost', deckHeight: 0 }).parts.map((p) => p.id), ['cabin', 'roof', 'number']);
   assert.deepEqual(buildingCuts({ kind: 'marshalpost' }, PLATE), {});
-  // Three standards: a low post, a shelter on the ground, a tall post.
-  assert.deepEqual(PRESETS.map((p) => p.id), ['marshal-low', 'marshal-shelter', 'marshal-tall']);
+  // Four standards: a low post, a shelter on the ground, a tall post, a corner lookout.
+  assert.deepEqual(PRESETS.map((p) => p.id), ['marshal-low', 'marshal-shelter', 'marshal-tall', 'marshal-lookout']);
   for (const p of PRESETS) assert.doesNotThrow(() => validateBuilding(p.building), p.id);
 });
 
