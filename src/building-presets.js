@@ -9,6 +9,8 @@ const door = (wall, at, frame = true) => ({ wall, type: 'door', at, width: 28, h
 const panes = (wall, at, width, height, sill, across, up) => ({ ...window(wall, at, width, height, sill), across, up });
 // An opening of a connected section or a shaped building: framed, a window with its panes.
 const shell = (wall, type, at, width, height, sill, across = 1, up = 1) => ({ wall, type, at, width, height, sill, frame: true, ...(type === 'window' && { across, up }) });
+// A window with a sill ledge under it and a lintel over it.
+const trims = (o) => ({ ...o, ledge: true, lintel: true });
 const hatch = (wall, at, width, height, sill, frame = false) => ({ ...window(wall, at, width, height, sill, frame), counter: true, flap: true });
 
 /** A row of pit garages side by side, one bay each, as many as wanted. */
@@ -167,7 +169,7 @@ const PRESETS = [
   {
     id: 'pit-tower',
     name: 'Pit tower',
-    note: 'An open pit box below, a planked storey, a cab leaning out on top, a staircase up the side',
+    note: 'An open brick pit box below, a brick storey, a glazed cab leaning out on top, a staircase up the side',
     building: {
       width: 80,
       depth: 80,
@@ -177,9 +179,9 @@ const PRESETS = [
       open: true,
       waist: 10,
       panes: 1,
-      wallTexture: 'planks',
+      wallTexture: 'brick',
       upper: [
-        { width: 80, depth: 80, x: 0, y: 0, height: 40, wallTexture: 'planks', openings: [window('front', 40, 40, 14, 16)] },
+        { width: 80, depth: 80, x: 0, y: 0, height: 40, wallTexture: 'brick', openings: [{ ...window('front', 40, 40, 14, 16), ledge: true, lintel: true }] },
         { width: 80, depth: 80, x: 0, y: 0, height: 40, wallTexture: 'planks', open: true, waist: 14, panes: 3, lean: 15 },
       ],
       access: 'stairs',
@@ -278,7 +280,7 @@ const PRESETS = [
   {
     id: 'hut-brick',
     name: 'Brick hut',
-    note: 'Bricks, windows of small panes, a step at the door, a two-sided roof',
+    note: 'Bricks, windows of small panes with sills and lintels, a panelled door with a step, a chimney, gutters and a downpipe',
     building: {
       width: 110,
       depth: 80,
@@ -294,7 +296,8 @@ const PRESETS = [
       overhangBack: 5,
       overhangLeft: 4,
       overhangRight: 4,
-      openings: [{ ...door('front', 24), step: true }, panes('front', 72, 44, 28, 14, 4, 2), panes('left', 40, 44, 28, 14, 4, 2), panes('right', 40, 44, 28, 14, 4, 2)],
+      openings: [{ ...door('front', 24), step: true, leaf: 'panels' }, trims(panes('front', 72, 44, 28, 14, 4, 2)), trims(panes('left', 40, 44, 28, 14, 4, 2)), trims(panes('right', 40, 44, 28, 14, 4, 2))],
+      chimney: { x: 55, y: 62, width: 10, depth: 8, height: 12 }, gutters: true, downpipes: 'left',
     },
   },
   {
@@ -316,7 +319,7 @@ const PRESETS = [
       overhangBack: 4,
       overhangLeft: 5,
       overhangRight: 5,
-      openings: [{ ...door('front', 24), step: true }, panes('front', 60, 26, 24, 16, 2, 3), panes('right', 35, 30, 24, 16, 2, 3)],
+      openings: [{ ...door('front', 24), step: true, leaf: 'panels' }, trims(panes('front', 60, 26, 24, 16, 2, 3)), trims(panes('right', 35, 30, 24, 16, 2, 3))],
     },
   },
   {
@@ -556,13 +559,14 @@ const PRESETS = [
   {
     id: 'stall-container',
     name: 'Container café',
-    note: 'A long converted container: serving awning, pickup counter, cargo doors and a roof sign',
+    note: 'A long converted container: serving awnings on the front and the side, cargo doors, a roof sign and a bin',
     building: {
       width: 190, depth: 76, height: 80, baseHeight: 4, door: 'none', wallTexture: 'metal', container: 'right',
       openings: [{...hatch('front', 95, 128, 32, 32, true), flapAngle: 20},
-        {...window('left', 38, 36, 25, 35), counter: true}, {...door('back', 50), height: 56}],
+        {...window('left', 38, 36, 25, 35), counter: true, flap: true, flapAngle: 20}, {...door('back', 50), height: 56, leaf: 'plain'}],
       overhangFront: 2, overhangBack: 2, overhangLeft: 2, overhangRight: 2,
       sign: 'billboard', signWidth: 130, signHeight: 16,
+      props: [{ type: 'drum', x: -26, y: -20, storey: -1 }],
     },
   },
   {
@@ -589,29 +593,26 @@ const PRESETS = [
   },
   {
     id: 'stall-kiosk', name: 'Refreshment kiosk',
-    note: 'Two serving faces with counters, propped awnings, boarded walls and a roof sign',
+    note: 'Two serving faces with counters, propped awnings, boarded walls, a framed side window, a roof falling to the back and a sign on it',
     building: {
       width: 150, depth: 110, height: 82, baseHeight: 4, door: 'none',
-      roof: 'gable', ridge: 'width', pitch: 18, roofTexture: 'seam', wallTexture: 'boards', plinth: 5,
-      openings: [hatch('front', 75, 108, 30, 32), hatch('left', 55, 58, 30, 32), {...door('back', 75),step:true}],
+      roof: 'slope', rises: 'front', pitch: 12, roofTexture: 'seam', wallTexture: 'boards', plinth: 5,
+      openings: [hatch('front', 75, 108, 30, 32), hatch('left', 55, 58, 30, 32), {...panes('right', 55, 30, 28, 34, 2, 2), ledge: true}, {...door('back', 75), step: true, leaf: 'planks'}],
       overhangFront: 10, overhangBack: 5, overhangLeft: 6, overhangRight: 6, sign: 'billboard', signWidth: 120, signHeight: 24,
     },
   },
   {
     id: 'stall-tickets',
     name: 'Ticket office',
-    note: 'Two small hatches with flaps, a two-sided roof, a billboard; print two for a pair',
+    note: 'Two small hatches with flaps, a flat roof with a billboard on it, a planked door; print two for a pair',
     building: {
       width: 95,
       depth: 85,
       height: 76,
       baseHeight: 4,
       door: 'none',
-      roof: 'gable',
-      ridge: 'width',
-      pitch: 25,
       wallTexture: 'planks',
-      openings: [hatch('front', 28, 30, 24, 30), hatch('front', 67, 30, 24, 30), door('back', 47.5, false)],
+      openings: [hatch('front', 28, 30, 24, 30), hatch('front', 67, 30, 24, 30), { ...door('back', 47.5, false), leaf: 'planks' }],
       overhangFront: 8,
       overhangBack: 4,
       overhangLeft: 4,
@@ -644,18 +645,19 @@ const PRESETS = [
   },
   {
     id: 'classic', name: 'Classic garage',
-    note: 'A heritage brick workshop: tiled gables, masonry trim, divided windows and a rear service door',
+    note: 'A heritage brick workshop: tiled gables, a chimney, gutters and downpipes, masonry trim, divided windows with sills and lintels, a rear service door',
     building: {
       roof: 'gable', ridge: 'depth', pitch: 35, wallTexture: 'brick', roofTexture: 'tile', plinth: 6, cornice: 4, pilasters: 60,
       overhangFront: 8, overhangBack: 8, overhangLeft: 6, overhangRight: 6,
-      openings: [panes('left', 50, 38, 28, 26, 2, 2), panes('left', 125, 38, 28, 26, 2, 2),
-        panes('right', 50, 38, 28, 26, 2, 2), panes('right', 125, 38, 28, 26, 2, 2), {...door('back', 60),step:true}],
+      openings: [trims(panes('left', 50, 38, 28, 26, 2, 2)), trims(panes('left', 125, 38, 28, 26, 2, 2)),
+        trims(panes('right', 50, 38, 28, 26, 2, 2)), trims(panes('right', 125, 38, 28, 26, 2, 2)), {...door('back', 60), step: true, leaf: 'panels', lintel: true}],
+      chimney: { x: 60, y: 150, width: 14, depth: 10, height: 14 }, gutters: true, downpipes: 'right',
     },
   },
   {
     id: 'shed',
     name: 'Wooden shed',
-    note: 'Planks and shingles',
+    note: 'Planks and shingles, a planked door, a window with shutters',
     building: {
       width: 100,
       depth: 120,
@@ -670,7 +672,7 @@ const PRESETS = [
       overhangBack: 8,
       overhangLeft: 6,
       overhangRight: 6,
-      openings: [door('front', 50), window('left', 60, 34, 24, 22)],
+      openings: [{ ...door('front', 50), leaf: 'planks' }, { ...window('left', 60, 24, 24, 22), shutters: true }],
     },
   },
   {

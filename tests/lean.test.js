@@ -76,7 +76,8 @@ test('a leaning storey: one body a part, fitting the plate, flat to print, nothi
       }
       // Walls and frames lie flat: as thin as they are, over no air.
       for (const p of parts.filter((q) => /^(front|back|left|right|frame)/.test(q.id))) {
-        assert.ok(printSize(p)[2] < 4.5, p.name + ' lies flat: ' + printSize(p) + ' ' + label);
+        // A wall and what stands out of it: 1.5 mm for a sill or a lintel.
+        assert.ok(printSize(p)[2] < 4.5 + 1.5 + 0.01, p.name + ' lies flat: ' + printSize(p) + ' ' + label);
         assert.ok(overAir(p) <= 0.5, p.name + ' prints ' + overAir(p).toFixed(1) + ' mm² over air ' + label);
       }
       for (let i = 0; i < parts.length; i++)
