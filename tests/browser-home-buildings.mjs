@@ -49,9 +49,10 @@ try {
   await idle();
   await goHome();
   await home.locator('.home-row', { hasText: 'Home test shed' }).locator('[data-home="open-building"]').click();
+  // The Buildings page was idle before the click: wait for the saved one to be opened.
+  await page.waitForFunction(() => document.querySelector('#buildings-page [name="buildingName"]')?.value === 'Home test shed');
   await idle();
   assert.equal((await saved()).kind, 'footprint');
-  assert.equal(await bd.locator('[name="buildingName"]').inputValue(), 'Home test shed');
   // All of them: the Buildings page as it was.
   await goHome();
   await home.locator('[data-home="buildings"]').click();
