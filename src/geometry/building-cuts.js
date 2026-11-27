@@ -15,8 +15,9 @@ export const JOINT = Object.freeze({
   aside: 4, // and this far from the side of an opening or its frame: it may run through one
 });
 // The parts that may be cut, and which way: a wall along its length (front,
-// front2 for the second storey, ...) and across its height (frontZ); the
-// base, a floor and the roof across (X) and front to back (Y).
+// front2 for the second storey, ...) and across its height (frontZ), a
+// dividing wall or a partition the same way; the base, a floor and the roof
+// across (X) and front to back (Y).
 const WALL_IDS = ['front', 'back', 'left', 'right'];
 const STOREY_NAMES = ['', '', ', storey 2', ', storey 3', ', storey 4'];
 export const CUT_KEYS = Object.freeze([
@@ -32,6 +33,7 @@ export const CUT_KEYS = Object.freeze([
   'roofX',
   'roofY',
   ...Array.from({ length: 23 }, (_, i) => i + 1).flatMap((i) => ['divide' + i, 'divide' + i + 'Z']),
+  ...Array.from({ length: 24 }, (_, i) => i + 1).flatMap((i) => ['partition' + i, 'partition' + i + 'Z']),
 ]);
 /** What a cut key is called on the page. */
 export function cutLabel(key) {
@@ -39,6 +41,8 @@ export function cutLabel(key) {
   if (m) return m[1][0].toUpperCase() + m[1].slice(1) + ' wall' + STOREY_NAMES[Number(m[2] || 1)] + (m[3] ? ', across its height' : '');
   const d = /^divide(\d+)(Z?)$/.exec(key);
   if (d) return 'Dividing wall ' + d[1] + (d[2] ? ', across its height' : '');
+  const p = /^partition(\d+)(Z?)$/.exec(key);
+  if (p) return 'Partition ' + p[1] + (p[2] ? ', across its height' : '');
   const f = /^(base|roof|floor)(\d?)([XY])$/.exec(key);
   if (!f) return key;
   const name = f[1] === 'floor' ? 'Floor of storey ' + f[2] : f[1] === 'base' ? 'Base' : 'Roof';
@@ -129,7 +133,9 @@ const round = (v) => Math.round(v * 10) / 10;
 /**
  * Where each part of a building is cut to fit the plate. walls: each wall
  * as { key, length, height (as it prints), keepOut along it, keepOutUp
- * across its height }; flats: the base, the floors and the roof as { name,
+ * across its height; leaning out, scale (how much longer it prints at its
+ * top) and stands (how tall it stands, height then as it prints slanted) };
+ * flats: the base, the floors and the roof as { name,
  * extent [x, y], scale [x, y] (how much longer it prints than its plan) }.
  */
 export function planCuts(b, plate, { walls, flats }) {
@@ -142,8 +148,11 @@ export function planCuts(b, plate, { walls, flats }) {
     const tall = w.height > room.long;
     // Cut across its height, its bands lie across the plate and its length along it.
     const maxPiece = tall || w.height <= room.short ? room.long : room.short;
-    plan[w.key] = planPart(w.key, w.length, maxPiece - (w.padding ?? 0), w.keepOut, cuts[w.key]);
-    plan[w.key + 'Z'] = planPart(w.key + 'Z', w.height, tall ? room.short : Infinity, w.keepOutUp ?? [], cuts[w.key + 'Z']);
+    // A wall that leans out prints longer at its top than it is planned, by its scale.
+    plan[w.key] = planPart(w.key, w.length, maxPiece / (w.scale ?? 1) - (w.padding ?? 0), w.keepOut, cuts[w.key]);
+    // Across its height it is cut where it stands; leaning, each band prints as much longer as the wall slants.
+    const stands = w.stands ?? w.height;
+    plan[w.key + 'Z'] = planPart(w.key + 'Z', stands, tall ? (room.short * stands) / w.height : Infinity, w.keepOutUp ?? [], cuts[w.key + 'Z']);
   }
   // The base, a floor and the roof are cut one way or both ways. Their long
   // side may lie along either side of the plate: the way with fewer pieces.

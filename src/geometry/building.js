@@ -1853,6 +1853,9 @@ function wallOpenings(s, doors) {
   return { along, up };
 }
 
+// A partition stands on its floor up to under the frame of the ceiling.
+const partitionHeight = (s) => s.height - KIT.lipDepth - INSIDE.under;
+
 /**
  * Where a building is cut to fit a plate: for each part that is too long,
  * its cuts and the range each may move in. Without a plate, nothing is cut.
@@ -1901,11 +1904,16 @@ export function buildingCuts(input, plate) {
         // A sawtooth peaks just short of where the next tooth starts.
         high += b.roof === 'sawtooth' && most > 0 ? rise : Math.min(most, rise);
       }
+      // Walls that lean out are longer at the top by (1 + f), and slant: their top as far out as it is from the middle × f.
+      const { f } = leanGrow(s);
+      const out = ((w === 'front' || w === 'back' ? s.depth : s.width) / 2) * f;
       walls.push({
         key: w + s.suffix,
         length: wallLength(s, w),
         padding: b.container === 'none' ? 0 : 4, // corner posts extend 2 mm beyond each end
-        height: high + KIT.groove,
+        scale: 1 + f,
+        height: Math.hypot(high, out) + KIT.groove,
+        stands: high + KIT.groove,
         // A cut may run through an opening, not along its side; across the
         // height, not along its top or bottom, nor through the foot of the wall.
         keepOut: along[w].flatMap(([a, c]) => [[a - aside, a + aside], [c - aside, c + aside]]),
@@ -1913,6 +1921,19 @@ export function buildingCuts(input, plate) {
       });
     }
   }
+  // A partition: as long as it is, as tall as it stands on its floor; a cut keeps off the sides and the top of its doorway.
+  b.partitions.forEach((q, i) => {
+    const s = storeys[q.storey],
+      d = q.door,
+      aside = JOINT.aside;
+    walls.push({
+      key: 'partition' + (i + 1),
+      length: Math.hypot(q.x1 - q.x0, q.y1 - q.y0),
+      height: partitionHeight(s),
+      keepOut: d ? [[d.at - d.width / 2 - aside, d.at - d.width / 2 + aside], [d.at + d.width / 2 - aside, d.at + d.width / 2 + aside]] : [],
+      keepOutUp: d ? [[d.height - aside, d.height + aside]] : [],
+    });
+  });
   const top = storeys.at(-1);
   const ov = [b.overhangLeft + b.overhangRight, b.overhangFront + b.overhangBack];
   const slope = Math.hypot(1, shape.t);
@@ -1926,6 +1947,9 @@ export function buildingCuts(input, plate) {
   if (b.roof === 'hip' || b.roof === 'mansard' || b.roof === 'vault') roofExtent.fill(0);
   // A sawtooth's panels and north lights are cut along their length only.
   if (b.roof === 'sawtooth') roofExtent[['front', 'back'].includes(b.rises) ? 1 : 0] = 0;
+  // On walls that lean out the roof and its frame are as wide as the tops of the walls.
+  const { f: topGrow } = leanGrow(top);
+  scale = scale.map((v) => v * (1 + topGrow));
   return planCuts(b, plate, {
     walls,
     flats: [
@@ -2508,16 +2532,25 @@ export function buildGarage(wasm, input, plate = null) {
       // nothing moves; above it the walls lean from the floor up. The floor
       // over them, its frame and the holes for the frame's tabs lean on,
       // straight, past the tops of the walls, so the tabs meet their holes.
+      const LEAN_EDGE = 5;
       const warpWith = (fn) => (solid) => {
         // The part under the floor reaches a hair over it, so the two fuse even where a texture only touches across the split.
         const lower = trim(solid, [0, 0, -1], -(top + 0.02)),
           upper = trim(solid, [0, 0, 1], top);
         if (upper.isEmpty()) return solid;
-        const moved = own(upper.warp(fn));
+        // The widening bends a long edge: split first, so a long thin triangle (along a seam) does not turn over.
+        const moved = own(own(upper.refineToLength(LEAN_EDGE)).warp(fn));
         return lower.isEmpty() ? moved : own(Manifold.union([lower, moved]));
       };
       const warped = warpWith(leanAt),
         warpedOn = warpWith(leanBy(Infinity));
+      // A door's leaf leans with its wall all the way down: its pin under the floor on along the line of its hinge, into a hole leaning the same way.
+      const leanOn = (v) => {
+        const dz = Math.min(v[2] - top, s.height) / s.height;
+        v[0] = W / 2 + (v[0] - W / 2) * (1 + grow * dz);
+        v[1] = D / 2 + (v[1] - D / 2) * (1 + grow * dz);
+      };
+      const warpedThrough = (solid) => own(own(solid.refineToLength(LEAN_EDGE)).warp(leanOn));
       // How far this storey lifts in the exploded view, and its walls with it.
       const lift = (s.n - 1) * APART.storey;
       const wallApart = (w) => add3(scale3(OUTWARD[w], APART.out), [0, 0, APART.up + lift]);
@@ -2760,13 +2793,17 @@ export function buildGarage(wasm, input, plate = null) {
             if (L.glass) leafCuts.push(onWallShape(o.wall, L.glass, L.from - 0.5, L.to + 0.5));
             if (leafCuts.length) leaf = minus(leaf, ...leafCuts);
             const k = s.openings.indexOf(o) + 1;
-            local({ id: 'leaf' + s.suffix + '-' + k, name: openingName(o, s.openings) + ' leaf' + s.label, role: 'door', solid: leaf, outward: OUTWARD[o.wall], apart: wallApart(o.wall) });
+            local({ id: 'leaf' + s.suffix + '-' + k, name: openingName(o, s.openings) + ' leaf' + s.label, role: 'door', solid: leaf, outward: OUTWARD[o.wall], apart: wallApart(o.wall), through: true, inset: -L.from });
             // Its slot over the doorway, through the wall so it prints with nothing over air (under the
             // door's frame, if it has one); its hole through the floor.
             cut.push(onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zt - 0.5, hinge + pin / 2 + pl, zt - pl + len + pl), -t - 1, 1));
             // The wall's foot carries on under the doorway down into the groove: notched there for the pin, through it.
-            cut.push(onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zb - len - pl - 2, hinge + pin / 2 + pl, zb + 0.5), -t - 1, 1));
-            swingHoles.push({ n: s.n, ox: s.ox, oy: s.oy, solid: onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zb - len - pl - 2, hinge + pin / 2 + pl, zb + 0.5), L.from - pl, L.to + pl) });
+            // Under walls that lean out, the pin leans on below the floor: the notch as much wider.
+            const below = len + pl + 2,
+              slack = (grow * (Math.max(W, D) / 2) * below) / s.height;
+            cut.push(onWallShape(o.wall, rect2(hinge - pin / 2 - pl - slack, zb - below, hinge + pin / 2 + pl + slack, zb + 0.5), -t - 1, 1));
+            const hole = onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zb - below, hinge + pin / 2 + pl, zb + 0.5), L.from - pl, L.to + pl);
+            swingHoles.push({ n: s.n, ox: s.ox, oy: s.oy, solid: grow ? warpedThrough(hole) : hole });
           } else if (shapes.leaf) {
             const L = shapes.leaf;
             add.push(onWallShape(o.wall, L.section, L.from, L.to));
@@ -2933,11 +2970,13 @@ export function buildGarage(wasm, input, plate = null) {
           ay = above.oy - s.oy;
         // The frame under the floor: its tabs go through slots in the floor,
         // flush with its top, clear of the groove for the walls above.
+        // Over walls that lean out the tabs lean on with the frame: where they come through the top of the floor is widened from the middle.
+        const atTop = 1 + grow * (1 + KIT.slab / s.height);
         const groovedAt = (q) => {
           const r = KIT.tabLength / 2 + KIT.tabPlay + 1,
             w = KIT.tabThick / 2 + KIT.tabPlay + 1;
           const [hx, hy] = q.d[0] ? [r, w] : [w, r];
-          const [x0, y0, x1, y1] = [q.p[0] - hx, q.p[1] - hy, q.p[0] + hx, q.p[1] + hy];
+          const [x0, y0, x1, y1] = [W / 2 + (q.p[0] - hx - W / 2) * atTop, D / 2 + (q.p[1] - hy - D / 2) * atTop, W / 2 + (q.p[0] + hx - W / 2) * atTop, D / 2 + (q.p[1] + hy - D / 2) * atTop];
           const out = [ax - c, ay - c, ax + above.width + c, ay + above.depth + c],
             inn = [ax + t + c, ay + t + c, ax + above.width - t - c, ay + above.depth - t - c];
           const meets = x0 < out[2] && x1 > out[0] && y0 < out[3] && y1 > out[1];
@@ -3131,7 +3170,7 @@ export function buildGarage(wasm, input, plate = null) {
           lean = leanAt;
         // Its outside leans out by (its distance from the middle) × f over
         // the height, its inside a little less. A wall lies on its inside, a
-        // frame or a sign on its back against the wall's outside.
+        // frame or a sign on its back against the wall's outside, a door's leaf on its back as far in.
         const angle = (w, inset) => (Math.atan(((w === 'front' || w === 'back' ? cy : cx) - inset) * f / s.height) * 180) / Math.PI;
         const LIE = { front: (a) => [-90 - a, 0, 0], back: (a) => [90 + a, 0, 0], left: (a) => [0, 90 + a, 0], right: (a) => [0, -90 - a, 0] };
         const wallOf = (out) => WALLS.find((w) => OUTWARD[w].every((v, i) => v === out[i]));
@@ -3139,7 +3178,7 @@ export function buildGarage(wasm, input, plate = null) {
           const part = own2[i];
           if (part.shaped) continue;
           const w = part.outward && !part.lie && !part.turn ? wallOf(part.outward) : null;
-          own2[i] = { ...part, solid: warped(part.solid), ...(w && { lie: LIE[w](angle(w, part.role === 'wall' ? t : 0)) }) };
+          own2[i] = { ...part, solid: part.through ? warpedThrough(part.solid) : warped(part.solid), ...(w && { lie: LIE[w](angle(w, part.inset ?? (part.role === 'wall' ? t : 0))) }) };
         }
       }
       // Into place on the storey below.
@@ -3237,15 +3276,20 @@ export function buildGarage(wasm, input, plate = null) {
       b.partitions.forEach((q, i) => {
         const s = all[q.storey],
           h = INSIDE.thick / 2,
-          zt = s.floor + s.height - KIT.lipDepth - INSIDE.under;
+          zb = s.floor + lift,
+          zt = zb + partitionHeight(s);
         const along = Math.abs(q.y0 - q.y1) < 1e-9;
         const [u0, u1] = along ? [Math.min(q.x0, q.x1), Math.max(q.x0, q.x1)] : [Math.min(q.y0, q.y1), Math.max(q.y0, q.y1)];
-        let wall = along ? box(u0, q.y0 - h, s.floor + lift, u1, q.y0 + h, zt + lift) : box(q.x0 - h, u0, s.floor + lift, q.x0 + h, u1, zt + lift);
+        let wall = along ? box(u0, q.y0 - h, zb, u1, q.y0 + h, zt) : box(q.x0 - h, u0, zb, q.x0 + h, u1, zt);
         if (q.door) {
-          const a = u0 + q.door.at - q.door.width / 2, c = a + q.door.width, z1 = s.floor + q.door.height + lift;
-          wall = minus(wall, along ? box(a, q.y0 - h - 1, s.floor + lift - 1, c, q.y0 + h + 1, z1) : box(q.x0 - h - 1, a, s.floor + lift - 1, q.x0 + h + 1, c, z1));
+          const a = u0 + q.door.at - q.door.width / 2, c = a + q.door.width, z1 = zb + q.door.height;
+          wall = minus(wall, along ? box(a, q.y0 - h - 1, zb - 1, c, q.y0 + h + 1, z1) : box(q.x0 - h - 1, a, zb - 1, q.x0 + h + 1, c, z1));
         }
-        inside.push({ id: 'partition-' + (i + 1), name: 'Partition ' + (i + 1), role: 'divider', solid: wall, outward: along ? [0, -1, 0] : [-1, 0, 0], apart: [0, 0, APART.up] });
+        const part = { id: 'partition-' + (i + 1), name: 'Partition ' + (i + 1), role: 'divider', solid: wall, outward: along ? [0, -1, 0] : [-1, 0, 0], apart: [0, 0, APART.up] };
+        // Longer than the plate, it is cut like a wall, from its end at u0, its doorway an opening in it.
+        const plain = { ...s, wallTexture: 'plain', wallTextures: {}, lowerTexture: 'none', garage: false, openings: q.door ? [{ wall: 'partition', at: q.door.at, width: q.door.width, sill: 0, height: q.door.height }] : [] };
+        const cutFrame = along ? [[1, 0, 0], [0, 1, 0], [u0, q.y0 - h - 2, 0]] : [[0, 1, 0], [1, 0, 0], [q.x0 - h - 2, u0, 0]];
+        inside.push(...cutWall({ ...part, cutKey: 'partition' + (i + 1), length: u1 - u0, cutFrame }, 'partition', plain, { W: 0, D: 0, z0: zb, zTop: zt, top: zb, z1: zt }));
       });
       b.stairs.forEach((q, i) => {
         const f = flightOf(b, q),
@@ -3297,10 +3341,24 @@ export function buildGarage(wasm, input, plate = null) {
         Wt = top.width,
         Dt = top.depth;
       const ALONG = { front: [[0, 0], [1, 0]], back: [[Wt, Dt], [-1, 0]], left: [[0, Dt], [0, -1]], right: [[Wt, 0], [0, 1]] };
+      // Under a sloped roof the walls reach up past the eaves to it: the gap is cut from over their tops.
+      const over = top.eave + (b.roof === 'flat' ? 0 : shape.rise) + 2;
+      // Walls that lean out: the gap leans with them, the way the storey was widened.
+      const { f: grow } = leanGrow(top);
+      const leanOut = (v) => {
+        const dz = Math.min(Math.max(v[2] - top.floor, 0), top.height) / top.height;
+        v[0] = Wt / 2 + (v[0] - Wt / 2) * (1 + grow * dz);
+        v[1] = Dt / 2 + (v[1] - Dt / 2) * (1 + grow * dz);
+      };
       for (const d of b.damage) {
         const [[x0, y0], dir] = ALONG[d.wall],
           inward = OUTWARD[d.wall].map((v) => -v);
-        const cutter = sweep(breachOutline(d, top.eave + lift), [...dir, 0], [0, 0, 1], [x0 + top.ox, y0 + top.oy, 0], [inward[0], inward[1], 0], -1, t + 1);
+        // Its depth from the eaves; its top over the walls. From out past the relief on the wall (bands, pilasters, ribs) through to inside.
+        const outline = breachOutline(d, top.eave).map(([u, z], k, all) => [u, k === 0 || k === all.length - 1 ? over : z]);
+        let cutter = sweep(outline, [...dir, 0], [0, 0, 1], [x0, y0, 0], [inward[0], inward[1], 0], -(RELIEF.depth + 4), t + 1);
+        // Refined first, so it bends where the lean stops at the tops of the walls.
+        if (grow) cutter = own(own(cutter.refineToLength(2)).warp(leanOut));
+        cutter = own(cutter.translate([top.ox, top.oy, lift]));
         const mine = new RegExp('^' + d.wall + (top.n > 1 ? top.n : '') + '(-\\d+)?$');
         for (const [i, q] of parts.entries()) {
           if (!mine.test(q.id)) continue;
@@ -3573,8 +3631,9 @@ export function buildGarage(wasm, input, plate = null) {
   // length the seam steps from course to course, across its height it runs
   // along a course, so either seam is one more joint.
   function cutWall(part, wall, s, { W, D, z0, zTop, top, z1 }) {
-    const along = plan?.[part.id]?.cuts ?? [],
-      up = plan?.[part.id + 'Z']?.cuts ?? [];
+    const key = part.cutKey ?? part.id;
+    const along = plan?.[key]?.cuts ?? [],
+      up = plan?.[key + 'Z']?.cuts ?? [];
     if (!along.length && !up.length) return [part];
     const tex = textureOf(s, wall);
     const stepped = ['brick', 'block'].includes(tex);
