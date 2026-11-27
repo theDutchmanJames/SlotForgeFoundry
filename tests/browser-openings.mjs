@@ -90,11 +90,18 @@ try {
   const d = b.openings.length - 1;
   await pick(d);
   await choose('leaf', 'panels');
+  // Square, it can swing; arched, it cannot, and the choice is dropped.
+  await pick(d);
+  await flag('swing');
+  await noError('swinging door');
+  assert.equal((await saved()).openings[d].swing, true);
   await pick(d);
   await choose('shape', 'arch');
   await noError('arched panelled door');
   b = await saved();
-  assert.deepEqual([b.openings[d].leaf, b.openings[d].shape], ['panels', 'arch']);
+  assert.deepEqual([b.openings[d].leaf, b.openings[d].shape, b.openings[d].swing], ['panels', 'arch', false]);
+  await pick(d);
+  assert.equal(await host.locator('[data-opening-flag="swing"]').count(), 0, 'no Swings for an arched door');
 
   await host.locator('[data-bd-view="model"]').click();
   await idle();

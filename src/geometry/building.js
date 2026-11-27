@@ -451,7 +451,9 @@ const LABELS = {
   textureDepth: 'Joint depth',
 };
 const UNITS = { pitch: '°', lowerPitch: '°', textureScale: ' %', standTaper: ' %', teeth: '' };
-const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle', 'shape', 'ledge', 'lintel', 'shutters', 'leaf'];
+const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle', 'shape', 'ledge', 'lintel', 'shutters', 'leaf', 'swing'];
+/** A door that swings: its leaf a part of its own, as far clear of its doorway all round; its pins square and long. */
+export const SWING = Object.freeze({ play: 0.3, pin: 1.2, length: 2, above: 4 });
 // Panes in a framed window, at most so many each way and at least so big.
 export const PANES = Object.freeze({ most: 6, least: 4 });
 const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
@@ -489,6 +491,11 @@ function checkOpening(o, i, dims, where) {
   if (full.at === undefined) full.at = L / 2;
   // Its shape and what goes round it: a round window as high as it is wide.
   Object.assign(full, checkOpeningShape(full, 'The ' + kind + ' on the ' + full.wall + ' wall' + where));
+  // A door that swings on pins in the wall over it and the floor under it.
+  full.swing = full.swing ?? false;
+  if (typeof full.swing !== 'boolean') throw Error('Choose whether the ' + kind + ' on the ' + full.wall + ' wall' + where + ' swings.');
+  if (full.swing && (full.type !== 'door' || full.leaf === 'open' || full.shape !== 'square')) throw Error('The ' + kind + ' on the ' + full.wall + ' wall' + where + ': a door that swings is a square door with a leaf in it.');
+  if (full.swing && full.sill + full.height > dims.height - SWING.above) throw Error('The ' + kind + ' on the ' + full.wall + ' wall' + where + ' swings on a pin in the wall over it: keep it ' + SWING.above + ' mm under the top of the wall.');
   if ((full.counter || full.flap) && (full.shape !== 'square' || full.shutters)) throw Error('A serving hatch, with its counter or flap, is a square window without shutters.');
   for (const [key, min, max] of [
     ['width', 8, L],
@@ -1731,6 +1738,7 @@ export function buildingLayout(input) {
   for (const s of storeys)
     s.openings.forEach((o, i) => {
       if (o.frame) parts.push({ id: 'frame' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' frame' + s.label, role: 'frame' });
+      if (o.swing) parts.push({ id: 'leaf' + s.suffix + '-' + (i + 1), name: openingName(o, s.openings) + ' leaf' + s.label, role: 'door' });
     });
   for (const s of storeys)
     s.openings.forEach((o, i) => {
@@ -2401,6 +2409,8 @@ export function buildGarage(wasm, input, plate = null) {
       parts.push(...cutFlat(base, plan && [plan.baseX, plan.baseY], [-m, -m]));
     }
 
+    // Where the pins of the doors that swing go down through the floor or the base: cut once all is made.
+    const swingHoles = [];
     // Each storey is made where it stands on the storey below, in its own
     // frame (x from its left wall, y from its front wall), and moved into place.
     for (const s of storeys) {
@@ -2659,7 +2669,30 @@ export function buildGarage(wasm, input, plate = null) {
           const shapes = shapesOf(o, sink);
           const add = shapes.relief.filter((r) => !r.cut).map((r) => onWallShape(o.wall, r.section, r.from, r.to));
           const cut = shapes.relief.filter((r) => r.cut).map((r) => onWallShape(o.wall, r.section, r.from, r.to));
-          if (shapes.leaf) {
+          if (shapes.leaf && o.swing) {
+            // A leaf of its own, clear of its doorway all round, a pin up into the wall over it and one down
+            // through the floor at its hinge side; it lies flat to print, its face up.
+            const L = shapes.leaf,
+              { play: pl, pin, length: len } = SWING;
+            const CS = wasm.CrossSection;
+            const rect2 = (a0, b0, a1, b1) => own(new CS([[[a0, b0], [a1, b0], [a1, b1], [a0, b1]]], 'Positive'));
+            const zb = top + o.sill,
+              zt = zb + o.height,
+              hinge = o.at - o.width / 2 + pl + pin / 2;
+            const section = own(CS.union([own(L.section.offset(-pl, 'Miter', 2)), rect2(hinge - pin / 2, zb + pl - len, hinge + pin / 2, zb + pl + 0.1), rect2(hinge - pin / 2, zt - pl - 0.1, hinge + pin / 2, zt - pl + len)]));
+            let leaf = onWallShape(o.wall, section, L.from, L.to);
+            const leafCuts = L.cuts.map((c) => onWallShape(o.wall, c, L.to - TRIM.deep, L.to + 0.5));
+            if (L.glass) leafCuts.push(onWallShape(o.wall, L.glass, L.from - 0.5, L.to + 0.5));
+            if (leafCuts.length) leaf = minus(leaf, ...leafCuts);
+            const k = s.openings.indexOf(o) + 1;
+            local({ id: 'leaf' + s.suffix + '-' + k, name: openingName(o, s.openings) + ' leaf' + s.label, role: 'door', solid: leaf, outward: OUTWARD[o.wall], apart: wallApart(o.wall) });
+            // Its slot over the doorway, through the wall so it prints with nothing over air (under the
+            // door's frame, if it has one); its hole through the floor.
+            cut.push(onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zt - 0.5, hinge + pin / 2 + pl, zt - pl + len + pl), -t - 1, 1));
+            // The wall's foot carries on under the doorway down into the groove: notched there for the pin, through it.
+            cut.push(onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zb - len - pl - 2, hinge + pin / 2 + pl, zb + 0.5), -t - 1, 1));
+            swingHoles.push({ n: s.n, ox: s.ox, oy: s.oy, solid: onWallShape(o.wall, rect2(hinge - pin / 2 - pl, zb - len - pl - 2, hinge + pin / 2 + pl, zb + 0.5), L.from - pl, L.to + pl) });
+          } else if (shapes.leaf) {
             const L = shapes.leaf;
             add.push(onWallShape(o.wall, L.section, L.from, L.to));
             // Panels and planks sunk into its front; glass through its top.
@@ -3171,6 +3204,15 @@ export function buildGarage(wasm, input, plate = null) {
           if (v > 0.01) throw Error(q.name + ' runs into the ' + p.name.toLowerCase() + ': move it.');
         }
       parts.push(...inside);
+    }
+    // The holes for the pins of the doors that swing, through the base or the floor under them.
+    if (swingHoles.length) {
+      const lift = b.standType === 'none' ? 0 : b.standHeight;
+      for (const h of swingHoles) {
+        const hole = own(h.solid.translate([h.ox, h.oy, lift]));
+        const under = new RegExp((h.n === 1 ? '^base' : '^floor' + h.n) + String.raw`(-\d+)?$`);
+        for (const [k, p] of parts.entries()) if (under.test(p.id)) parts[k] = { ...p, solid: own(p.solid.subtract(hole)) };
+      }
     }
     // The breaches: each a ragged gap cut down from the top of its wall on the top storey.
     if (b.damage.length) {

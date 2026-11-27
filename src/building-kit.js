@@ -168,6 +168,7 @@ export function kitNotes(name, b, parts, sizes) {
       : framed2
         ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
         : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
+    ...([b, ...(b.upper ?? [])].some((st) => (st.openings ?? []).some((o) => o.swing)) ? ['Hang each door that swings before the storey above goes on: tip its top pin up into the slot over its doorway, then lower its bottom pin into the hole in the floor. Do not glue it.'] : []),
     ...(b.partitions?.length ? ['Glue each partition upright on its floor where it stands, its ends against the walls, before the storey above goes on.'] : []),
     ...(b.stairs?.length ? ['Glue each flight of stairs on its floor, its top step under the stairwell in the floor above, before that floor goes on.'] : []),
     ...(b.props?.length ? ['Glue each prop where it stands, on its floor before the storey above goes on, or on the table outside. ' + propLines(b.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
