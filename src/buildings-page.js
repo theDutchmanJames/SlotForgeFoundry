@@ -12,7 +12,7 @@ import { COURTYARD, FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, JETTY, footprin
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
-import { kitNotes } from './building-kit.js';
+import { fileSafe, kitNotes, kitStlName } from './building-kit.js';
 import { glazingSheets, glazingSvg } from './building-glazing.js';
 import { footprintSheets, kit3mf, stlMesh } from './kit-extras.js';
 import { footprint as tableFootprint } from './planner-buildings.js';
@@ -1095,8 +1095,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.wTowerWindows.checked = w.towerWindows;
     e.wTowerRoof.value = w.towerRoof;
     e.wTowerCab.value = w.towerCab;
-    $('[data-bd-towers]').hidden = !w.towers;
-    $('[data-bd-walkway-legs]').hidden = w.towers;
+    drawWalkway();
+  }
+  // Only what shows: the values stay as typed, a half-typed one too.
+  function drawWalkway() {
+    const towers = form.elements.wTowers.checked;
+    $('[data-bd-towers]').hidden = !towers;
+    $('[data-bd-walkway-legs]').hidden = towers;
   }
   function readWalkway() {
     const e = form.elements;
@@ -1257,7 +1262,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const b of host.querySelectorAll('[data-bd-stand-shape]')) b.setAttribute('aria-pressed', String(b.dataset.bdStandShape === (g.curve ? 'curved' : 'straight')));
     $('[data-bd-curve]').hidden = !g.curve;
     form.elements.gLength.disabled = !!g.curve;
-    form.elements.gLength.value = g.length;
+    // Curved, its length follows from the radius and angle; straight, it stays as typed.
+    if (g.curve) form.elements.gLength.value = g.length;
     host.querySelector('[data-bd-canopy]').hidden = g.roof !== 'canopy';
     $('[data-bd-stand-straight]').hidden = !!g.curve;
     $('[data-bd-stand-straight-benches]').hidden = !!g.curve;
@@ -1370,6 +1376,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   ${field('stPilasters', 'Pilasters apart', s.pilasters, [0, RELIEF.spacing[1]])}
   <label class="bd-check"><input type="checkbox" name="stPanels"${s.panels ? ' checked' : ''}><span>Recessed panels</span></label>
   <p class="bd-hint">Open, a storey has a waist wall all round and corner posts up to a beam under its ceiling, like a marshal's or a judge's box: no windows or doors. Panes split the open band with mullions. The top storey's walls can lean out at the top, like a control-tower cab, under a flat roof. Walls can be a braced steel frame or a lattice, open between their members. Relief stands out of the walls: a plinth at the foot, a cornice under the eaves, pilasters at the corners and every so far along (0 for none), and panels sunk between them; it runs round the corners and keeps clear of every opening.</p>`;
+    // The finish of this storey's walls.
+    fillFinish(form, 'fw', s, FOUR);
+  }
+  // The finish fields of a garage's chosen storey, as built; not while a value is being typed, or refused.
+  function fillWallFinish() {
+    if (!isGarage() || invalid) return;
+    // The field in use keeps what is in it: it may be being typed already.
+    const active = document.activeElement;
+    const typing = active?.tagName === 'INPUT' && form.contains(active) && /^fw-/.test(active.name) ? active.value : null;
+    fillFinish(form, 'fw', storeyOf(building, storey), FOUR);
+    if (typing !== null) active.value = typing;
   }
   // The windows and doors of the chosen wall on the chosen storey, each a small card.
   // The lettering of the chosen wall on the chosen storey, each a small card.
@@ -1615,7 +1632,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     else if (isFitTest()) $('[data-bd-fit-tries]').textContent = 'Its three grooves: ' + fitClearances(building).join(', ') + ' mm each side.';
     else if (isPlatform()) drawPlatform();
-    else if (isWalkway()) fillWalkway(building);
+    else if (isWalkway()) drawWalkway();
     else if (isBays()) drawBays();
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
@@ -1636,7 +1653,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       for (const el of host.querySelectorAll('[data-bd-for]')) el.hidden = !el.dataset.bdFor.split(' ').includes(building.roof);
       const walls = storeyOf(building, storey);
       for (const b of host.querySelectorAll('[data-bd-wall-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdWallTexture === walls.wallTexture));
-      fillFinish(form, 'fw', walls, FOUR);
+      // The finish fields are filled with the storey (drawStoreys), not while typing.
       // Breaches come down from the top of a wall: only with the roof left out.
       $('[data-bd-add-breach]').hidden = !(building.leaveOut ?? []).includes('roof');
       if (!(building.damage ?? []).length) $('.bd-breaches').innerHTML = '';
@@ -2110,8 +2127,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     // The clear sheet behind each window, full size, to cut.
     const sheets = glazingSheets(building);
     if (sheets.length) zip['glazing.svg'] = strToU8(glazingSvg(name || 'Building', sheets));
-    files.forEach((f, i) => (zip[String(i + 1).padStart(2, '0') + ' ' + f.name + '.stl'] = f.bytes));
-    const file = (name || 'Building').replace(/[\\/:*?"<>|]+/g, '-');
+    files.forEach((f, i) => (zip[kitStlName(i, f.name)] = f.bytes));
+    const file = fileSafe(name);
     // The whole kit as one 3MF, laid out on plates, for a slicer.
     const { bytes: threeMf, plates } = kit3mf(name || 'Building', files.map((f) => ({ name: f.name, mesh: stlMesh(f.bytes) })), plate());
     zip[file + '.3mf'] = threeMf;
@@ -2188,10 +2205,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     clearTimeout(timer);
     timer = setTimeout(() => rebuild(), 250);
   });
-  form.addEventListener('change', () => {
+  form.addEventListener('change', async () => {
     clearTimeout(timer);
     showBands(form);
-    rebuild();
+    await rebuild();
+    // A value done with (not one being typed): the wall finish as the building took it.
+    fillWallFinish();
   });
   $('[name="apart"]').addEventListener('input', (e) => {
     apart = Number(e.target.value) / 100;
@@ -2328,11 +2347,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         }
         fitted = false;
         await rebuild(next);
+        // The rise, pitch and arch as the new roof has them, or the next edit reads the old ones back.
+        if (!invalid) for (const k of ['rise', 'pitch', 'arch']) form.elements[k].value = building[k];
       } else if (b.dataset.bdEven) {
         const cuts = { ...building.cuts };
         delete cuts[b.dataset.bdEven];
         await rebuild({ ...readForm(), cuts });
-      } else if (b.dataset.bdWallTexture) await rebuild(withStorey(readForm(), storey, { wallTexture: b.dataset.bdWallTexture }));
+      } else if (b.dataset.bdWallTexture) {
+        await rebuild(withStorey(readForm(), storey, { wallTexture: b.dataset.bdWallTexture }));
+        // A wall of its own the same as all of them is no longer its own.
+        fillWallFinish();
+      }
       else if (b.dataset.bdRoofTexture) await rebuild({ ...readForm(), roofTexture: b.dataset.bdRoofTexture });
       else if (b.dataset.bdStorey !== undefined) {
         const next = readForm();
@@ -2370,8 +2395,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const type = b.dataset.bdGantryType;
         // A box sign belongs to a half gantry only; a footbridge has no board, so no text.
         await rebuild({ ...readGantry(), type, ...(type !== 'half' && { sign: false }), ...(type === 'bridge' && { text: '' }) });
-        form.elements.tText.value = building.text ?? '';
-        drawGantry();
+        // Its fields as built: no box sign ticked off a half gantry, no text on a footbridge.
+        // Refused, the fields stay as typed, the error in view.
+        if (invalid) drawGantry();
+        else fillGantry(building);
       } else if (b.dataset.bdStandShape) {
         const next = readStand();
         next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;
@@ -2379,7 +2406,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         if (next.curve) Object.assign(next, { raised: 0, upperTier: 0, stairs: 'none', railings: false, benchStyle: 'block', build: 'shell' });
         fitted = false;
         await rebuild(next);
-        drawStand();
+        // Its fields as built: curved, no frames, stairs or railings left in the hidden fields.
+        // Refused, the fields stay as typed, the error in view.
+        if (invalid) drawStand();
+        else fillStand(building);
       } else if (b.dataset.bdRooms !== undefined) {
         // One room, or two of half the width or depth each.
         const base = readForm();
