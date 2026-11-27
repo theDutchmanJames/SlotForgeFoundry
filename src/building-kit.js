@@ -18,7 +18,9 @@ const andList = (items) => (items.length < 2 ? items.join('') : items.slice(0, -
 const rightWayUp = (items) => {
   if (!items.length) return '';
   const list = andList(items);
-  return list[0].toUpperCase() + list.slice(1) + (items.length > 1 || items[0].endsWith('s') ? ' print' : ' prints') + ' the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.';
+  // Without a roof (left out, or a vault printing on its end): a floor on its underside.
+  const roof = items.some((i) => /roof/i.test(i));
+  return list[0].toUpperCase() + list.slice(1) + (items.length > 1 || items[0].endsWith('s') ? ' print' : ' prints') + ' the right way up: ' + (roof ? 'a roof on its underside, its texture on top' : 'a floor on its underside') + (items.some((i) => /frames/.test(i)) ? ', a frame flat with its tabs up.' : '.');
 };
 
 // Window and door frames on a connected or shaped building.
@@ -43,6 +45,14 @@ const trimsNote = (b) => {
     ? ['Sills, lintels, shutters and doors are part of their walls: they print with them, standing up from the outside face, a door in the back of its doorway. Paint them before the walls go together.']
     : [];
 };
+/**
+ * A name made safe as a file name on every system: no \ / : * ? " < > |
+ * (a part of a walkway's tower is "Left tower: base plate"), and no dots or
+ * spaces at its end, which Windows drops.
+ */
+export const fileSafe = (name, fallback = 'Building') => String(name ?? '').replace(/[\\/:*?"<>|]+/g, '-').replace(/[. ]+$/, '') || fallback;
+/** The file of the i-th part (from 0) in a kit's zip: "01 Front wall.stl". */
+export const kitStlName = (i, name) => String(i + 1).padStart(2, '0') + ' ' + fileSafe(name, 'Part') + '.stl';
 const hasFrames = (parts) => parts.some((p) => /(^|-)frame-\d/.test(p.id));
 export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'sections') return [
@@ -62,14 +72,19 @@ export function kitNotes(name, b, parts, sizes) {
     `${{ L: 'L-shaped', U: 'U-shaped', T: 'T-shaped', custom: 'Drawn', octagon: 'Octagonal', round: 'Round' }[b.shape] ?? 'Rectangular'} footprint${b.shape === 'round' ? ' of ' + b.sides + ' sides' : ''}, ${fmt(b.width)} × ${fmt(b.depth)} mm; walls ${b.height} mm tall, ${b.wall} mm thick.` +
       (b.upper?.length ? ' ' + (b.upper.length + 1) + ' storeys: ' + b.upper.map((u, i) => 'storey ' + (i + 2) + ' ' + fmt(u.height) + ' mm').join(', ') + ', each on a floor.' : '') +
       (b.roofShape === 'hip' ? ' A hip roof at ' + b.pitch + '°, a panel over each wall.' : '') +
+      (b.roofShape === 'sawtooth' ? ' A sawtooth roof of ' + b.teeth + (b.teeth === 1 ? ' tooth' : ' teeth') + ' at ' + b.pitch + '°, each rising towards the back' + (b.teeth > 1 ? ', a north light between each tooth and the next' : '') + '.' : '') +
       (b.courtyards?.length ? ' Round ' + (b.courtyards.length === 1 ? 'a courtyard' : b.courtyards.length + ' courtyards') + ', open to the sky, its walls named Courtyard 1, wall 1 and on; the base is its paving.' : ''),
-    'Print the base' + (b.upper?.length ? ', the floors, their frames' : '') + ' and ' + (b.roofShape === 'hip' ? 'each roof panel flat on its underside' : 'the roof flat') + ', and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
+    'Print the base' + (b.upper?.length ? ', the floors, their frames' : '') + ' and ' + (b.roofShape === 'hip' ? 'each roof panel flat on its underside' : b.roofShape === 'sawtooth' ? 'each roof tooth flat on its underside' + (b.teeth > 1 ? ', each north light flat, its glazed face up' : '') : 'the roof flat') + ', and the walls on their inside face with the outside face up. Parts are supplied in print orientation.',
     'Shaped panels larger than the selected plate are tiled with straight glue seams. Align matching numbered pieces on a flat surface and glue before assembly. These seams do not have interlocking keys.',
     'Assemble the base first. Dry-fit the walls in its groove in numbered perimeter order; mitres meet at both outside and recessed corners.' + (b.courtyards?.length ? ' Stand each courtyard’s walls in the groove round it the same way.' : '') + ' Glue the wall seams and feet.',
     ...(b.upper?.length ? ['Glue each floor frame under its floor, its outside a little inside the walls. Lay the floor on the walls below, its frame dropping inside them, and stand the next storey\'s walls in the groove on top, in the same order as the walls below.'] : []),
     ...(b.props?.length ? ['Glue each prop where it stands, on its floor before the storey above goes on, or on the table outside. ' + propLines(b.props.map((p) => p.type)).slice(1).map((l) => l.slice(2)).join(' ')] : []),
     b.roofShape === 'hip'
       ? 'Lay the roof panels on the tops of the walls, each over its own wall, numbered as the walls; they meet along the hips at the top. Glue them to the walls and to each other.'
+      : b.roofShape === 'sawtooth'
+      ? b.teeth > 1
+        ? 'Glue clear sheet behind the panes of each north light. Lay the roof teeth on the walls in order from the front, tooth 1 first, each sloping up towards the back. Stand each north light upright between its tooth and the next, inside the walls: its foot on the low edge of the next tooth, its top under the high edge of its own, its panes facing the back. Glue the teeth along the tops of the walls, to each other and to the lights.'
+        : 'Lay the roof tooth on the walls, sloping up towards the back, and glue it along their tops.'
       : 'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
     ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
     ...trimsNote(b),
@@ -99,6 +114,13 @@ export function kitNotes(name, b, parts, sizes) {
     .map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : ''))
     .join('\n');
   const upper = b.upper ?? [];
+  // Left out: the roof, open to the sky, or up to three walls, on every storey.
+  const leaveOut = b.leaveOut ?? [];
+  const roofless = leaveOut.includes('roof');
+  const walls = ['front', 'back', 'left', 'right'].filter((w) => !leaveOut.includes(w));
+  // A corner where a front or back wall meets a side wall.
+  const cornered = walls.some((w) => w === 'front' || w === 'back') && walls.some((w) => w === 'left' || w === 'right');
+  const wallsNamed = walls.length === 4 ? 'the four walls' : walls.length === 1 ? 'the ' + walls[0] + ' wall' : 'the ' + ['', '', 'two', 'three'][walls.length] + ' walls, the ' + andList(walls) + ',';
   const sloped = b.roof !== 'flat';
   const framed = [b, ...upper].some((s) => s.openings.some((o) => o.frame));
   const braced = parts.some((p) => /^brace/.test(p.id));
@@ -112,6 +134,23 @@ export function kitNotes(name, b, parts, sizes) {
     tower: 'Stand the four tower frames in the slots of the tower foot, the front and the back outside the ends, and glue the corners. Lay the base on top, the tabs of the frames up into the pockets under it.',
     frames: 'Stand the four frames in the slots of the foot frame, the front and the back outside the ends, and glue the corners. Lay the base on top, the tabs of the frames up into the pockets under it.',
   }[b.standType];
+  // The roof goes on last of the shell; left out, the building is open to the sky.
+  const roofStep =
+    sloped
+      ? b.roof === 'gambrel' || b.roof === 'mansard'
+        ? 'Lay the steep lower panels on the walls, their feet on the tops of the walls, and glue them to the walls' + (b.roof === 'mansard' ? ' and to each other along the hips' : '') + '. Then lay the upper panels on their mitred tops so they meet ' + (b.roof === 'mansard' ? 'along the hips and at the top' : 'at the ridge, their ends on the gables of the end walls') + ', and glue them.'
+        : b.roof === 'sawtooth'
+        ? 'Glue each north light upright on the end walls where they step down, its panes facing the way the roof rises, its foot under the eaves. Lay roof panel 1 on the low wall and the end walls, its high edge on north light 1; then each next panel, its low edge against the foot of the north light before it. Glue them along the tops of the walls and the lights.'
+        : b.roof === 'vault'
+        ? 'Lay the vault on the walls, its flat edges on the tops of the side walls, the end walls rising inside the arch' + (parts.some((p) => /^roof-\d/.test(p.id)) ? '; its pieces end to end, in order' : '') + '. Glue it along the tops of the walls' + (parts.some((p) => /^roof-\d/.test(p.id)) ? ' and its pieces to each other' : '') + '.'
+        : b.roof === 'hip'
+        ? 'Lay the four roof panels on the walls so they meet along the hips' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
+        : b.roof === 'gable'
+        ? 'Lay the two roof panels on the walls so they meet at the ridge' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
+        : 'Lay the roof panel on the walls, its high edge on the tallest wall' + (framed2 ? ', its frame inside the walls' : '') + '. Glue it along the tops of the walls.'
+      : framed2
+        ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
+        : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.';
   const steps = [
     ...(cut
       ? ['Join the pieces of each cut part first (they are numbered, 1 of 2 and so on): lay them flat, push each tab into its socket or each brick into its step, glue, and let them set flat.']
@@ -122,8 +161,8 @@ export function kitNotes(name, b, parts, sizes) {
     ...(stand ? [stand] : []),
     ...(b.access === 'ladder' ? ['Stand the ladder with its foot on the table and its top against ' + { base: 'the edge of the base', roof: 'the edge of the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', on the ' + b.accessWall + ' wall, and glue it there.'] : []),
     ...(b.access === 'stairs' ? ['Stand the staircase on the table against the ' + b.accessWall + ' wall, its landing level with ' + { base: 'the top of the base', roof: 'the roof', 2: 'the floor of storey 2', 3: 'the floor of storey 3', 4: 'the floor of storey 4' }[b.accessTo] + ', its own wall on the outside, and glue it.'] : []),
-    'Stand the four walls ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
-    'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove. The grooves leave ' + b.play + ' mm on each side of a wall: if your walls are too tight or too loose in them, change the joint clearance and print the base again.',
+    'Stand ' + wallsNamed + ' ' + (upper.length ? 'of the ground floor ' : '') + 'in the groove of the base.' + (b.door === 'none' || !walls.includes('front') ? '' : ' The front wall has the garage door opening' + (b.rooms?.along === 'width' ? 's.' : '.')),
+    (cornered ? 'The mitred corners meet without a seam on the outside. Glue them, and glue the walls into the groove.' : walls.length > 1 ? 'Glue the walls into the groove.' : 'Glue the wall into the groove.') + ' The grooves leave ' + b.play + ' mm on each side of a wall: if your walls are too tight or too loose in them, change the joint clearance and print the base again.',
     ...(divided
       ? ['Stand each dividing wall in its groove in the base, between the walls, and glue its ends to them. Its notched top corners let the lip of the roof or the floor above pass over it.']
       : []),
@@ -132,6 +171,9 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     ...(b.door === 'roller'
       ? [doors > 1 ? 'Glue each roller door behind its opening, its ribs facing out, standing on the floor of its room.' : 'Glue the roller door behind its opening, its ribs facing out, standing on the floor of the base.']
+      : []),
+    ...(b.door === 'panel'
+      ? [doors > 1 ? 'Glue each up-and-over door behind its opening, standing on the floor of its room, its panelled face out through the opening.' : 'Glue the up-and-over door behind its opening, standing on the floor of the base, its panelled face out through the opening.']
       : []),
     ...upper.map(
       (_, i) =>
@@ -153,21 +195,7 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     ...(b.rooflights?.length ? ['Glue clear sheet under each rooflight, 3 mm bigger than its hole all round, before the roof goes on.'] : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
-    sloped
-      ? b.roof === 'gambrel' || b.roof === 'mansard'
-        ? 'Lay the steep lower panels on the walls, their feet on the tops of the walls, and glue them to the walls' + (b.roof === 'mansard' ? ' and to each other along the hips' : '') + '. Then lay the upper panels on their mitred tops so they meet ' + (b.roof === 'mansard' ? 'along the hips and at the top' : 'at the ridge, their ends on the gables of the end walls') + ', and glue them.'
-        : b.roof === 'sawtooth'
-        ? 'Glue each north light upright on the end walls where they step down, its panes facing the way the roof rises, its foot under the eaves. Lay roof panel 1 on the low wall and the end walls, its high edge on north light 1; then each next panel, its low edge against the foot of the north light before it. Glue them along the tops of the walls and the lights.'
-        : b.roof === 'vault'
-        ? 'Lay the vault on the walls, its flat edges on the tops of the side walls, the end walls rising inside the arch' + (parts.some((p) => /^roof-\d/.test(p.id)) ? '; its pieces end to end, in order' : '') + '. Glue it along the tops of the walls' + (parts.some((p) => /^roof-\d/.test(p.id)) ? ' and its pieces to each other' : '') + '.'
-        : b.roof === 'hip'
-        ? 'Lay the four roof panels on the walls so they meet along the hips' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
-        : b.roof === 'gable'
-        ? 'Lay the two roof panels on the walls so they meet at the ridge' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
-        : 'Lay the roof panel on the walls, its high edge on the tallest wall' + (framed2 ? ', its frame inside the walls' : '') + '. Glue it along the tops of the walls.'
-      : framed2
-        ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
-        : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
+    ...(roofless ? [] : [roofStep]),
     ...([b, ...(b.upper ?? [])].some((st) => (st.openings ?? []).some((o) => o.swing)) ? ['Hang each door that swings before the storey above goes on: tip its top pin up into the slot over its doorway, then lower its bottom pin into the hole in the floor. Do not glue it.'] : []),
     ...(b.partitions?.length ? ['Glue each partition upright on its floor where it stands, its ends against the walls, before the storey above goes on.'] : []),
     ...(b.stairs?.length ? ['Glue each flight of stairs on its floor, its top step under the stairwell in the floor above, before that floor goes on.'] : []),
@@ -184,7 +212,9 @@ export function kitNotes(name, b, parts, sizes) {
     name + ' · SlotForge Foundry building kit',
     '',
     'Outside ' + fmt(b.width) + ' × ' + fmt(b.depth) + ' mm, walls ' + fmt(b.height) + ' mm high to the eaves on a base ' + fmt(b.baseHeight) + ' mm high.' + storeys +
-      (b.rooms ? ' ' + b.rooms.sizes.length + ' rooms ' + (b.rooms.along === 'width' ? 'side by side' : 'front to back') + ': ' + b.rooms.sizes.map((v) => fmt(v)).join(' + ') + ' mm, outside to outside.' : ''),
+      (b.rooms ? ' ' + b.rooms.sizes.length + ' rooms ' + (b.rooms.along === 'width' ? 'side by side' : 'front to back') + ': ' + b.rooms.sizes.map((v) => fmt(v)).join(' + ') + ' mm, outside to outside.' : '') +
+      (roofless ? ' It has no roof: it is open to the sky.' : '') +
+      (walls.length < 4 ? ' It has ' + (walls.length === 1 ? 'one wall, the ' + walls[0] : ['', '', 'two', 'three'][walls.length] + ' walls, the ' + andList(walls)) + (upper.length ? ', on every storey' : '') + '; the ' + andList(leaveOut.filter((w) => w !== 'roof')) + (walls.length < 3 ? ' walls are' : ' wall is') + ' left out.' : ''),
     '',
     'Parts, as they lie on the plate:',
     list,
@@ -193,11 +223,11 @@ export function kitNotes(name, b, parts, sizes) {
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
     ...(parts.some((p) => /^(counter|flap)/.test(p.id)) ? ['- A counter or a flap lies on its top, its two fins standing up from it.'] : []),
-    '- The base prints upside down. ' + rightWayUp([...(b.roof === 'vault' ? [] : [sloped ? 'The roof panels' : 'The roof']), ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) +
+    ('- The base prints upside down. ' + rightWayUp([...(b.roof === 'vault' || roofless ? [] : [sloped ? 'The roof panels' : 'The roof']), ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])])).trimEnd() +
       (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : '') +
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
-    ...(b.roof === 'vault' ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
-    ...(b.roof === 'sawtooth' ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
+    ...(b.roof === 'vault' && !roofless ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
+    ...(b.roof === 'sawtooth' && !roofless ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
     ...(b.props?.length ? [propLines(b.props.map((p) => p.type))[0]] : []),
     ...(b.dormers?.length ? ['- Each dormer prints standing on its front, its window on the plate, open at the back and underneath.'] : []),
     ...(b.chimney ? ['- The chimney prints upside down, standing on its cap; its flue is a pointed pocket.'] : []),
