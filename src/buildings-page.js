@@ -68,7 +68,7 @@ import { ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-te
 import { LETTERING, textWidth } from './geometry/lettering.js';
 import { finishFields, fillFinish, readFinish, showBands } from './building-finish.js';
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
-import { COLOUR_SETS, SURFACES, buildingPaint, checkColours, hexText, setColours, textHex } from './building-colours.js';
+import { COLOUR_SETS, SURFACES, buildingPaint, checkColours, hexText, paintList, partColours, setColours, textHex } from './building-colours.js';
 
 const KEY = 'foundry.building';
 // Whether the model shows its colours or each part by its role, remembered in this browser.
@@ -261,7 +261,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-row"><span>Colour set</span><select name="col-set">${COLOUR_SETS.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}<option value="custom">Your own</option></select></label>
       ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${key === 'walls' || key === 'roof' ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
       <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls and roof by their texture</span></label>
-      <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta; or pick a colour of your own for each. The colours are for the view: the parts print in the filament you load.</p></section>
+      <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta; or pick a colour of your own for each. The kit carries them in its 3MF, for a printer with several filaments, and as a paint list in its notes.</p></section>
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
       <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="octagon">Octagon</option><option value="round">Round</option><option value="custom" disabled>Drawn outline</option></select></label>
@@ -2183,14 +2183,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     await rebuild(readForm());
     if (buildingBusy || invalid) return;
     const files = await call('buildingKit', { building, plate: plate() });
-    const zip = { 'README.txt': strToU8(kitNotes(name, building, files, sizes)) };
+    // The colours of the parts as the view shows them, for the 3MF and the paint list.
+    const tints = partColours(colours, parts);
+    const paints = paintList(colours, parts);
+    const notes = kitNotes(name, building, files, sizes) + (paints.length ? '\n\n' + paints.join('\n') : '');
+    const zip = { 'README.txt': strToU8(notes) };
     // The clear sheet behind each window, full size, to cut.
     const sheets = glazingSheets(building);
     if (sheets.length) zip['glazing.svg'] = strToU8(glazingSvg(name || 'Building', sheets));
     files.forEach((f, i) => (zip[kitStlName(i, f.name)] = f.bytes));
     const file = fileSafe(name);
     // The whole kit as one 3MF, laid out on plates, for a slicer.
-    const { bytes: threeMf, plates } = kit3mf(name || 'Building', files.map((f) => ({ name: f.name, mesh: stlMesh(f.bytes) })), plate());
+    const { bytes: threeMf, plates } = kit3mf(name || 'Building', files.map((f) => ({ name: f.name, mesh: stlMesh(f.bytes), colour: tints.get(f.id) })), plate());
     zip[file + '.3mf'] = threeMf;
     // Where it stands on the table, full size, on A4 sheets.
     let sheets2 = [];
@@ -2202,7 +2206,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     for (const s2 of sheets2) zip[s2.name] = strToU8(s2.svg);
     // The README says what else is in the kit.
     zip['README.txt'] = strToU8(
-      kitNotes(name, building, files, sizes) +
+      notes +
         '\n\nAlso in the kit\n- ' + file + '.3mf: every part as it prints, laid out on ' + plates + ' plate' + (plates > 1 ? 's' : '') + ' of ' + plate().width + ' × ' + plate().depth + ' mm, to open in a slicer instead of the STL files.' +
         (sheets2.length ? '\n- footprint 1.svg' + (sheets2.length > 1 ? ' to footprint ' + sheets2.length + '.svg' : '') + ': where it stands on the table, full size, on A4. Print at 100 %, check the 10 mm bar, and tape the sheets together where their crosses meet.' : ''),
     );
@@ -2214,7 +2218,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     await rebuild(readForm());
     if (buildingBusy || invalid) return;
     const s = await store();
-    savedId = await s.saveBuilding({ id: savedId ?? undefined, name: name || 'Building', building, updated: Date.now() });
+    savedId = await s.saveBuilding({ id: savedId ?? undefined, name: name || 'Building', building, colours, updated: Date.now() });
     remember();
     await listSaved();
     notice('Saved in the Library: ' + (name || 'Building') + '.');
@@ -2703,6 +2707,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     building = validateBuilding(preset?.building ?? {});
     name = preset?.name ?? 'Garage';
     savedId = null;
+    // A standard building starts in the colours of what it is made of.
+    colours = checkColours(null);
+    fillColours();
     storey = 0;
     fitted = false;
     fill(building);
@@ -2717,6 +2724,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     name = saved.name;
     history.reset({ building, name });
     savedId = saved.id;
+    // Saved before it had colours: by material.
+    colours = checkColours(saved.colours ?? null);
+    fillColours();
     storey = 0;
     fitted = false;
     fill(building);

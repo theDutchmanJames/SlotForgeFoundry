@@ -69,13 +69,25 @@ function sizeOf({ verts }) {
 
 /**
  * The kit as a 3MF: an object for each part, set out on plates side by side
- * (each plate's area marked by where its parts are), in millimetres.
+ * (each plate's area marked by where its parts are), in millimetres. A part
+ * with a colour ({ name, face } as a hex number) takes it as its material,
+ * so a slicer can match it to a filament.
  */
 export function kit3mf(title, parts, plate) {
   const placed = packParts(parts, plate);
   const plates = Math.max(1, ...placed.map((q) => q.plate + 1));
   const objects = [],
     items = [];
+  // The colours, one material each, in the order the parts first use them.
+  const materials = [];
+  const materialOf = (c) => {
+    if (!c) return -1;
+    const key = c.name + ':' + c.face;
+    let k = materials.findIndex((m) => m.key === key);
+    if (k < 0) k = materials.push({ key, name: c.name, color: '#' + (c.face >>> 0).toString(16).padStart(6, '0').toUpperCase() + 'FF' }) - 1;
+    return k;
+  };
+  const MATERIALS_ID = parts.length + 1;
   placed.forEach(({ part, plate: k, x, y, turn }, i) => {
     const { verts, tris } = part.mesh;
     const [, , , lo] = sizeOf(part.mesh);
@@ -88,7 +100,8 @@ export function kit3mf(title, parts, plate) {
       minV = Math.min(...local.map((q) => q[1]));
     const vs = local.map(([a, b, c]) => `<vertex x="${(a - minU).toFixed(4)}" y="${(b - minV).toFixed(4)}" z="${c.toFixed(4)}"/>`).join('');
     const ts = tris.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('');
-    objects.push(`<object id="${i + 1}" name="${esc(part.name)}" type="model"><mesh><vertices>${vs}</vertices><triangles>${ts}</triangles></mesh></object>`);
+    const m = materialOf(part.colour);
+    objects.push(`<object id="${i + 1}" name="${esc(part.name)}" type="model"${m < 0 ? '' : ` pid="${MATERIALS_ID}" pindex="${m}"`}><mesh><vertices>${vs}</vertices><triangles>${ts}</triangles></mesh></object>`);
     // Plates side by side along x, a plate's width and a gap apart.
     const ox = (plate.margin ?? 0) + k * (plate.width + 20) + x,
       oy = (plate.margin ?? 0) + y;
@@ -98,7 +111,7 @@ export function kit3mf(title, parts, plate) {
 <model unit="millimeter" xml:lang="en-GB" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
 <metadata name="Title">${esc(title)}</metadata>
 <metadata name="Application">SlotForge Foundry</metadata>
-<resources>${objects.join('\n')}</resources>
+<resources>${materials.length ? `<basematerials id="${MATERIALS_ID}">${materials.map((m) => `<base name="${esc(m.name)}" displaycolor="${m.color}"/>`).join('')}</basematerials>\n` : ''}${objects.join('\n')}</resources>
 <build>${items.join('')}</build>
 </model>`;
   const types = `<?xml version="1.0" encoding="UTF-8"?>

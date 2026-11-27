@@ -1,8 +1,8 @@
 // The colours a building is shown in: by what its walls and roof are made
 // of (bricks red, planks brown), or a set of colours chosen for it. The
 // joints of a texture take a colour of their own, like mortar between
-// bricks, and the grain of wood a shade darker. They are for the 3D view:
-// the parts print in whatever filament is loaded.
+// bricks, and the grain of wood a shade darker. The kit carries them in its
+// 3MF and a paint list; the parts print in whatever filament is loaded.
 
 /** The surfaces that take a colour of their own, in the order the panel lists them. */
 export const SURFACES = Object.freeze([
@@ -114,3 +114,66 @@ export function buildingPaint(colours, parts = []) {
 /** A colour as the colour input shows it, and back. */
 export const hexText = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
 export const textHex = (s) => (/^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 16) : null);
+
+// The names of the textures, for the paint list.
+const WALL_WORDS = { plain: 'smooth', brick: 'bricks', block: 'concrete blocks', crack: 'concrete', metal: 'corrugated metal', planks: 'planks', boards: 'boards', stone: 'stone', timber: 'half-timbered' };
+const ROOF_WORDS = { plain: 'smooth', tile: 'tiles', metal: 'corrugated sheet', shingle: 'shingles', seam: 'standing seams' };
+const SURFACE_OF = (part) => {
+  const j = part.joints;
+  if (part.role === 'roof' || j?.surface === 'roof') return 'roof';
+  if (part.role === 'wall' || part.role === 'divider' || j) return 'walls';
+  if (part.role === 'door') return 'doors';
+  if (TRIM.has(part.role)) return 'trim';
+  if (BASE.has(part.role)) return 'base';
+  return null;
+};
+/**
+ * Each part's colour, by its id: the surface it belongs to, a name for it
+ * ('Walls, bricks'), its colour and its joints'. A part with no colour of
+ * its own (a prop) is left out.
+ */
+export function partColours(colours, parts) {
+  const paint = buildingPaint(colours, parts);
+  const walls = parts.find((p) => p.joints?.surface === 'wall');
+  const out = new Map();
+  for (const p of parts) {
+    const c = paint(p);
+    const surface = SURFACE_OF(p);
+    if (!c || !surface) continue;
+    const j = p.joints ?? (/gable/.test(p.id) && walls ? walls.joints : null);
+    const kind = surface === 'walls' ? j?.kind ?? 'plain' : surface === 'roof' ? (j?.surface === 'roof' ? j.kind : 'plain') : null;
+    const words = surface === 'walls' ? WALL_WORDS[kind] : surface === 'roof' ? ROOF_WORDS[kind] : null;
+    const label = SURFACES.find(([k]) => k === surface)[1];
+    out.set(p.id, { surface, kind, name: words && kind !== 'plain' ? label + ', ' + words : label, face: c.face, joint: kind && kind !== 'plain' ? c.joint : null });
+  }
+  return out;
+}
+const HEX = (v) => hexText(v).toUpperCase();
+/** The paint list for the kit notes: each colour, the parts in it, and how to bring out its joints. */
+export function paintList(colours, parts) {
+  const groups = new Map();
+  for (const c of partColours(colours, parts).values()) {
+    const key = c.name + c.face + ':' + c.joint;
+    const g = groups.get(key) ?? { ...c, count: 0 };
+    g.count++;
+    groups.set(key, g);
+  }
+  if (!groups.size) return [];
+  const order = SURFACES.map(([k]) => k);
+  const lines = [...groups.values()]
+    .sort((a, b) => order.indexOf(a.surface) - order.indexOf(b.surface))
+    .map((g) => {
+      const parts = g.count + (g.count > 1 ? ' parts' : ' part');
+      if (!g.joint) return `- ${g.name}: ${HEX(g.face)} (${parts}).`;
+      const how = MORTAR.has(g.kind)
+        ? 'paint them ' + HEX(g.face) + ', then work ' + HEX(g.joint) + ' into the joints and wipe the faces clean before it dries'
+        : 'paint them ' + HEX(g.face) + ', then a thin wash of ' + HEX(g.joint) + ' settles in the joints and the grain';
+      return `- ${g.name} (${parts}): ${how}.`;
+    });
+  const set = COLOUR_SETS.find(([id]) => id === checkColours(colours).set);
+  return [
+    'Colours' + (set ? ' (' + set[1] + ')' : ''),
+    ...lines,
+    'Paint the parts before you glue them. Printing in colour: the 3MF gives each part its colour, to match to the filaments you have.',
+  ];
+}

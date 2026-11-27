@@ -44,6 +44,10 @@ try {
   assert.equal((model.match(/<object /g) ?? []).length, stls.length, 'an object in the 3MF for each STL');
   assert.ok(names.includes('footprint 1.svg'), 'the footprint sheet');
   assert.match(strFromU8(zip['README.txt']), /Also in the kit\n- Brick hut\.3mf: every part as it prints/);
+  // Its colours: brick walls and a roof as materials of the 3MF, and the paint list in the notes.
+  assert.match(model, /<base name="Walls, bricks" displaycolor="#A4533CFF"\/>/);
+  assert.match(model, /<base name="Roof, shingles"/);
+  assert.match(strFromU8(zip['README.txt']), /Colours \(By material\)\n- Walls, bricks \(4 parts\): paint them #A4533C, then work #CDC6B8 into the joints/);
   assert.match(strFromU8(zip['footprint 1.svg']), /Brick hut · footprint, full size/i);
   assert.match(await page.locator('body').innerText(), /one 3MF on \d+ plates?, the footprint on 1 A4 sheet/);
 

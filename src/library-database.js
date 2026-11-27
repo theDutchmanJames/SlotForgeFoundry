@@ -21,6 +21,7 @@ import { validateLayout } from './planner-model.js';
 import { checkProject } from './project.js';
 import { normaliseSlotPosition, slotForm } from './slot-position.js';
 import { validateBuilding } from './geometry/building.js';
+import { checkColours } from './building-colours.js';
 
 const applicationId = 0x53464c42; // SFLB
 export const LIBRARY_VERSION = 6;
@@ -888,25 +889,30 @@ export function deleteStlPart(db, id) {
 
 /* ---------- Buildings ---------- */
 
+// A building's data: its settings, and the colours it is shown in kept beside them.
+function buildingData(data) {
+  const { colours, ...building } = JSON.parse(data);
+  return { building: validateBuilding(building), ...(colours !== undefined && { colours: checkColours(colours) }) };
+}
 export function readBuildings(db) {
   return rows(db, 'SELECT id, name, data, updated FROM buildings ORDER BY updated DESC, rowid').map((r) => ({
     id: r.id,
     name: r.name,
-    building: validateBuilding(JSON.parse(r.data)),
+    ...buildingData(r.data),
     updated: r.updated,
   }));
 }
 export function readBuilding(db, id) {
   const [row] = rows(db, 'SELECT id, name, data, updated FROM buildings WHERE id=?', [checkedId(id)]);
   if (!row) throw Error('This building no longer exists. Reopen the library.');
-  return { id: row.id, name: row.name, building: validateBuilding(JSON.parse(row.data)), updated: row.updated };
+  return { id: row.id, name: row.name, ...buildingData(row.data), updated: row.updated };
 }
-export function saveBuilding(db, { id, name, building, updated }) {
+export function saveBuilding(db, { id, name, building, colours, updated }) {
   const buildingId = id === undefined ? crypto.randomUUID() : checkedId(id);
   db.run(
     'INSERT INTO buildings(id, name, data, updated) VALUES (?,?,?,?) ' +
       'ON CONFLICT(id) DO UPDATE SET name=excluded.name, data=excluded.data, updated=excluded.updated',
-    [buildingId, nameOf(name), JSON.stringify(validateBuilding(building)), stamp(updated)],
+    [buildingId, nameOf(name), JSON.stringify({ ...validateBuilding(building), ...(colours !== undefined && { colours: checkColours(colours) }) }), stamp(updated)],
   );
   return buildingId;
 }
