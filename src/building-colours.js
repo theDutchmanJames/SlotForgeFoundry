@@ -43,6 +43,7 @@ export const COLOUR_SETS = Object.freeze([
   ['whitewash', 'Whitewash and terracotta', { walls: 0xece7dc, roof: 0x9f5238, trim: 0x3c5a7a, doors: 0x3c5a7a, base: 0x7a746a }],
   ['timber', 'Weathered timber', { walls: 0x8b7a68, roof: 0x5b5048, trim: 0xcfc6b4, doors: 0x5a4a3a, base: 0x6a645c }],
   ['racing', 'Team colours', { walls: 0xe8e8e6, roof: 0x3a3f46, trim: 0xe5484d, doors: 0xe5484d, base: 0x4b5058 }],
+  ['marshal', 'Marshal orange', { walls: 0xf0ece2, roof: 0xe2762f, trim: 0xe2762f, doors: 0xe2762f, base: 0x6f757b }],
   ['industrial', 'Industrial', { walls: 0x8c97a0, roof: 0x6f7880, trim: 0xd9a441, doors: 0x4a5561, base: 0x5b626c }],
 ]);
 export const COLOURS_DEFAULT = Object.freeze({ set: 'material', walls: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b });

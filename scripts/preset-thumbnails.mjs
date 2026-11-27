@@ -11,7 +11,8 @@ import { BUILDING_PRESETS } from '../src/building-presets.js';
 const SIZE = [176, 132]; // twice the size it shows at, for sharp screens
 const only = process.argv.slice(2);
 const executablePath = process.env.SLOT_FORGE_BROWSER || ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
-const browser = await chromium.launch({ executablePath, headless: true, args: ['--disable-webgl'] });
+// WebGL in software, so the pictures show the buildings in their colours, joints and all.
+const browser = await chromium.launch({ executablePath, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await (await browser.newContext({ viewport: { width: 1400, height: 1000 }, offline: true })).newPage();
 page.setDefaultTimeout(60000);
 const host = page.locator('#buildings-page');

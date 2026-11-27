@@ -16,7 +16,7 @@ import { fileSafe, kitNotes, kitStlName } from './building-kit.js';
 import { glazingSheets, glazingSvg } from './building-glazing.js';
 import { footprintSheets, kit3mf, stlMesh } from './kit-extras.js';
 import { footprint as tableFootprint } from './planner-buildings.js';
-import { BUILDING_PRESETS, PRESET_GROUPS } from './building-presets.js';
+import { BUILDING_PRESETS, PRESET_GROUPS, presetColours } from './building-presets.js';
 import { presetThumb } from './preset-thumbs.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth, standExtent } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
@@ -2707,8 +2707,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     building = validateBuilding(preset?.building ?? {});
     name = preset?.name ?? 'Garage';
     savedId = null;
-    // A standard building starts in the colours of what it is made of.
-    colours = checkColours(null);
+    // A standard building starts in its own colours; New building by material.
+    colours = presetColours(preset?.id);
     fillColours();
     storey = 0;
     fitted = false;

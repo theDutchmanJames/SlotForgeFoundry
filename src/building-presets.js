@@ -1,6 +1,7 @@
 // Standard buildings: good starting settings for what slot-racing layouts
 // most often have beside the track. Each is an ordinary building, so every
 // setting can be changed afterwards. Toy proportions for 1:32.
+import { setColours } from './building-colours.js';
 
 const window = (wall, at, width, height, sill, frame = true) => ({ wall, type: 'window', at, width, height, sill, frame });
 const door = (wall, at, frame = true) => ({ wall, type: 'door', at, width: 28, height: 48, frame });
@@ -1432,6 +1433,23 @@ function lettered(p) {
   if (w.lettering) b = w.storey ? { ...b, upper: b.upper.map((u, i) => (i === w.storey - 1 ? { ...u, lettering: w.lettering } : u)) } : { ...b, lettering: w.lettering };
   return { ...p, building: b };
 }
+// The colours each starts in, by the name of a set: those with brick, planks
+// or stone show what they are made of (by material, the default); plain
+// walls take the colours of what they are, a team's pits, a marshal's post.
+export const COLOURED = {
+  racing: ['pitrow', 'pit-modern', 'pit-building', 'pit-row-modern', 'pit-boxes', 'starter-tower', 'vip', 'camera-tower', 'press-tower', 'tower-pyramid', 'booth-column',
+    'stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'stand-bleachers', 'stand-terrace', 'stand-double', 'platform', 'platform-both', 'platform-plain',
+    'finish-bridge', 'gantry-lattice', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway-towers', 'crosswalk', 'stairs-switchback', 'banner-bridge',
+    'billboard', 'hoarding', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane'],
+  marshal: ['marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-legs', 'post-box', 'flag-post'],
+  timber: ['picnic-pergola', 'benches', 'picnic', 'gantry-timber', 'carport', 'carport-twin'],
+  whitewash: ['townhouse', 'motor-court', 'drive-in-box-office', 'car-wash', 'motor-showroom'],
+  yellowbrick: ['ruined-townhouse'],
+  industrial: ['paint-body-shop', 'auction-hall', 'weighbridge-office', 'auto-parts-store', 'drive-in-screen'],
+};
+const COLOURS_OF = new Map(Object.entries(COLOURED).flatMap(([set, ids]) => ids.map((id) => [id, set])));
+/** The colours a standard building starts in. */
+export const presetColours = (id) => setColours(COLOURS_OF.get(id) ?? 'material');
 export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
 
 /** The standard buildings in groups, for the Start from list: every preset in one. */
