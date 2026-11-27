@@ -981,6 +981,62 @@ const PRESETS = [
       upper: [74, 74].map(() => ({ height: 74, wallTexture: 'brick', openings: [1, 2, 3, 4, 5, 6, 7, 8].map((k) => ({ ...shell('edge-' + k, 'window', 35, 30, 40, 20, 2, 2), shape: 'arch', ledge: true })) })),
     },
   },
+  // Stands and towers after the Scaleform library's circuit packs, at 1:32.
+  {
+    id: 'stand-bleachers',
+    name: 'Back straight bleachers',
+    note: 'Six rows of wooden benches on X-braced frames along the straight, open underneath, an aisle up the middle',
+    building: { kind: 'grandstand', build: 'frames', length: 600, rows: 6, rowDepth: 21, rowRise: 10, frontHeight: 8, aisles: 1, benchStyle: 'wood', parapet: false },
+  },
+  {
+    id: 'stand-terrace',
+    name: 'Hairpin fan terrace',
+    note: 'Six concrete steps to stand on round the outside of a hairpin, four aisles, a wall at the back',
+    building: { kind: 'grandstand', rows: 6, rowDepth: 20, rowRise: 9, frontHeight: 8, seats: false, aisles: 4, backHeight: 14, curve: { radius: 600, angle: 70, facing: 'in' } },
+  },
+  {
+    id: 'stand-double',
+    name: 'Double-deck circuit stand',
+    note: 'Five rows of benches with backs on the table and five more on an upper tier behind them, raised on braced frames, a staircase up each end, railings',
+    building: { kind: 'grandstand', length: 360, rows: 5, upperTier: 5, aisles: 2, backHeight: 12, backrests: true, stairs: 'both', railings: true },
+  },
+  {
+    id: 'picnic-pergola',
+    name: 'Spectator picnic pergola',
+    note: 'Two picnic tables under a timber pergola: posts under a beam each side, a roof of slats across',
+    building: { kind: 'picnic', count: 2, length: 60, gap: 30, pergola: true },
+  },
+  {
+    id: 'timber-pavilion',
+    name: 'Triple-gabled timber pavilion',
+    note: 'Three planked bays side by side, each open at the front under its own gable',
+    building: {
+      kind: 'sections',
+      sections: ['s1', 's2', 's3'].map((id, i) => ({
+        id, name: ['West bay', 'Centre bay', 'East bay'][i], parent: i ? ['s1', 's2'][i - 1] : null, side: 'right', offset: 0,
+        width: 147, depth: 123, height: 80, roofType: 'gable', pitch: 32, ridge: 'depth', rises: 'back', overhang: 6,
+        wallTexture: 'planks',
+        openings: [shell('front', 'door', 73.5, 117, 66, 0)],
+      })),
+    },
+  },
+  {
+    id: 'score-beacon',
+    name: 'Lap-scoring beacon',
+    note: 'A slim concrete tower of four storeys, the first three places lettered up its front, a ladder up the back',
+    building: {
+      width: 97, depth: 74, height: 89, baseHeight: 6, door: 'none', wallTexture: 'block',
+      overhangFront: 7, overhangBack: 7, overhangLeft: 7, overhangRight: 7,
+      openings: [{ ...door('left', 37) }, panes('front', 48.5, 52, 27, 28, 2, 1), window('right', 37, 24, 28, 32)],
+      sign: 'fascia', signWidth: 70, signHeight: 13, signText: 'LAPS',
+      upper: [['P3', '28'], ['P2', '16'], ['P1', '07']].map(([p, n]) => ({
+        height: 81, wallTexture: 'plain',
+        lettering: [{ wall: 'front', text: p + ' ' + n, at: 48.5, up: 40, height: 18 }],
+        openings: [window('right', 37, 18, 26, 34), ...(p === 'P3' ? [{ ...door('back', 40), leaf: 'plain' }] : [])],
+      })),
+      access: 'ladder', accessWall: 'back', accessAt: 75, accessTo: '2',
+    },
+  },
 ];
 
 // The words on them: plain names of what they are, as a circuit letters its
@@ -1026,9 +1082,9 @@ export const PRESET_GROUPS = Object.freeze([
   ['Pit buildings', ['pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'pit-tower']],
   ['Towers and offices', ['tower', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
   ['Marshal posts', ['marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],
-  ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
+  ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'stand-bleachers', 'stand-terrace', 'stand-double', 'picnic-pergola', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
   ['Over the track', ['gantry-start', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
-  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda']],
+  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon']],
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
 ]);

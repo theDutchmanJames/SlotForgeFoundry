@@ -220,7 +220,7 @@ export async function checkBuildings({ page, action, download, snap }) {
   assert.ok(await setting('gLength').isDisabled(), 'a curve sets the length');
   await setting('gRows').fill('3');
   await setting('gRows').press('Tab');
-  await page.waitForFunction(() => /3 rows/.test(document.querySelector('[data-bd-stand-size]').textContent));
+  await page.waitForFunction(() => /3 rows/.test(document.querySelector('[data-bd-grandstand-size]').textContent));
   await host.locator('[data-bd-stand-shape="straight"]').click();
   await page.waitForFunction(() => !document.querySelector('form.bd-form [name="gLength"]').disabled);
   // The modern pit building: railings, a balcony and bay numbers.

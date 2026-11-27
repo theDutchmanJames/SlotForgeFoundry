@@ -210,7 +210,8 @@ export function kitNotes(name, b, parts, sizes) {
 // The notes of a grandstand: its sections stood on end, joined, and its canopy.
 function standNotes(name, g, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');
-  const sections = parts.filter((p) => /^stand/.test(p.id)).length;
+  const sections = parts.filter((p) => /^stand/.test(p.id)).length,
+    upperSections = parts.filter((p) => /^upper-stand/.test(p.id)).length;
   const canopy = parts.some((p) => /^canopy/.test(p.id));
   const framed = g.build === 'frames';
   const benches = parts.some((p) => /^bench-/.test(p.id))
@@ -229,14 +230,20 @@ function standNotes(name, g, parts, sizes) {
     ...(sections > 1
       ? ['Join the sections end to end in their order, 1 of ' + sections + ' first: push the two tabs at the end of each into the slots of the next, with a drop of glue, and let them set on a flat table.']
       : []),
-    ...(parts.some((p) => /^frame/.test(p.id))
+    ...(upperSections
+      ? [
+          'Stand the lower tier on the table, its parapet towards the track.',
+          ...(upperSections > 1 ? ['Join the sections of the upper tier the same way.'] : []),
+          'Stand the upper tier’s frames behind the lower tier, the front frames against its back wall, and lower the upper tier onto them as the frames of a raised stand take it: its first row level with the top of the back wall in front of it.',
+        ]
+      : parts.some((p) => /^frame/.test(p.id))
       ? [
           'Stand the frames: glue a front and a back frame for each section along the table, as far apart as the stand is deep, and the cross frames between them, at each end and at each joint between two sections.',
           'Lower the grandstand onto the frames, the top of each cross frame up into the hollow under the rows, its parapet over the front frames, towards the track.',
         ]
       : ['Stand the grandstand on the table, its parapet towards the track.']),
-    ...(parts.some((p) => /^stair/.test(p.id)) ? ['Glue each staircase against its end of the stand, its top step level with the last row, its wall on the outside.'] : []),
-    ...(parts.some((p) => /^rail-back/.test(p.id)) ? ['Glue the back railings on the back of the back wall, their solid band down against it, one for each section, end to end.'] : []),
+    ...(parts.some((p) => /^(upper-)?stair/.test(p.id)) ? ['Glue each staircase against its end of the stand, its top step level with the last row, its wall on the outside.'] : []),
+    ...(parts.some((p) => /^(upper-)?rail-back/.test(p.id)) ? ['Glue the back railings on the back of the back wall, their solid band down against it, one for each section, end to end.'] : []),
     ...benches,
     ...(canopy
       ? ['Glue the canopy' + (parts.filter((p) => /^canopy/.test(p.id)).length > 1 ? ' pieces' : '') + ' on top of the back wall, reaching out over the rows, and glue the posts under its front edge, in front of the parapet.']
@@ -245,7 +252,7 @@ function standNotes(name, g, parts, sizes) {
   return [
     name + ' · SlotForge Foundry grandstand kit',
     '',
-    g.rows + ' rows, ' + fmt(g.length) + ' mm long' + (g.curve ? ' along the front, curved on a radius of ' + fmt(g.curve.radius) + ' mm through ' + fmt(g.curve.angle) + '°' : '') + '; each row ' + fmt(g.rowDepth) + ' mm deep and ' + fmt(g.rowRise) + ' mm higher than the one before.',
+    g.rows + ' rows' + (g.upperTier ? ', and an upper tier of ' + g.upperTier + ' behind them,' : '') + ' ' + fmt(g.length) + ' mm long' + (g.curve ? ' along the front, curved on a radius of ' + fmt(g.curve.radius) + ' mm through ' + fmt(g.curve.angle) + '°' : '') + '; each row ' + fmt(g.rowDepth) + ' mm deep and ' + fmt(g.rowRise) + ' mm higher than the one before.',
     '',
     'Parts, as they lie on the plate:',
     list,
@@ -347,7 +354,7 @@ function picnicNotes(name, p, parts, sizes) {
   return [
     name + ' · SlotForge Foundry picnic table kit',
     '',
-    (p.count === 1 ? 'A picnic table ' : p.count + ' picnic tables, each ') + fmt(p.length) + ' mm long: a top and a seat each side of planks, on two A-frame ends.',
+    (p.count === 1 ? 'A picnic table ' : p.count + ' picnic tables, each ') + fmt(p.length) + ' mm long: a top and a seat each side of planks, on two A-frame ends.' + (p.pergola ? ' Over ' + (p.count === 1 ? 'it' : 'them') + ' a pergola: posts under a beam along each side, slats across on top.' : ''),
     '',
     'Parts, as they lie on the plate:',
     list,
@@ -355,11 +362,20 @@ function picnicNotes(name, p, parts, sizes) {
     'Printing',
     '- Every part prints without supports.',
     '- The top and the seats print upside down, their planks on the plate and the cleats up; the ends lie flat.',
+    ...(p.pergola ? ['- The pergola frames lie flat on their side; its roof upside down, the slats on the plate and the battens up.'] : []),
     '',
     'Putting it together',
-    '1. Stand the two ends up and lay the seats on the low bearers, their cleats down just inside the ends, the planks reaching past them.',
-    '2. Lay the top on the high bearers the same way and glue it all.',
-    '3. Stand it beside the track.',
+    ...[
+      'Stand the two ends up and lay the seats on the low bearers, their cleats down just inside the ends, the planks reaching past them.',
+      'Lay the top on the high bearers the same way and glue it all.',
+      ...(p.pergola
+        ? [
+            'Stand the pergola frames up on the table, one along the front and one along the back of the row' + (parts.some((q) => q.id === 'pergola-front-2') ? ', bay after bay, end to end' : '') + ', and put the tables between them.',
+            'Lay each roof on its frames, the battens down just inside them, and glue it.',
+          ]
+        : []),
+      'Stand it beside the track.',
+    ].map((line, i) => i + 1 + '. ' + line),
   ].join('\n');
 }
 

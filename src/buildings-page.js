@@ -18,7 +18,7 @@ import { footprintSheets, kit3mf, stlMesh } from './kit-extras.js';
 import { footprint as tableFootprint } from './planner-buildings.js';
 import { BUILDING_PRESETS, PRESET_GROUPS } from './building-presets.js';
 import { presetThumb } from './preset-thumbs.js';
-import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
+import { GRANDSTAND_LIMITS, sizeLine, standDepth, standExtent } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
 import { PIT_MODULE_LIMITS, pitLevels } from './geometry/pit-module.js';
 import { MARSHAL_POST_LIMITS, marshalLevels } from './geometry/marshal-post.js';
@@ -30,7 +30,7 @@ import { PROPS, propOf } from './geometry/props.js';
 import { PROPS_KIT } from './geometry/props-kit.js';
 import { FIT_LIMITS, fitClearances } from './geometry/fit-test.js';
 import { TYRE_BRIDGE_LIMITS, tyreOpening } from './geometry/tyre-bridge.js';
-import { PICNIC_LIMITS } from './geometry/picnic.js';
+import { PERGOLA, PICNIC_LIMITS } from './geometry/picnic.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
 import { WALKWAY_LIMITS } from './geometry/walkway.js';
 import { BAYS as BAY_KIT, BAY_TYPES, PIT_BAYS_LIMITS } from './geometry/pit-bays.js';
@@ -366,7 +366,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('qCount', 'Tables in the row', 1, PICNIC_LIMITS.count, '')}
       ${field('qLength', 'Length of each', 60, PICNIC_LIMITS.length)}
       ${field('qGap', 'Gap between them', 15, PICNIC_LIMITS.gap)}
-      <p class="bd-hint">A top and a seat each side, of planks with gaps between them, joined by cleats underneath, on two A-frame ends set in from the ends. The top and the seats print upside down, their planks on the plate; the ends print flat.</p></section>
+      <label class="bd-check"><input type="checkbox" name="qPergola"><span>A pergola over them</span></label>
+      <p class="bd-hint">A top and a seat each side, of planks with gaps between them, joined by cleats underneath, on two A-frame ends set in from the ends. The top and the seats print upside down, their planks on the plate; the ends print flat. A pergola stands over the row: a frame of posts under a beam along each side and a roof of slats across them, in bays of at most ${PERGOLA.longest} mm, all printing flat.</p></section>
     <section class="bd-box" data-bd-card="tyre" data-bd-tyre hidden><h3>Tyre bridge</h3>
       ${field('ySpan', 'Span at the table', 340, TYRE_BRIDGE_LIMITS.span)}
       ${field('yHeight', 'Height', 130, TYRE_BRIDGE_LIMITS.height)}
@@ -450,10 +451,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="gParapet"><span>A parapet in front of the first row</span></label>
       <label class="bd-row" data-bd-stand-build><span>Built of</span><select name="gBuild"><option value="shell">A stepped shell</option><option value="frames">Decks on braced frames</option></select></label>
       <label class="bd-row" data-bd-stand-straight-benches><span>Benches</span><select name="gBenchStyle"><option value="block">Moulded into the rows</option><option value="wood">Wooden, of planks</option></select></label>
-      <p class="bd-hint" data-bd-stand-size></p></section>
+      <p class="bd-hint" data-bd-grandstand-size></p></section>
     <section class="bd-box" data-bd-card="standFrame" data-bd-stand hidden><h3>Frame, stairs and railings</h3>
       <div data-bd-stand-straight>
       ${field('gRaised', 'Raised on frames', 0, GRANDSTAND_LIMITS.raised)}
+      ${field('gUpper', 'Upper tier rows', 0, GRANDSTAND_LIMITS.upperTier, '')}
       <label class="bd-row"><span>Staircase</span><select name="gStairs"><option value="none">None</option><option value="left">At the left end</option><option value="right">At the right end</option><option value="both">At both ends</option></select></label>
       <label class="bd-check"><input type="checkbox" name="gRailings"><span>Railings round the sides and the back</span></label>
       </div>
@@ -664,11 +666,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function fillPicnic(k) {
     const e = form.elements;
     for (const [n, key] of PICNIC_FIELDS) e[n].value = k[key];
+    e.qPergola.checked = k.pergola;
   }
   function readPicnic() {
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
-    const k = { kind: 'picnic' };
+    const k = { kind: 'picnic', pergola: e.qPergola.checked };
     for (const [n, key] of PICNIC_FIELDS) k[key] = num(e[n]);
     return k;
   }
@@ -999,6 +1002,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.gParapet.checked = g.parapet;
     e.gBuild.value = g.build;
     e.gRaised.value = g.raised;
+    e.gUpper.value = g.upperTier;
     e.gStairs.value = g.stairs;
     e.gRailings.checked = g.railings;
     e.gRoof.value = g.roof;
@@ -1021,9 +1025,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[data-bd-stand-build]').hidden = !!g.curve;
     $('[data-bd-stand-frame-hint]').textContent = g.curve
       ? 'Frames, a staircase and railings are for a straight grandstand.'
-      : 'Raised, the stand stands on braced frames: one along the front and one along the back under each section, and one across at each end and each joint, its top pushed up into the hollow of the shell, which holds it square. They print flat. A staircase climbs an end from the table to the last row and prints on its side. The side railings are part of the end panels; the back railing is glued on the back of the back wall, a panel for each section, printing flat.';
-    $('[data-bd-stand-size]').textContent =
-      g.rows + ' rows, ' + fmt(g.length) + ' mm long and ' + fmt(standDepth(g)) + ' mm deep. The front row is ' + fmt(g.frontHeight) + ' mm up' + (g.parapet ? ', behind a parapet' : ', open in front') + '; each row is ' + fmt(g.rowRise) + ' mm higher.';
+      : 'Raised, the stand stands on braced frames: one along the front and one along the back under each section, and one across at each end and each joint, its top pushed up into the hollow of the shell, which holds it square. They print flat. A staircase climbs an end from the table to the last row and prints on its side. The side railings are part of the end panels; the back railing is glued on the back of the back wall, a panel for each section, printing flat. An upper tier stands behind the stand on frames of its own, its first row level with the top of the back wall in front of it; the staircases and railings are then the upper tier’s.';
+    $('[data-bd-grandstand-size]').textContent =
+      g.rows + ' rows' + (g.upperTier ? ' and ' + g.upperTier + ' more on an upper tier behind' : '') + ', ' + fmt(g.length) + ' mm long and ' + fmt(g.upperTier ? standExtent(g)[3] : standDepth(g)) + ' mm deep. The front row is ' + fmt(g.frontHeight) + ' mm up' + (g.parapet ? ', behind a parapet' : ', open in front') + '; each row is ' + fmt(g.rowRise) + ' mm higher.';
   }
   function readStand() {
     const e = form.elements;
@@ -1043,6 +1047,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       parapet: e.gParapet.checked,
       build: building.curve ? 'shell' : e.gBuild.value,
       raised: building.curve ? 0 : num(e.gRaised),
+      upperTier: building.curve ? 0 : num(e.gUpper),
       stairs: building.curve ? 'none' : e.gStairs.value,
       railings: !building.curve && e.gRailings.checked,
       roof: e.gRoof.value,
@@ -2106,7 +2111,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const next = readStand();
         next.curve = b.dataset.bdStandShape === 'curved' ? { radius: Number(form.elements.gRadius.value) || 450, angle: Number(form.elements.gAngle.value) || 45, facing: form.elements.gFacing.value || 'in' } : null;
         // Curved: no frames, staircases or railings.
-        if (next.curve) Object.assign(next, { raised: 0, stairs: 'none', railings: false, benchStyle: 'block', build: 'shell' });
+        if (next.curve) Object.assign(next, { raised: 0, upperTier: 0, stairs: 'none', railings: false, benchStyle: 'block', build: 'shell' });
         fitted = false;
         await rebuild(next);
         drawStand();

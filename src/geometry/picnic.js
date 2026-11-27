@@ -14,6 +14,9 @@ export const PICNIC_DEFAULTS = Object.freeze({
   length: 60,
   count: 1, // tables in a row
   gap: 15, // between two
+  // A pergola over the row: a frame of posts and a beam along each side and
+  // a roof of slats across on them, in bays of at most PERGOLA.longest.
+  pergola: false,
 });
 export const PICNIC_LIMITS = Object.freeze({
   length: [40, 150],
@@ -27,6 +30,12 @@ export const PICNIC = Object.freeze({
   leg: 3, // a leg, wide
   foot: 3, // a leg's foot in from the outside of the seats
 });
+// The pergola: beyond the row at its ends and at its sides; its posts square
+// and its beam high, the top of the beam this high; the slats wide, thick,
+// this far apart and this far beyond the frames; the rail over each frame and
+// the batten under it inside the frame, wide and deep, and the play there; a
+// bay at most this long.
+export const PERGOLA = Object.freeze({ margin: [12, 20], post: 5, beam: 7, height: 84, slat: [6, 3], pitch: 14, reach: 6, batten: [3, 3], play: 0.2, longest: 180 });
 const LABELS = { length: 'Length', count: 'Tables', gap: 'Gap' };
 
 /** The picnic table as kept: known settings only, each checked. */
@@ -36,13 +45,37 @@ export function validatePicnic(input) {
   for (const [key, [min, max]] of Object.entries(PICNIC_LIMITS))
     if (!Number.isFinite(p[key]) || p[key] < min || p[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (key === 'count' ? '' : ' mm') + '.');
   if (!Number.isInteger(p.count)) throw Error('Tables are a whole number.');
+  if (typeof p.pergola !== 'boolean') throw Error('Choose whether a pergola stands over the tables.');
   return p;
 }
 
 /** Where each table starts along the row. */
 export const picnicStarts = (p) => Array.from({ length: p.count }, (_, k) => k * (p.length + p.gap));
-/** The row on the table, [x0, y0, x1, y1]. */
-export const picnicFootprint = (p) => [0, 0, p.count * p.length + (p.count - 1) * p.gap, PICNIC.depth];
+/** The row on the table, [x0, y0, x1, y1]: with its pergola, out to the posts. */
+export function picnicFootprint(p) {
+  const X = p.count * p.length + (p.count - 1) * p.gap;
+  if (!p.pergola) return [0, 0, X, PICNIC.depth];
+  const [mx, my] = PERGOLA.margin;
+  return [-mx, -my, X + mx, PICNIC.depth + my];
+}
+/** The bays of the pergola along the row, [x0, x1] each, all as long. */
+export function pergolaBays(p) {
+  if (!p.pergola) return [];
+  const [x0, , x1] = picnicFootprint(p);
+  const n = Math.max(1, Math.ceil((x1 - x0) / PERGOLA.longest - 1e-9)),
+    m = (x1 - x0) / n;
+  return Array.from({ length: n }, (_, k) => [x0 + k * m, x0 + (k + 1) * m]);
+}
+const pergolaParts = (p) =>
+  pergolaBays(p).flatMap((_, k, all) => {
+    const n = all.length > 1 ? ' ' + (k + 1) : '',
+      id = (s) => s + (all.length > 1 ? '-' + (k + 1) : '');
+    return [
+      { id: id('pergola-front'), name: 'Pergola frame, front' + n, role: 'frame' },
+      { id: id('pergola-back'), name: 'Pergola frame, back' + n, role: 'frame' },
+      { id: id('pergola-roof'), name: 'Pergola roof' + n, role: 'roof' },
+    ];
+  });
 
 /** The parts of the picnic tables, without geometry. */
 export function picnicLayout(input) {
@@ -59,6 +92,7 @@ export function picnicLayout(input) {
       { id: id('end-right'), name: 'End' + n + ', right', role: 'frame' },
     );
   });
+  parts.push(...pergolaParts(p));
   return { building: p, parts };
 }
 
@@ -114,6 +148,40 @@ export function buildPicnic(wasm, input) {
       for (const [side, a, out] of [['left', x0 + I, [-1, 0, 0]], ['right', x0 + L - I - et, [1, 0, 0]]])
         parts.push({ id: id('end-' + side), name: 'End' + n + ', ' + side, role: 'frame', solid: sweep(endCs, [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], a, a + et), outward: out, apart: [out[0] * 6, 0, 0] });
     });
+    // The pergola: in each bay a frame along the front and the back, posts at
+    // its ends (and its middle, a long bay) under a beam, printing flat; on
+    // them a roof of slats across, joined by a rail over each frame, in one
+    // layer that prints flat, a batten under each rail just inside its frame.
+    if (p.pergola) {
+      const P = PERGOLA,
+        [, y0, , y1] = picnicFootprint(p),
+        [sw, st] = P.slat,
+        [bw, bh] = P.batten;
+      const H = P.height,
+        zb = H - P.beam;
+      const bays = pergolaBays(p);
+      pergolaParts(p).forEach((q, i) => {
+        const [a, c] = bays[Math.floor(i / 3)];
+        const kind = q.id.split('-')[1];
+        if (kind === 'roof') {
+          const count = Math.max(2, Math.floor((c - a - sw) / P.pitch) + 1),
+            step = (c - a - sw) / (count - 1);
+          const bits = Array.from({ length: count }, (_, k) => box(a + k * step, y0 - P.reach, H, a + k * step + sw, y1 + P.reach, H + st));
+          const inner = P.post + P.play + bw;
+          bits.push(box(a, y0, H, c, y0 + inner, H + st), box(a, y1 - inner, H, c, y1, H + st));
+          bits.push(box(a + 1, y0 + P.post + P.play, H - bh, c - 1, y0 + inner, H + 0.01), box(a + 1, y1 - inner, H - bh, c - 1, y1 - P.post - P.play, H + 0.01));
+          parts.push({ ...q, solid: own(wasm.Manifold.union(bits)), flip: true, apart: [0, 0, 20] });
+          return;
+        }
+        const front = kind === 'front',
+          ya = front ? y0 : y1 - P.post;
+        const xs = [a, c - P.post];
+        if (c - a > 100) xs.push((a + c) / 2 - P.post / 2);
+        const bits = xs.map((x) => box(x, ya, 0, x + P.post, ya + P.post, zb + 0.01));
+        bits.push(box(a, ya, zb, c, ya + P.post, H));
+        parts.push({ ...q, solid: own(wasm.Manifold.union(bits)), outward: [0, front ? -1 : 1, 0], apart: [0, front ? -12 : 12, 0] });
+      });
+    }
     const keep = new Set(parts.map((q) => q.solid));
     for (const s of temp) if (!keep.has(s)) s.delete();
     return parts;

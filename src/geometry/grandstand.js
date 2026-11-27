@@ -37,6 +37,11 @@ export const GRANDSTAND_DEFAULTS = Object.freeze({
   raised: 0, // the stand on braced frames this high, or 0 on the table
   stairs: 'none', // a staircase up an end: 'none', 'left', 'right' or 'both'
   railings: false, // railings round the sides and the back
+  // An upper tier of this many rows behind the stand, raised on braced
+  // frames so its first row is level with the top of the lower one's back
+  // wall: the staircases and railings are the upper tier's (a straight
+  // shell stand on the table, open to the sky).
+  upperTier: 0,
 });
 export const GRANDSTAND_LIMITS = Object.freeze({
   length: [60, 1500],
@@ -49,6 +54,7 @@ export const GRANDSTAND_LIMITS = Object.freeze({
   roofHeight: [30, 120],
   sectionLength: [40, 300],
   raised: [0, 100],
+  upperTier: [0, 12],
 });
 export const STAND = Object.freeze({
   shell: 3, // the stepped shell, the parapet and the back wall
@@ -78,6 +84,7 @@ const LABELS = {
   roofHeight: 'Canopy height',
   sectionLength: 'Section length',
   raised: 'Raised',
+  upperTier: 'Upper tier rows',
 };
 
 /** The grandstand as kept: known settings only, each checked. */
@@ -85,8 +92,8 @@ export function validateGrandstand(input) {
   const g = { ...GRANDSTAND_DEFAULTS, ...(input && typeof input === 'object' ? input : {}) };
   for (const key of Object.keys(g)) if (!Object.hasOwn(GRANDSTAND_DEFAULTS, key)) throw Error('The grandstand has an unknown setting: ' + key + '.');
   for (const [key, [min, max]] of Object.entries(GRANDSTAND_LIMITS))
-    if (!Number.isFinite(g[key]) || g[key] < min || g[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (key === 'rows' || key === 'aisles' ? '' : ' mm') + '.');
-  if (!Number.isInteger(g.rows) || !Number.isInteger(g.aisles)) throw Error('Rows and aisles are whole numbers.');
+    if (!Number.isFinite(g[key]) || g[key] < min || g[key] > max) throw Error(LABELS[key] + ' must be between ' + min + ' and ' + max + (['rows', 'aisles', 'upperTier'].includes(key) ? '' : ' mm') + '.');
+  if (!Number.isInteger(g.rows) || !Number.isInteger(g.aisles) || !Number.isInteger(g.upperTier)) throw Error('Rows, aisles and the rows of an upper tier are whole numbers.');
   if (typeof g.seats !== 'boolean') throw Error('Choose whether the rows have benches.');
   if (typeof g.backrests !== 'boolean' || typeof g.railings !== 'boolean') throw Error('Choose whether the benches have backs and the stand railings.');
   if (g.backrests && !g.seats) throw Error('Backs are for benches: choose benches too.');
@@ -122,6 +129,11 @@ export function validateGrandstand(input) {
     g.length = Math.round(((c.radius * c.angle * Math.PI) / 180) * 10) / 10;
     g.curve = { ...c };
   }
+  if (g.upperTier) {
+    if (g.curve !== null || g.build !== 'shell' || g.raised || g.roof !== 'none') throw Error('An upper tier is for a straight stand of a stepped shell, on the table and open to the sky.');
+    const r = upperRaise(g);
+    if (r < 20 || r > GRANDSTAND_LIMITS.raised[1]) throw Error('The upper tier would stand ' + Math.round(r) + ' mm up on its frames: keep it between 20 and ' + GRANDSTAND_LIMITS.raised[1] + ' mm, with fewer or lower rows below.');
+  }
   const room = (g.length - g.aisles * STAND.aisle) / (g.aisles + 1);
   if (room < 20) throw Error('Too many aisles for a grandstand ' + g.length + ' mm long: at most ' + Math.max(0, Math.floor((g.length - 20) / (STAND.aisle + 20))) + '.');
   return g;
@@ -144,7 +156,7 @@ export function sizeLine(b) {
   if (b.kind === 'flagpost') return "Flag waver's post · " + Math.round(b.width) + ' wide, ' + Math.round(b.height) + ' mm up';
   if (b.kind === 'marshalpost') return (b.deckHeight > 0 ? 'Marshal post' : 'Marshal shelter') + ' · ' + Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
   if (b.kind !== 'grandstand') return Math.round(b.width) + ' × ' + Math.round(b.depth) + ' mm';
-  return b.rows + ' rows · ' + Math.round(b.length) + ' mm' + (b.curve ? ' · curved' : '');
+  return b.rows + ' rows' + (b.upperTier ? ' and ' + b.upperTier + ' on an upper tier' : '') + ' · ' + Math.round(b.length) + ' mm' + (b.curve ? ' · curved' : '');
 }
 
 /** How high the front wall stands above the bottom of the shell: up to the first row, and the parapet above it. */
@@ -153,8 +165,20 @@ const frontWall = (g) => g.frontHeight + (g.parapet ? STAND.parapet : 0);
 export const standDepth = (g) => STAND.shell + g.rows * g.rowDepth + STAND.shell;
 /** How high its back wall stands above the bottom of the shell: above the last row, or up to the canopy. */
 const wallTop = (g) => g.frontHeight + (g.rows - 1) * g.rowRise + (g.roof === 'canopy' ? g.roofHeight : g.backHeight);
-/** How high its back wall stands above the table, raised or not. */
-export const standHeight = (g) => g.raised + wallTop(g);
+/** How high its back wall stands above the table, raised or not; with an upper tier, the upper one's. */
+export const standHeight = (g) => (g.upperTier ? standHeight(tiers(g).upper) : g.raised + wallTop(g));
+/** How high the frames raise an upper tier: its first row level with the top of the lower tier's back wall. */
+const upperRaise = (g) => wallTop(g) - g.frontHeight;
+/**
+ * A stand with an upper tier as two stands: the lower one on the table,
+ * without staircases or railings; the upper one behind it, raised, with
+ * them. The upper one is as built at y 0: it stands `behind` further back.
+ */
+export function tiers(g) {
+  const lower = { ...g, upperTier: 0, stairs: 'none', railings: false };
+  const upper = { ...g, upperTier: 0, rows: g.upperTier, raised: upperRaise(g) };
+  return { lower, upper, behind: standDepth(lower) };
+}
 /** Which ends have a staircase. */
 export const stairEnds = (g) => ({ none: [], left: ['left'], right: ['right'], both: ['left', 'right'] })[g.stairs];
 /**
@@ -171,6 +195,12 @@ export function standStair(g) {
 }
 /** A straight stand's outline on the table, [x0, y0, x1, y1]: its staircases beside it, its back railing behind. */
 export function standExtent(g) {
+  if (g.upperTier) {
+    const { lower, upper, behind } = tiers(g);
+    const a = standExtent(lower),
+      b = standExtent(upper);
+    return [Math.min(a[0], b[0]), Math.min(a[1], b[1] + behind), Math.max(a[2], b[2]), b[3] + behind];
+  }
   const ends = stairEnds(g),
     S = STAND.stair.width;
   const x0 = ends.includes('left') ? -S : 0,
@@ -295,6 +325,11 @@ function frameSpans(g) {
 export function grandstandLayout(input) {
   const g = validateGrandstand(input);
   if (g.build === 'frames') return framedLayout(g);
+  if (g.upperTier) {
+    const { lower, upper } = tiers(g);
+    const below = grandstandLayout(lower);
+    return { building: g, parts: [...below.parts, ...grandstandLayout(upper).parts.map(upperPart)], sections: below.sections };
+  }
   const sections = sectionSpans(g);
   const parts = sections.map((_, i) => ({ id: 'stand-' + (i + 1), name: 'Grandstand section ' + (i + 1) + ' of ' + sections.length, role: 'wall' }));
   parts.push({ id: 'end', name: 'End panel', role: 'wall' });
@@ -489,10 +524,33 @@ function buildFramed(wasm, g) {
   }
 }
 
+/** A part of the upper tier: its id and name marked so. */
+const upperPart = (p) => ({ ...p, id: 'upper-' + p.id, name: 'Upper tier, ' + p.name[0].toLowerCase() + p.name.slice(1) });
+
 export function buildGrandstand(wasm, input) {
   const { Manifold, CrossSection } = wasm;
   const { building: g, sections } = grandstandLayout(input);
   if (g.build === 'frames') return buildFramed(wasm, g);
+  if (g.upperTier) {
+    const { lower, upper, behind } = tiers(g);
+    const below = buildGrandstand(wasm, lower);
+    let above;
+    try {
+      above = buildGrandstand(wasm, upper);
+    } catch (e) {
+      for (const p of below) p.solid.delete();
+      throw e;
+    }
+    // The upper tier behind the lower one, set apart further back when the parts are spread.
+    return [
+      ...below,
+      ...above.map((p) => {
+        const solid = p.solid.translate([0, behind, 0]);
+        p.solid.delete();
+        return { ...upperPart(p), solid, apart: [p.apart?.[0] ?? 0, (p.apart?.[1] ?? 0) + 30, p.apart?.[2] ?? 0] };
+      }),
+    ];
+  }
   const temp = [];
   const own = (s) => (temp.push(s), s);
   const cs = (rects) => own(new CrossSection(rects.map(([a, b, c, d]) => [[a, b], [c, b], [c, d], [a, d]]), 'Positive'));
