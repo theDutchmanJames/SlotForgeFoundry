@@ -8,6 +8,7 @@
 
 import { kitShapes } from './kit-shapes.js';
 import { LETTERING, fitHeight, raisedText, textWidth } from './lettering.js';
+import { MORE_PARTS, MORE_PROPS, buildMoreProp } from './props-more.js';
 
 /** The props: id, name, group, size [width, depth, height] in mm. */
 export const PROPS = Object.freeze([
@@ -35,6 +36,7 @@ export const PROPS = Object.freeze([
   { id: 'chevron-right', name: 'Chevrons, right', group: 'Signs', size: [30, 10, 26] },
   { id: 'pit-in', name: 'Pit in sign', group: 'Signs', size: [36, 10, 28] },
   { id: 'pit-out', name: 'Pit out sign', group: 'Signs', size: [36, 10, 28] },
+  ...MORE_PROPS,
 ]);
 /** The props of several parts, and what each part is called. */
 export const PROP_PARTS = Object.freeze({
@@ -43,6 +45,7 @@ export const PROP_PARTS = Object.freeze({
   'pit-board': ['board', 'foot'],
   parasol: ['canopy', 'pole', 'foot'],
   ...Object.fromEntries(['brake-150', 'brake-100', 'brake-50', 'chevron-left', 'chevron-right', 'pit-in', 'pit-out'].map((id) => [id, ['board', 'foot']])),
+  ...MORE_PARTS,
 });
 export const PROP_IDS = PROPS.map((p) => p.id);
 export const propOf = (id) => PROPS.find((p) => p.id === id);
@@ -75,6 +78,8 @@ export function propParts(wasm, own, type) {
     onBack = [0, -90]; // the back face down, the front up
   const parts = [];
   const add = (key, name, solid, pose = flat) => parts.push({ key, name, solid, pose });
+  // The props of the second set, drawn in their own module.
+  if (buildMoreProp(type, { W, D, H, box, sweep, turned, minus, union, add, own, wasm, onBack, name: prop.name })) return parts;
 
   if (type === 'tyre-stack' || type === 'tyre') {
     // Tyres one on another, a V between each two; a bore through them all.

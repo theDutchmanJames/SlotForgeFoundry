@@ -846,7 +846,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     e.eStyle.value = k.style;
   }
   // The props kit: a row for each kind of prop, how many.
-  const propOptions = (chosen) => PROPS.map((p) => `<option value="${p.id}"${p.id === chosen ? ' selected' : ''}>${p.name}</option>`).join('');
+  // The props to choose from, in their groups.
+  const propOptions = (chosen) =>
+    [...new Set(PROPS.map((p) => p.group))]
+      .map((g) => `<optgroup label="${g}">${PROPS.filter((p) => p.group === g).map((p) => `<option value="${p.id}"${p.id === chosen ? ' selected' : ''}>${p.name}</option>`).join('')}</optgroup>`)
+      .join('');
   function fillProps(k) {
     $('.bd-props-items').innerHTML = k.items
       .map((it, i) => `<div class="bd-room"><label class="bd-row"><span>Prop</span><select name="pk-type-${i}">${propOptions(it.type)}</select></label>${field('pk-count-' + i, 'How many', it.count, [1, PROPS_KIT.most], '')}${k.items.length > 1 ? `<button type="button" class="bd-remove" data-bd-remove-item="${i}" title="Remove" aria-label="Remove prop ${i + 1}">${icon('close')}</button>` : ''}</div>`)

@@ -1384,6 +1384,67 @@ const PRESETS = [
     building: {'kind': 'stage', 'width': 162.0, 'depth': 104.0, 'height': 13, 'ramps': 'ends', 'rampLength': 100, 'backdrop': true, 'backdropHeight': 75, 'backdropText': 'WINNER'},
   },
   // Scaleform town and car buildings: end
+  // Props kits for the second set of props.
+  {
+    id: 'props-garage',
+    name: 'Garage props',
+    note: 'A bench vise, an oil drain, an engine on its stand, an air compressor, a wheel balancer, a hydraulic press and a two-post lift',
+    building: { kind: 'props', items: [{ type: 'vise', count: 1 }, { type: 'oil-drain', count: 1 }, { type: 'engine-stand', count: 1 }, { type: 'compressor', count: 1 }, { type: 'balancer', count: 1 }, { type: 'press', count: 1 }, { type: 'car-lift', count: 1 }] },
+  },
+  {
+    id: 'props-pitcrew',
+    name: 'Pit crew kit',
+    note: 'Quick jacks, a bottle cart, a cooling fan, a hose reel, tyres in their warmers, wheel guns, a tyre rack and a pit wall stand',
+    building: { kind: 'props', items: [{ type: 'quick-jack', count: 2 }, { type: 'bottle-cart', count: 1 }, { type: 'cooling-fan', count: 1 }, { type: 'hose-reel', count: 1 }, { type: 'tyre-warmer', count: 4 }, { type: 'wheel-gun', count: 2 }, { type: 'tyre-rack', count: 1 }, { type: 'pit-perch', count: 1 }] },
+  },
+  {
+    id: 'props-grid',
+    name: 'Grid and marshals',
+    note: 'A lollipop board, the starter’s rostrum, spare wings, helmets, a marshal light panel, a TV camera, a tow dolly and a spill kit',
+    building: { kind: 'props', items: [{ type: 'lollipop', count: 1 }, { type: 'starter-stand', count: 1 }, { type: 'wing-stand', count: 1 }, { type: 'helmet', count: 2 }, { type: 'light-panel', count: 1 }, { type: 'tv-camera', count: 1 }, { type: 'tow-dolly', count: 1 }, { type: 'spill-bin', count: 1 }] },
+  },
+  {
+    id: 'props-scrutineering',
+    name: 'Scrutineering kit',
+    note: 'A width gauge arch, a ride height sled, a pyrometer case, a fuel sample bench and a wheel alignment stand',
+    building: { kind: 'props', items: [{ type: 'width-arch', count: 1 }, { type: 'height-sled', count: 1 }, { type: 'pyrometer', count: 1 }, { type: 'sample-bench', count: 1 }, { type: 'alignment', count: 2 }] },
+  },
+  {
+    id: 'props-slotcars',
+    name: 'Slot car racing kit',
+    note: 'Hand controllers, a power supply, a tyre truer, a setup board, a pinion puller and a pit box',
+    building: { kind: 'props', items: [{ type: 'controllers', count: 2 }, { type: 'power-supply', count: 1 }, { type: 'tyre-truer', count: 1 }, { type: 'setup-board', count: 1 }, { type: 'pinion-puller', count: 1 }, { type: 'pit-case', count: 2 }] },
+  },
+  {
+    id: 'props-circuit',
+    name: 'Circuit furniture',
+    note: 'Crash barriers, a tyre wall, a catch fence, a pit wall section, a position pylon, a circuit clock, a flag rack, a PA speaker, a trestle, a ladder and steps',
+    building: { kind: 'props', items: [{ type: 'crash-barrier', count: 2 }, { type: 'tyre-wall', count: 1 }, { type: 'catch-fence', count: 1 }, { type: 'pit-wall', count: 1 }, { type: 'pylon', count: 1 }, { type: 'circuit-clock', count: 1 }, { type: 'flag-rack', count: 1 }, { type: 'pa-speaker', count: 1 }, { type: 'trestle', count: 1 }, { type: 'ladder', count: 1 }, { type: 'steps', count: 1 }, { type: 'sign-board', count: 1 }] },
+  },
+  {
+    id: 'props-interiors',
+    name: 'Furniture',
+    note: 'Chairs, shelves, a fireplace, bench seats, tables and a counter to furnish a building',
+    building: { kind: 'props', items: [{ type: 'chair', count: 4 }, { type: 'shelves', count: 1 }, { type: 'fireplace', count: 1 }, { type: 'seat', count: 2 }, { type: 'table', count: 2 }, { type: 'counter', count: 1 }] },
+  },
+  {
+    id: 'props-architecture',
+    name: 'Architectural details',
+    note: 'Columns, stepped buttresses, an arch, chimney pots, a battlement, roof vents, a water tank and sci-fi pillars',
+    building: { kind: 'props', items: [{ type: 'column', count: 2 }, { type: 'buttress', count: 2 }, { type: 'arch', count: 1 }, { type: 'chimney-pot', count: 3 }, { type: 'battlement', count: 1 }, { type: 'roof-vent', count: 2 }, { type: 'water-tank', count: 1 }, { type: 'scifi-pillar', count: 1 }] },
+  },
+  {
+    id: 'props-street',
+    name: 'Street furniture',
+    note: 'A picket fence, a retaining wall, a railing, a gate, street lamps, barrels, a planter, a ruined wall and a name plate',
+    building: { kind: 'props', items: [{ type: 'picket-fence', count: 1 }, { type: 'retaining-wall', count: 1 }, { type: 'railing', count: 1 }, { type: 'gate', count: 1 }, { type: 'street-lamp', count: 2 }, { type: 'barrel', count: 2 }, { type: 'planter', count: 1 }, { type: 'ruined-wall', count: 1 }, { type: 'nameplate', count: 1 }] },
+  },
+  {
+    id: 'props-shapes',
+    name: 'Shapes and scale',
+    note: 'A block, a cylinder, a cone, a dome, a vault and a wedge to build with; a figure and a car at 1:32, a trophy and a jerry can',
+    building: { kind: 'props', items: [{ type: 'shape-block', count: 1 }, { type: 'shape-cylinder', count: 1 }, { type: 'shape-cone', count: 1 }, { type: 'shape-dome', count: 1 }, { type: 'shape-vault', count: 1 }, { type: 'shape-wedge', count: 1 }, { type: 'figure', count: 2 }, { type: 'car-block', count: 1 }, { type: 'trophy', count: 1 }, { type: 'jerry-can', count: 2 }] },
+  },
 ];
 
 // The words on them: plain names of what they are, as a circuit letters its
@@ -1436,5 +1497,5 @@ export const PRESET_GROUPS = Object.freeze([
   // Scaleform town and car groups
   ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'courtyard-inn', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'guildhall', 'ruined-townhouse', 'room-box']],
   ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'wind-tunnel', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-audio-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane']],
-  ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking']],
+  ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking', 'props-garage', 'props-pitcrew', 'props-grid', 'props-scrutineering', 'props-slotcars', 'props-circuit', 'props-interiors', 'props-architecture', 'props-street', 'props-shapes']],
 ]);
