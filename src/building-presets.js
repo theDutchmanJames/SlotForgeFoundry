@@ -285,7 +285,7 @@ const PRESETS = [
       overhangBack: 5,
       overhangLeft: 4,
       overhangRight: 4,
-      openings: [{ ...door('front', 24), step: true, leaf: 'panels' }, trims(panes('front', 72, 44, 28, 14, 4, 2)), trims(panes('left', 40, 44, 28, 14, 4, 2)), trims(panes('right', 40, 44, 28, 14, 4, 2))],
+      openings: [{ ...door('front', 24), step: true, leaf: 'panels' }, trims(panes('front', 72, 44, 28, 10, 4, 2)), trims(panes('left', 40, 44, 28, 10, 4, 2)), trims(panes('right', 40, 44, 28, 10, 4, 2))],
       chimney: { x: 55, y: 62, width: 10, depth: 8, height: 12 }, gutters: true, downpipes: 'left',
     },
   },

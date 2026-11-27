@@ -580,11 +580,6 @@ export function validateBuilding(input) {
   if (!Number.isInteger(b.firstNumber) || b.firstNumber < 0 || b.firstNumber > 99 - 23) throw Error('The first bay number must be a whole number from 0 to 76.');
   if (!ROOFS.some(([id]) => id === b.roof)) throw Error('Choose a roof from the list.');
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
-  if (b.roof === 'hip' || b.roof === 'mansard') {
-    const top = b.upper.at(-1) ?? b;
-    const across = Math.max((top.width ?? b.width) + b.overhangLeft + b.overhangRight, (top.depth ?? b.depth) + b.overhangFront + b.overhangBack);
-    if (across > HIP_ACROSS) throw Error('A ' + (b.roof === 'hip' ? 'hip' : 'mansard') + ' roof is not cut to fit the plate: the top storey with its overhangs can be at most ' + HIP_ACROSS + ' mm across, not ' + fmtMm(across) + '.');
-  }
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
   Object.assign(b, checkFinish(b, WALLS, b.height));
   if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
@@ -629,7 +624,8 @@ export function validateBuilding(input) {
     const least = b.lane.width + 2 * KIT.laneClear;
     if (b.doorWidth < least - 1e-9) throw Error('The garage door is narrower than the track through it: make it at least ' + fmtMm(least) + ' mm wide.');
   }
-  if (!Array.isArray(b.upper) || b.upper.length > MAX_UPPER) throw Error('A building has at most ' + MAX_UPPER + ' storeys above the ground floor.');
+  if (!Array.isArray(b.upper)) throw Error('The storeys above the ground floor are a list, empty for none.');
+  if (b.upper.length > MAX_UPPER) throw Error('A building has at most ' + MAX_UPPER + ' storeys above the ground floor.');
   const several = b.upper.length > 0;
   // Windows and doors keep wall beside the garage doors, and beside each
   // dividing wall where it meets an outside wall.
@@ -681,8 +677,9 @@ export function validateBuilding(input) {
     if (b.numbers && doors.length) throw Error('The sign and the bay numbers both go above the garage doors: choose one.');
     if (b.door !== 'none' && b.doorHeight > under - 1) throw Error('The garage door reaches up under the sign: at most ' + fmtMm(under - 1) + ' mm high with a sign of ' + b.signHeight + ' mm.');
     for (const o of openings.filter((q) => q.wall === 'front')) {
-      const reach = o.sill + o.height + (o.frame ? KIT.trim : 0) + (o.flap ? HATCH.flapClear : 0);
-      if (reach > under) throw Error('The ' + openingName(o, openings).toLowerCase() + ' reaches up under the sign: its top can be at most ' + fmtMm(under - (o.frame ? KIT.trim : 0) - (o.flap ? HATCH.flapClear : 0)) + ' mm above the floor.');
+      // Its frame, its lintel and the room its flap takes, all under the sign.
+      const extra = (o.frame ? KIT.trim : 0) + overOf(o) + (o.flap ? HATCH.flapClear : 0);
+      if (o.sill + o.height + extra > under) throw Error('The ' + openingName(o, openings).toLowerCase() + (o.lintel ? ' with its lintel' : '') + ' reaches up under the sign: its top can be at most ' + fmtMm(under - extra) + ' mm above the floor.');
     }
   }
   // Each storey above stands on the one below, inside its walls.
@@ -715,6 +712,12 @@ export function validateBuilding(input) {
     below = s;
     return s;
   });
+  // A hip or mansard roof prints in whole panels: the top storey, its size now known, with its overhangs.
+  if (b.roof === 'hip' || b.roof === 'mansard') {
+    const top = upper.at(-1) ?? b;
+    const across = Math.max(top.width + b.overhangLeft + b.overhangRight, top.depth + b.overhangFront + b.overhangBack);
+    if (across > HIP_ACROSS) throw Error('A ' + (b.roof === 'hip' ? 'hip' : 'mansard') + ' roof is not cut to fit the plate: the top storey with its overhangs can be at most ' + HIP_ACROSS + ' mm across, not ' + fmtMm(across) + '.');
+  }
   checkAccess(b, [{ ...b, openings }, ...upper]);
   // A step in front of a door: on the ground floor, the building on the table.
   if (upper.some((s) => s.openings.some((o) => o.step))) throw Error('A step is for a door on the ground floor.');
@@ -766,10 +769,27 @@ function checkInsideClash(b) {
       return { storey: p.storey, name: 'prop ' + (b.props.indexOf(p) + 1), box: [p.x, p.y, p.x + fw, p.y + fd] };
     }),
   ];
+  const meets = (a, c) => a[0] < c[2] && c[0] < a[2] && a[1] < c[3] && c[1] < a[3];
+  const named = (t) => t.name[0].toUpperCase() + t.name.slice(1);
   for (const [i, a] of things.entries())
     for (const c of things.slice(i + 1))
-      if (a.storey === c.storey && a.box[0] < c.box[2] && c.box[0] < a.box[2] && a.box[1] < c.box[3] && c.box[1] < a.box[3])
+      if (a.storey === c.storey && meets(a.box, c.box))
         if (!(a.name.startsWith('Partition') && c.name.startsWith('Partition'))) throw Error(a.name + ' stands on ' + c.name.toLowerCase() + ': move one of them.');
+  // Each flight's stairwell, cut in the floor above as buildGarage cuts it: nothing stands over it.
+  const g = INSIDE.stair.well;
+  b.stairs.forEach((q, k) => {
+    const [x0, y0, x1, y1] = flightOf(b, q).box,
+      well = [x0 - g, y0 - g, x1 + g, y1 + g];
+    for (const t of things) if (t.storey === q.storey + 1 && meets(t.box, well)) throw Error(named(t) + ' stands over the stairwell of stairs ' + (k + 1) + ': move one of them.');
+  });
+  // Over a pit bay the track runs through the base, as wide as the cut through it: nothing on the ground floor stands over it.
+  if (b.lane) {
+    const half = b.lane.width / 2 + KIT.lanePlay,
+      lane = [b.width / 2 - half, -Infinity, b.width / 2 + half, b.depth - KIT.wall - b.play];
+    for (const t of things)
+      if (t.storey === 0 && meets(t.box, lane))
+        throw Error(named(t) + ' stands over the track through the garage: keep it out of the ' + fmtMm(2 * half) + ' mm in the middle of the floor.');
+  }
 }
 
 /**
@@ -859,8 +879,15 @@ function checkGableFront(b) {
   if (b.sign === 'fascia' || b.cornice) throw Error('The stepped gable covers the top of the front wall, where the sign or the cornice would be: choose one.');
   const all = storeyStack(b),
     top = all[all.length - 1];
+  // Under the board: each front opening with its frame, lintel and flap, and the lettering.
+  const under = top.height - GABLE_FRONT.glue - 1;
   for (const o of top.openings.filter((o) => o.wall === 'front'))
-    if (o.sill + o.height + (o.frame ? KIT.trim : 0) > top.height - GABLE_FRONT.glue - 1) throw Error('The stepped gable is glued over the top ' + GABLE_FRONT.glue + ' mm of the front wall: keep the ' + openingName(o, top.openings).toLowerCase() + ' under it.');
+    if (o.sill + o.height + (o.frame ? KIT.trim : 0) + overOf(o) + (o.flap ? HATCH.flapClear : 0) > under)
+      throw Error('The stepped gable is glued over the top ' + GABLE_FRONT.glue + ' mm of the front wall: keep the ' + openingName(o, top.openings).toLowerCase() + (o.lintel ? ', its lintel' : '') + (o.flap ? ', its flap' : '') + ' under it.');
+  top.lettering.forEach((l, i) => {
+    if (l.wall === 'front' && l.up + l.height / 2 > under - 1)
+      throw Error('The stepped gable is glued over the top ' + GABLE_FRONT.glue + ' mm of the front wall: keep lettering ' + (i + 1) + top.label + ' under it, its middle at most ' + fmtMm(under - 1 - l.height / 2) + ' mm up.');
+  });
 }
 /** The stepped gable's outline in the plane of the front wall: u along it, z up; each step clear of the roof over it. */
 export function gableFrontOutline(b) {
@@ -980,6 +1007,7 @@ function checkProps(b) {
   const props = checkPropList(b.props);
   const all = storeyStack(b);
   const inner = KIT.wall + b.play + PROP_GAP;
+  const outside = props.some((p) => p.storey < 0) ? tableParts(b) : [];
   const placed = [];
   props.forEach((p, i) => {
     const name = 'Prop ' + (i + 1) + ', the ' + propOf(p.type).name.toLowerCase();
@@ -997,6 +1025,9 @@ function checkProps(b) {
       const m = KIT.ledge + PROP_GAP;
       if (box[0] < b.width + m && box[2] > -m && box[1] < b.depth + m && box[3] > -m) throw Error(name + ' stands on the table outside: keep it ' + PROP_GAP + ' mm clear of the base.');
       if (box[0] < -150 || box[1] < -150 || box[2] > b.width + 150 || box[3] > b.depth + 150) throw Error(name + ' stands at most 150 mm from the building.');
+      for (const t of outside)
+        if (box[0] < t.box[2] + PROP_GAP && t.box[0] < box[2] + PROP_GAP && box[1] < t.box[3] + PROP_GAP && t.box[1] < box[3] + PROP_GAP)
+          throw Error(name + ' stands on the table where ' + t.name + ' is: keep it ' + PROP_GAP + ' mm clear.');
     }
     for (const q of placed)
       if (q.storey === p.storey && box[0] < q.box[2] + PROP_GAP && q.box[0] < box[2] + PROP_GAP && box[1] < q.box[3] + PROP_GAP && q.box[1] < box[3] + PROP_GAP)
@@ -1006,6 +1037,49 @@ function checkProps(b) {
   return props;
 }
 const q0 = (i, p) => 'prop ' + (i + 1) + ', the ' + propOf(p.type).name.toLowerCase();
+/**
+ * What stands on the table round the base, on the plan of the ground floor
+ * as buildGarage makes it: the steps in front of doors, the feet of the
+ * stand, and the way up the outside. Each { name, box: [x0, y0, x1, y1] }.
+ */
+function tableParts(b) {
+  const W = b.width,
+    D = b.depth,
+    m = KIT.ledge;
+  const out = [];
+  // A point u along a wall, n out from its face, on a storey of W × D at (ox, oy).
+  const at = (wall, u, n, w = W, d = D, ox = 0, oy = 0) =>
+    ({ front: [ox + u, oy - n], back: [ox + w - u, oy + d + n], left: [ox - n, oy + d - u], right: [ox + w + n, oy + u] })[wall];
+  const span = (wall, u0, u1, n0, n1, ...s) => {
+    const [a, c] = [at(wall, u0, n0, ...s), at(wall, u1, n1, ...s)];
+    return [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[0], c[0]), Math.max(a[1], c[1])];
+  };
+  const [reach, wider] = KIT.step;
+  for (const o of b.openings) if (o.step) out.push({ name: 'the step of the ' + openingName(o, b.openings).toLowerCase(), box: span(o.wall, o.at - o.width / 2 - wider, o.at + o.width / 2 + wider, m, m + reach) });
+  const pad = STAND.foot[1];
+  if (b.standType === 'legs') standFeet(b).forEach((box, i) => out.push({ name: 'the foot of the ' + LEG_NAMES[i] + ' leg', box }));
+  if (b.standType === 'frames') {
+    const [x0, y0, x1, y1] = standInside(b);
+    out.push({ name: 'the foot frame of the stand', box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad] });
+  }
+  if (b.standType === 'tower' || b.standType === 'column') {
+    const r = (b.standType === 'tower' ? b.standSize : b.standSize * (1 + b.standTaper / 100)) / 2 + pad;
+    out.push({ name: 'the foot of the ' + b.standType, box: [W / 2 - r, D / 2 - r, W / 2 + r, D / 2 + r] });
+  }
+  if (b.access !== 'none') {
+    const { against: s, rise, out: extra } = accessPlace(b, [b, ...b.upper]);
+    const relief = s.relief && (s.relief.plinth || s.relief.cornice || s.relief.pilasters) ? RELIEF.depth : 0;
+    const off = Math.max(KIT.ledge, extra, relief) + 0.2;
+    const where = [s.width, s.depth, s.ox, s.oy];
+    if (b.access === 'ladder') {
+      // From the wall out to its foot, and the thickness of its rails beyond.
+      const Q = ACCESS.ladder,
+        a = (Q.angle * Math.PI) / 180;
+      out.push({ name: 'the ladder', box: span(b.accessWall, b.accessAt - Q.width / 2, b.accessAt + Q.width / 2, off, off + rise / Math.tan(a) + Q.thick / Math.sin(a), ...where) });
+    } else out.push({ name: 'the staircase', box: span(b.accessWall, b.accessAt, b.accessAt + stairsOf(rise).run, off, off + ACCESS.stairs.width, ...where) });
+  }
+  return out;
+}
 
 /**
  * The chimney, the rooflights, the gutters and the downpipes: each over the
@@ -1394,8 +1468,9 @@ function checkLettering(list, s, doors, under, where) {
     if (z0 < foot || z1 > head) throw Error(name + ' is too low or too high on the wall: its middle between ' + fmtMm(foot + l.height / 2) + ' and ' + fmtMm(head - l.height / 2) + ' mm up.');
     const hits = (a0, c0, a1, c1) => u0 < a1 + 1 && u1 > a0 - 1 && z0 < c1 + 1 && z1 > c0 - 1;
     for (const o of s.openings.filter((q) => q.wall === l.wall)) {
-      const k = o.frame ? KIT.trim : 0;
-      if (hits(o.at - o.width / 2 - k, o.sill - (o.type === 'window' ? k : 0), o.at + o.width / 2 + k, o.sill + o.height + k)) throw Error(name + ' runs over the ' + openingName(o, s.openings).toLowerCase() + '.');
+      // Its frame, and beyond it its shutters, its sill ledge and its lintel.
+      const k = o.frame ? KIT.trim : 0, side = sideOf(o);
+      if (hits(o.at - o.width / 2 - k - side, o.sill - (o.type === 'window' ? k : 0) - underOf(o), o.at + o.width / 2 + k + side, o.sill + o.height + k + overOf(o))) throw Error(name + ' runs over the ' + openingName(o, s.openings).toLowerCase() + '.');
     }
     if (l.wall === 'front') for (const d of doors) if (hits(d.x, 0, d.x + d.width, d.height)) throw Error(name + ' runs over a garage door.');
     // The bay numbers' plaques, on the wall above the doors (under a balcony they hang from its edge instead).
