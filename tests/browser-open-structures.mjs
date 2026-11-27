@@ -59,12 +59,16 @@ try {
   await idle();
   assert.equal(await setting('br-wall-0').count(), 0);
 
-  // The room box: no front wall, no roof.
-  await host.locator('[data-bd-preset="room-box"]').click();
+  // A room box: a garage with its back wall and its roof left out.
+  await host.locator('[data-bd-preset="garage"]').click();
   await idle();
-  assert.equal(await setting('leave-front').isChecked(), true);
+  await setting('leave-back').check();
+  await idle();
+  await setting('leave-roof').check();
+  await idle();
+  assert.equal(await setting('leave-back').isChecked(), true);
   zip = await exportZip();
-  assert.ok(!stls(zip).some((n) => /front wall|roof/i.test(n)), stls(zip).join(', '));
+  assert.ok(!stls(zip).some((n) => /back wall|roof/i.test(n)), stls(zip).join(', '));
 
   // The forecourt canopy: its card; made a tent with screens at the ends.
   await host.locator('[data-bd-preset="forecourt-canopy"]').click();
@@ -94,7 +98,7 @@ try {
   zip = await exportZip();
   assert.ok(!stls(zip).some((n) => /Header|Pier/.test(n)));
   assert.deepEqual(errors, []);
-  console.log('PASS: a roof left out and a breach added, refused too deep and removed; the room box open in front; a forecourt canopy made a screened tent; a start ramp with and without its portal.');
+  console.log('PASS: a roof left out and a breach added, refused too deep and removed; a garage open at the back; a forecourt canopy made a screened tent; a start ramp with and without its portal.');
 } finally {
   await browser.close();
 }

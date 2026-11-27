@@ -14,11 +14,11 @@ const wasm = await Module();
 wasm.setup();
 const PLATE = { width: 200, depth: 200, margin: 0 };
 const LIBRARY = [
-  'scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda',
+  'scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'paddock-diner', 'timing-rotunda',
   'stand-bleachers', 'stand-terrace', 'stand-double', 'picnic-pergola', 'timber-pavilion', 'score-beacon',
-  'commentary-booth', 'ticket-office', 'starter-tower', 'marshal-lookout', 'press-gallery', 'endurance-pits', 'finish-bridge',
+  'commentary-booth', 'ticket-office', 'starter-tower', 'marshal-lookout', 'press-gallery', 'finish-bridge',
   // Its town and car buildings.
-  'corner-shop', 'village-station', 'canal-house', 'engineering-works', 'courtyard-inn', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'guildhall', 'drag-timing-booth', 'hillclimb-lodge', 'wind-tunnel', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-audio-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'ruined-townhouse', 'room-box', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane',
+  'corner-shop', 'village-station', 'canal-house', 'engineering-works', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'drag-timing-booth', 'hillclimb-lodge', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'ruined-townhouse', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane',
   // Its moving parts, machinery and scenery.
   'drive-in-screen', 'carport', 'carport-twin', 'banner-bridge', 'props-moving', 'props-machinery',
 ];

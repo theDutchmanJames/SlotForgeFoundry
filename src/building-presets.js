@@ -107,22 +107,10 @@ const PRESETS = [
     building: modernPits(3, 160),
   },
   {
-    id: 'pit-low',
-    name: 'Modern pits, low relief',
-    note: 'The same front, 80 mm deep, to stand against a wall',
-    building: modernPits(3, 80),
-  },
-  {
     id: 'pit-building',
     name: 'Pit building',
     note: 'Doors set back between columns, a balcony, glazing that leans out, a visor',
     building: { kind: 'pitmodule', bays: 3 },
-  },
-  {
-    id: 'pit-building-low',
-    name: 'Pit building, low relief',
-    note: 'The same front, 70 mm deep, to stand against a wall',
-    building: { kind: 'pitmodule', bays: 3, depth: 70 },
   },
   {
     id: 'pit-row-modern',
@@ -135,12 +123,6 @@ const PRESETS = [
     name: 'Pit garages with corporate boxes',
     note: 'Glazing set deep in a frame, a balcony over the lane',
     building: { kind: 'pitbays', types: ['box', 'box', 'box'] },
-  },
-  {
-    id: 'pit-boxes-low',
-    name: 'Pit garages with boxes, low relief',
-    note: 'The same front, 75 mm deep, to stand against a wall',
-    building: { kind: 'pitbays', types: ['box', 'box', 'box'], depth: 75, setBack: 10 },
   },
   {
     id: 'tower',
@@ -558,12 +540,6 @@ const PRESETS = [
     building: { width: 90, depth: 90, height: 40, baseHeight: 5, door: 'none', open: true, waist: 18, standType: 'tower', standHeight: 110, standSize: 70, access: 'ladder', accessWall: 'back', accessAt: 45, accessTo: 'base', overhangFront: 5, overhangBack: 5, overhangLeft: 5, overhangRight: 5 },
   },
   {
-    id: 'scaffold-tower',
-    name: 'Scaffold camera tower',
-    note: 'Braced steel frame walls, a deck on top behind a mesh railing',
-    building: { width: 80, depth: 80, height: 120, baseHeight: 4, door: 'none', wallStyle: 'braced', roofRailing: true, railingStyle: 'mesh', access: 'ladder', accessWall: 'right', accessAt: 40, accessTo: 'roof', overhangFront: 4, overhangBack: 4, overhangLeft: 4, overhangRight: 4 },
-  },
-  {
     id: 'press-tower',
     name: 'Press tower',
     note: 'An open room on a round column, a flat roof reaching out',
@@ -713,12 +689,6 @@ const PRESETS = [
     building: { kind: 'grandstand', build: 'frames', length: 120, rows: 2, aisles: 1, rowDepth: 20, rowRise: 14, frontHeight: 8, backrests: true, benchStyle: 'wood', parapet: false },
   },
   {
-    id: 'gantry-start',
-    name: 'Start gantry',
-    note: 'Two legs, a beam with five start lights and a board',
-    building: { kind: 'gantry', type: 'start' },
-  },
-  {
     id: 'gantry-lattice',
     name: 'Start gantry, lattice',
     note: 'Steel lattice legs and beam, a board on top',
@@ -765,12 +735,6 @@ const PRESETS = [
     name: 'Viewing platform, no stairs',
     note: 'The deck, frames and railings alone',
     building: { kind: 'platform', stair: 'none' },
-  },
-  {
-    id: 'walkway',
-    name: 'Walkway bridge',
-    note: 'A covered glazed walkway between two buildings, on legs',
-    building: { kind: 'walkway' },
   },
   {
     id: 'crosswalk-tower',
@@ -947,20 +911,6 @@ const PRESETS = [
     },
   },
   {
-    id: 'medical-centre',
-    name: 'Medical centre',
-    note: 'An L-shaped plastered building with a flat roof: a wide entrance, a ward window, a back door',
-    building: {
-      kind: 'footprint', shape: 'L', width: 188, depth: 145, wing: 75, height: 94, baseHeight: 6, overhang: 4,
-      openings: [
-        shell('edge-1', 'door', 55, 44, 67, 0),
-        shell('edge-1', 'window', 137, 61, 32, 32, 2, 1),
-        shell('edge-6', 'window', 72, 49, 31, 33, 2, 1),
-        shell('edge-4', 'door', 35, 31, 62, 0),
-      ],
-    },
-  },
-  {
     id: 'paddock-diner',
     name: 'Paddock diner',
     note: 'An eight-sided diner of corrugated metal, a window in every side but its door, a flat roof',
@@ -1125,12 +1075,6 @@ const PRESETS = [
     },
   },
   {
-    id: 'endurance-pits',
-    name: 'Endurance pit building',
-    note: 'Four pit garages with a hospitality lounge over them, its balcony along the pit lane',
-    building: { kind: 'pitmodule', bays: 4, bayWidth: 97, depth: 150, doorWidth: 70, groundHeight: 80, loungeHeight: 65, lean: 0, balcony: 30, door: 'roller', railing: true, roofRailing: false },
-  },
-  {
     id: 'finish-bridge',
     name: 'Finish-line bridge',
     note: 'The timekeepers’ cabin on four legs over the track, FINISH along its front, windows down both sides, a ladder up an end',
@@ -1174,12 +1118,6 @@ const PRESETS = [
     building: {'kind': 'footprint', 'shape': 'custom', 'points': [[0.0, 0.0], [437.5, 0.0], [437.5, 137.5], [210.0, 137.5], [210.0, 312.5], [0.0, 312.5]], 'height': 131.0, 'baseHeight': 6, 'overhang': 4, 'wallTexture': 'metal', 'roofShape': 'sawtooth', 'teeth': 3, 'pitch': 20, 'openings': [{'wall': 'edge-1', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-1', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-1', 'type': 'window', 'at': 306.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-1', 'type': 'window', 'at': 394.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-1', 'type': 'door', 'at': 219.0, 'width': 81.0, 'height': 100.0, 'sill': 0, 'frame': true}, {'wall': 'edge-2', 'type': 'window', 'at': 69.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-3', 'type': 'window', 'at': 57.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-3', 'type': 'window', 'at': 170.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-4', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-4', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-5', 'type': 'window', 'at': 52.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-5', 'type': 'window', 'at': 157.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-6', 'type': 'window', 'at': 52.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-6', 'type': 'window', 'at': 156.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'edge-6', 'type': 'window', 'at': 260.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 1}]},
   },
   {
-    id: 'courtyard-inn',
-    name: 'Courtyard inn',
-    note: 'Two half-timbered storeys round an open courtyard, arched windows and door, a way through to the yard',
-    building: {'kind': 'footprint', 'shape': 'rectangle', 'width': 437.5, 'depth': 375.0, 'height': 97.0, 'baseHeight': 6, 'overhang': 5, 'wallTexture': 'timber', 'courtyards': [{'shape': 'rectangle', 'x': 127.0, 'y': 105.0, 'width': 184.0, 'depth': 165.0}], 'openings': [{'wall': 'edge-1', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 306.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 394.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'door', 'at': 219.0, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 47.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 140.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 234.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 328.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 47.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 140.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 234.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 328.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 219.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 306.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 394.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-4', 'type': 'door', 'at': 92, 'width': 35, 'height': 69, 'sill': 0, 'frame': true, 'shape': 'arch'}, {'wall': 'court-1-1', 'type': 'window', 'at': 82, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-2', 'type': 'window', 'at': 92, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-3', 'type': 'window', 'at': 82, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}], 'upper': [{'height': 87.5, 'wallTexture': 'timber', 'openings': [{'wall': 'edge-1', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 219.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 306.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-1', 'type': 'window', 'at': 394.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 44.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 131.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 219.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 306.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-3', 'type': 'window', 'at': 394.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 47.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 140.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 234.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-2', 'type': 'window', 'at': 328.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 47.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 140.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 234.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'edge-4', 'type': 'window', 'at': 328.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-1', 'type': 'window', 'at': 82, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-2', 'type': 'window', 'at': 92, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-3', 'type': 'window', 'at': 82, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}, {'wall': 'court-1-4', 'type': 'window', 'at': 92, 'width': 40, 'height': 42, 'sill': 27, 'frame': true, 'across': 1, 'up': 2, 'shape': 'arch'}]}], 'props': [{'type': 'drum', 'x': 122.0, 'y': -30, 'storey': -1}]},
-  },
-  {
     id: 'watchtower',
     name: 'Watchtower',
     note: 'A round stone tower of three storeys under a cone roof, an arched door, narrow windows up it',
@@ -1210,12 +1148,6 @@ const PRESETS = [
     building: {'width': 181.0, 'depth': 172.0, 'height': 100.0, 'baseHeight': 6, 'door': 'none', 'cornice': 4, 'roof': 'mansard', 'pitch': 30, 'lowerPitch': 70, 'roofTexture': 'shingle', 'overhangFront': 3, 'overhangBack': 3, 'overhangLeft': 3, 'overhangRight': 3, 'openings': [{'wall': 'front', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'front', 'type': 'door', 'at': 136.0, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true, 'leaf': 'panels', 'step': true}, {'wall': 'right', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'right', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 136.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'upper': [{'height': 90.5, 'openings': [{'wall': 'front', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'front', 'type': 'window', 'at': 136.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'right', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'right', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'back', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'back', 'type': 'window', 'at': 136.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'left', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'left', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}]}, {'height': 84.5, 'openings': [{'wall': 'front', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'front', 'type': 'window', 'at': 136.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'right', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'right', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'back', 'type': 'window', 'at': 45.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'back', 'type': 'window', 'at': 136.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'left', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}, {'wall': 'left', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2, 'ledge': true}]}], 'dormers': [{'x': 90.5, 'y': 10, 'width': 26, 'height': 16}]},
   },
   {
-    id: 'guildhall',
-    name: 'Medieval guildhall',
-    note: 'Two half-timbered storeys, the upper one jettied out over the lower, a many-sided bay out from the front, windows round it and all along the sides',
-    building: {'kind': 'footprint', 'shape': 'custom', 'points': [[0.0, 50.0], [86.0, 50.0], [106.5, 20.0], [134.0, 5.0], [172.0, 0.0], [209.5, 5.0], [237.0, 20.0], [258.0, 50.0], [344.0, 50.0], [344.0, 250.0], [0.0, 250.0]], 'height': 112.5, 'baseHeight': 6, 'overhang': 6, 'wallTexture': 'timber', 'openings': [{'wall': 'edge-1', 'type': 'door', 'at': 43.0, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true}, {'wall': 'edge-2', 'type': 'window', 'at': 18.0, 'width': 14.0, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-7', 'type': 'window', 'at': 18.5, 'width': 14.0, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-4', 'type': 'window', 'at': 19.0, 'width': 15.5, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-5', 'type': 'window', 'at': 19.0, 'width': 15.5, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-8', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-9', 'type': 'window', 'at': 50.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-9', 'type': 'window', 'at': 150.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-11', 'type': 'window', 'at': 50.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-11', 'type': 'window', 'at': 150.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 215.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 301.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'upper': [{'height': 94.0, 'jetty': 6, 'wallTexture': 'timber', 'openings': [{'wall': 'edge-1', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-2', 'type': 'window', 'at': 18.0, 'width': 14.0, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-7', 'type': 'window', 'at': 18.5, 'width': 14.0, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-4', 'type': 'window', 'at': 19.0, 'width': 15.5, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-5', 'type': 'window', 'at': 19.0, 'width': 15.5, 'height': 42.0, 'sill': 27.0, 'frame': false, 'across': 1, 'up': 1}, {'wall': 'edge-8', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-9', 'type': 'window', 'at': 50.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-9', 'type': 'window', 'at': 150.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-11', 'type': 'window', 'at': 50.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-11', 'type': 'window', 'at': 150.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 43.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 129.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 215.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'edge-10', 'type': 'window', 'at': 301.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}]}]},
-  },
-  {
     id: 'drag-timing-booth',
     name: 'Drag strip timing booth',
     note: 'The timing booth at a drag strip start: windows to the lanes, a door at the side, DRAG TIMING along its front',
@@ -1226,12 +1158,6 @@ const PRESETS = [
     name: 'Hillclimb start lodge',
     note: 'A planked start lodge under a shingled gable, shuttered windows, HILLCLIMB over them',
     building: {'width': 137.0, 'depth': 102.0, 'height': 82.0, 'baseHeight': 6, 'door': 'none', 'wallTexture': 'planks', 'roof': 'gable', 'ridge': 'width', 'pitch': 36, 'roofTexture': 'shingle', 'overhangFront': 8, 'overhangBack': 8, 'overhangLeft': 8, 'overhangRight': 8, 'openings': [{'wall': 'front', 'type': 'window', 'at': 57.5, 'width': 81.0, 'height': 29.5, 'sill': 31.0, 'frame': true, 'across': 3, 'up': 1}, {'wall': 'left', 'type': 'window', 'at': 49.0, 'width': 64.0, 'height': 31.0, 'sill': 31.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'right', 'type': 'door', 'at': 51.0, 'width': 28.0, 'height': 64.0, 'sill': 0, 'frame': true, 'leaf': 'planks'}, {'wall': 'back', 'type': 'window', 'at': 56.0, 'width': 38.0, 'height': 27.0, 'sill': 37.5, 'frame': true, 'across': 2, 'up': 1}], 'sign': 'fascia', 'signWidth': 72.5, 'signHeight': 10, 'signText': 'HILLCLIMB'},
-  },
-  {
-    id: 'wind-tunnel',
-    name: 'Aerodynamic wind tunnel',
-    note: 'A tall plastered hall open at both ends for the air, a wide opening at the side, an observation window, AERO on its side',
-    building: {'width': 169.0, 'depth': 303.0, 'height': 145.5, 'baseHeight': 6, 'door': 'none', 'roof': 'flat', 'overhangFront': 4, 'overhangBack': 4, 'overhangLeft': 4, 'overhangRight': 4, 'openings': [{'wall': 'front', 'type': 'window', 'at': 84.5, 'width': 118.0, 'height': 114.5, 'sill': 17.0, 'frame': false}, {'wall': 'back', 'type': 'window', 'at': 84.5, 'width': 96.0, 'height': 92.0, 'sill': 28.0, 'frame': false}, {'wall': 'right', 'type': 'door', 'at': 148.5, 'width': 158.0, 'height': 73.5, 'sill': 0, 'frame': false}, {'wall': 'left', 'type': 'window', 'at': 112.0, 'width': 79.5, 'height': 37.5, 'sill': 42.5, 'frame': true, 'across': 3, 'up': 1}, {'wall': 'left', 'type': 'door', 'at': 248.5, 'width': 29.0, 'height': 62.5, 'sill': 0, 'frame': true, 'leaf': 'plain'}], 'lettering': [{'wall': 'left', 'text': 'AERO', 'at': 112.11, 'up': 119.0, 'height': 14}], 'props': [{'type': 'tunnel-fan', 'x': 72, 'y': 255, 'rotation': 0}]},
   },
   {
     id: 'crash-test-hall',
@@ -1294,12 +1220,6 @@ const PRESETS = [
     building: {'width': 209.5, 'depth': 185.0, 'height': 107.0, 'baseHeight': 6, 'door': 'none', 'wallTexture': 'brick', 'roof': 'gable', 'ridge': 'depth', 'pitch': 20, 'roofTexture': 'seam', 'overhangFront': 5, 'overhangBack': 5, 'overhangLeft': 4, 'overhangRight': 4, 'openings': [{'wall': 'front', 'type': 'door', 'at': 105.0, 'width': 175.0, 'height': 79.5, 'sill': 0, 'frame': false}, {'wall': 'right', 'type': 'window', 'at': 96.0, 'width': 63.0, 'height': 36.0, 'sill': 34.5, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'left', 'type': 'window', 'at': 89.0, 'width': 63.0, 'height': 36.0, 'sill': 34.5, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'back', 'type': 'door', 'at': 42.0, 'width': 29.0, 'height': 62.5, 'sill': 0, 'frame': true, 'leaf': 'planks'}], 'sign': 'fascia', 'signWidth': 128.0, 'signHeight': 14, 'signText': 'SPEED SHOP', 'props': [{'type': 'tool-chest', 'x': 12, 'y': 115.5, 'rotation': 90, 'storey': 0}, {'type': 'workbench', 'x': 112.5, 'y': 156.0, 'storey': 0}]},
   },
   {
-    id: 'car-audio-shop',
-    name: 'Car audio studio',
-    note: 'A plastered studio, a big window and a fitting bay in front, SOUND LAB across it',
-    building: {'width': 244.0, 'depth': 190.5, 'height': 104.5, 'baseHeight': 6, 'door': 'none', 'roof': 'flat', 'overhangFront': 5, 'overhangBack': 5, 'overhangLeft': 5, 'overhangRight': 5, 'openings': [{'wall': 'front', 'type': 'window', 'at': 41.5, 'width': 58.5, 'height': 50.0, 'sill': 20.0, 'frame': true, 'across': 1, 'up': 1}, {'wall': 'front', 'type': 'door', 'at': 168.5, 'width': 101.0, 'height': 79.5, 'sill': 0, 'frame': false}, {'wall': 'left', 'type': 'door', 'at': 38.0, 'width': 26.0, 'height': 65.5, 'sill': 0, 'frame': true, 'leaf': 'plain'}, {'wall': 'right', 'type': 'window', 'at': 99.0, 'width': 77.5, 'height': 38.0, 'sill': 34.0, 'frame': true, 'across': 2, 'up': 1}, {'wall': 'back', 'type': 'door', 'at': 56.0, 'width': 29.0, 'height': 62.5, 'sill': 0, 'frame': true, 'leaf': 'plain'}], 'sign': 'fascia', 'signWidth': 140.0, 'signHeight': 13, 'signText': 'SOUND LAB'},
-  },
-  {
     id: 'car-wash',
     name: 'Drive-through car wash',
     note: 'A long plastered hall open at both ends for the cars, windows along the front, WASH over them',
@@ -1346,12 +1266,6 @@ const PRESETS = [
     name: 'Ruined townhouse',
     note: 'Two plastered storeys open to the sky, the top of the front wall broken away, rubble before it',
     building: {'width': 219.0, 'depth': 156.0, 'height': 97.0, 'baseHeight': 6, 'door': 'none', 'roofLip': 'none', 'openings': [{'wall': 'front', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'front', 'type': 'door', 'at': 164.0, 'width': 35.0, 'height': 69.0, 'sill': 0, 'frame': true, 'leaf': 'planks'}, {'wall': 'right', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 164.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'upper': [{'height': 87.5, 'openings': [{'wall': 'front', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'right', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 55.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 164.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}]}], 'leaveOut': ['roof'], 'damage': [{'wall': 'front', 'at': 149, 'width': 80, 'depth': 60}, {'wall': 'left', 'at': 60, 'width': 50, 'depth': 30}], 'props': [{'type': 'rubble', 'x': 120, 'y': -40, 'storey': -1}, {'type': 'rubble', 'x': 150, 'y': 100, 'rotation': 90, 'storey': 0}]},
-  },
-  {
-    id: 'room-box',
-    name: 'Open room box',
-    note: 'A room with its front wall and its roof left out, to furnish and look into: a window in each wall, a table and a counter',
-    building: {'width': 156.0, 'depth': 125.0, 'height': 100.0, 'baseHeight': 6, 'door': 'none', 'wallTexture': 'planks', 'roofLip': 'none', 'openings': [{'wall': 'right', 'type': 'window', 'at': 62.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'back', 'type': 'window', 'at': 78.0, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}, {'wall': 'left', 'type': 'window', 'at': 62.5, 'width': 40.0, 'height': 42.0, 'sill': 27.0, 'frame': true, 'across': 2, 'up': 2}], 'leaveOut': ['roof', 'front'], 'props': [{'type': 'table', 'x': 40, 'y': 40, 'storey': 0}, {'type': 'counter', 'x': 70, 'y': 95, 'storey': 0}]},
   },
   {
     id: 'filling-station',
@@ -1506,7 +1420,6 @@ const WORDS = {
   'stall-container': { signText: 'CAFE' },
   'stall-twin': { signText: 'FOOD & DRINK' },
   // The start gantry's banner (016 comes with lettering for it), the flag waver's board.
-  'gantry-start': { set: { text: 'START' } },
   'gantry-lattice': { set: { text: 'FINISH' } },
   'gantry-timber': { set: { text: 'START' } },
   'gantry-half': { set: { text: 'FINISH' } },
@@ -1524,15 +1437,15 @@ export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
 /** The standard buildings in groups, for the Start from list: every preset in one. */
 export const PRESET_GROUPS = Object.freeze([
   ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'footprint-court', 'classic', 'shed', 'container', 'fit-test']],
-  ['Pit buildings', ['pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'pit-tower']],
-  ['Towers and offices', ['tower', 'commentary-booth', 'starter-tower', 'press-gallery', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
+  ['Pit buildings', ['pitrow', 'pit-modern', 'pit-building', 'pit-row-modern', 'pit-boxes', 'pit-tower']],
+  ['Towers and offices', ['tower', 'commentary-booth', 'starter-tower', 'press-gallery', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'press-tower', 'crosswalk-tower']],
   ['Marshal posts', ['marshal', 'marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],
   ['Stands and spectators', ['stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'stand-bleachers', 'stand-terrace', 'stand-double', 'picnic-pergola', 'benches', 'picnic', 'platform', 'platform-both', 'platform-plain']],
-  ['Over the track', ['gantry-start', 'finish-bridge', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway', 'walkway-towers', 'crosswalk', 'stairs-switchback', 'banner-bridge']],
+  ['Over the track', ['finish-bridge', 'gantry-lattice', 'gantry-timber', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway-towers', 'crosswalk', 'stairs-switchback', 'banner-bridge']],
   ['Stalls and signs', ['stall-container', 'stall-twin', 'stall-kiosk', 'stall-tickets', 'billboard', 'hoarding']],
-  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'medical-centre', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon', 'ticket-office', 'endurance-pits']],
+  ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon', 'ticket-office']],
   // Scaleform town and car groups
-  ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'courtyard-inn', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'guildhall', 'ruined-townhouse', 'room-box']],
-  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'wind-tunnel', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-audio-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane', 'drive-in-screen', 'carport', 'carport-twin']],
+  ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'ruined-townhouse']],
+  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane', 'drive-in-screen', 'carport', 'carport-twin']],
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking', 'props-garage', 'props-pitcrew', 'props-grid', 'props-scrutineering', 'props-slotcars', 'props-circuit', 'props-interiors', 'props-architecture', 'props-street', 'props-shapes', 'props-moving', 'props-machinery']],
 ]);

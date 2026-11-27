@@ -289,11 +289,6 @@ export async function checkBuildings({ page, action, download, snap }) {
   await host.locator('[data-bd-storey="2"]').click();
   assert.equal(await setting('stLean').inputValue(), '15');
   assert.equal(await setting('stPanes').inputValue(), '3');
-  // A scaffold: braced walls, a mesh railing.
-  await host.locator('[data-bd-preset="scaffold-tower"]').click();
-  await host.locator('[data-bd-part="roofrail-front"]').waitFor();
-  assert.equal(await setting('stWallStyle').inputValue(), 'braced');
-  assert.equal(await setting('railingStyle').inputValue(), 'mesh');
   // A way up: the press tower's staircase; a ladder instead, its card on a click.
   await host.locator('[data-bd-preset="press-tower"]').click();
   await page.waitForFunction(() => /Staircase/.test(document.querySelector('[data-bd-part="access"]')?.textContent ?? ''));
@@ -305,16 +300,16 @@ export async function checkBuildings({ page, action, download, snap }) {
   await page.waitForFunction(() => /Ladder/.test(document.querySelector('[data-bd-part="access"]')?.textContent ?? ''));
   await host.locator('[data-bd-part="access"]').click();
   await page.waitForFunction(() => document.querySelector('[data-bd-card="access"]').classList.contains('bd-flash'));
-  // A walkway bridge: its own card; off its legs.
-  await host.locator('[data-bd-preset="walkway"]').click();
-  await host.locator('[data-bd-part="side-back"]').waitFor();
+  // A walkway with towers: its own card, the towers' parts in the kit, no legs.
+  await host.locator('[data-bd-preset="walkway-towers"]').click();
+  await host.locator('[data-bd-part="tower2-roof-right"]').waitFor();
   assert.ok(await host.locator('[data-bd-card="walkway"]').isVisible() && (await host.locator('[data-bd-card="size"]').isHidden()));
+  assert.ok(await host.locator('[data-bd-walkway-legs]').isHidden());
+  // Without them, on its legs; then off its legs.
+  await setting('wTowers').uncheck();
+  await host.locator('[data-bd-part="leg-1"]').waitFor();
   await setting('wLegs').uncheck();
   await page.waitForFunction(() => !document.querySelector('[data-bd-part="leg-1"]'));
-  // With a tower at each end: the towers' parts in the kit, no legs.
-  await setting('wTowers').check();
-  await host.locator('[data-bd-part="tower2-roof-right"]').waitFor();
-  assert.ok(await host.locator('[data-bd-walkway-legs]').isHidden());
   // A modern pit lane: bays chosen one by one; a bay added, its type changed.
   await host.locator('[data-bd-preset="pit-boxes"]').click();
   await host.locator('[data-bd-part="roofright-3"]').waitFor();
@@ -375,7 +370,7 @@ export async function checkBuildings({ page, action, download, snap }) {
     assert.ok(await host.locator('.bd-error').isHidden(), preset + ': no error');
   }
   // A gantry over the track: a type to choose, its own cards.
-  await host.locator('[data-bd-preset="gantry-start"]').click();
+  await host.locator('[data-bd-preset="gantry-lattice"]').click();
   await host.locator('[data-bd-part="leg-2"]').waitFor();
   assert.ok(await host.locator('[data-bd-card="gantry"]').isVisible());
   assert.ok(await host.locator('[data-bd-card="gantryBridge"]').isHidden());

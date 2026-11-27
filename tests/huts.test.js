@@ -186,5 +186,4 @@ test('a way up stands against the base, notched round the feet of the stand; a l
       const gaps = [a.min[0] - base.max[0], base.min[0] - a.max[0]];
       assert.ok(gaps.some((v) => v > 0 && v < 0.5), id + ' against the base: ' + gaps);
     });
-  withParts(BUILDING_PRESETS.find((p) => p.id === 'scaffold-tower').building, (parts) => clean(parts, 'scaffold tower'));
 });
