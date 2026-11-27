@@ -98,6 +98,21 @@ export const MORE_PROPS = Object.freeze([
   { id: 'pylon', name: 'Position pylon', group: 'Circuit', size: [12, 8, 50] },
   { id: 'tyre-rack', name: 'Tyre rack', group: 'Pit lane', size: [24, 10, 20] },
   { id: 'pit-perch', name: 'Pit wall stand', group: 'Pit lane', size: [20, 14, 30] },
+  // Moving parts.
+  { id: 'boom-gate', name: 'Boom gate', group: 'Moving parts', size: [50, 6, 14] },
+  { id: 'drag-tree', name: 'Drag strip start lights', group: 'Moving parts', size: [12, 8, 56] },
+  { id: 'poster-frame', name: 'Poster frame', group: 'Moving parts', size: [40, 4, 38] },
+  // Machinery.
+  { id: 'tunnel-fan', name: 'Wind tunnel fan', group: 'Machinery', size: [24, 8, 30] },
+  { id: 'gantry-crane', name: 'Gantry crane', group: 'Machinery', size: [56, 10, 40] },
+  { id: 'turntable', name: 'Showroom turntable', group: 'Machinery', size: [56, 56, 3] },
+  { id: 'wash-gantry', name: 'Car wash brushes', group: 'Machinery', size: [40, 8, 30] },
+  { id: 'monorail', name: 'Assembly line monorail', group: 'Machinery', size: [56, 8, 36] },
+  { id: 'impact-block', name: 'Crash test block', group: 'Machinery', size: [30, 10, 20] },
+  { id: 'spray-arch', name: 'Spray booth light arch', group: 'Machinery', size: [40, 6, 32] },
+  { id: 'speaker-post', name: 'Drive-in speaker post', group: 'Machinery', size: [12, 8, 16] },
+  { id: 'wheel-stop', name: 'Wheel stop', group: 'Machinery', size: [56, 5, 4] },
+  { id: 'roller-bed', name: 'Brake test rollers', group: 'Machinery', size: [24, 16, 6] },
 ]);
 /** The props of several parts, and what each part is called. */
 export const MORE_PARTS = Object.freeze({
@@ -108,6 +123,11 @@ export const MORE_PARTS = Object.freeze({
   'street-lamp': ['lamp', 'foot'],
   'circuit-clock': ['clock', 'foot'],
   pylon: ['pylon', 'foot'],
+  'boom-gate': ['post', 'boom', 'pin'],
+  'drag-tree': ['lights', 'foot'],
+  'poster-frame': ['back', 'front', 'insert'],
+  'wash-gantry': ['portal', 'brush-1', 'brush-2'],
+  'speaker-post': ['post', 'foot'],
 });
 
 /**
@@ -455,6 +475,89 @@ export function buildMoreProp(type, ctx) {
       // Legs, the platform, a desk on it and a roof on posts over it.
       add('', name, fronts([rect(1, 0, 3, 12), rect(W - 3, 0, W - 1, 12), rect(0, 11.9, W, 14), rect(3, 13.9, 17, 20), rect(1, 13.9, 2.5, 28), rect(W - 2.5, 13.9, W - 1, 28), rect(0, 27.9, W, H)]), onBack);
       return true;
+    // ----- Moving parts -----
+    case 'boom-gate': {
+      // A post, and a boom turning on a pin through both: the pin's head down to print, its shaft up.
+      const hole = (y0, y1) => front(circle(3.5, 9, 0.95, 20), y0, y1);
+      add('post', 'post', minus(fronts([rect(0, 0, 8, 1.5), rect(1, 1.4, 6, 12)], 0, 3), hole(-1, 4)), onBack);
+      add('boom', 'boom', minus(fronts([rect(1, 7, 6.5, 11), rect(6.4, 8, W, 10)], 3.2, 4.4), hole(3, 5)), onBack);
+      add('pin', 'pin', union(front(circle(3.5, 9, 0.7, 20), 0, 4.6), front(circle(3.5, 9, 1.3, 20), 4.5, 5.3)), onBack);
+      return true;
+    }
+    case 'drag-tree': {
+      // A post and the plate of lights on it, a bore for a 3 mm LED in each, two columns of seven; in a foot.
+      const bores = [];
+      for (let k = 0; k < 7; k++) for (const x of [3.8, 8.2]) bores.push(front(circle(x, 23.5 + k * 5, 1.75, 20), 1, 7));
+      add('lights', 'lights', minus(fronts([rect(5, 1, 7, 21), rect(1, 20.9, 11, H)], 2, 6), ...bores), onBack);
+      add('foot', 'foot', footWith(10, 8, 3, 2, 4, 6, 4));
+      return true;
+    }
+    case 'poster-frame': {
+      // A back on two legs, spacers down its sides and along its foot; a front frame glued on them;
+      // between, an insert that slides in from the top, to print or paint and swap.
+      const yb = 2.2,
+        yf = 1.2;
+      add('back', 'back', union(box(0, yb, 8, W, D, H), box(0, yf, 8, 3, yb + 0.01, H), box(W - 3, yf, 8, W, yb + 0.01, H), box(3, yf, 8, W - 3, yb + 0.01, 11), box(3, 0, 0, 7, D, 8.01), box(W - 7, 0, 0, W - 3, D, 8.01)), onBack);
+      add('front', 'front', minus(box(0, 0, 8.3, W, yf, H), box(4, -1, 12, W - 4, yf + 1, H - 4)), onBack);
+      add('insert', 'insert', box(3.3, yf + 0.1, 11.2, W - 3.3, yb - 0.1, H - 0.5), onBack);
+      return true;
+    }
+    // ----- Machinery -----
+    case 'tunnel-fan': {
+      // A base and a post holding the rotor, its blades between the cut-outs round its hub.
+      const cuts = Array.from({ length: 7 }, (_, k) => {
+        const a = (2 * Math.PI * k) / 7;
+        const p = (r, da) => [12 + r * Math.cos(a + da), 18 + r * Math.sin(a + da)];
+        return front([p(3, 0.05), p(10, 0.15), p(10, 0.6), p(3, 0.55)], -1, D + 1);
+      });
+      add('', name, minus(fronts([rect(2, 0, 22, 2), rect(10, 1.9, 14, 8), circle(12, 18, 11.5, 40)]), ...cuts), onBack);
+      return true;
+    }
+    case 'gantry-crane':
+      // Two A-frames, the beam across them, the hoist under it and its hook hanging.
+      add('', name, fronts([[[0, 0], [3, 0], [6, 34], [3, 34]], [[10, 0], [13, 0], [7, 34], [4, 34]], [[W, 0], [W - 3, 34], [W - 6, 34], [W - 3, 0]], [[W - 10, 0], [W - 4, 34], [W - 7, 34], [W - 13, 0]], rect(0, 33.9, W, H), rect(24, 30, 32, 34), rect(27.5, 22, 28.5, 30.1), rect(26, 20, 30, 22)]), onBack);
+      return true;
+    case 'turntable':
+      // A thin disc, its edge chamfered under it at 45 degrees, rings across its top.
+      add('', name, turned([[0, 0], [W / 2 - 1, 0], [W / 2, 1], [W / 2, 2.5], [21, 2.5], [20.5, 3], [20, 2.5], [11, 2.5], [10.5, 3], [10, 2.5], [0, 2.5]]));
+      return true;
+    case 'wash-gantry':
+      // A portal over the lane and two roller brushes standing under its beam, grooved round.
+      add('portal', 'portal', fronts([rect(0, 0, 3, H), rect(W - 3, 0, W, H), rect(0, 26, W, H)], 2, 6), onBack);
+      for (const [k, x] of [[1, 12], [2, 28]]) {
+        const pts = [[0, 0], [4, 0]];
+        for (let z = 2; z < 24; z += 3) pts.push([4, z], [3.4, z + 0.6], [4, z + 1.2]);
+        pts.push([4, 25.9], [0, 25.9]);
+        add('brush-' + k, 'brush ' + k, turned(pts, x, 4));
+      }
+      return true;
+    case 'monorail':
+      // Two portals and the rail across their tops for the body carriers.
+      add('', name, fronts([rect(0, 0, 3, H), rect(17, 0, 20, H), rect(0, 28, 20, 31), rect(W - 20, 0, W - 17, H), rect(W - 3, 0, W, H), rect(W - 20, 28, W, 31), rect(0, H - 3, W, H)]), onBack);
+      return true;
+    case 'impact-block':
+      // A block, its face striped across in shallow grooves.
+      add('', name, minus(box(0, 0, 0, W, D, H), ...[0, 7, 14, 21, 28].map((x) => front([[x, 0], [x + 3, 0], [x + 11, H], [x + 8, H]], -1, 0.6))), onBack);
+      return true;
+    case 'spray-arch':
+      // An arch of light boxes over a car: legs, a beam, light bars inside them.
+      add('', name, fronts([rect(0, 0, 4, H), rect(W - 4, 0, W, H), rect(0, H - 4, W, H), rect(3.9, 6, 6, 26), rect(W - 6, 6, W - 3.9, 26), rect(8, H - 6, W - 8, H - 3.9)]), onBack);
+      return true;
+    case 'speaker-post':
+      // A post with its hanger bar and a speaker hooked on each side; in a foot.
+      add('post', 'post', fronts([rect(5, 1, 7, 14), rect(1, 12, 11, 13.5), rect(1, 8, 4, 12.1), rect(8, 8, 11, 12.1)], 3, 5), onBack);
+      add('foot', 'foot', footWith(8, 8, 3, 2, 2, 6, 4));
+      return true;
+    case 'wheel-stop':
+      // A kerb block across a parking bay, its sides sloping.
+      add('', name, side([[0, 0], [D, 0], [D - 1.5, H], [1.5, H]]));
+      return true;
+    case 'roller-bed': {
+      // Seen from the side: the bed with two rollers rising out of its top; it stands to print.
+      const arc = (y0) => Array.from({ length: 9 }, (_, k) => [y0 - 6 * (k / 8), 4 + 2 * Math.sin(Math.PI * (k / 8))]);
+      add('', name, side([[0, 0], [D, 0], [D, 4], ...arc(D - 2), ...arc(8).slice(1), [0, 4]]));
+      return true;
+    }
     default:
       return false;
   }
