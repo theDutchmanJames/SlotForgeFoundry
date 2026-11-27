@@ -19,7 +19,7 @@ import { stageFootprint } from './geometry/stage.js';
 import { switchbackFootprint } from './geometry/switchback.js';
 import { benchFootprint } from './geometry/bench.js';
 import { propsFootprint } from './geometry/props-kit.js';
-import { fitFootprint } from './geometry/fit-test.js';
+import { FIT, fitFootprint } from './geometry/fit-test.js';
 import { tyreFeet, tyreFootprint, tyreHeadroom } from './geometry/tyre-bridge.js';
 import { picnicFootprint } from './geometry/picnic.js';
 import { platformFootprint } from './geometry/viewing-platform.js';
@@ -214,6 +214,8 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = fitFootprint();
     outline = rect(x0, y0, x1, y1);
     front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
+    // It turns round the middle of its block, as it always has: a layout keeps it in place.
+    mid = [FIT.length / 2, FIT.depth / 2];
   } else if (b.kind === 'props') {
     // The row of props along the track.
     const [x0, y0, x1, y1] = propsFootprint(b);
@@ -281,11 +283,14 @@ export function shapeOf(b) {
       mid = [(l + r) / 2, (t + u) / 2];
     }
   } else {
-    // Its base with the ledge, and what stands beside it: door steps, the way
-    // up, props on the table, a stand's feet. Its front is the frontmost of them.
-    const [x0, y0, x1, y1] = boxRect(garageRects(b));
-    outline = rect(x0, y0, x1, y1);
-    front = { p: [b.width / 2, y0], f: [0, -1] };
+    // Its base with the ledge; what stands beside it on the table (door steps,
+    // the way up, props, a stand's feet) is in its pieces (baseParts), which
+    // keep off the track. Its front is the frontmost of the base, the steps
+    // and the way up: a prop on the table does not push it back from the track.
+    const m = KIT.ledge,
+      { steps, way } = garageExtras(b);
+    outline = rect(-m, -m, b.width + m, b.depth + m);
+    front = { p: [b.width / 2, Math.min(-m, ...[...steps, ...way].map((r) => r[1]))], f: [0, -1] };
     // It turns round the middle of its walls, whatever stands beside it.
     mid = [b.width / 2, b.depth / 2];
   }
@@ -594,7 +599,9 @@ export function snapPose(entry, loops, radius = SNAP) {
     const [ux, uy] = [fp[0] - shape.centre[0], fp[1] - shape.centre[1]];
     // A curved grandstand's ends reach forward of the middle of its front: it may have to stand back that far.
     const sag = b.kind === 'grandstand' && b.curve ? b.curve.radius * (1 - Math.cos((b.curve.angle * Math.PI) / 360)) : 0;
-    for (let out = 0; out <= 30 + sag; out += 1) {
+    // A garage's props on the table out in front of it: it stands back as far as one of them is on the track.
+    const ahead = b.kind === 'garage' ? Math.max(0, ...garageExtras(b).props.map((r) => fp[1] - r[1])) : 0;
+    for (let out = 0; out <= 30 + sag + ahead; out += 1) {
       // The middle of its front GAP (and more) from the edge; the rest follows.
       const target = [at[0] + n[0] * (GAP + out), at[1] + n[1] * (GAP + out)];
       const pose = { x: target[0] - (c * ux - s * uy), y: target[1] - (s * ux + c * uy), a };

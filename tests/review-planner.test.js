@@ -75,10 +75,12 @@ test('every part a standard building stands on the table with lies inside its ou
         const at = atTable(part);
         if (!at) continue;
         const [l, d, r, u] = at.box;
-        assert.ok(l >= x0 - 0.05 && d >= y0 - 0.05 && r <= x1 + 0.05 && u <= y1 + 0.05, id + ': ' + part.id + ' at the table [' + at.box.map((v) => v.toFixed(1)) + '] beyond its outline [' + [x0, y0, x1, y1] + ']');
+        // A garage's outline is its base: what stands beside it is in its pieces, checked below.
+        const garage = b.kind === 'garage';
+        assert.ok(garage || (l >= x0 - 0.05 && d >= y0 - 0.05 && r <= x1 + 0.05 && u <= y1 + 0.05), id + ': ' + part.id + ' at the table [' + at.box.map((v) => v.toFixed(1)) + '] beyond its outline [' + [x0, y0, x1, y1] + ']');
         if (!at.polys.length) continue;
         const shadow = polygonClipping.union(...at.polys.map((ring) => [ring]));
-        assert.ok(area(polygonClipping.difference(shadow, [outline])) < 0.05, id + ': ' + part.id + ' outside its outline');
+        assert.ok(garage || area(polygonClipping.difference(shadow, [outline])) < 0.05, id + ': ' + part.id + ' outside its outline');
         assert.ok(area(polygonClipping.difference(shadow, base)) < 0.05, id + ': ' + part.id + ' stands on the table outside its ' + (spanOf(b) ? 'feet' : 'base'));
       }
     } finally {
@@ -92,7 +94,8 @@ test('a building with a prop in front snaps clear of the track: the prop too, no
   const b = validateBuilding(preset('ticket-office'));
   const barrier = garageExtras(b).props[0];
   assert.ok(barrier[1] < -KIT.ledge - 20, 'the barrier stands out in front');
-  assert.equal(shapeOf(b).front.p[1], barrier[1], 'its front is the front of the barrier');
+  // Its front is its own, not the barrier's: a prop does not push it back from the track.
+  assert.ok(shapeOf(b).front.p[1] > barrier[1] + 20, 'its front is not the front of the barrier');
   const rows = [straight(150, 8, -150)];
   const entry = place(b, { x: 0, y: 80, a: 0 });
   const pose = snapPose(entry, rows[0].polys);
