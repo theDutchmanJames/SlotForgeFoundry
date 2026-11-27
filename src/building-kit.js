@@ -11,7 +11,13 @@ import { tyreOpening } from './geometry/tyre-bridge.js';
  * parts: the parts as exported (a part cut to fit the plate is in pieces);
  * sizes: each part's size as it lies on the plate, by its id.
  */
-const andList = (items) => items.slice(0, -1).join(', ') + ' and ' + items.at(-1);
+const andList = (items) => (items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items.at(-1));
+// What prints the right way up, if anything: the roof, the floors, their frames.
+const rightWayUp = (items) => {
+  if (!items.length) return '';
+  const list = andList(items);
+  return list[0].toUpperCase() + list.slice(1) + (items.length > 1 || items[0].endsWith('s') ? ' print' : ' prints') + ' the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.';
+};
 
 // Window and door frames on a connected or shaped building.
 const FRAMES_NOTE = 'Window and door frames print face up, their back flat on the plate. Paint them, then glue each round its opening on the outside of its wall, its inner edge flush with the opening; the texture keeps clear of where it sits.';
@@ -125,7 +131,11 @@ export function kitNotes(name, b, parts, sizes) {
       : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
-      ? b.roof === 'hip'
+      ? b.roof === 'sawtooth'
+        ? 'Glue each north light upright on the end walls where they step down, its panes facing the way the roof rises, its foot under the eaves. Lay roof panel 1 on the low wall and the end walls, its high edge on north light 1; then each next panel, its low edge against the foot of the north light before it. Glue them along the tops of the walls and the lights.'
+        : b.roof === 'vault'
+        ? 'Lay the vault on the walls, its flat edges on the tops of the side walls, the end walls rising inside the arch' + (parts.some((p) => /^roof-\d/.test(p.id)) ? '; its pieces end to end, in order' : '') + '. Glue it along the tops of the walls' + (parts.some((p) => /^roof-\d/.test(p.id)) ? ' and its pieces to each other' : '') + '.'
+        : b.roof === 'hip'
         ? 'Lay the four roof panels on the walls so they meet along the hips' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
         : b.roof === 'gable'
         ? 'Lay the two roof panels on the walls so they meet at the ridge' + (framed2 ? ', their frames inside the walls' : '') + ', and glue them along the tops of the walls and to each other.'
@@ -150,9 +160,11 @@ export function kitNotes(name, b, parts, sizes) {
     '- Every part prints flat as it is in its file, without supports.',
     '- The walls and frames lie with their outside face up. The mitred ends of the walls are 45° overhangs.',
     ...(parts.some((p) => /^(counter|flap)/.test(p.id)) ? ['- A counter or a flap lies on its top, its two fins standing up from it.'] : []),
-    '- The base prints upside down. ' + andList([sloped ? 'The roof panels' : 'The roof', ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) + ' print the right way up: a roof on its underside, its texture on top, a frame flat with its tabs up.' +
+    '- The base prints upside down. ' + rightWayUp([...(b.roof === 'vault' ? [] : [sloped ? 'The roof panels' : 'The roof']), ...(upper.length ? ['the floors'] : []), ...(framed2 || upper.length ? ['their frames'] : [])]) +
       (parts.some((p) => /^brace/.test(p.id)) ? ' A corner brace lies on one leg.' : '') +
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
+    ...(b.roof === 'vault' ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
+    ...(b.roof === 'sawtooth' ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
     '',
     'Putting it together',
     ...steps.map((s, i) => i + 1 + '. ' + s),

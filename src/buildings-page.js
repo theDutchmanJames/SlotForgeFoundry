@@ -449,16 +449,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
-      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip"')}
+      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip sawtooth"')}
+      ${field('teeth', 'Teeth', building.teeth, BUILDING_LIMITS.teeth, '', ' data-bd-for="sawtooth"')}
+      ${field('rise', 'Rise over the eaves', building.rise, BUILDING_LIMITS.rise, 'mm', ' data-bd-for="vault"')}
       ${field('arch', 'Arched, higher in the middle', building.arch, BUILDING_LIMITS.arch, 'mm', ' data-bd-for="flat"')}
-      <label class="bd-row" data-bd-for="gable flat"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
-      <label class="bd-row" data-bd-for="slope"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
+      <label class="bd-row" data-bd-for="gable flat vault"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
+      <label class="bd-row" data-bd-for="slope sawtooth"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
       <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option><option value="solid">Solid, a parapet</option></select></label>
       <label class="bd-row"><span>Under the roof</span><select name="roofLip"><option value="frame">Frame with tabs</option><option value="none">Nothing</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
-      <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
+      <p class="bd-hint">How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
     <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
@@ -1130,6 +1132,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       doorHeight: num(e.doorHeight),
       baseHeight: num(e.baseHeight),
       pitch: num(e.pitch),
+      teeth: num(e.teeth),
+      rise: num(e.rise),
       overhangFront: num(e.overhangFront),
       overhangBack: num(e.overhangBack),
       overhangLeft: num(e.overhangLeft),
@@ -1239,6 +1243,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       $('[data-bd-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
       for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoofTexture === building.roofTexture));
       $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
+      for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.hidden = building.roof === 'vault' && !['plain', 'metal'].includes(b.dataset.bdRoofTexture);
       const textured = [building, ...building.upper].some(isTextured);
       $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
     }
@@ -1545,7 +1550,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.railingStyle.value = b.railingStyle;
     for (const k of ['access', 'accessWall', 'accessAt', 'accessTo']) form.elements[k].value = b[k];
     for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
-    for (const k of ['standHeight', 'standSize', 'standTaper', 'arch']) form.elements[k].value = b[k];
+    for (const k of ['standHeight', 'standSize', 'standTaper', 'arch', 'teeth', 'rise']) form.elements[k].value = b[k];
     form.elements.standBraces.checked = b.standBraces;
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
@@ -1728,6 +1733,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         const next = { ...readForm(), roof: b.dataset.bdRoof };
         // Only a flat roof is arched.
         if (next.roof !== 'flat') next.arch = 0;
+        // A vault is plain or corrugated, and at most a half round over its span.
+        if (next.roof === 'vault') {
+          if (!['plain', 'metal'].includes(next.roofTexture)) next.roofTexture = 'plain';
+          const top = next.upper.at(-1) ?? next;
+          const span = next.ridge === 'depth' ? top.width ?? next.width : top.depth ?? next.depth;
+          next.rise = Math.max(BUILDING_LIMITS.rise[0], Math.min(next.rise, Math.floor(span / 2)));
+        }
         fitted = false;
         await rebuild(next);
       } else if (b.dataset.bdEven) {

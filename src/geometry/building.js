@@ -8,7 +8,7 @@
 // and 75 mm high and takes practically any slot car.
 
 import { DRAWN, FINISH_DEFAULTS, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, bandTop, checkFinish, finishJoints, isTextured, roofJoints, textureOf } from './building-texture.js';
-import { JOINT, planCuts, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
+import { JOINT, planCuts, plateRoom, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
 import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
 import { buildPitModule, pitModuleLayout, validatePitModule } from './pit-module.js';
@@ -35,7 +35,12 @@ export const ROOFS = Object.freeze([
   ['slope', 'Single slope'],
   ['gable', 'Two-sided'],
   ['hip', 'Hip'],
+  ['sawtooth', 'Sawtooth'],
+  ['vault', 'Barrel vault'],
 ]);
+// A sawtooth roof: each tooth at least this wide along its slope, and its
+// glazed face this high, for windows in its north light.
+export const SAWTOOTH = Object.freeze({ least: 30, face: 12, pane: 18, bar: 2, edge: 2 });
 export const BUILDING_DEFAULTS = Object.freeze({
   kind: 'garage',
   container: 'none', // none, frame, left or right: shipping-container shell and cargo-door end
@@ -46,8 +51,13 @@ export const BUILDING_DEFAULTS = Object.freeze({
   doorWidth: 90,
   doorHeight: 55,
   door: 'roller', // 'roller', 'panel' (up and over), 'open' (an opening without a door) or 'none' (no garage door)
-  roof: 'flat', // 'flat', 'slope', 'gable' or 'hip' (four sides at one pitch: a pyramid on a square)
+  roof: 'flat', // 'flat', 'slope', 'gable', 'hip' (four sides at one pitch), 'sawtooth' or 'vault'
   pitch: 30, // degrees, for a sloped or two-sided roof
+  // A sawtooth roof: so many single slopes side by side, each rising towards
+  // `rises`, a glazed north light standing between one and the next.
+  teeth: 3,
+  // A barrel vault: a half-round or flatter arch, its axis along the ridge, this high over the eaves.
+  rise: 40,
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
   rises: 'back', // single slope: the side the roof rises towards
   overhangFront: 3,
@@ -149,6 +159,8 @@ export const BUILDING_LIMITS = Object.freeze({
   standSize: [8, 200],
   standTaper: [0, 100],
   arch: [0, 30],
+  teeth: [2, 8],
+  rise: [10, 150],
   play: [0.1, 0.5],
   ...TEXTURE_LIMITS,
 });
@@ -338,13 +350,15 @@ const LABELS = {
   standSize: 'Size of the stand',
   standTaper: 'Taper',
   arch: 'Arch',
+  teeth: 'Teeth',
+  rise: 'Rise of the vault',
   play: 'Joint clearance',
   waist: 'Waist wall',
   textureScale: 'Texture size',
   textureJoint: 'Joint width',
   textureDepth: 'Joint depth',
 };
-const UNITS = { pitch: '°', textureScale: ' %', standTaper: ' %' };
+const UNITS = { pitch: '°', textureScale: ' %', standTaper: ' %', teeth: '' };
 const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle'];
 // Panes in a framed window, at most so many each way and at least so big.
 export const PANES = Object.freeze({ most: 6, least: 4 });
@@ -616,7 +630,28 @@ export function validateBuilding(input) {
   }
   const lettering = checkLettering(b.lettering, { ...b, openings }, doors, b.sign === 'fascia' ? signUnder(b) : Infinity, '');
   upper.forEach((u, i) => (u.lettering = checkLettering(u.lettering, u, [], Infinity, STOREY_SUFFIX[i + 2])));
-  return { ...b, openings, lettering, upper, cuts: validateCuts(b.cuts) };
+  const out = { ...b, openings, lettering, upper, cuts: validateCuts(b.cuts) };
+  checkRoof(out);
+  return out;
+}
+
+/** The sawtooth and the vault: their teeth wide enough for a north light, the vault no higher than a half round. */
+function checkRoof(b) {
+  if (!Number.isInteger(b.teeth)) throw Error('The teeth must be a whole number from 2 to 8.');
+  if (!['sawtooth', 'vault'].includes(b.roof)) return;
+  const top = storeyStack(b).at(-1);
+  if (b.roof === 'sawtooth') {
+    const run = ['front', 'back'].includes(b.rises) ? top.depth : top.width;
+    const w = run / b.teeth,
+      face = w * Math.tan((b.pitch * Math.PI) / 180);
+    if (w < SAWTOOTH.least) throw Error('Each tooth of the sawtooth is only ' + fmtMm(w) + ' mm wide: at least ' + SAWTOOTH.least + ' mm. Choose fewer teeth.');
+    if (face < SAWTOOTH.face) throw Error('Each tooth rises only ' + fmtMm(face) + ' mm, too low for its north light: at least ' + SAWTOOTH.face + ' mm. Make the pitch steeper or the teeth fewer.');
+  }
+  if (b.roof === 'vault') {
+    const span = b.ridge === 'depth' ? top.width : top.depth;
+    if (b.rise > span / 2) throw Error('The vault rises at most half its span, a half round: ' + fmtMm(span / 2) + ' mm.');
+    if (!['plain', 'metal'].includes(b.roofTexture)) throw Error('A barrel vault is plain or corrugated.');
+  }
 }
 
 // An open storey: no windows or doors of its own, a waist wall low enough to leave a band open.
@@ -899,7 +934,56 @@ export function roofShape(b) {
     ];
     return { t, panels, rise: (Math.min(W, D) / 2) * t };
   }
+  if (b.roof === 'sawtooth') {
+    // Single slopes side by side along `dir`, each over a strip w wide; d
+    // runs from the low wall, a tooth's plane z = eave + t (d - k w).
+    const dir = { back: [0, 1], front: [0, -1], right: [1, 0], left: [-1, 0] }[b.rises];
+    const s0 = dir[0] < 0 ? -W : dir[1] < 0 ? -D : 0;
+    const run = dir[1] ? D : W,
+      n = b.teeth,
+      w = run / n;
+    const panels = Array.from({ length: n }, (_, k) => ({
+      dir,
+      s0: s0 + k * w,
+      keeps: [...(k ? [[[dir[0], dir[1], 0], s0 + k * w]] : []), ...(k < n - 1 ? [[[-dir[0], -dir[1], 0], -(s0 + (k + 1) * w)]] : [])],
+      id: 'roof-' + (k + 1),
+      name: 'Roof panel ' + (k + 1),
+      apart: [dir[0] * k * APART.ridge, dir[1] * k * APART.ridge, 0],
+    }));
+    return { t, panels, rise: w * t, saw: { dir, s0, run, n, w } };
+  }
+  if (b.roof === 'vault') {
+    // A circular arc across the span, through the tops of the outsides of
+    // the side walls at the eaves, b.rise higher at the crown.
+    const along = b.ridge === 'depth';
+    const span = along ? W : D,
+      c = span / 2,
+      h = b.rise,
+      R = (c * c + h * h) / (2 * h);
+    return { t: 0, panels: [], rise: h, vault: { along, span, c, R, below: R - h } };
+  }
   return { t: 0, panels: [], rise: 0 };
+}
+
+/**
+ * How far the underside of the roof is above the eaves over a point of the
+ * top storey (x from its left wall, y from its front wall): the lowest of the
+ * panels, under a sawtooth the tooth over it, under a vault its arch.
+ */
+export function roofAt(shape, x, y) {
+  if (shape.saw) {
+    const { dir, s0, n, w } = shape.saw;
+    const d = dir[0] * x + dir[1] * y - s0;
+    const k = Math.min(n - 1, Math.max(0, Math.floor(d / w)));
+    return shape.t * (d - k * w);
+  }
+  if (shape.vault) {
+    const { along, c, R, below } = shape.vault;
+    const u = (along ? x : y) - c;
+    return Math.abs(u) >= R ? 0 : Math.max(0, Math.sqrt(R * R - u * u) - below);
+  }
+  if (!shape.panels.length) return 0;
+  return Math.min(...shape.panels.map((p) => shape.t * (p.dir[0] * x + p.dir[1] * y - p.s0)));
 }
 
 /**
@@ -957,7 +1041,7 @@ export function tabSpots(W, D, avoid = () => false, play = KIT.play) {
 }
 const frameIds = (b, storeys) => {
   const out = [];
-  if (b.roofLip === 'none') return out;
+  if (b.roofLip === 'none' || ['sawtooth', 'vault'].includes(b.roof)) return out;
   if (b.roof === 'flat') out.push({ id: 'roof-frame', name: 'Roof frame', role: 'lip' });
   else for (const p of roofShape(b).panels) out.push({ id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip' });
   return out;
@@ -1063,7 +1147,7 @@ const dividerParts = (b) =>
 /** How high the ceiling is over a point of a storey: the floor above or the roof, under a sloped roof its underside. */
 function ceilingAt(b, s, shape, x, y) {
   if (!s.top || b.roof === 'flat') return s.eave;
-  return Math.min(...shape.panels.map((p) => s.eave + shape.t * (p.dir[0] * x + p.dir[1] * y - p.s0)));
+  return s.eave + roofAt(shape, x, y);
 }
 
 /** The parts of the kit, without geometry: their ids, names and roles. */
@@ -1094,7 +1178,9 @@ export function buildingLayout(input) {
     if (s.garage) parts.push(...dividerParts(b));
   }
   if (b.roof === 'flat') parts.push({ id: 'roof', name: 'Flat roof', role: 'roof' });
+  else if (b.roof === 'vault') parts.push({ id: 'roof', name: 'Barrel vault', role: 'roof' });
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
+  for (let k = 1; b.roof === 'sawtooth' && k < b.teeth; k++) parts.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall' });
   parts.push(...frameIds(b, storeys));
   if (b.door === 'roller' || b.door === 'panel') parts.push(...doors.map((d) => doorPart(d, doors, b)));
   for (const run of railingRuns(b, storeys)) parts.push({ id: run.id, name: run.name, role: 'frame' });
@@ -1176,9 +1262,19 @@ export function buildingCuts(input, plate) {
       // Across the height a brick seam moves onto the nearest course line: up to half a course.
       const asideUp = JOINT.aside + (step ? (DRAWN[tex].course * b.textureScale) / 200 : 0);
       // A wall prints as tall as it stands, its foot in the groove included.
+      // Under a sloped roof, up to where it is highest along the outside of the wall.
       let high = s.height;
-      if (s.top && b.roof === 'gable') high += (b.ridge === 'depth') === (w === 'front' || w === 'back') ? rise : 0;
-      if (s.top && b.roof === 'slope') high += w === b.rises ? rise : (w === 'front' || w === 'back') === (b.rises === 'front' || b.rises === 'back') ? 0 : rise;
+      if (s.top && b.roof !== 'flat') {
+        const L = w === 'front' || w === 'back' ? s.width : s.depth;
+        let most = 0;
+        for (let k = 0; k <= 80; k++) {
+          const u = (k / 80) * L;
+          const [x, y] = { front: [u, 0], back: [u, s.depth], left: [0, u], right: [s.width, u] }[w];
+          most = Math.max(most, roofAt(shape, x, y));
+        }
+        // A sawtooth peaks just short of where the next tooth starts.
+        high += b.roof === 'sawtooth' && most > 0 ? rise : Math.min(most, rise);
+      }
       walls.push({
         key: w + s.suffix,
         length: wallLength(s, w),
@@ -1200,7 +1296,10 @@ export function buildingCuts(input, plate) {
   if (b.roof === 'slope') scale = b.rises === 'left' || b.rises === 'right' ? [slope, 1] : [1, slope];
   if (b.roof === 'gable') roofExtent[b.ridge === 'depth' ? 0 : 1] = 0;
   // A hip roof's panels are not cut: the building is checked to be small enough.
-  if (b.roof === 'hip') roofExtent.fill(0);
+  // A vault is cut across its axis by itself, each piece standing on its end.
+  if (b.roof === 'hip' || b.roof === 'vault') roofExtent.fill(0);
+  // A sawtooth's panels and north lights are cut along their length only.
+  if (b.roof === 'sawtooth') roofExtent[['front', 'back'].includes(b.rises) ? 1 : 0] = 0;
   return planCuts(b, plate, {
     walls,
     flats: [
@@ -1258,6 +1357,108 @@ export function buildGarage(wasm, input, plate = null) {
     return kept.length === 1 ? kept[0] : own(Manifold.union(kept));
   };
   const shape = roofShape(b);
+  // A vault's arch as a solid: a cylinder of radius r about its axis, the top storey W wide, its eaves at z1.
+  const vaultDrum = ({ along, c: half, below }, W, z1, r) => {
+    const drum = own(Manifold.cylinder(4000, r, r, 256));
+    return along ? own(own(drum.rotate([-90, 0, 0])).translate([half, -2000, z1 - below])) : own(own(drum.rotate([0, 90, 0])).translate([-2000, half, z1 - below]));
+  };
+  // The part of a solid between d0 and d1 along a sawtooth's slopes (null: no end).
+  const sawStrip = (solid, { dir: [dx, dy], s0 }, d0, d1) => {
+    let q = solid;
+    if (d0 !== null) q = trim(q, [dx, dy, 0], s0 + d0);
+    if (d1 !== null) q = trim(q, [-dx, -dy, 0], -(s0 + d1));
+    return q;
+  };
+  /**
+   * A sawtooth's north lights: between one tooth and the next a glazed wall
+   * as long as the building is across, standing on the walls at its ends,
+   * its foot a roof's thickness under the eaves, the next tooth's low edge
+   * against it and the high edge of its own tooth on top. A row of panes
+   * through it above the next tooth. It prints flat, its glazed face up.
+   */
+  function northLights(W, D, z1, apart) {
+    const { dir: [dx, dy], s0, n, w } = shape.saw,
+      T = shape.t,
+      len = Math.hypot(T, 1);
+    const along = dx !== 0; // the slopes run along x, the lights across y
+    const L = along ? D : W;
+    const at = (d) => (dx || dy) * (d + s0);
+    const out = [];
+    for (let k = 1; k < n; k++) {
+      const [p0, p1] = [at(k * w - t), at(k * w)].sort((a, e) => a - e);
+      let light = along ? box(p0, 0, z1 - rt, p1, L, z1 + shape.rise + 1) : box(0, p0, z1 - rt, L, p1, z1 + shape.rise + 1);
+      // Under the tooth before it.
+      light = trim(light, [T * dx, T * dy, -1], -(z1 - T * (s0 + (k - 1) * w)) / len);
+      // The panes: over the next tooth's edge, under the sloping top, clear of the walls at its ends.
+      const { pane, bar, edge } = SAWTOOTH;
+      const v0 = z1 + rt * len + edge,
+        v1 = z1 + shape.rise - t * T - edge,
+        u0 = t + c + edge,
+        u1 = L - t - c - edge;
+      const m = Math.max(1, Math.floor((u1 - u0 + bar) / (pane + bar))),
+        pw = (u1 - u0 - (m - 1) * bar) / m;
+      const holes = [];
+      for (let i = 0; i < m; i++) {
+        const a = u0 + i * (pw + bar);
+        holes.push(along ? box(p0 - 1, a, v0, p1 + 1, a + pw, v1) : box(a, p0 - 1, v0, a + pw, p1 + 1, v1));
+      }
+      light = minus(light, ...holes);
+      out.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall', solid: light, outward: [dx, dy, 0], apart: add3(apart, [dx * k * APART.ridge, dy * k * APART.ridge, -APART.roof / 2]) });
+    }
+    return out;
+  }
+  /**
+   * A barrel vault: the arch as thick as a roof, its eaves past the side
+   * walls, flat where it bears on their tops; the end walls rise into it. It
+   * prints standing on its end, every face upright; cut across its axis where
+   * it is longer than the plate is wide, the pieces glued end to end. A
+   * corrugated vault has grooves round it.
+   */
+  function barrelVault(W, D, z1, ov, apart) {
+    const { CrossSection } = wasm;
+    const { along, span, c: half, R, below } = shape.vault;
+    const zc = z1 - below;
+    const [a0, a1] = along ? [-ov.left, W + ov.right] : [-ov.front, D + ov.back];
+    const [l0, l1] = along ? [-ov.front, D + ov.back] : [-ov.left, W + ov.right];
+    const circle = (r) => own(CrossSection.circle(r, 256).translate([half, zc]));
+    const rect = (u0, v0, u1, v1) => own(new CrossSection([[[u0, v0], [u1, v0], [u1, v1], [u0, v1]]], 'Positive'));
+    const top = z1 + shape.rise + rt + 1;
+    let profile = own(own(circle(R + rt).subtract(circle(R))).intersect(rect(a0, Math.max(zc, z1 - 40), a1, top)));
+    const bear = own(own(rect(0, z1, t + c, top).add(rect(span - t - c, z1, span, top))).intersect(circle(R + 0.01)));
+    profile = own(profile.add(bear));
+    const length = l1 - l0;
+    let solid = own(profile.extrude(length));
+    if (b.roofTexture === 'metal') {
+      const k = b.textureScale / 100,
+        pitch = DRAWN.metal.pitch * k,
+        depth = Math.min(b.textureDepth, rt - 1.2);
+      // Each groove a V round the arch, its sides steeper than 45° as the vault stands to print.
+      const r0 = R + rt - depth,
+        r1 = R + rt + 1,
+        reach = 1.25 * (r1 - r0);
+      const vee = own(new CrossSection([[[r1, -reach], [r1, reach], [r0, 0]]], 'Positive'));
+      const ring = own(Manifold.revolve(vee, 256));
+      const grooves = [];
+      for (let e = pitch / 2; e < length - pitch / 4; e += pitch) grooves.push(own(ring.translate([half, zc, e])));
+      const cut = grooves.filter((q) => !q.isEmpty());
+      if (cut.length) solid = whole(own(solid.subtract(own(Manifold.union(cut)))));
+    }
+    // Across the axis into pieces no longer than the plate is wide.
+    const room = plate ? plateRoom(plate).short : Infinity;
+    const pieces = Math.max(1, Math.ceil(length / room - 1e-9));
+    const parts = [];
+    for (let i = 0; i < pieces; i++) {
+      let piece = solid;
+      if (i) piece = trim(piece, [0, 0, 1], (i * length) / pieces);
+      if (i < pieces - 1) piece = trim(piece, [0, 0, -1], -((i + 1) * length) / pieces);
+      // Into place: across the span u, up v, along the axis e.
+      const placed = own(piece.transform(along ? [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, l1, 0, 1] : [0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, l0, 0, 0, 1]));
+      const id = 'roof' + (pieces > 1 ? '-' + (i + 1) : ''),
+        name = 'Barrel vault' + (pieces > 1 ? ' ' + (i + 1) + ' of ' + pieces : '');
+      parts.push({ id, name, role: 'roof', solid: placed, lie: along ? [90, 0, 0] : [0, 90, 0], apart: add3(apart, along ? [0, (i - (pieces - 1) / 2) * APART.piece, 0] : [(i - (pieces - 1) / 2) * APART.piece, 0, 0]) });
+    }
+    return parts;
+  }
   const OUTWARD = { front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
   const plan = plate ? buildingCuts(b, plate) : null;
   const runs = railingRuns(b, storeys);
@@ -1456,6 +1657,31 @@ export function buildGarage(wasm, input, plate = null) {
       const r = Math.SQRT1_2;
       const underRoof = (solid) => {
         if (!sloped) return solid;
+        if (shape.vault) {
+          // Below the eaves, and up into the arch a clearance inside it.
+          const low = trim(solid, [0, 0, -1], -z1);
+          // Clear of where the vault bears flat on the tops of the side walls.
+          const { along, span } = shape.vault,
+            u = along ? [1, 0, 0] : [0, 1, 0];
+          const high = trim(trim(own(solid.intersect(vaultDrum(shape.vault, W, z1, shape.vault.R - c))), u, t + 2 * c), u.map((v) => -v), -(span - t - 2 * c));
+          // An empty part in a union can empty the lot: only what is there.
+          const kept = [low, high].filter((q) => !q.isEmpty());
+          return kept.length === 2 ? own(Manifold.union(kept)) : kept[0] ?? low;
+        }
+        if (shape.saw) {
+          // Under each tooth its own plane; under a north light, up to its foot.
+          const { dir: [dx, dy], s0, n, w } = shape.saw,
+            len = Math.hypot(shape.t, 1);
+          const pieces = [];
+          for (let k = 0; k < n; k++) {
+            const last = k === n - 1;
+            pieces.push(trim(sawStrip(solid, shape.saw, k ? k * w : null, last ? null : (k + 1) * w - t), [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * (s0 + k * w)) / len));
+            // A hair into the teeth on either side, lower than both, so the wall stays one body.
+            if (!last) pieces.push(trim(sawStrip(solid, shape.saw, (k + 1) * w - t - 0.01, (k + 1) * w + 0.01), [0, 0, -1], -(z1 - rt)));
+          }
+          const kept = pieces.filter((q) => !q.isEmpty());
+          return kept.length ? own(Manifold.union(kept)) : solid;
+        }
         for (const p of shape.panels) {
           const [dx, dy] = p.dir;
           const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
@@ -1634,7 +1860,7 @@ export function buildGarage(wasm, input, plate = null) {
             const z = Math.min(...[u0, u1].flatMap((u) => faces.map((v) => ceiling(u, v)))) - KIT.lipDepth - c;
             return across ? box(at - t / 2 - 1, u0, z, at + t / 2 + 1, u1, zTop + 1) : box(u0, at - t / 2 - 1, z, u1, at + t / 2 + 1, zTop + 1);
           };
-          if (storeys[s.n] || b.roofLip !== 'none') wall = minus(wall, notch(lo - 1, reach), notch(far, (across ? D : W) - lo + 1));
+          if (storeys[s.n] || frameIds(b, storeys).length) wall = minus(wall, notch(lo - 1, reach), notch(far, (across ? D : W) - lo + 1));
           const part = dividerParts(b)[i];
           local(
             ...cutWall(
@@ -1692,6 +1918,8 @@ export function buildGarage(wasm, input, plate = null) {
           // It prints the right way up, its top on the plate side up.
           const roof = { id: 'roof', name: 'Flat roof', role: 'roof', solid: roofPlate, lie: [0, 0, 0], apart: roofApart };
           local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
+        } else if (shape.vault) {
+          local(...barrelVault(W, D, z1, ov, roofApart));
         } else {
           // Each panel lies on the walls at the pitch, as thick as the roof, and
           // reaches past the walls by the overhang of each side.
@@ -1712,7 +1940,7 @@ export function buildGarage(wasm, input, plate = null) {
                 {
                   dir: p.dir,
                   t: shape.t,
-                  eave: [dx < 0 ? W : 0, dy < 0 ? D : 0],
+                  eave: [dx * p.s0, dy * p.s0],
                   topAt: (x, y) => z1 + shape.t * (dx * x + dy * y - p.s0) + rt / cosA,
                   bounds: panel.boundingBox(),
                 },
@@ -1723,11 +1951,11 @@ export function buildGarage(wasm, input, plate = null) {
             }
             const deg = (Math.atan(shape.t) * 180) / Math.PI;
             // The two panels of a two-sided roof also part at the ridge.
-            const ridge = p.keeps ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0];
+            const ridge = p.apart ?? (p.keeps ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0]);
             const lie = [-deg * dy, deg * dx, 0];
             // Under it a frame, as under a flat roof, following the pitch: its
             // tabs stand square to the panel, in pockets in its underside.
-            if (b.roofLip !== 'none') {
+            if (b.roofLip !== 'none' && !shape.saw) {
               const { frame, holes } = lipFrame(W, D, { z1, T: shape.t, dir: p.dir, s0: p.s0 }, { keeps: p.keeps, avoid: clearOfDividers(s), high: KIT.tabRoof });
               panel = minus(panel, ...holes);
               const part = { id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip', solid: frame, lie, apart: add3([0, 0, lift + APART.up + APART.roof / 2], ridge) };
@@ -1737,6 +1965,7 @@ export function buildGarage(wasm, input, plate = null) {
             const roof = { id: p.id, name: p.name, role: 'roof', solid: panel, lie, apart: add3(roofApart, ridge) };
             local(...cutFlat(roof, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
           }
+          if (shape.saw) for (const light of northLights(W, D, z1, roofApart)) local(...cutFlat(light, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
         }
       }
 
