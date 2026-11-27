@@ -259,8 +259,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <form class="bd-form" autocomplete="off">
     <section class="bd-box" data-bd-card="colours" data-bd-colours><h3>Colours</h3>
       <label class="bd-row"><span>Colour set</span><select name="col-set">${COLOUR_SETS.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}<option value="custom">Your own</option></select></label>
-      ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${key === 'walls' || key === 'roof' ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
-      <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls and roof by their texture</span></label>
+      ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${key === 'walls' || key === 'band' || key === 'roof' ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
+      <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls and roof by their textures</span></label>
       <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta; or pick a colour of your own for each. The kit carries them in its 3MF, for a printer with several filaments, and as a paint list in its notes.</p></section>
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
@@ -2289,7 +2289,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (t.name === 'col-set') setPaint(t.value === 'custom' ? { ...colours, set: 'custom' } : setColours(t.value));
     else if (t.name === 'col-auto') {
       const base = setColours(colours.set === 'custom' ? 'redbrick' : colours.set);
-      setPaint(t.checked ? { ...colours, walls: null, roof: null } : { ...colours, set: 'custom', walls: colours.walls ?? base.walls ?? 0xa4533c, roof: colours.roof ?? base.roof ?? 0x4b5058 });
+      setPaint(t.checked ? { ...colours, walls: null, band: null, roof: null } : { ...colours, set: 'custom', walls: colours.walls ?? base.walls ?? 0xa4533c, roof: colours.roof ?? base.roof ?? 0x4b5058 });
     } else if (t.name?.startsWith('col-')) {
       const v = textHex(t.value);
       if (v !== null) setPaint({ ...colours, set: 'custom', [t.name.slice(4)]: v });

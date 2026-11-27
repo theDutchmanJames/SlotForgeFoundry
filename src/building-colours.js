@@ -7,6 +7,7 @@
 /** The surfaces that take a colour of their own, in the order the panel lists them. */
 export const SURFACES = Object.freeze([
   ['walls', 'Walls'],
+  ['band', 'Lower walls'],
   ['roof', 'Roof'],
   ['trim', 'Windows and trim'],
   ['doors', 'Doors'],
@@ -35,7 +36,7 @@ export const ROOF_MATERIALS = Object.freeze({
 // and stones, every other joint is a shade of the colour.
 const MORTAR = new Set(['brick', 'stone']);
 
-/** The sets to start from; 'material' takes walls and roof from their textures. */
+/** The sets to start from; 'material' takes walls and roof from their textures. A band along the foot of the walls follows its texture in every set. */
 export const COLOUR_SETS = Object.freeze([
   ['material', 'By material', { walls: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b }],
   ['redbrick', 'Red brick and slate', { walls: 0xa4533c, roof: 0x4b5058, trim: 0xf0ece2, doors: 0x2f4a6b, base: 0x6f757b }],
@@ -46,7 +47,9 @@ export const COLOUR_SETS = Object.freeze([
   ['marshal', 'Marshal orange', { walls: 0xf0ece2, roof: 0xe2762f, trim: 0xe2762f, doors: 0xe2762f, base: 0x6f757b }],
   ['industrial', 'Industrial', { walls: 0x8c97a0, roof: 0x6f7880, trim: 0xd9a441, doors: 0x4a5561, base: 0x5b626c }],
 ]);
-export const COLOURS_DEFAULT = Object.freeze({ set: 'material', walls: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b });
+export const COLOURS_DEFAULT = Object.freeze({ set: 'material', walls: null, band: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b });
+// The surfaces that may follow their textures (null); the rest always have a colour.
+const BY_TEXTURE = new Set(['walls', 'band', 'roof']);
 
 const isHex = (v) => Number.isInteger(v) && v >= 0 && v <= 0xffffff;
 /** Colours as kept: a set by name and its five colours; anything else is put right. */
@@ -57,15 +60,14 @@ export function checkColours(input) {
   const out = { set };
   for (const [key] of SURFACES) {
     const v = raw[key];
-    // Walls and roof may follow their textures (null); the rest always have a colour.
-    out[key] = isHex(v) ? v : v === null && (key === 'walls' || key === 'roof') ? null : base[key] ?? COLOURS_DEFAULT[key];
+    out[key] = isHex(v) ? v : v === null && BY_TEXTURE.has(key) ? null : key in base ? base[key] : COLOURS_DEFAULT[key];
   }
   return out;
 }
 /** The colours of a set, to start from. */
 export function setColours(id) {
   const found = COLOUR_SETS.find(([key]) => key === id);
-  return found ? { set: id, ...found[2] } : checkColours(null);
+  return checkColours(found ? { set: id, ...found[2] } : null);
 }
 
 const darker = (hex, k) => {
@@ -103,7 +105,10 @@ export function buildingPaint(colours, parts = []) {
     }
     if (part.role === 'wall' || part.role === 'divider' || j) {
       const kind = j?.kind ?? 'plain';
-      return surface(c.walls, WALL_MATERIALS[kind] ?? WALL_MATERIALS.plain, kind);
+      const own = surface(c.walls, WALL_MATERIALS[kind] ?? WALL_MATERIALS.plain, kind);
+      // A band along its foot in its own colours, below the height it reaches up to.
+      const b = j?.band;
+      return b ? { ...own, lower: { ...surface(c.band, WALL_MATERIALS[b.kind] ?? WALL_MATERIALS.plain, b.kind), below: b.below } } : own;
     }
     if (part.role === 'door') return { face: c.doors };
     if (TRIM.has(part.role)) return { face: c.trim };
@@ -130,8 +135,9 @@ const SURFACE_OF = (part) => {
 };
 /**
  * Each part's colour, by its id: the surface it belongs to, a name for it
- * ('Walls, bricks'), its colour and its joints'. A part with no colour of
- * its own (a prop) is left out.
+ * ('Walls, bricks'), its colour and its joints', and a wall's band
+ * ({ name, kind, face, joint }). A part with no colour of its own (a prop)
+ * is left out.
  */
 export function partColours(colours, parts) {
   const paint = buildingPaint(colours, parts);
@@ -145,7 +151,8 @@ export function partColours(colours, parts) {
     const kind = surface === 'walls' ? j?.kind ?? 'plain' : surface === 'roof' ? (j?.surface === 'roof' ? j.kind : 'plain') : null;
     const words = surface === 'walls' ? WALL_WORDS[kind] : surface === 'roof' ? ROOF_WORDS[kind] : null;
     const label = SURFACES.find(([k]) => k === surface)[1];
-    out.set(p.id, { surface, kind, name: words && kind !== 'plain' ? label + ', ' + words : label, face: c.face, joint: kind && kind !== 'plain' ? c.joint : null });
+    const band = c.lower && { surface: 'band', kind: j.band.kind, name: 'Lower walls, ' + WALL_WORDS[j.band.kind], face: c.lower.face, joint: c.lower.joint };
+    out.set(p.id, { surface, kind, name: words && kind !== 'plain' ? label + ', ' + words : label, face: c.face, joint: kind && kind !== 'plain' ? c.joint : null, ...(band && { band }) });
   }
   return out;
 }
@@ -153,11 +160,15 @@ const HEX = (v) => hexText(v).toUpperCase();
 /** The paint list for the kit notes: each colour, the parts in it, and how to bring out its joints. */
 export function paintList(colours, parts) {
   const groups = new Map();
-  for (const c of partColours(colours, parts).values()) {
+  const count = (c) => {
     const key = c.name + c.face + ':' + c.joint;
     const g = groups.get(key) ?? { ...c, count: 0 };
     g.count++;
     groups.set(key, g);
+  };
+  for (const c of partColours(colours, parts).values()) {
+    count(c);
+    if (c.band) count(c.band);
   }
   if (!groups.size) return [];
   const order = SURFACES.map(([k]) => k);

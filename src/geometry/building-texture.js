@@ -59,25 +59,28 @@ const CLEAR = 1; // joints keep this far from an opening and from a frame
 // them, so the 3D view can find them in a part and shade them darker, like
 // mortar between bricks. Each cutting solid is listed here by its id; the
 // list keeps only the most recent, it is for the view and nothing else.
-export const JOINT_TAGS = new Map(); // id → { kind, mark: 1 joint | 2 grain, surface: 'wall' | 'roof' }
+// A band along the foot of the walls is tagged with the height it reaches up to (below).
+export const JOINT_TAGS = new Map(); // id → { kind, mark: 1 joint | 2 grain, surface: 'wall' | 'roof', below? }
 const MOST_TAGS = 20000;
-function tagged(own, solid, kind, mark, surface = 'wall') {
+function tagged(own, solid, kind, mark, surface = 'wall', below = null) {
   const s = own(solid.asOriginal());
-  JOINT_TAGS.set(s.originalID(), { kind, mark, surface });
+  JOINT_TAGS.set(s.originalID(), { kind, mark, surface, ...(below !== null && { below }) });
   if (JOINT_TAGS.size > MOST_TAGS) JOINT_TAGS.delete(JOINT_TAGS.keys().next().value);
   return s;
 }
 /**
  * The joints of a part's mesh: a mark for each triangle (0 face, 1 joint,
  * 2 grain) and the texture most of its joints belong to, or null when no
- * joint was cut into it.
+ * joint was cut into it. A wall with a band along its foot also gives the
+ * band: { kind, below }, below the height it reaches up to.
  */
 export function jointMarks(mesh) {
   const ids = mesh.runOriginalID,
     runs = mesh.runIndex;
   if (!ids?.length || !JOINT_TAGS.size) return null;
   let marks = null;
-  const count = new Map();
+  const count = new Map(),
+    bands = new Map();
   for (let r = 0; r < ids.length; r++) {
     const tag = JOINT_TAGS.get(ids[r]);
     if (!tag) continue;
@@ -86,13 +89,23 @@ export function jointMarks(mesh) {
     if (z <= a) continue;
     marks ??= new Uint8Array(mesh.triVerts.length / 3);
     marks.fill(tag.mark, a, z);
+    const weight = (z - a) * (tag.mark === 1 ? 1 : 0.25);
+    if (tag.below !== undefined) {
+      const key = tag.kind + ':' + tag.below;
+      bands.set(key, (bands.get(key) ?? 0) + weight);
+      continue;
+    }
     const key = tag.surface + ':' + tag.kind;
-    count.set(key, (count.get(key) ?? 0) + (z - a) * (tag.mark === 1 ? 1 : 0.25));
+    count.set(key, (count.get(key) ?? 0) + weight);
   }
   if (!marks) return null;
-  const [key] = [...count].sort((p, q) => q[1] - p[1])[0];
-  const [surface, kind] = key.split(':');
-  return { marks, surface, kind };
+  const most = (m) => [...m].sort((p, q) => q[1] - p[1])[0]?.[0];
+  // Joints only in the band: the wall above it is plain.
+  const [surface, kind] = (most(count) ?? 'wall:plain').split(':');
+  const band = most(bands);
+  if (!band) return { marks, surface, kind };
+  const [bandKind, below] = band.split(':');
+  return { marks, surface, kind, band: { kind: bandKind, below: Number(below) } };
 }
 
 // Rectangles as polygons, in the 2D frame of a face.
@@ -296,7 +309,7 @@ const matrix = (X, Y, Z, O) => [...X, 0, ...Y, 0, ...Z, 0, ...O, 1];
  * rectangles [u0, z0, u1, z1] in the wall's frame) and of the part of the
  * wall that stands in the groove of the base.
  */
-export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, frame = null, ceil = zTop + 1 }, keepOut, settings, kind) {
+export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, frame = null, ceil = zTop + 1, below = null }, keepOut, settings, kind) {
   const seed = wallSeed(wall);
   const polys = jointPolygons(kind, [0, length], [bottom, zTop], settings, seed);
   if (!polys.length) return null;
@@ -327,13 +340,13 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, f
     : { ...DIRS[wall], O: DIRS[wall].origin(W, D) };
   const place = (solid) => own(solid.transform(matrix(U, [0, 0, 1], N, O)));
   const cuts = [];
-  if (!section.isEmpty()) cuts.push(tagged(own, place(own(section.extrude(settings.textureDepth + 1))), kind, 1));
+  if (!section.isEmpty()) cuts.push(tagged(own, place(own(section.extrude(settings.textureDepth + 1))), kind, 1, 'wall', below));
   // The grain, a third as deep, clear of the ends and the openings like the joints.
   const grain = grainPolygons(kind, [0, length], [bottom, zTop], settings, seed);
   if (grain.length) {
     let g = own(own(new wasm.CrossSection(grain, 'NonZero')).intersect(own(new wasm.CrossSection([rect(end, bottom + 0.3, length - end, ceil)], 'Positive'))));
     if (clear) g = own(g.subtract(clear));
-    if (!g.isEmpty()) cuts.push(tagged(own, place(own(g.extrude(1 + settings.textureDepth / 3))), kind, 2));
+    if (!g.isEmpty()) cuts.push(tagged(own, place(own(g.extrude(1 + settings.textureDepth / 3))), kind, 2, 'wall', below));
   }
   // Planks: each row slopes into the wall, the rows running on round the corner.
   if (LAPPED.includes(kind)) {
@@ -451,7 +464,7 @@ export function finishJoints(wasm, own, wall, geom, keepOut, settings, s) {
   if (lower === 'none') add(geom, main);
   else {
     const split = geom.bottom + s.lowerHeight;
-    add({ ...geom, top: split, ceil: split - 0.3 }, lower);
+    add({ ...geom, top: split, ceil: split - 0.3, below: split }, lower);
     add({ ...geom, bottom: split }, main);
   }
   if (!cuts.length) return null;

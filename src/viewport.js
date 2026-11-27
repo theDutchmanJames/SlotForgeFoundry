@@ -288,13 +288,21 @@ function paintedGeometry(part, paint) {
   const out = new Float32Array(n * 3),
     colours = new Float32Array(n * 3);
   const c = new THREE.Color();
-  const rgb = [paint.face, paint.joint ?? paint.face, paint.grain ?? paint.face].map((hex) => c.setHex(hex).toArray());
+  const rgbOf = (p) => [p.face, p.joint ?? p.face, p.grain ?? p.face].map((hex) => c.setHex(hex).toArray());
+  const rgb = rgbOf(paint);
+  // A band along the foot of a wall: its triangles below the height it reaches up to, in its colours.
+  const lower = paint.lower ? rgbOf(paint.lower) : null;
+  let palette = rgb;
   for (let i = 0; i < n; i++) {
     const v = indices[i] * 3;
     out[i * 3] = positions[v];
     out[i * 3 + 1] = positions[v + 1];
     out[i * 3 + 2] = positions[v + 2];
-    const [r, g, b] = rgb[marks[(i / 3) | 0]] ?? rgb[0];
+    if (i % 3 === 0 && lower) {
+      const z = (positions[v + 2] + positions[indices[i + 1] * 3 + 2] + positions[indices[i + 2] * 3 + 2]) / 3;
+      palette = z < paint.lower.below ? lower : rgb;
+    }
+    const [r, g, b] = palette[marks[(i / 3) | 0]] ?? palette[0];
     colours[i * 3] = r;
     colours[i * 3 + 1] = g;
     colours[i * 3 + 2] = b;
