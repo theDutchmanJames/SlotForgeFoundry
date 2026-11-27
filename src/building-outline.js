@@ -4,7 +4,7 @@
 // the outline, court-1-1 of courtyard 1), so when walls come in between, the
 // windows and doors and the walls' own textures move with them.
 import { validateBuilding } from './geometry/building.js';
-import { footprintPoints, footprintRings, footprintWalls } from './geometry/footprint-building.js';
+import { footprintPoints, footprintRings, footprintStoreys, footprintWalls, storeyWalls } from './geometry/footprint-building.js';
 
 export const BAY = Object.freeze({ depth: 15, chamfer: 15, bulge: 15, facets: 6 });
 
@@ -15,7 +15,8 @@ function ringOf(wall) {
   return m[1] ? { ring: 0, i: Number(m[1]) - 1 } : { ring: Number(m[2]), i: Number(m[3]) - 1 };
 }
 const idOf = (ring, i) => (ring ? 'court-' + ring + '-' : 'edge-') + (i + 1);
-const ringWalls = (b, ring) => footprintWalls(b).filter((w) => w.ring === ring);
+// A ring's walls, of the ground floor or of storey `st`, moved out by its jetties.
+const ringWalls = (b, ring, st = null) => (st?.out ? storeyWalls(b, st) : footprintWalls(b)).filter((w) => w.ring === ring);
 const ringPoints = (b, ring) => footprintRings(b)[ring].map((p) => [...p]);
 // The building ready to draw a ring of: its outline drawn as it is; a courtyard's ring as it is.
 function drawable(b, ring) {
@@ -43,6 +44,8 @@ export function asOutline(b) {
   if (b.kind !== 'footprint') throw Error('Only a shaped building has an outline to draw.');
   return b.shape === 'custom' ? b : { ...b, shape: 'custom', points: footprintPoints(b) };
 }
+// The outline drawn; or the courtyard drawn, its other settings following from its ring. Not yet checked, nor moved to 0, 0.
+const redrawn = (b, ring, points) => ({ ...b, ...(ring ? { courtyards: b.courtyards.map((c, k) => (k === ring - 1 ? { shape: 'custom', points } : c)) } : { points }) });
 /**
  * The outline with new points, and the walls renamed: `where(i)` says where
  * the old wall i went, as a function of an opening's place along it giving
@@ -51,11 +54,27 @@ export function asOutline(b) {
 function renamed(b, ring, points, where) {
   // Every storey's windows and doors, and its walls' own textures, on this ring.
   const mine = (wall) => ringOf(wall)?.ring === ring;
-  const storey = (s) => {
+  const next = redrawn(b, ring, points);
+  const storeys = footprintStoreys({ ...b, upper: b.upper ?? [] });
+  const storey = (s, n) => {
+    // A jettied storey's walls stand out past the ground floor's, longer at each corner: its windows
+    // and doors are kept where they are on the plan, measured along its own walls, old and new.
+    const before = ringWalls(b, ring, storeys[n]), after = ringWalls(next, ring, storeys[n]);
     const openings = s.openings.map((o) => {
       if (!mine(o.wall)) return o;
-      const [j, u] = where(ringOf(o.wall).i, o.at);
-      return { ...o, wall: idOf(ring, j), at: Math.round(u * 1e6) / 1e6 };
+      const i = ringOf(o.wall).i;
+      if (!storeys[n].out || !before[i]) {
+        const [j, u] = where(i, o.at);
+        return { ...o, wall: idOf(ring, j), at: Math.round(u * 1e6) / 1e6 };
+      }
+      const old = before[i], p = at(old.a, old.dir, o.at);
+      // Of the walls the old one became, the one running the same way that it is along.
+      const pieces = where.pieces?.(i) ?? [where(i, o.at)[0]];
+      const j = pieces.find((k) => {
+        const w = after[k];
+        return w && w.dir[0] * old.dir[0] + w.dir[1] * old.dir[1] > 1 - 1e-6 && along(p, w) > -1e-6 && along(p, w) < w.length + 1e-6;
+      }) ?? pieces[0];
+      return { ...o, wall: idOf(ring, j), at: Math.round(along(p, after[j]) * 1e6) / 1e6 };
     });
     const wallTextures = {};
     for (const [w, t] of Object.entries(s.wallTextures ?? {})) {
@@ -69,10 +88,10 @@ function renamed(b, ring, points, where) {
     }
     return { openings, wallTextures };
   };
-  // The outline drawn; or the courtyard drawn, its other settings following from its ring.
-  const shape = ring ? { courtyards: b.courtyards.map((c, k) => (k === ring - 1 ? { shape: 'custom', points } : c)) } : { points };
-  return validateBuilding({ ...b, ...shape, ...storey(b), upper: (b.upper ?? []).map((u) => ({ ...u, ...storey(u) })) });
+  return validateBuilding({ ...next, ...storey(b, 0), upper: (b.upper ?? []).map((u, n) => ({ ...u, ...storey(u, n + 1) })) });
 }
+// How far along a wall a point on the plan is.
+const along = (p, w) => (p[0] - w.a[0]) * w.dir[0] + (p[1] - w.a[1]) * w.dir[1];
 // Every storey's windows and doors on a wall: a wall about to change shape must have none.
 const openingsOn = (b, wall) => [b, ...(b.upper ?? [])].flatMap((s) => s.openings.filter((o) => o.wall === wall));
 
@@ -114,17 +133,23 @@ export function addBay(input, wall, depth = BAY.depth, [from, to] = [1 / 3, 2 / 
     L = w.length,
     u0 = L * from,
     u1 = L * to;
-  // A window or door where the bay starts or ends would be cut in two.
-  [b, ...(b.upper ?? [])].forEach((st, n) =>
-    st.openings.forEach((o, k) => {
-      if (o.wall === wall && [u0, u1].some((u) => Math.abs(o.at - u) < o.width / 2 + 9))
-        throw Error((o.type === 'door' ? 'Door ' : 'Window ') + (k + 1) + (n ? ' of storey ' + (n + 1) : '') + ' is where the ' + (depth > 0 ? 'bay' : 'recess') + ' would start or end: move it first.');
-    }),
-  );
   const p1 = at(w.a, w.dir, u0),
     p4 = at(w.a, w.dir, u1);
   const points = ringPoints(b, ring);
   points.splice(i + 1, 0, p1, at(p1, out, depth), at(p4, out, depth), p4);
+  // A window or door where the bay starts or ends would be cut in two: on a jettied storey, where its own walls turn.
+  const storeys = footprintStoreys({ ...b, upper: b.upper ?? [] });
+  [b, ...(b.upper ?? [])].forEach((st, n) => {
+    let ends = [u0, u1];
+    if (storeys[n].out) {
+      const old = ringWalls(b, ring, storeys[n])[i], after = ringWalls(redrawn(b, ring, points), ring, storeys[n]);
+      ends = [along(after[i].end, old), along(after[i + 4].a, old)];
+    }
+    st.openings.forEach((o, k) => {
+      if (o.wall === wall && ends.some((u) => Math.abs(o.at - u) < o.width / 2 + 9))
+        throw Error((o.type === 'door' ? 'Door ' : 'Window ') + (k + 1) + (n ? ' of storey ' + (n + 1) : '') + ' is where the ' + (depth > 0 ? 'bay' : 'recess') + ' would start or end: move it first.');
+    });
+  });
   const where = (j, u) => (j < i ? [j, u] : j > i ? [j + 4, u] : u <= u0 ? [i, u] : u >= u1 ? [i + 4, u - u1] : [i + 2, u - u0]);
   where.pieces = (j) => (j === i ? [i, i + 1, i + 2, i + 3, i + 4] : [where(j, 0)[0]]);
   return renamed(b, ring, points, where);
