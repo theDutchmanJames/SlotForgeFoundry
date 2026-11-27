@@ -27,6 +27,7 @@ import { kitShapes } from './kit-shapes.js';
 import { TRIM, checkOpeningShape, openingShapes, outlineOf, overOf, sideOf, underOf } from './opening-shapes.js';
 import { PROP_GAP, PROP_PARTS, checkPropList, placeProp, propFootprint, propOf } from './props.js';
 import { PROPS_DEFAULTS, buildPropsKit, propsLayout, validatePropsKit } from './props-kit.js';
+import { buildFitTest, fitTestLayout, validateFitTest } from './fit-test.js';
 import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
@@ -536,6 +537,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'walkway') return validateWalkway(input);
   if (input?.kind === 'pitbays') return validatePitBays(input);
   if (input?.kind === 'props') return validatePropsKit(input);
+  if (input?.kind === 'fittest') return validateFitTest(input);
   const raw = input && typeof input === 'object' ? input : {};
   const b = { ...BUILDING_DEFAULTS, ...raw };
   for (const key of Object.keys(b))
@@ -1445,6 +1447,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'walkway') return { ...walkwayLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'pitbays') return { ...pitBaysLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'props') return { ...propsLayout(input), storeys: [], doors: [] };
+  if (input?.kind === 'fittest') return { ...fitTestLayout(input), storeys: [], doors: [] };
   const b = validateBuilding(input);
   const storeys = storeyStack(b);
   const parts = [{ id: 'base', name: 'Base plate', role: 'buildingBase' }, ...standParts(b)];
@@ -1522,7 +1525,7 @@ export function buildingCuts(input, plate) {
   if (input?.kind === 'sections') return {};
   if (input?.kind === 'footprint') return {};
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props', 'fittest'].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1620,6 +1623,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'walkway') return buildWalkway(wasm, input);
   if (input?.kind === 'pitbays') return buildPitBays(wasm, input);
   if (input?.kind === 'props') return buildPropsKit(wasm, input, plate);
+  if (input?.kind === 'fittest') return buildFitTest(wasm, input);
   const { Manifold, CrossSection } = wasm;
   const { building: b, storeys, doors } = buildingLayout(input);
   const { wall: t, groove: g, ledge: m, shell, deck, roof: rt } = KIT;

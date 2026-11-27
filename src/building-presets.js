@@ -461,6 +461,12 @@ const PRESETS = [
     building: { kind: 'tyrebridge' },
   },
   {
+    id: 'fit-test',
+    name: 'Fit test',
+    note: 'Print this first: three grooves round your joint clearance and a strip of wall to try in them',
+    building: { kind: 'fittest' },
+  },
+  {
     id: 'props-pit',
     name: 'Pit props',
     note: 'Tyre stacks, a tool chest, a workbench, gas bottles and oil drums for a pit garage',
@@ -840,7 +846,7 @@ export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
 
 /** The standard buildings in groups, for the Start from list: every preset in one. */
 export const PRESET_GROUPS = Object.freeze([
-  ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'classic', 'shed', 'container']],
+  ['Start shapes', ['garage', 'connected', 'footprint-l', 'footprint-u', 'footprint-t', 'classic', 'shed', 'container', 'fit-test']],
   ['Pit buildings', ['pitrow', 'pit-modern', 'pit-low', 'pit-building', 'pit-building-low', 'pit-row-modern', 'pit-boxes', 'pit-boxes-low', 'pit-tower']],
   ['Towers and offices', ['tower', 'race-control', 'race-hq', 'vip', 'timing', 'tower-pyramid', 'booth-column', 'camera-tower', 'scaffold-tower', 'press-tower', 'crosswalk-tower']],
   ['Marshal posts', ['marshal', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-brick', 'hut-first-aid', 'hut-large', 'hut-legs', 'hut-frames', 'post-box', 'hut-tower', 'flag-post']],

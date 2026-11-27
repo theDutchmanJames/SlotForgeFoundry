@@ -3,6 +3,7 @@
 import { glazingSheets } from './building-glazing.js';
 import { fmt } from './ui.js';
 import { propOf } from './geometry/props.js';
+import { fitClearances } from './geometry/fit-test.js';
 import { marshalLevels } from './geometry/marshal-post.js';
 import { BILLBOARD } from './geometry/billboard.js';
 import { tyreOpening } from './geometry/tyre-bridge.js';
@@ -83,6 +84,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
   if (b.kind === 'props') return propsNotes(name, b, parts, sizes);
+  if (b.kind === 'fittest') return fitNotes(name, b, parts, sizes);
   if (b.kind === 'tyrebridge') return tyreNotes(name, b, parts, sizes);
   if (b.kind === 'picnic') return picnicNotes(name, b, parts, sizes);
   if (b.kind === 'platform') return platformNotes(name, b, parts, sizes);
@@ -408,6 +410,22 @@ export function propLines(types) {
     '- Props print as they lie, without supports: round ones on their bases, a tool chest, a counter, a pit board and a sign on their backs, a crowd barrier on its front, tops and frames flat.',
     ...Object.entries(PROP_HOW).filter(([t]) => has(t) || (t === 'sign' && types.some((x) => /^(brake|chevron|pit-(in|out))/.test(x)))).map(([, how]) => '- ' + how),
   ];
+}
+function fitNotes(name, b, parts, sizes) {
+  const [lo, mid, hi] = fitClearances(b);
+  return [
+    name + ' · SlotForge Foundry fit test',
+    '',
+    'Print this before a big kit, with the settings you will print the kit with. It finds the joint clearance your printer needs: the room each side of a wall in the groove of a base or a floor, and of every tab in its pocket.',
+    '',
+    'Parts, as they lie on the plate:',
+    ...parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')),
+    '',
+    'Trying it',
+    '- The block has three grooves, with a clearance of ' + lo + ', ' + mid + ' and ' + hi + ' mm each side, raised in front of each.',
+    '- Push the wall strip into each groove from the back. The one it slides into with a little push, and stays in without falling out, is right for your printer.',
+    '- Set Joint clearance on your buildings to that number. Too tight in all three: print the test again at a larger clearance; too loose in all three: at a smaller one.',
+  ].join('\n');
 }
 function propsNotes(name, b, parts, sizes) {
   const list = parts.map((p) => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '')).join('\n');

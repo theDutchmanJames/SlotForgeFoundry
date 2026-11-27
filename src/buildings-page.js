@@ -14,6 +14,8 @@ import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
 import { kitNotes } from './building-kit.js';
 import { glazingSheets, glazingSvg } from './building-glazing.js';
+import { footprintSheets, kit3mf, stlMesh } from './kit-extras.js';
+import { footprint as tableFootprint } from './planner-buildings.js';
 import { BUILDING_PRESETS, PRESET_GROUPS } from './building-presets.js';
 import { presetThumb } from './preset-thumbs.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth } from './geometry/grandstand.js';
@@ -26,6 +28,7 @@ import { SWITCHBACK_LIMITS, switchbackPlan } from './geometry/switchback.js';
 import { BENCH_LIMITS } from './geometry/bench.js';
 import { PROPS, propOf } from './geometry/props.js';
 import { PROPS_KIT } from './geometry/props-kit.js';
+import { FIT_LIMITS, fitClearances } from './geometry/fit-test.js';
 import { TYRE_BRIDGE_LIMITS, tyreOpening } from './geometry/tyre-bridge.js';
 import { PICNIC_LIMITS } from './geometry/picnic.js';
 import { PLATFORM_LIMITS, platformFootprint, platformStair } from './geometry/viewing-platform.js';
@@ -379,6 +382,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('eSeat', 'Seat height', 14, BENCH_LIMITS.seatHeight)}
       <label class="bd-check"><input type="checkbox" name="eBack"><span>A back on each bench</span></label>
       <p class="bd-hint">Planked, the seat and the back are planks with gaps between them, joined by cleats behind, on two end frames set in from the ends: their legs joined by a stretcher, the back leg rising to carry the back. The seat prints upside down, its planks on the plate; the back face down; the end frames flat. Plain, the seat and back are one piece between the end frames, lying on the back.</p></section>
+    <section class="bd-box" data-bd-card="fitTest" data-bd-fittest hidden><h3>Fit test</h3>
+      <label class="bd-row"><span>Joint clearance</span><span class="bd-input"><input type="number" name="ftPlay" value="0.2" min="${FIT_LIMITS.play[0]}" max="${FIT_LIMITS.play[1]}" step="0.05"><small>mm</small></span></label>
+      <p class="bd-hint" data-bd-fit-tries></p>
+      <p class="bd-hint">Print this before a big kit, with the settings you will print the kit with. Push the wall strip into each groove from the back: the one it slides into with a little push, and stays in, gives the clearance to set as Joint clearance on your buildings. Too tight in all three, or too loose: print it again around a larger or a smaller number.</p></section>
     <section class="bd-box" data-bd-card="propsKit" data-bd-props hidden><h3>Props</h3>
       <div class="bd-props-items"></div>
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-add-item>${icon('plus')}Prop</button></div>
@@ -589,6 +596,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isSwitchback = () => building.kind === 'switchback';
   const isBench = () => building.kind === 'bench';
   const isProps = () => building.kind === 'props';
+  const isFitTest = () => building.kind === 'fittest';
   const isTyre = () => building.kind === 'tyrebridge';
   const isPicnic = () => building.kind === 'picnic';
   const isPlatform = () => building.kind === 'platform';
@@ -637,10 +645,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
     foldCards();
-    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       if (box.hasAttribute('data-bd-fitting')) continue;
-      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
+      const own = ['sections', 'footprint', 'stand', 'gantry', 'pits', 'marshal', 'flag', 'billboard', 'switchback', 'bench', 'props', 'fittest', 'tyre', 'picnic', 'platform', 'walkway', 'bays'].find((k) => box.hasAttribute('data-bd-' + k)) ?? 'garage';
       box.hidden = own !== kind;
     }
     if (!isGarage()) $('[data-bd-fitting]').hidden = true;
@@ -1196,6 +1204,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isSwitchback()) return readSwitchback();
     if (isBench()) return readBench();
     if (isProps()) return readProps();
+    if (isFitTest()) return { kind: 'fittest', play: form.elements.ftPlay.value === '' ? NaN : Number(form.elements.ftPlay.value) };
     if (isTyre()) return readTyre();
     if (isPicnic()) return readPicnic();
     if (isPlatform()) return readPlatform();
@@ -1349,6 +1358,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isProps()) {
       // Its rows are drawn when it is filled, and when a prop comes or goes.
     }
+    else if (isFitTest()) $('[data-bd-fit-tries]').textContent = 'Its three grooves: ' + fitClearances(building).join(', ') + ' mm each side.';
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) fillWalkway(building);
     else if (isBays()) drawBays();
@@ -1624,6 +1634,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isSwitchback()) card = 'switchback';
     else if (isBench()) card = 'bench';
     else if (isProps()) card = 'propsKit';
+    else if (isFitTest()) card = 'fitTest';
     else if (/^prop-/.test(id)) card = 'buildingProps';
     else if (isTyre()) card = 'tyre';
     else if (isPicnic()) card = 'picnic';
@@ -1714,6 +1725,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'switchback') return fillSwitchback(b);
     if (b.kind === 'bench') return fillBench(b);
     if (b.kind === 'props') return fillProps(b);
+    if (b.kind === 'fittest') {
+      form.elements.ftPlay.value = b.play;
+      return;
+    }
     if (b.kind === 'tyrebridge') return fillTyre(b);
     if (b.kind === 'picnic') return fillPicnic(b);
     if (b.kind === 'platform') return fillPlatform(b);
@@ -1826,8 +1841,26 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const sheets = glazingSheets(building);
     if (sheets.length) zip['glazing.svg'] = strToU8(glazingSvg(name || 'Building', sheets));
     files.forEach((f, i) => (zip[String(i + 1).padStart(2, '0') + ' ' + f.name + '.stl'] = f.bytes));
-    download((name || 'Building').replace(/[\\/:*?"<>|]+/g, '-') + ' kit.zip', zipSync(zip, { level: 6 }), 'application/zip');
-    notice('Kit downloaded: ' + files.length + ' STL files and the notes for printing and putting it together.');
+    const file = (name || 'Building').replace(/[\\/:*?"<>|]+/g, '-');
+    // The whole kit as one 3MF, laid out on plates, for a slicer.
+    const { bytes: threeMf, plates } = kit3mf(name || 'Building', files.map((f) => ({ name: f.name, mesh: stlMesh(f.bytes) })), plate());
+    zip[file + '.3mf'] = threeMf;
+    // Where it stands on the table, full size, on A4 sheets.
+    let sheets2 = [];
+    try {
+      sheets2 = footprintSheets(name || 'Building', tableFootprint({ building, pose: { x: 0, y: 0, a: 0 } }));
+    } catch {
+      // A kit with no footprint on the table of its own: no sheets.
+    }
+    for (const s2 of sheets2) zip[s2.name] = strToU8(s2.svg);
+    // The README says what else is in the kit.
+    zip['README.txt'] = strToU8(
+      kitNotes(name, building, files, sizes) +
+        '\n\nAlso in the kit\n- ' + file + '.3mf: every part as it prints, laid out on ' + plates + ' plate' + (plates > 1 ? 's' : '') + ' of ' + plate().width + ' × ' + plate().depth + ' mm, to open in a slicer instead of the STL files.' +
+        (sheets2.length ? '\n- footprint 1.svg' + (sheets2.length > 1 ? ' to footprint ' + sheets2.length + '.svg' : '') + ': where it stands on the table, full size, on A4. Print at 100 %, check the 10 mm bar, and tape the sheets together where their crosses meet.' : ''),
+    );
+    download(file + ' kit.zip', zipSync(zip, { level: 6 }), 'application/zip');
+    notice('Kit downloaded: ' + files.length + ' STL files, the same as one 3MF on ' + plates + (plates > 1 ? ' plates' : ' plate') + ', ' + (sheets2.length ? 'the footprint on ' + sheets2.length + ' A4 ' + (sheets2.length > 1 ? 'sheets' : 'sheet') + ', ' : '') + 'and the notes for printing and putting it together.');
   }
   async function save() {
     clearTimeout(timer);
