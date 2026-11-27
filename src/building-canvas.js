@@ -30,6 +30,22 @@ const barsPath = (o, H) => {
   return lines.length ? `<path class="bd-drawing-bars" d="${lines.join('')}"/>` : '';
 };
 
+/**
+ * The plan's width and depth in Footprint: a shaped building's from its ground
+ * outline, whatever storey is chosen (an upper one has no size of its own);
+ * a rectangular one's from the storey chosen.
+ */
+export function planSize(b, level) {
+  if (b.kind === 'footprint') {
+    const pts = footprintPoints(b);
+    return [Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
+  }
+  const s = editStorey(b, level);
+  return [s.width, s.depth];
+}
+/** The storey the size and wing handles change: a shaped building's ground floor, which carries its outline. */
+export const sizeLevel = (b, level) => (b.kind === 'footprint' ? 0 : level);
+
 // The lightweight SVG preview never builds meshes while dragging. Release commits one edit.
 export function createBuildingCanvas(host, { getState, commit, onWall, onSection, error }) {
   let mode = 'wall', selected = null, drag = null, preview = null, valid = true;
@@ -52,7 +68,8 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
     const op = selectedOpening;
     const connected = b.kind === 'sections', plan = connected ? sectionPlan(b,level) : null;
     const elevation = connected ? sectionElevation(b,level,current.id) : null;
-    const W = mode === 'wall' ? current.length : connected ? plan.max[0]-plan.min[0] : s.width, H = mode === 'wall' ? elevation?.height ?? s.height : connected ? plan.max[1]-plan.min[1] : s.depth;
+    const size = mode === 'plan' && !connected ? planSize(b, level) : null;
+    const W = mode === 'wall' ? current.length : connected ? plan.max[0]-plan.min[0] : size[0], H = mode === 'wall' ? elevation?.height ?? s.height : connected ? plan.max[1]-plan.min[1] : size[1];
     const margin = 24;
     const outline = b.kind === 'footprint' ? footprintPoints(b) : [[0, 0], [s.width, 0], [s.width, s.depth], [0, s.depth]];
     const shaped = b.kind === 'footprint';
@@ -180,9 +197,9 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
       render();
       return;
     } else if (drag.shape) {
-      const connected = b.kind === 'sections';
-      const patch = drag.shape === 'offset' ? {offset:snap(s.offset+(['front','back'].includes(s.side)?dx:dy))} : drag.shape === 'wing' ? { wing: snap(b.wing + dx) } : { width: snap(s.width + (connected && s.parent && s.side==='left'?-dx:dx)), depth: snap(s.depth + (connected && s.parent && s.side==='front'?-dy:dy)) };
-      next = patchStorey(b, drag.level, patch);
+      const connected = b.kind === 'sections', level = drag.shape === 'offset' ? drag.level : sizeLevel(b, drag.level), g = editStorey(b, level);
+      const patch = drag.shape === 'offset' ? {offset:snap(s.offset+(['front','back'].includes(s.side)?dx:dy))} : drag.shape === 'wing' ? { wing: snap(b.wing + dx) } : { width: snap(g.width + (connected && g.parent && g.side==='left'?-dx:dx)), depth: snap(g.depth + (connected && g.parent && g.side==='front'?-dy:dy)) };
+      next = patchStorey(b, level, patch);
     } else if (drag.group && !drag.resize) {
       // The chosen ones together, by whole millimetres (Shift: 5).
       try { preview = moveOpenings(b, drag.level, drag.group, snap(dx), snap(-dy)); valid = true; error(''); }

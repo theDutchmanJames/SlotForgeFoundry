@@ -144,6 +144,21 @@ export function checkOutline(points, wall) {
   if (Math.min(w, d) < OUTLINE.size[0] || Math.max(w, d) > OUTLINE.size[1]) throw Error('A drawn building is ' + OUTLINE.size[0] + ' to ' + OUTLINE.size[1] + ' mm across.');
   return { points: pts, width: w, depth: d };
 }
+// The courtyards and props moved back by dx, dy with the outline, so they keep their places among its walls; checked later.
+const back = (v, d) => (Number.isFinite(v) ? Math.round((v - d) * 1e6) / 1e6 : v);
+function shiftPlan(b, dx, dy) {
+  const courtyards = Array.isArray(b.courtyards)
+    ? b.courtyards.map((c) => (!c || typeof c !== 'object' ? c : {
+      ...c,
+      ...('x' in c && { x: back(c.x, dx) }),
+      ...('y' in c && { y: back(c.y, dy) }),
+      ...(Array.isArray(c.points) && { points: c.points.map((p) => (Array.isArray(p) ? [back(p[0], dx), back(p[1], dy)] : p)) }),
+    }))
+    : b.courtyards;
+  // A prop's place left out is 0, 0: on the plan, so it moves too.
+  const props = Array.isArray(b.props) ? b.props.map((p) => (!p || typeof p !== 'object' ? p : { ...p, x: back(p.x ?? 0, dx), y: back(p.y ?? 0, dy) })) : b.props;
+  return { courtyards, props };
+}
 /**
  * A ring of walls, wound so its inside is the building's: each wall at least
  * OUTLINE.shortest long, each corner turning at least a few degrees and at
@@ -187,7 +202,14 @@ function checkOpenings(openings, walls, height, where) {
   const out = openings.map((o, i) => {
     if (!o || typeof o !== 'object' || Object.keys(o).some(k => !SHELL_OPENING_KEYS.includes(k))) throw Error('Invalid opening ' + (i + 1) + where);
     const w = walls.find(w => w.id === o.wall);
-    if (!w || !['window', 'door'].includes(o.type)) throw Error('Choose a wall and an opening type.');
+    if (!['window', 'door'].includes(o.type)) throw Error('Opening ' + (i + 1) + where + ': choose a window or a door.');
+    // A wall the shape has not got, after the shape changed to one with fewer walls, or no wall at all.
+    if (!w) {
+      const name = (o.type === 'door' ? 'Door ' : 'Window ') + (i + 1) + (where ? ' of' + where.slice(1) : '');
+      const m = /^(?:edge-(\d+)|court-(\d+)-(\d+))$/.exec(o.wall ?? '');
+      if (!m) throw Error(name + ' is on no wall: choose one.');
+      throw Error(name + ' is on ' + (m[1] ? 'wall ' + m[1] : 'wall ' + m[3] + ' of courtyard ' + m[2]) + ', which this ' + (m[1] ? 'shape' : 'building') + ' has not got: move it or remove it.');
+    }
     const q = { ...o, sill: o.type === 'door' ? 0 : o.sill };
     if (![q.at, q.width, q.height, q.sill].every(Number.isFinite) || q.width < 8 || q.height < 8 || q.sill < 0) throw Error('Openings need positive sizes and a position above the floor.');
     const p = checkShellOpening(q, w.name);
@@ -213,8 +235,13 @@ export function validateFootprint(input) {
   if (!SHAPES.includes(b.shape)) throw Error('Choose a rectangular, L, U, T, octagonal or round footprint, or draw one.');
   if (!Number.isInteger(b.sides) || b.sides < 6 || b.sides > 32) throw Error('A round building has 6 to 32 sides.');
   // A drawn outline sets the width and the depth; the wing is not used.
-  if (b.shape === 'custom') Object.assign(b, checkOutline(b.points, b.wall));
-  else b.points = null;
+  if (b.shape === 'custom') {
+    const drawn = b.points;
+    Object.assign(b, checkOutline(drawn, b.wall));
+    // Moved so its nearest corner is at 0, 0: the courtyards and props on the plan move with it.
+    const dx = Math.min(...drawn.map((p) => p[0])), dy = Math.min(...drawn.map((p) => p[1]));
+    if (dx || dy) Object.assign(b, shiftPlan(b, dx, dy));
+  } else b.points = null;
   for (const [key, min, max] of [['width', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['depth', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['wing', 40, 500], ['height', 30, 180], ['baseHeight', 4, 20], ['wall', 2, 5], ['play', 0.1, 0.5], ['roof', 2, 5], ['overhang', 0, 12], ['pitch', ...PITCH], ['domeRise', 10, 300]]) {
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max) throw Error(key + ' must be between ' + min + ' and ' + max + (key === 'pitch' ? '°.' : ' mm.'));
   }
@@ -449,24 +476,32 @@ export function buildFootprint(wasm, input, plate = null) {
     return solid;
   };
   // Flat panels split into labelled butt-jointed tiles. No overlap or internal duplicate walls.
-  function tiles(solid, part, wall = null, [zLow, zHigh] = [b.baseHeight - 2, top]) {
+  function tiles(solid, part, wall = null, [zLow, zHigh] = [b.baseHeight - 2, top], lean = { pitch: 0, thick: 0 }) {
     const bb = solid.boundingBox();
     const long = Math.max(...room), short = Math.min(...room);
     let segments;
     if (wall) {
       // Plane cuts along the wall and its height keep every panel printable, even on small beds; the top piece reaches up under the roof.
       const nx = plate ? Math.ceil((wall.length + 2 * b.wall) / long) : 1;
-      const nz = plate ? Math.ceil((zHigh - zLow) / short) : 1;
+      // As high as the wall really is: under a sawtooth or a hip its top rises past zHigh.
+      const zTop = Math.max(zHigh, bb.max[2]);
+      const nz = plate ? Math.ceil((zTop - zLow - 1e-6) / short) : 1;
       segments = [];
       for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
         const lo = -b.wall + x * (wall.length + 2 * b.wall) / nx, hi = -b.wall + (x + 1) * (wall.length + 2 * b.wall) / nx;
-        const z0 = zLow + z * (zHigh - zLow) / nz, z1 = z === nz - 1 ? zHigh + rise + 10 : zLow + (z + 1) * (zHigh - zLow) / nz;
-        const cutter = sweep([[lo, z0 - 0.00001], [hi, z0 - 0.00001], [hi, z1 + 0.00001], [lo, z1 + 0.00001]], [...wall.dir, 0], [0, 0, 1], [...wall.a, 0], [...wall.inward, 0], -b.wall - 1, 2 * b.wall + 1);
+        const z0 = zLow + z * (zTop - zLow) / nz, z1 = z === nz - 1 ? zTop + rise + 10 : zLow + (z + 1) * (zTop - zLow) / nz;
+        // A hair past the wall's foot and top; where two pieces meet, exactly, so they do not overlap.
+        const f = z ? z0 : z0 - 0.00001, g = z === nz - 1 ? z1 + 0.00001 : z1;
+        const cutter = sweep([[lo, f], [hi, f], [hi, g], [lo, g]], [...wall.dir, 0], [0, 0, 1], [...wall.a, 0], [...wall.inward, 0], -b.wall - 1, 2 * b.wall + 1);
         segments.push(own(solid.intersect(cutter)));
       }
     } else {
       const dx = bb.max[0] - bb.min[0], dy = bb.max[1] - bb.min[1];
-      const nx = plate ? Math.ceil(dx / room[0]) : 1, ny = plate ? Math.ceil(dy / room[1]) : 1;
+      // A slope laid flat by its pitch (`lean`, and how high it is thick) is longer printed than on the
+      // plan: each piece 1/cos as long, and its upright ends lying over by its thickness × sin.
+      const cos = Math.cos((lean.pitch * Math.PI) / 180), over = lean.thick * Math.sin((lean.pitch * Math.PI) / 180);
+      if (plate && room[1] <= over) throw Error(part.name + ' is too thick to lie on the plate.');
+      const nx = plate ? Math.ceil(dx / room[0]) : 1, ny = plate ? Math.ceil(dy / (cos * (room[1] - over))) : 1;
       segments = [];
       for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) segments.push(own(solid.intersect(box(bb.min[0] + x * dx / nx, bb.min[1] + y * dy / ny, bb.min[2] - 1, bb.min[0] + (x + 1) * dx / nx, bb.min[1] + (y + 1) * dy / ny, bb.max[2] + 1))));
     }
@@ -531,8 +566,8 @@ export function buildFootprint(wasm, input, plate = null) {
         const end = last ? c : c - lt;
         const slope = sweep([[a, sawUnder(k, a)], [end, sawUnder(k, end)], [end, sawUnder(k, end) + T], [a, sawUnder(k, a) + T]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -1000, 3000);
         const panel = own(slope.intersect(plan));
-        // Longer than the plate, in pieces end to end.
-        if (!panel.isEmpty()) tiles(panel, { id: 'roof-' + (k + 1), name: 'Roof tooth ' + (k + 1), role: 'roof', lie: [-b.pitch, 0, 0], apart: [0, 0, roofLift + k * 6] });
+        // Longer than the plate as it prints, laid down its pitch: in pieces end to end.
+        if (!panel.isEmpty()) tiles(panel, { id: 'roof-' + (k + 1), name: 'Roof tooth ' + (k + 1), role: 'roof', lie: [-b.pitch, 0, 0], apart: [0, 0, roofLift + k * 6] }, null, undefined, { pitch: b.pitch, thick: T });
         if (last) continue;
         // The north light: from the next tooth's low edge up to this one's high edge, over the inside of the walls.
         const z1 = sawUnder(k, end) + T;
