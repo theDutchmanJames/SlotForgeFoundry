@@ -10,12 +10,15 @@ import { overOf, sideOf, underOf } from './opening-shapes.js';
 import polygonClipping from 'polygon-clipping';
 import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf, propPartIds } from './props.js';
 
-export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [], props: [], courtyards: [] });
+export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, domeRise: 40, teeth: 3, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [], props: [], courtyards: [] });
 export const SHAPES = Object.freeze(['rectangle', 'L', 'U', 'T', 'octagon', 'round', 'custom']);
 /** A drawn outline: its walls at least this long, its corners at most this many, each turning at least `least` and at most `most` degrees. */
 export const OUTLINE = Object.freeze({ shortest: 10, most: 48, size: [40, 1200], least: 3, turn: 90 });
 /** A storey above: its height, its windows and doors, its finish. */
-export const FOOTPRINT_UPPER = Object.freeze({ height: 60, openings: Object.freeze([]), ...SHELL_FINISH_DEFAULTS });
+// jetty: how far its walls stand out past the walls below, on a floor that reaches out under them: a jettied storey.
+export const FOOTPRINT_UPPER = Object.freeze({ height: 60, jetty: 0, openings: Object.freeze([]), ...SHELL_FINISH_DEFAULTS });
+/** A jetty: at most this far out past the walls below. */
+export const JETTY = 10;
 /** Storeys: at most so many above the ground floor; the floor between, its groove and the frame under it. */
 export const FLOORS = Object.freeze({ most: 3, slab: 4, groove: 2, lip: 2, lipDepth: 3 });
 /** A pitched roof's pitch. */
@@ -66,7 +69,14 @@ export function footprintRings(b) {
  * the building. A courtyard's walls face out into the courtyard.
  */
 export function footprintWalls(b) {
-  return footprintRings(b).flatMap((points, r) =>
+  return wallsOf(footprintRings(b));
+}
+/** The walls of a storey: round the outline and the courtyards moved out by its jetties. */
+export function storeyWalls(b, s) {
+  return wallsOf(ringsOffset(b, s?.out ?? 0));
+}
+function wallsOf(rings) {
+  return rings.flatMap((points, r) =>
     points.map((a, i) => {
       const end = points[(i + 1) % points.length], dx = end[0] - a[0], dy = end[1] - a[1], length = Math.hypot(dx, dy);
       const id = r ? 'court-' + r + '-' + (i + 1) : 'edge-' + (i + 1), name = r ? 'Courtyard ' + r + ', wall ' + (i + 1) : 'Wall ' + (i + 1);
@@ -162,8 +172,11 @@ function checkRing(pts, wall, where, what) {
 export function footprintStoreys(b) {
   const out = [];
   let floor = b.baseHeight;
+  let reach = 0;
   [{ height: b.height, openings: b.openings, wallTexture: b.wallTexture, wallTextures: b.wallTextures, lowerTexture: b.lowerTexture, lowerHeight: b.lowerHeight }, ...b.upper].forEach((s, i) => {
-    out.push({ ...s, n: i + 1, floor, top: floor + s.height, suffix: i ? '-' + (i + 1) : '', label: i ? ', storey ' + (i + 1) : '' });
+    // How far its walls stand out past the ground floor's: its jetty and those below it.
+    reach += i ? s.jetty ?? 0 : 0;
+    out.push({ ...s, n: i + 1, floor, top: floor + s.height, out: reach, suffix: i ? '-' + (i + 1) : '', label: i ? ', storey ' + (i + 1) : '' });
     floor += s.height + FLOORS.slab;
   });
   return out;
@@ -202,16 +215,27 @@ export function validateFootprint(input) {
   // A drawn outline sets the width and the depth; the wing is not used.
   if (b.shape === 'custom') Object.assign(b, checkOutline(b.points, b.wall));
   else b.points = null;
-  for (const [key, min, max] of [['width', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['depth', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['wing', 40, 500], ['height', 30, 180], ['baseHeight', 4, 20], ['wall', 2, 5], ['play', 0.1, 0.5], ['roof', 2, 5], ['overhang', 0, 12], ['pitch', ...PITCH]]) {
+  for (const [key, min, max] of [['width', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['depth', b.shape === 'custom' ? OUTLINE.size[0] : 60, 1200], ['wing', 40, 500], ['height', 30, 180], ['baseHeight', 4, 20], ['wall', 2, 5], ['play', 0.1, 0.5], ['roof', 2, 5], ['overhang', 0, 12], ['pitch', ...PITCH], ['domeRise', 10, 300]]) {
     if (!Number.isFinite(b[key]) || b[key] < min || b[key] > max) throw Error(key + ' must be between ' + min + ' and ' + max + (key === 'pitch' ? '°.' : ' mm.'));
   }
   if (['rectangle', 'L', 'U', 'T'].includes(b.shape) && Math.min(b.width, b.depth) < 100) throw Error('A rectangular, L, U or T building is at least 100 mm wide and deep.');
   if (!['rectangle', 'custom', 'octagon', 'round'].includes(b.shape) && (b.wing > b.depth - 30 || b.wing > (b.shape === 'U' ? (b.width - 30) / 2 : b.shape === 'T' ? b.width - 60 : b.width - 30))) throw Error('The wing leaves too little room for the recess. Reduce the wing width or enlarge the building.');
   // A round building's walls are drawn too: their lengths and corners are checked as any outline's.
   if (b.shape === 'round' || b.shape === 'octagon') checkOutline(footprintPoints(b), b.wall);
-  if (!['flat', 'hip'].includes(b.roofShape)) throw Error('Choose a flat roof or a hip roof.');
+  if (!['flat', 'hip', 'dome', 'sawtooth'].includes(b.roofShape)) throw Error('Choose a flat roof, a hip roof, a dome or a sawtooth.');
+  if (b.roofShape === 'sawtooth') {
+    if (!Number.isInteger(b.teeth) || b.teeth < 1 || b.teeth > 8) throw Error('A sawtooth roof has 1 to 8 teeth.');
+    if (b.pitch > SAW.most) throw Error('A sawtooth\u2019s slopes are at most ' + SAW.most + '\u00b0, so its north lights stay low enough.');
+    const { wd, h } = sawOf(b);
+    if (wd < SAW.least) throw Error('The teeth are only ' + Math.round(wd * 10) / 10 + ' mm deep: at least ' + SAW.least + ' mm each, so fewer teeth.');
+    if (h < SAW.light + 4) throw Error('The teeth are too low for their north lights: a steeper pitch, or fewer teeth.');
+  }
+  if (b.roofShape === 'dome') {
+    if (cornerTurns(footprintPoints(b)).some((t) => t < 0)) throw Error('A dome goes on an outline without inside corners: an L, U or T, or a drawn outline with one, takes a flat roof.');
+    if (b.domeRise > domeOf(b).a) throw Error('A dome rises at most as high as half its span, a half round: ' + Math.floor(domeOf(b).a) + ' mm.');
+  }
   b.courtyards = checkCourtyards(b);
-  if (b.courtyards.length && b.roofShape === 'hip') throw Error('A building round a courtyard takes a flat roof.');
+  if (b.courtyards.length && b.roofShape !== 'flat') throw Error('A building round a courtyard takes a flat roof.');
   if (b.roofShape === 'hip' && cornerTurns(footprintPoints(b)).some((t) => t < 0)) throw Error('A hip roof goes on an outline without inside corners: an L, U or T, or a drawn outline with one, takes a flat roof.');
   const walls = footprintWalls(b);
   checkShellTexture(b);
@@ -223,12 +247,47 @@ export function validateFootprint(input) {
     if (!u || typeof u !== 'object' || Object.keys(u).some((k) => !Object.hasOwn(FOOTPRINT_UPPER, k))) throw Error('Invalid storey ' + (i + 2) + '.');
     const s = { ...FOOTPRINT_UPPER, ...u };
     if (!Number.isFinite(s.height) || s.height < 30 || s.height > 180) throw Error('Storey ' + (i + 2) + ' is 30 to 180 mm high.');
-    Object.assign(s, checkShellFinish(s, walls.map((w) => w.id), s.height, where));
-    s.openings = checkOpenings(s.openings, walls, s.height, where);
+    if (!Number.isFinite(s.jetty) || s.jetty < 0 || s.jetty > JETTY) throw Error('Storey ' + (i + 2) + ' stands out 0 to ' + JETTY + ' mm past the walls below.');
     return s;
+  });
+  // Each storey's windows and doors along its own walls, moved out by its jetties.
+  if (b.upper.some((u) => u.jetty) && b.roofShape === 'dome') throw Error('A dome goes on walls that stand one above the other: no jetties under it.');
+  footprintStoreys(b).slice(1).forEach((st, i) => {
+    const s = b.upper[i], where = ', storey ' + (i + 2), mine = storeyWalls(b, st);
+    if (st.out) {
+      // Moved out, the outline and each courtyard keep their shape.
+      try {
+        ringsOffset(b, st.out).forEach((r, k) => checkRing(k ? [...r].reverse() : r, b.wall, '', k ? 'Courtyard ' + k : 'The outline'));
+      } catch (e) {
+        throw Error('Storey ' + (i + 2) + ' stands out too far: ' + e.message);
+      }
+    }
+    Object.assign(s, checkShellFinish(s, mine.map((w) => w.id), s.height, where));
+    s.openings = checkOpenings(s.openings, mine, s.height, where);
   });
   b.props = checkFootprintProps(b);
   return b;
+}
+/** A sawtooth: each tooth at least so deep; its north light's frame wide, its panes' bars this far apart; the slopes at most this steep. */
+export const SAW = Object.freeze({ least: 25, light: 6, frame: 2, bar: 22, thick: 2, most: 35 });
+/** The teeth across the outline from front to back: where they start, how deep each is, how high it rises. */
+export function sawOf(b) {
+  const jet = footprintStoreys(b).at(-1).out ?? 0;
+  const pts = footprintOffset(b, jet + b.overhang);
+  const ys = pts.map((p) => p[1]);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const wd = (y1 - y0) / b.teeth;
+  return { y0, y1, wd, h: wd * Math.tan((b.pitch * Math.PI) / 180) };
+}
+/** A dome: a cap of a sphere over the outline, its middle, the radius of its foot out past the corners, and its sphere. */
+export const DOME = Object.freeze({ cone: 50, shell: 3 });
+export function domeOf(b) {
+  const pts = footprintOffset(b, b.overhang + (footprintStoreys(b).at(-1).out ?? 0));
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const c = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  const a = Math.max(...pts.map(([x, y]) => Math.hypot(x - c[0], y - c[1])));
+  const h = b.domeRise;
+  return { c, a, h, R: (a * a + h * h) / (2 * h) };
 }
 /**
  * The courtyards on the plan: each a rectangle, an octagon or a round one of
@@ -271,6 +330,10 @@ function checkCourtyards(b) {
     return q;
   });
 }
+/** Whether a square on the plan lies in a courtyard, clear of the walls round it: on its paving. */
+function inCourtyard(b, square) {
+  return (b.courtyards ?? []).some((c) => areaOf(polygonClipping.difference(square, [closed(offsetPoints(courtyardPoints(c), PROP_GAP))])) < 1e-6);
+}
 /** The base's outline, out past the walls. */
 const BASE_OUT = 3;
 // The area of a polygon-clipping result.
@@ -293,7 +356,7 @@ function checkFootprintProps(b) {
   const props = checkPropList(b.props);
   if (!props.length) return props;
   const storeys = footprintStoreys(b);
-  const room = ringsOffset(b, -(b.wall + b.play + PROP_GAP)).map(closed),
+  const roomOf = (s) => ringsOffset(b, s.out - (b.wall + b.play + PROP_GAP)).map(closed),
     base = [closed(footprintOffset(b, BASE_OUT + PROP_GAP))];
   const placed = [];
   props.forEach((p, i) => {
@@ -304,10 +367,12 @@ function checkFootprintProps(b) {
     if (p.storey >= storeys.length) throw Error(name + ' stands on a storey the building has not got.');
     if (p.storey >= 0) {
       const s = storeys[p.storey], where = p.storey ? 'storey ' + (p.storey + 1) : 'the ground floor';
-      if (areaOf(polygonClipping.difference(square, room)) > 1e-6) throw Error(name + ' stands inside ' + where + ', ' + PROP_GAP + ' mm clear of its walls.');
+      if (areaOf(polygonClipping.difference(square, roomOf(s))) > 1e-6) throw Error(name + ' stands inside ' + where + ', ' + PROP_GAP + ' mm clear of its walls.');
       if (propOf(p.type).size[2] > s.height - FLOORS.lipDepth - 1) throw Error(name + ' is too tall for ' + where + ': ' + propOf(p.type).size[2] + ' mm under a ceiling ' + s.height + ' mm high.');
+    } else if (inCourtyard(b, square)) {
+      // Outside, in a courtyard: on its paving, the base, clear of the walls round it.
     } else {
-      if (areaOf(polygonClipping.intersection(square, base)) > 1e-6) throw Error(name + ' stands on the table outside: keep it ' + PROP_GAP + ' mm clear of the base.');
+      if (areaOf(polygonClipping.intersection(square, base)) > 1e-6) throw Error(name + ' stands on the table outside, or in a courtyard: keep it ' + PROP_GAP + ' mm clear of the base and the walls.');
       if (box[0] < -150 || box[1] < -150 || box[2] > b.width + 150 || box[3] > b.depth + 150) throw Error(name + ' stands at most 150 mm from the building.');
     }
     for (const q of placed)
@@ -319,7 +384,7 @@ function checkFootprintProps(b) {
 }
 const frameName = (o, i, s) => (o.type === 'door' ? 'Door ' : 'Window ') + (i + 1) + ' frame' + s.label;
 // The panels of a hip roof: one over each wall.
-const roofPanels = (b) => (b.roofShape === 'hip' ? footprintWalls(b).map((w, i) => ({ id: 'roof-' + (i + 1), name: 'Roof panel ' + (i + 1), wall: w })) : []);
+const roofPanels = (b) => (b.roofShape === 'hip' ? storeyWalls(b, footprintStoreys(b).at(-1)).filter((w) => !w.ring).map((w, i) => ({ id: 'roof-' + (i + 1), name: 'Roof panel ' + (i + 1), wall: w })) : []);
 export function footprintLayout(input) {
   const b = validateFootprint(input);
   const walls = footprintWalls(b), storeys = footprintStoreys(b);
@@ -330,7 +395,12 @@ export function footprintLayout(input) {
     parts.push(...s.openings.flatMap((o, i) => (o.frame ? [{ id: 'frame-' + (i + 1) + s.suffix, name: frameName(o, i, s), role: 'frame' }] : [])));
   }
   if (b.roofShape === 'hip') parts.push(...roofPanels(b).map((p) => ({ id: p.id, name: p.name, role: 'roof' })));
-  else parts.push({ id: 'roof', name: 'Shaped flat roof', role: 'roof' });
+  else if (b.roofShape === 'sawtooth')
+    for (let k = 0; k < b.teeth; k++) {
+      parts.push({ id: 'roof-' + (k + 1), name: 'Roof tooth ' + (k + 1), role: 'roof' });
+      if (k < b.teeth - 1) parts.push({ id: 'light-' + (k + 1), name: 'North light ' + (k + 1), role: 'wall' });
+    }
+  else parts.push({ id: 'roof', name: b.roofShape === 'dome' ? 'Dome' : 'Shaped flat roof', role: 'roof' });
   parts.push(...propPartIds(b.props));
   return { building: b, storeys: [], doors: [], parts };
 }
@@ -346,21 +416,36 @@ export function buildFootprint(wasm, input, plate = null) {
   const own = s => (temp.push(s), s);
   const { poly, box, sweep } = kitShapes(wasm, own);
   const { Manifold } = wasm;
-  const rings = footprintRings(b), inners = ringsOffset(b, -b.wall), walls = footprintWalls(b);
+  const walls = footprintWalls(b);
   // The plan out to an offset of every ring, the courtyards open: the outline wound one way, each courtyard the other.
   const region = (amount) => own(new wasm.CrossSection(ringsOffset(b, amount).map((r, k) => (k ? cw(r) : ccw(r))), 'Positive'));
   const storeys = footprintStoreys(b);
-  const top = storeys.at(-1).top;
+  const top = storeys.at(-1).top, jet = storeys.at(-1).out;
+  // The top storey's walls, the roof's eaves over them.
+  const topWalls = storeyWalls(b, storeys.at(-1));
   const room = plate ? [plate.width - 2 * (plate.margin ?? 0), plate.depth - 2 * (plate.margin ?? 0)] : [Infinity, Infinity];
   if (room.some(n => n < 40)) throw Error('Use a print plate with at least 40 mm usable width and depth.');
   const trim = (s, n, off) => own(s.trimByPlane(n, off));
   // A hip roof: over each wall a plane rising inward at the pitch from the outside of the wall at the eaves.
   const t = Math.tan((b.pitch * Math.PI) / 180), lenT = Math.hypot(t, 1);
-  const hip = b.roofShape === 'hip';
-  const rise = hip ? t * Math.max(b.width, b.depth) : 0;
+  const hip = b.roofShape === 'hip', saw = b.roofShape === 'sawtooth';
+  const teeth = saw ? sawOf(b) : null;
+  const rise = hip ? t * Math.max(b.width, b.depth) : saw ? teeth.h + b.roof * lenT : 0;
+  // Under a sawtooth each tooth's underside: rising from its front edge at the eaves; under a north light, up to its foot.
+  const sawUnder = (k, y) => top + (y - teeth.y0 - k * teeth.wd) * t;
   const underRoof = (solid) => {
+    if (saw) {
+      const pieces = [];
+      for (let k = 0; k < b.teeth; k++) {
+        const a = teeth.y0 + k * teeth.wd, c = a + teeth.wd;
+        const zone = sweep([[a, -1000], [c, -1000], [c, sawUnder(k, c)], [a, sawUnder(k, a)]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -1000, 3000);
+        const piece = own(solid.intersect(zone));
+        if (!piece.isEmpty()) pieces.push(piece);
+      }
+      return pieces.length ? own(Manifold.union(pieces)) : solid;
+    }
     if (!hip) return solid;
-    for (const w of walls) solid = trim(solid, [t * w.inward[0], t * w.inward[1], -1], (t * (w.inward[0] * w.a[0] + w.inward[1] * w.a[1]) - top) / lenT);
+    for (const w of topWalls) solid = trim(solid, [t * w.inward[0], t * w.inward[1], -1], (t * (w.inward[0] * w.a[0] + w.inward[1] * w.a[1]) - top) / lenT);
     return solid;
   };
   // Flat panels split into labelled butt-jointed tiles. No overlap or internal duplicate walls.
@@ -404,15 +489,18 @@ export function buildFootprint(wasm, input, plate = null) {
       // The floor under an upper storey: on the walls below, a groove on top for its walls, a frame under it inside the walls below.
       if (s.n > 1) {
         const under = s.floor - FLOORS.slab;
-        const slab = own(own(own(region(0).extrude(FLOORS.slab)).translate([0, 0, under])).subtract(ring(b.play, -b.wall - b.play, s.floor - FLOORS.groove, s.floor + 0.01)));
+        // Out to its own walls, which stand out past those below by its jetty; its frame inside the walls below.
+        const below = storeys[s.n - 2].out;
+        const slab = own(own(own(region(s.out).extrude(FLOORS.slab)).translate([0, 0, under])).subtract(ring(s.out + b.play, s.out - b.wall - b.play, s.floor - FLOORS.groove, s.floor + 0.01)));
         tiles(slab, { id: 'floor' + s.suffix, name: 'Floor' + s.label, role: 'floor', lie: [0, 0, 0], apart: [0, 0, lift - 8] });
-        const frame = ring(-b.wall - b.play, -b.wall - b.play - FLOORS.lip, under - FLOORS.lipDepth, under);
+        const frame = ring(below - b.wall - b.play, below - b.wall - b.play - FLOORS.lip, under - FLOORS.lipDepth, under);
         tiles(frame, { id: 'floor' + s.suffix + '-frame', name: 'Floor frame' + s.label, role: 'lip', lie: [0, 0, 0], apart: [0, 0, lift - 16] });
       }
-      walls.forEach((w) => {
+      const rings = ringsOffset(b, s.out), inners = ringsOffset(b, s.out - b.wall), mineWalls = storeyWalls(b, s);
+      mineWalls.forEach((w) => {
         const outline = rings[w.ring], inner = inners[w.ring], i = w.index, j = (i + 1) % outline.length;
         // From the bottom of its groove up to the floor above, or the roof.
-        let solid = own(own(poly([outline[i], outline[j], inner[j], inner[i]]).extrude(s.height + FLOORS.groove + (last && hip ? rise + 2 : 0))).translate([0, 0, s.floor - FLOORS.groove]));
+        let solid = own(own(poly([outline[i], outline[j], inner[j], inner[i]]).extrude(s.height + FLOORS.groove + (last && (hip || saw) ? rise + 2 : 0))).translate([0, 0, s.floor - FLOORS.groove]));
         if (last) solid = underRoof(solid);
         const mine = s.openings.filter(o => o.wall === w.id);
         for (const o of mine) {
@@ -427,23 +515,91 @@ export function buildFootprint(wasm, input, plate = null) {
       // A frame prints face up, glued on round its opening.
       s.openings.forEach((o, i) => {
         if (!o.frame) return;
-        const w = walls.find((x) => x.id === o.wall);
+        const w = mineWalls.find((x) => x.id === o.wall);
         tiles(shellFrame(o, w, s.floor, { sweep, own, Manifold, wasm }), { id: 'frame-' + (i + 1) + s.suffix, name: frameName(o, i, s), role: 'frame', ...lay(w), apart: [-w.inward[0] * 28, -w.inward[1] * 28, 8 + lift] });
       });
     }
     const roofLift = (storeys.length - 1) * 40 + 30;
-    if (!hip) {
-      const roof = own(region(b.overhang).extrude(b.roof)).translate([0, 0, top]); own(roof);
+    if (saw) {
+      // Each tooth a slope over its strip of the plan, out to the overhang, a north light between it and the
+      // next, standing on the next tooth's low edge, framed round panes; each slope prints on its underside.
+      const T = b.roof * lenT, lt = SAW.thick;
+      const plan = own(own(poly(footprintOffset(b, jet + b.overhang)).extrude(rise + 400)).translate([0, 0, top - 200]));
+      const inside = own(own(poly(footprintOffset(b, jet - b.wall - b.play)).extrude(rise + 400)).translate([0, 0, top - 200]));
+      for (let k = 0; k < b.teeth; k++) {
+        const a = teeth.y0 + k * teeth.wd, c = a + teeth.wd, last = k === b.teeth - 1;
+        const end = last ? c : c - lt;
+        const slope = sweep([[a, sawUnder(k, a)], [end, sawUnder(k, end)], [end, sawUnder(k, end) + T], [a, sawUnder(k, a) + T]], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], -1000, 3000);
+        const panel = own(slope.intersect(plan));
+        // Longer than the plate, in pieces end to end.
+        if (!panel.isEmpty()) tiles(panel, { id: 'roof-' + (k + 1), name: 'Roof tooth ' + (k + 1), role: 'roof', lie: [-b.pitch, 0, 0], apart: [0, 0, roofLift + k * 6] });
+        if (last) continue;
+        // The north light: from the next tooth's low edge up to this one's high edge, over the inside of the walls.
+        const z1 = sawUnder(k, end) + T;
+        let light = own(box(-1000, c - lt, top, 3000, c, z1).intersect(inside));
+        if (light.isEmpty()) continue;
+        const { min, max } = light.boundingBox();
+        const panes = [];
+        const n = Math.max(1, Math.round((max[0] - min[0] - SAW.frame) / SAW.bar));
+        const step = (max[0] - min[0] - SAW.frame) / n;
+        for (let q = 0; q < n; q++) panes.push(box(min[0] + SAW.frame + q * step, c - lt - 1, top + SAW.frame, min[0] + (q + 1) * step, c + 1, z1 - SAW.frame));
+        light = own(light.subtract(own(Manifold.union(panes))));
+        // Longer than the plate, cut in the middle of a bar: as few pieces as fit.
+        const long = Math.max(...room), bars = Array.from({ length: n - 1 }, (_, q) => min[0] + SAW.frame / 2 + (q + 1) * step);
+        const cuts = [];
+        let from = min[0];
+        while (max[0] - from > long) {
+          const next = bars.filter((x) => x > from + 1 && x - from <= long).pop();
+          if (next === undefined) throw Error('North light ' + (k + 1) + ' cannot be cut to fit the plate between its panes: a bigger plate, or another number of teeth.');
+          cuts.push(next);
+          from = next;
+        }
+        const edges = [min[0] - 1, ...cuts, max[0] + 1];
+        const pieces = edges.slice(1).map((e, q) => own(light.intersect(box(edges[q], -1000, -1000, e, 3000, 3000)))).flatMap((piece) => piece.decompose().map(own));
+        // Where the plan narrows it may come apart too: each piece its own.
+        pieces.forEach((piece, i, all) => result.push({ id: 'light-' + (k + 1) + (all.length > 1 ? '-' + (i + 1) : ''), name: 'North light ' + (k + 1) + (all.length > 1 ? ', ' + (i + 1) + ' of ' + all.length : ''), role: 'wall', solid: piece, outward: [0, 1, 0], apart: [0, 0, roofLift + k * 6 + 3] }));
+      }
+    } else if (b.roofShape === 'dome') {
+      // A cap of a sphere on the walls, trimmed to the outline and its overhang; hollowed by a cone
+      // steeper than 45 degrees under it, all inside the shell, so it prints the right way up.
+      const { c, a, h, R } = domeOf(b);
+      const zc = top + h - R;
+      const sphere = (r) => own(own(Manifold.sphere(r, 256)).translate([c[0], c[1], zc]));
+      let dome = own(sphere(R).intersect(own(own(poly(footprintOffset(b, jet + b.overhang)).extrude(h + 2)).translate([0, 0, top]))));
+      // The hollow: the widest cone steeper than 45 degrees that stays inside the shell, on the tops of
+      // the walls, inside their inner faces; the solid round it is left to the slicer's infill.
+      const inner = footprintOffset(b, -b.wall - b.play);
+      const rIn = Math.min(...inner.map((p, i) => {
+        const q = inner[(i + 1) % inner.length], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy);
+        return Math.abs((c[0] - p[0]) * dy - (c[1] - p[1]) * dx) / l;
+      }));
+      const t = Math.tan((DOME.cone * Math.PI) / 180), Ri = R - DOME.shell;
+      const fits = (rc) => {
+        for (let k = 0; k <= 60; k++) {
+          const r = (rc * k) / 60;
+          if (top + (rc - r) * t > zc + Math.sqrt(Math.max(0, Ri * Ri - r * r))) return false;
+        }
+        return true;
+      };
+      let lo = 0, hi = rIn;
+      for (let k = 0; k < 30; k++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+      if (lo > 2) dome = own(dome.subtract(own(own(Manifold.cylinder(lo * t, lo, 0, 128)).translate([c[0], c[1], top - 0.01]))));
+      const { min, max } = dome.boundingBox();
+      const [x, y] = [max[0] - min[0], max[1] - min[1]];
+      if (plate && !((x <= room[0] && y <= room[1]) || (x <= room[1] && y <= room[0]))) throw Error('The dome is ' + Math.round(x) + ' × ' + Math.round(y) + ' mm: too big for the plate. A dome prints whole: make the building smaller, or the roof flat.');
+      result.push({ id: 'roof', name: 'Dome', role: 'roof', solid: dome, lie: [0, 0, 0], apart: [0, 0, roofLift] });
+    } else if (!hip) {
+      const roof = own(region(jet + b.overhang).extrude(b.roof)).translate([0, 0, top]); own(roof);
       tiles(roof, { id: 'roof', name: 'Shaped flat roof', role: 'roof', lie: [0, 0, 0], apart: [0, 0, roofLift] });
     } else {
       // Each panel: as thick as the roof over its plane, out to the overhang, kept to its side of the hips.
-      const reach = own(own(poly(footprintOffset(b, b.overhang)).extrude(rise + 200)).translate([0, 0, top - 100]));
+      const reach = own(own(poly(footprintOffset(b, jet + b.overhang)).extrude(rise + 200)).translate([0, 0, top - 100]));
       const planeOf = (w) => [t * w.inward[0], t * w.inward[1], top - t * (w.inward[0] * w.a[0] + w.inward[1] * w.a[1])];
       roofPanels(b).forEach(({ id, name, wall: w }) => {
         const [a, c, k] = planeOf(w);
         let panel = trim(reach, [-a, -c, 1], k / lenT);
         panel = trim(panel, [a, c, -1], -(k + b.roof * lenT) / lenT);
-        for (const v of walls) {
+        for (const v of topWalls) {
           if (v === w) continue;
           // Where this plane is lower than the other's: the hip between them, square to the plan.
           const n = [v.inward[0] - w.inward[0], v.inward[1] - w.inward[1]], l = Math.hypot(...n);
@@ -473,7 +629,10 @@ export function buildFootprint(wasm, input, plate = null) {
     const ids = propPartIds(b.props);
     let k = 0;
     b.props.forEach((p) => {
-      const z = p.storey < 0 ? 0 : storeys[p.storey].floor;
+      const [fw, fd] = propFootprint(p.type, p.rotation);
+      const square = [closed([[p.x, p.y], [p.x + fw, p.y], [p.x + fw, p.y + fd], [p.x, p.y + fd]])];
+      // In a courtyard it stands on the base, its paving; outside, on the table.
+      const z = p.storey >= 0 ? storeys[p.storey].floor : inCourtyard(b, square) ? b.baseHeight : 0;
       for (const q of placeProp(wasm, own, p, z)) {
         const id = ids[k++];
         for (const other of result) {

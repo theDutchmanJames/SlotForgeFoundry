@@ -132,6 +132,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // at, width, depth } a ragged gap down from the top of the wall, `at` its
   // middle along the wall (as for a window), `depth` how far down it reaches.
   damage: Object.freeze([]),
+  // A stepped gable: a board glued on the front wall of the top storey, rising
+  // above a two-sided roof whose gable faces the front in so many steps a side.
+  gableFront: 'none', // 'none' or 'stepped'
+  gableSteps: 3,
   gutters: false,
   downpipes: 'none',
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -730,7 +734,40 @@ export function validateBuilding(input) {
   out.props = checkProps(out);
   out.leaveOut = checkLeaveOut(out);
   out.damage = checkDamage(out);
+  checkGableFront(out);
   return out;
+}
+
+/** The stepped gable: its board thick, glued this far down the wall, clear of the roof by this much. */
+export const GABLE_FRONT = Object.freeze({ thick: 2.5, glue: 8, clear: 4, crown: 4 });
+function checkGableFront(b) {
+  if (!['none', 'stepped'].includes(b.gableFront)) throw Error('Choose a stepped gable, or none.');
+  if (b.gableFront === 'none') return;
+  if (!Number.isInteger(b.gableSteps) || b.gableSteps < 1 || b.gableSteps > 6) throw Error('A stepped gable has 1 to 6 steps a side.');
+  if (b.roof !== 'gable' || b.ridge !== 'depth') throw Error('A stepped gable stands on a two-sided roof whose gable faces the front: its ridge front to back.');
+  if (b.overhangFront > 0) throw Error('The stepped gable stands where the roof would overhang the front: set the overhang at the front to 0.');
+  if (b.leaveOut.includes('roof') || b.leaveOut.includes('front')) throw Error('A stepped gable needs the roof and the front wall.');
+  if (b.sign === 'fascia' || b.cornice) throw Error('The stepped gable covers the top of the front wall, where the sign or the cornice would be: choose one.');
+  const all = storeyStack(b),
+    top = all[all.length - 1];
+  for (const o of top.openings.filter((o) => o.wall === 'front'))
+    if (o.sill + o.height + (o.frame ? KIT.trim : 0) > top.height - GABLE_FRONT.glue - 1) throw Error('The stepped gable is glued over the top ' + GABLE_FRONT.glue + ' mm of the front wall: keep the ' + openingName(o, top.openings).toLowerCase() + ' under it.');
+}
+/** The stepped gable's outline in the plane of the front wall: u along it, z up; each step clear of the roof over it. */
+export function gableFrontOutline(b) {
+  const all = storeyStack(b),
+    top = all[all.length - 1],
+    shape = roofShape(b);
+  const W = top.width,
+    n = b.gableSteps,
+    sw = W / (2 * n + 1);
+  const thick = KIT.roof * Math.hypot(shape.panels[0]?.t ?? 0, 1);
+  const over = (u) => top.eave + roofAt(shape, u, 0) + thick;
+  const tops = Array.from({ length: 2 * n + 1 }, (_, k) => Math.max(over(k * sw), over((k + 1) * sw), over(Math.min(Math.max(W / 2, k * sw), (k + 1) * sw))) + GABLE_FRONT.clear + (k === n ? GABLE_FRONT.crown : 0));
+  const zb = top.eave - GABLE_FRONT.glue;
+  const pts = [[0, zb], [W, zb]];
+  for (let k = 2 * n; k >= 0; k--) pts.push([(k + 1) * sw, tops[k]], [k * sw, tops[k]]);
+  return pts;
 }
 
 /** Breaches: at most so many; each at least `least` wide and deep, and `keep` of the wall left under it. */
@@ -1572,6 +1609,7 @@ export function buildingLayout(input) {
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
   for (let k = 1; b.roof === 'sawtooth' && k < b.teeth; k++) parts.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall' });
   if (b.chimney) parts.push({ id: 'chimney', name: 'Chimney', role: 'frame' });
+  if (b.gableFront === 'stepped') parts.push({ id: 'gable-front', name: 'Stepped gable', role: 'wall' });
   b.dormers.forEach((_, i) => parts.push({ id: 'dormer-' + (i + 1), name: 'Dormer ' + (i + 1), role: 'wall' }));
   parts.push(...propPartIds(b.props));
   if (b.gutters)
@@ -2972,6 +3010,13 @@ export function buildGarage(wasm, input, plate = null) {
     parts.push(...propParts('table'));
     // What is left out goes: the roof, or a wall and its corner braces.
     for (let i = parts.length - 1; i >= 0; i--) if (!keptPart(b, parts[i].id)) parts.splice(i, 1);
+    // The stepped gable: a board on the front wall of the top storey, rising over the roof in steps; it prints on its back.
+    if (b.gableFront === 'stepped') {
+      const top = storeys[storeys.length - 1],
+        lift = b.standType === 'none' ? 0 : b.standHeight;
+      const pts = gableFrontOutline(b).map(([u, z]) => [u, z + lift]);
+      parts.push({ id: 'gable-front', name: 'Stepped gable', role: 'wall', solid: sweep(pts, [1, 0, 0], [0, 0, 1], [top.ox, top.oy, 0], [0, 1, 0], -GABLE_FRONT.thick, 0), outward: [0, -1, 0], apart: [0, -20, 10] });
+    }
     // The breaches: each a ragged gap cut down from the top of its wall on the top storey.
     if (b.damage.length) {
       const top = storeys[storeys.length - 1],

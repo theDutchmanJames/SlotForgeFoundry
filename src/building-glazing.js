@@ -4,7 +4,7 @@
 // window or past the end of the wall.
 import { buildingLayout, leanGrow, validateBuilding, WALL_NAMES } from './geometry/building.js';
 import { sectionPositions, sectionWalls } from './geometry/connected-building.js';
-import { footprintStoreys, footprintWalls } from './geometry/footprint-building.js';
+import { footprintStoreys, storeyWalls } from './geometry/footprint-building.js';
 import { TRIM, outlineOf } from './geometry/opening-shapes.js';
 
 export const GLAZING = Object.freeze({ overlap: 2, apart: 0.5, page: 180, gap: 4, margin: 10, text: 2.6 });
@@ -69,7 +69,7 @@ export function glazingSheets(input) {
   }
   if (b.kind === 'footprint') {
     for (const st of footprintStoreys(b))
-      for (const w of footprintWalls(b)) {
+      for (const w of storeyWalls(b, st)) {
         windows(st.openings, w.id).forEach((o, i, all) => add(w.name + st.label + ', window ' + (i + 1), o, all.filter((p) => p !== o), w.length, st.height));
         doors(st.openings, w.id, w.name + st.label + ',');
       }

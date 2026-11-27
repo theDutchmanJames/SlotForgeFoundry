@@ -42,7 +42,7 @@ test('every prop, turned any way, is whole, clear of itself and prints without s
           for (let k = 0; k < 3; k++) (lo[k] = Math.min(lo[k], min[k])), (hi[k] = Math.max(hi[k], max[k]));
         }
         assert.ok(lo[0] >= 10 - 1.01 && hi[0] <= 10 + fw + 1.01 && lo[1] >= 20 - 1.01 && hi[1] <= 20 + fd + 1.01, p.id + ' within its footprint at ' + rotation + '°');
-        assert.ok(lo[2] >= 5 - 2.01, p.id + ' on the floor');
+        assert.ok(lo[2] >= 5 - 1e-6, p.id + ' on the floor, not sunk into it');
         // Small parts, as small as they look.
         for (const q of parts) assert.ok(printSize(q).every((v) => v < 60), p.id + ' ' + q.name + ' size');
       } finally {

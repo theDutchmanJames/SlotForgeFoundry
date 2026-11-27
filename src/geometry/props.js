@@ -249,7 +249,8 @@ export function propParts(wasm, own, type) {
     const canopy = minus(own(own(Manifold.cylinder(high, W / 2, 0.8, 8)).translate([cx, cy, H - high])), hole(H - high - 1, H + 1));
     add('canopy', 'canopy', canopy);
     add('pole', 'pole', box(cx - pole / 2, cy - pole / 2, 0, cx + pole / 2, cy + pole / 2, H - 1.5), [0, 90]);
-    add('foot', 'foot', minus(own(own(Manifold.cylinder(foot, 6, 5, 48)).translate([cx, cy, -foot + 0.001])), hole(-foot - 1, 1)));
+    // The foot on the floor, the pole standing in the hole through it.
+    add('foot', 'foot', minus(own(own(Manifold.cylinder(foot, 6, 5, 48)).translate([cx, cy, 0])), hole(-1, foot + 1)));
   }
   return parts;
 }

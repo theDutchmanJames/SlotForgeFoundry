@@ -8,7 +8,7 @@ import { createBuildingHistory, editWalls } from './building-edit.js';
 import { createBuildingCanvas } from './building-canvas.js';
 import { addSection, removeSection } from './geometry/connected-building.js';
 import { sectionFields, readSectionFields } from './building-sections.js';
-import { COURTYARD, FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, footprintWalls } from './geometry/footprint-building.js';
+import { COURTYARD, FLOORS, FOOTPRINT_DEFAULTS, FOOTPRINT_UPPER, JETTY, footprintWalls } from './geometry/footprint-building.js';
 import { zipSync, strToU8 } from 'fflate';
 import { esc, fmt, icon } from './ui.js';
 import { Viewport } from './viewport.js';
@@ -247,8 +247,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
       <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="octagon">Octagon</option><option value="round">Round</option><option value="custom" disabled>Drawn outline</option></select></label>
       ${[['width','Width',60,1200],['depth','Depth',60,1200],['wing','Wing width',40,500],['sides','Sides',6,32],['height','Wall height',30,180],['baseHeight','Base height',4,20],['wall','Wall thickness',2,5],['play','Joint clearance',0.1,0.5],['roof','Roof thickness',2,5],['overhang','Roof overhang',0,12]].map(([key,label,min,max]) => field('fp-' + key,label,FOOTPRINT_DEFAULTS[key],[min,max],key === 'sides' ? '' : 'mm')).join('')}
-      <label class="bd-row"><span>Roof</span><select name="fpRoofShape"><option value="flat">Flat</option><option value="hip">Hip, a cone on a round plan</option></select></label>
+      <label class="bd-row"><span>Roof</span><select name="fpRoofShape"><option value="flat">Flat</option><option value="hip">Hip, a cone on a round plan</option><option value="dome">A dome</option><option value="sawtooth">Sawtooth</option></select></label>
       ${field('fp-pitch', 'Roof pitch', FOOTPRINT_DEFAULTS.pitch, [10, 45], '°')}
+      ${field('fp-domeRise', 'Dome rise', FOOTPRINT_DEFAULTS.domeRise, [10, 300])}
+      ${field('fp-teeth', 'Teeth', FOOTPRINT_DEFAULTS.teeth, [1, 8], '')}
       <div class="bd-sub">Storeys</div>
       <div class="bd-seg bd-wide" role="group" aria-label="Storey" data-bd-fp-storeys></div>
       <div data-bd-fp-storey></div>
@@ -520,6 +522,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
+      <label class="bd-check" data-bd-for="gable"><input type="checkbox" name="gableStepped"><span>A stepped gable at the front</span></label>
+      ${field('gableSteps', 'Steps a side', building.gableSteps ?? 3, [1, 6], '', ' data-bd-for="gable"')}
       <div class="bd-sub">Leave out</div>
       <div class="bd-checks" data-bd-leave-out>${[['roof', 'The roof'], ['front', 'Front wall'], ['back', 'Back wall'], ['left', 'Left wall'], ['right', 'Right wall']].map(([k, label]) => `<label class="bd-check"><input type="checkbox" name="leave-${k}"><span>${label}</span></label>`).join('')}</div>
       <div class="bd-breaches"></div>
@@ -662,8 +666,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
     // The storey chosen above the ground floor: its height and its finish.
     if (storey) {
-      const el = form.elements['fp-st-height'];
-      next.upper = building.upper.map((u, i) => (i === storey - 1 ? { ...u, ...finish, height: el && el.value !== '' ? Number(el.value) : NaN } : u));
+      const el = form.elements['fp-st-height'],
+        jet = form.elements['fp-st-jetty'];
+      next.upper = building.upper.map((u, i) => (i === storey - 1 ? { ...u, ...finish, height: el && el.value !== '' ? Number(el.value) : NaN, ...(jet && { jetty: jet.value === '' ? NaN : Number(jet.value) }) } : u));
     }
     return next;
   }
@@ -723,7 +728,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('[data-bd-fp-add-storey]').hidden = building.upper.length >= FLOORS.most;
     const s = storeyOf(building, storey);
     $('[data-bd-fp-storey]').innerHTML = storey
-      ? `<div class="bd-op-head">${icon('building')}<b>Storey ${storey + 1}</b><span class="bd-grow"></span><button type="button" class="bd-remove" data-bd-fp-remove-storey title="Remove this storey and every storey above it" aria-label="Remove storey ${storey + 1} and every storey above it">${icon('close')}</button></div>${field('fp-st-height', 'Wall height', s.height, [30, 180])}`
+      ? `<div class="bd-op-head">${icon('building')}<b>Storey ${storey + 1}</b><span class="bd-grow"></span><button type="button" class="bd-remove" data-bd-fp-remove-storey title="Remove this storey and every storey above it" aria-label="Remove storey ${storey + 1} and every storey above it">${icon('close')}</button></div>${field('fp-st-height', 'Wall height', s.height, [30, 180])}${field('fp-st-jetty', 'Stands out past the walls below', s.jetty ?? 0, [0, JETTY])}`
       : '';
     $('[data-bd-fp-walls-of]').textContent = building.upper.length ? 'Walls of ' + (storey ? 'storey ' + (storey + 1) : 'the ground floor') : 'Walls';
     $('[data-bd-fp-finish]').innerHTML = finishFields('ff', s, fpWalls(building), { main: true });
@@ -888,7 +893,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   function drawBuildingProps() {
     const box = $('.bd-bprops');
     if (!box) return;
-    const where = (sel) => [[-1, 'Outside, on the table'], [0, 'Ground floor'], ...building.upper.map((_, i) => [i + 1, 'Storey ' + (i + 2)])].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
+    const where = (sel) => [[-1, building.courtyards?.length ? 'Outside, or in a courtyard' : 'Outside, on the table'], [0, 'Ground floor'], ...building.upper.map((_, i) => [i + 1, 'Storey ' + (i + 2)])].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
     box.innerHTML = (building.props ?? [])
       .map(
         (p, i) =>
@@ -1429,6 +1434,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       breakAt: num(e.breakAt),
       props: readBuildingProps(),
       leaveOut: ['roof', 'front', 'back', 'left', 'right'].filter((k) => e['leave-' + k]?.checked),
+      gableFront: e.gableStepped?.checked ? 'stepped' : 'none',
+      gableSteps: num(e.gableSteps),
       damage: (building.damage ?? []).map((d, i) => (e['br-wall-' + i] ? { wall: e['br-wall-' + i].value, at: num(e['br-at-' + i]), width: num(e['br-w-' + i]), depth: num(e['br-d-' + i]) } : d)),
       dormers: (building.dormers ?? []).map((d, i) => (e['dormer-x-' + i] ? { x: num(e['dormer-x-' + i]), y: num(e['dormer-y-' + i]), width: num(e['dormer-w-' + i]), height: num(e['dormer-h-' + i]) } : d)),
       overhangFront: num(e.overhangFront),
@@ -1514,7 +1521,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = building.shape === 'custom';
       form.elements['fp-wing'].closest('label').hidden = !['L', 'U', 'T'].includes(building.shape);
       form.elements['fp-sides'].closest('label').hidden = building.shape !== 'round';
-      form.elements['fp-pitch'].closest('label').hidden = building.roofShape !== 'hip';
+      form.elements['fp-pitch'].closest('label').hidden = !['hip', 'sawtooth'].includes(building.roofShape);
+      form.elements['fp-teeth'].closest('label').hidden = building.roofShape !== 'sawtooth';
+      form.elements['fp-domeRise'].closest('label').hidden = building.roofShape !== 'dome';
       form.elements.fpRoofShape.value = building.roofShape;
       form.elements.fpShape.value = building.shape;
       if (building.shape === 'custom') for (const key of ['width', 'depth']) form.elements['fp-' + key].value = building[key];
@@ -1941,6 +1950,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.signText.value = b.signText;
     form.elements.signCut.checked = b.signCut;
     for (const k of ['roof', 'front', 'back', 'left', 'right']) form.elements['leave-' + k].checked = (b.leaveOut ?? []).includes(k);
+    form.elements.gableStepped.checked = b.gableFront === 'stepped';
+    form.elements.gableSteps.value = b.gableSteps;
     drawBreaches();
     $('[name="buildingName"]').value = name;
     drawRooms();

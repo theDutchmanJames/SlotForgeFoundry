@@ -56,3 +56,17 @@ test('props on a shaped building print clean and are in the kit, named as laid o
     parts.forEach((p) => p.solid.delete());
   }
 });
+
+test('a prop outside stands in a courtyard on its paving, clear of the walls round it', () => {
+  const b = { kind: 'footprint', shape: 'rectangle', width: 180, depth: 160, height: 60, courtyards: [{ x: 50, y: 50, width: 80, depth: 60 }], props: [{ type: 'parasol', x: 70, y: 60, storey: -1 }, { type: 'crate', x: -40, y: 20, storey: -1 }] };
+  assert.throws(() => validateBuilding({ ...b, props: [{ type: 'crate', x: 48, y: 60, storey: -1 }] }), /in a courtyard: keep it 2 mm clear/);
+  const parts = buildGarage(wasm, b, PLATE);
+  try {
+    checkKit(parts, PLATE);
+    const low = (id) => Math.min(...parts.filter((p) => p.id === id || p.id.startsWith(id + '-')).map((p) => p.solid.boundingBox().min[2]));
+    assert.ok(Math.abs(low('prop-1') - 6) < 1e-6, 'on the paving, the top of the base');
+    assert.ok(Math.abs(low('prop-2')) < 1e-6, 'on the table outside');
+  } finally {
+    parts.forEach((p) => p.solid.delete());
+  }
+});

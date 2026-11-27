@@ -1,13 +1,14 @@
 // Editing operations shared by the wall canvas and its accessible numeric controls.
 import { validateBuilding, OPENING_DEFAULTS, wallLength } from './geometry/building.js';
 import { sectionPositions, sectionWalls } from './geometry/connected-building.js';
-import { footprintWalls } from './geometry/footprint-building.js';
+import { footprintStoreys, storeyWalls } from './geometry/footprint-building.js';
 
 export const editStorey = (b, level) => b.kind === 'sections' ? b.sections[level] : level ? b.upper[level - 1] : b;
 export const patchStorey = (b, level, patch) => b.kind === 'sections' ? { ...b, sections: b.sections.map((s,i) => i === level ? { ...s, ...patch } : s) } : level ? { ...b, upper: b.upper.map((s, i) => i === level - 1 ? { ...s, ...patch } : s) } : { ...b, ...patch };
 export function editWalls(b, level = 0) {
   if (b.kind === 'sections') return sectionWalls(sectionPositions(b)[level]);
-  if (b.kind === 'footprint') return footprintWalls(b).map(w => ({ id: w.id, name: w.name, length: w.length }));
+  // A shaped building's walls on the storey: a jettied one's stand out, a little longer.
+  if (b.kind === 'footprint') return storeyWalls(b, footprintStoreys(b)[level]).map(w => ({ id: w.id, name: w.name, length: w.length }));
   const s = editStorey(b, level);
   return ['front', 'left', 'back', 'right'].map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), length: wallLength(s, id) }));
 }
