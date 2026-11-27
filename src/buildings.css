@@ -212,6 +212,42 @@
   color: var(--accent-text);
   font-weight: 650;
 }
+.bd-viewbar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.bd-viewbar > * {
+  pointer-events: auto;
+}
+.bd-viewbar .bd-seg button {
+  padding: 4px 8px;
+}
+.bd-cutaway {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bd-cutaway input {
+  width: 110px;
+}
+.bd-measured {
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.bd-part.off {
+  opacity: 0.45;
+}
 .bd-stage {
   position: relative;
   flex: 1;

@@ -158,6 +158,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     storey = 0,
     selected = null,
     viewport = null,
+    // The view's own state: parts hidden, a measurement being made.
+    hiddenParts = new Set(),
+    measuring = false,
+    measured = [],
     serial = 0,
     timer = 0,
     apart = 0,
@@ -214,7 +218,17 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     <button type="button" class="sf-btn ghost" data-bd="undo" title="Undo building edit (Ctrl+Z)">Undo</button><button type="button" class="sf-btn ghost" data-bd="redo" title="Redo building edit (Ctrl+Shift+Z)">Redo</button>
     <div class="bd-seg" role="group" aria-label="View"><button type="button" data-bd-view="model">Model</button><button type="button" data-bd-view="draw">Draw</button><button type="button" data-bd-view="plate">Parts on the plate</button></div>
   </header>
-  <div class="bd-stage"><div class="bd-model"></div><div class="bd-canvas" hidden></div><div class="bd-plates" hidden></div><div class="bd-message" role="status" hidden></div></div>
+  <div class="bd-stage"><div class="bd-model"></div>
+    <div class="bd-viewbar" data-bd-viewbar>
+      <div class="bd-seg" role="group" aria-label="Look from">${[['iso', 'Iso'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right'], ['top', 'Top']].map(([v, label]) => `<button type="button" data-bd-look="${v}">${label}</button>`).join('')}</div>
+      <label class="bd-cutaway" title="Cut away everything above this height, to look inside"><span>Cut away</span><input type="range" name="cutaway" min="0" max="100" step="1" value="100" aria-label="Cut away above: 100 keeps it all"></label>
+      <button type="button" class="sf-btn ghost" data-bd-measure aria-pressed="false" title="Click two points on the model to measure between them">Measure</button>
+      <span class="bd-measured" data-bd-measured role="status"></span>
+      <span class="bd-grow"></span>
+      <button type="button" class="sf-btn ghost" data-bd-hide title="Hide the part chosen">Hide</button>
+      <button type="button" class="sf-btn ghost" data-bd-only title="Show only the part chosen">Only this</button>
+      <button type="button" class="sf-btn ghost" data-bd-showall title="Show every part again">Show all</button>
+    </div><div class="bd-canvas" hidden></div><div class="bd-plates" hidden></div><div class="bd-message" role="status" hidden></div></div>
   <footer><div class="bd-chips" data-bd-chips></div><span class="bd-grow"></span>
     <button type="button" class="sf-btn ghost" data-bd="new">${icon('plus')}New building</button>
     <button type="button" class="sf-btn soft" data-bd="save">${icon('library')}Save to Library</button>
@@ -1366,6 +1380,11 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
     }
     $('.bd-model').hidden = view !== 'model';
+    $('[data-bd-viewbar]').hidden = view !== 'model';
+    for (const el of host.querySelectorAll('[data-bd-part]')) el.classList.toggle('off', hiddenParts.has(el.dataset.bdPart));
+    $('[data-bd-hide]').disabled = !selected;
+    $('[data-bd-only]').disabled = !selected;
+    $('[data-bd-showall]').disabled = !hiddenParts.size;
     $('.bd-apart').hidden = view !== 'model';
     $('.bd-plates').hidden = view !== 'plate';
     // The parts as built (a part cut to fit the plate is in pieces), or as
@@ -1383,7 +1402,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     $('.bd-parts').innerHTML = list
       .map(
         (p) =>
-          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id.split('-')[0]] ?? { roof: 'building', frame: 'view', floor: 'plate' }[p.role] ?? 'box')}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
+          `<button type="button" class="bd-part${p.id === selected ? ' active' : ''}${fits(p) ? '' : ' big'}${hiddenParts.has(p.id) ? ' off' : ''}" data-bd-part="${p.id}">${icon(PART_ICONS[p.id.split('-')[0]] ?? { roof: 'building', frame: 'view', floor: 'plate' }[p.role] ?? 'box')}<span><b>${esc(p.name)}</b><small>${sizes[p.id] ? sizes[p.id].map((v) => fmt(v)).join(' × ') + ' mm' : '…'}</small></span></button>`,
       )
       .join('');
     const grams = (parts.reduce((sum, p) => sum + p.volume, 0) / 1000) * density();
@@ -1525,16 +1544,55 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     }
   }
   function show() {
-    viewport ??= new Viewport($('.bd-model'), (id) => choose(id));
+    viewport ??= new Viewport($('.bd-model'), (id, face, point) => (measuring ? measureAt(point) : choose(id)));
     viewport.resize();
     viewport.setParts(parts, !fitted);
     fitted = true;
     viewport.setApart(apart);
-    viewport.select(selected ?? undefined, new Set());
+    // Hidden parts that are no longer in the kit are forgotten.
+    const ids = new Set(parts.map((p) => p.id));
+    for (const id of hiddenParts) if (!ids.has(id)) hiddenParts.delete(id);
+    viewport.select(selected ?? undefined, hiddenParts);
+    cutaway();
+  }
+  // The cut-away slider, as a height between the lowest and the highest point shown.
+  function cutaway() {
+    const v = Number($('[name="cutaway"]').value);
+    const range = viewport?.heightRange();
+    viewport?.setCutaway(v >= 100 || !range ? null : range[0] + ((range[1] - range[0]) * v) / 100);
+  }
+  // A point picked while measuring: the first, then the second and the distance between them.
+  function measureAt(point) {
+    if (!point) return;
+    measured = measured.length === 1 ? [measured[0], point] : [point];
+    viewport?.setMeasure(measured);
+    const out = $('[data-bd-measured]');
+    if (measured.length < 2) out.textContent = 'Click a second point';
+    else {
+      const [a, b] = measured,
+        d = [0, 1, 2].map((k) => b[k] - a[k]);
+      const r = (v) => fmt(Math.round(Math.abs(v) * 10) / 10);
+      out.textContent = r(Math.hypot(...d)) + ' mm · across ' + r(d[0]) + ', back ' + r(d[1]) + ', up ' + r(d[2]);
+    }
+  }
+  function setMeasuring(on) {
+    measuring = on;
+    measured = [];
+    viewport?.setMeasure([]);
+    $('[data-bd-measure]').setAttribute('aria-pressed', String(on));
+    $('[data-bd-measured]').textContent = on ? 'Click a point on the model' : '';
+  }
+  function showHidden() {
+    viewport?.select(selected ?? undefined, hiddenParts);
+    for (const el of host.querySelectorAll('[data-bd-part]')) el.classList.toggle('off', hiddenParts.has(el.dataset.bdPart));
+    $('[data-bd-hide]').disabled = !selected;
+    $('[data-bd-only]').disabled = !selected;
+    $('[data-bd-showall]').disabled = !hiddenParts.size;
+    cutaway();
   }
   function choose(id) {
     selected = selected === id ? null : id;
-    viewport?.select(selected ?? undefined, new Set());
+    viewport?.select(selected ?? undefined, hiddenParts);
     if (selected) focusPart(selected);
     sync();
   }
@@ -1835,6 +1893,27 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   $('[name="apart"]').addEventListener('input', (e) => {
     apart = Number(e.target.value) / 100;
     viewport?.setApart(apart);
+    cutaway();
+  });
+  // The view bar: look from a side, cut away, measure, hide and show parts.
+  $('[name="cutaway"]').addEventListener('input', cutaway);
+  $('[data-bd-viewbar]').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.bdLook) viewport?.view(b.dataset.bdLook);
+    else if (b.hasAttribute('data-bd-measure')) setMeasuring(!measuring);
+    else if (b.hasAttribute('data-bd-hide') && selected) {
+      hiddenParts.add(selected);
+      selected = null;
+      showHidden();
+      sync();
+    } else if (b.hasAttribute('data-bd-only') && selected) {
+      hiddenParts = new Set(parts.map((p) => p.id).filter((id) => id !== selected));
+      showHidden();
+    } else if (b.hasAttribute('data-bd-showall')) {
+      hiddenParts = new Set();
+      showHidden();
+    }
   });
   $('[name="buildingName"]').addEventListener('input', (e) => {
     name = e.target.value.trim();

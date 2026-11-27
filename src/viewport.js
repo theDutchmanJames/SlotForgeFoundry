@@ -909,6 +909,37 @@ export class Viewport {
       for (const vertex of path) bounds.expandByPoint(point.fromArray(vertex));
     this.designBounds = bounds.isEmpty() ? null : bounds;
   }
+  /** Everything above z cut away, to look inside (null: nothing). Drawn with WebGL only. */
+  setCutaway(z) {
+    this.cutaway = z ?? null;
+    if (this.renderer) this.renderer.clippingPlanes = z == null ? [] : [new THREE.Plane(new THREE.Vector3(0, 0, -1), z)];
+    this.draw();
+  }
+  /** How low and how high the parts shown reach, as they stand now: [min z, max z], or null. */
+  heightRange() {
+    const box = new THREE.Box3();
+    for (const mesh of this.group.children) if (mesh.visible) box.expandByObject(mesh);
+    return box.isEmpty() ? null : [box.min.z, box.max.z];
+  }
+  /** A measuring line between two points picked on the model, a dot for the first, or nothing. */
+  setMeasure(points = []) {
+    if (this.measureMark) {
+      this.measureMark.removeFromParent();
+      this.measureMark.geometry.dispose();
+      this.measureMark.material.dispose();
+      this.measureMark = null;
+    }
+    if (points.length) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(...p)));
+      this.measureMark =
+        points.length > 1
+          ? new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xe5484d, depthTest: false }))
+          : new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xe5484d, size: 7, sizeAttenuation: false, depthTest: false }));
+      this.measureMark.renderOrder = 999;
+      this.scene.add(this.measureMark);
+    }
+    this.draw();
+  }
   view(which) {
     const pose = orthoPose(which);
     if (!pose) return;
