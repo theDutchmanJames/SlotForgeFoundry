@@ -13,7 +13,7 @@ const wasm = await Module();
 wasm.setup();
 const near = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
 const PLATE = { width: 200, depth: 200, margin: 0 };
-const VARIANTS = [{}, { door: 'roller', bays: 2 }, { bays: 1, depth: 70, lean: 0, visor: 0, balcony: 10 }, { lean: 25, visor: 20, recess: 15, doorWidth: 60, numbers: false, railing: false }];
+const VARIANTS = [{}, { door: 'roller', bays: 2 }, { bays: 1, depth: 70, lean: 0, visor: 0, balcony: 10 }, { lean: 25, visor: 20, depth: 145, recess: 15, doorWidth: 60, numbers: false, railing: false }];
 const withParts = (settings, check) => {
   const parts = buildPitModule(wasm, settings);
   try {

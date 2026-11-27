@@ -68,6 +68,8 @@ export const GANTRY = Object.freeze({
 });
 /** The open members of a gantry: a lattice or timber, or none for solid. */
 const openOf = (g) => (g.members === 'solid' ? null : GANTRY[g.members]);
+/** A lattice or timber gantry's board: as long as this, in the middle of the span (at the end of a half gantry's reach). */
+const boardWidth = (g) => Math.min((g.type === 'half' ? g.reach : g.span) * 0.6, 160);
 /** A leg's side: wider as a lattice tube. */
 export const legOf = (g) => openOf(g)?.leg ?? GANTRY.leg;
 /** A foot's side: round its leg. */
@@ -105,6 +107,11 @@ export function validateGantry(input) {
     if (fitHeight(g.text, wide, high) < LETTERING.height[0]) throw Error('The board is too small for “' + g.text + '”: make it higher, the span longer, or the text shorter.');
   }
   if (g.type === 'start' && g.lights * 8 > g.span) throw Error('There is no room for ' + g.lights + ' start lights on a beam of ' + g.span + ' mm: at most ' + Math.floor(g.span / 8) + '.');
+  // A lattice or timber gantry carries its lights on the board, which is shorter than the span.
+  if (g.type === 'start' && g.members !== 'solid' && g.board) {
+    const w = boardWidth(g);
+    if (g.lights * 8 > w) throw Error('There is no room for ' + g.lights + ' start lights on a board of ' + Math.round(w) + ' mm: at most ' + Math.floor(w / 8) + ', or a longer span.');
+  }
   return g;
 }
 
@@ -116,8 +123,7 @@ export function validateGantry(input) {
 export function textRoom(g) {
   const open = openOf(g);
   if (!open) return { wide: (g.type === 'half' ? g.reach : g.span) - 10, high: g.boardHeight - 4, up: g.boardHeight / 2 };
-  const span = g.type === 'half' ? g.reach : g.span;
-  const w = Math.min(span * 0.6, 160),
+  const w = boardWidth(g),
     h = Math.max(g.boardHeight, open.girder[0] - 4);
   if (g.type === 'start' && g.lights) {
     const from = h / 2 + GANTRY.light[0] + 1.5,
@@ -349,8 +355,7 @@ export function buildGantry(wasm, input, plate = null) {
         v1 = zTop;
       // The board: on the front of the front girder, in the middle of the span (at the end of a half gantry's reach), the start lights in it.
       if (g.board) {
-        const span = half ? g.reach : g.span;
-        const w = Math.min(span * 0.6, 160),
+        const w = boardWidth(g),
           mid = half ? o + L + g.reach - w / 2 - P : o + L + g.span / 2;
         const h = Math.max(g.boardHeight, bh - 4),
           zc = (v0 + v1) / 2,

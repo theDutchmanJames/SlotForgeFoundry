@@ -93,11 +93,14 @@ export function propParts(wasm, own, type) {
     add('', prop.name, turned(pts));
   } else if (type === 'drum') {
     // An oil drum: two V-grooves round it, two bungs on its lid.
-    const R = W / 2;
+    // The bungs stand on the lid: the drum is lower by them, so they keep inside its height.
+    const R = W / 2,
+      bung = 1,
+      lid = H - bung;
     const pts = [[0, 0], [R, 0]];
-    for (const z of [H / 3, (2 * H) / 3]) pts.push([R, z - 0.7], [R - 0.7, z], [R, z + 0.7]);
-    pts.push([R, H], [0, H]);
-    const bungs = [[W / 2 - 4, D / 2], [W / 2 + 4, D / 2 + 2]].map(([x, y]) => own(own(Manifold.cylinder(1, 1.5, 1.5, 24)).translate([x, y, H])));
+    for (const z of [lid / 3, (2 * lid) / 3]) pts.push([R, z - 0.7], [R - 0.7, z], [R, z + 0.7]);
+    pts.push([R, lid], [0, lid]);
+    const bungs = [[W / 2 - 4, D / 2], [W / 2 + 4, D / 2 + 2]].map(([x, y]) => own(own(Manifold.cylinder(bung + 0.01, 1.5, 1.5, 24)).translate([x, y, lid - 0.01])));
     add('', prop.name, union(turned(pts), ...bungs));
   } else if (type === 'gas-bottle') {
     // A tall bottle, its shoulder at 45°, a neck and a valve.
@@ -132,14 +135,20 @@ export function propParts(wasm, own, type) {
     add('', prop.name, crate);
   } else if (type === 'tool-chest') {
     // A chest of drawers on a plinth, a raised handle on each drawer; it lies on its back to print.
-    let chest = union(box(0, 0, 0, W, D, H), box(-0.5, -0.5, H - 1, W + 0.5, D, H));
+    // The body is set in from its size by the lip of its top at the sides and the handles at the front.
+    const lip = 0.5,
+      grip = 0.8;
+    const x0 = lip,
+      x1 = W - lip,
+      y0 = grip;
+    let chest = union(box(x0, y0, 0, x1, D, H), box(0, y0 - lip, H - 1, W, D, H));
     const drawers = 5,
       z0 = 2,
       dh = (H - 4) / drawers;
-    const cuts = [box(0.8, -1, 0, W - 0.8, 0.6, z0 - 0.4)]; // the plinth, set back
+    const cuts = [box(x0 + 0.8, y0 - 1, 0, x1 - 0.8, y0 + 0.6, z0 - 0.4)]; // the plinth, set back
     const handles = [];
-    for (let k = 0; k <= drawers; k++) cuts.push(box(-1, -1, z0 + k * dh - 0.3, W + 1, 0.4, z0 + k * dh + 0.3));
-    for (let k = 0; k < drawers; k++) handles.push(box(W / 2 - 4, -0.8, z0 + k * dh + dh / 2 - 0.5, W / 2 + 4, 0.01, z0 + k * dh + dh / 2 + 0.5));
+    for (let k = 0; k <= drawers; k++) cuts.push(box(-1, y0 - 1, z0 + k * dh - 0.3, W + 1, y0 + 0.4, z0 + k * dh + 0.3));
+    for (let k = 0; k < drawers; k++) handles.push(box(W / 2 - 4, y0 - grip, z0 + k * dh + dh / 2 - 0.5, W / 2 + 4, y0 + 0.01, z0 + k * dh + dh / 2 + 0.5));
     chest = union(minus(chest, ...cuts), ...handles);
     add('', prop.name, chest, onBack);
   } else if (type === 'counter') {
@@ -237,9 +246,9 @@ export function propParts(wasm, own, type) {
     for (const x of [0, W - t]) bits.push(box(x, 0, 0, x + t, D, 1.2));
     add('', prop.name, union(...bits), [0, 90]);
   } else if (type === 'podium') {
-    // Three steps, the winner's in the middle; their numbers raised on top.
+    // Three steps, the winner's in the middle; their numbers raised on top, the winner's inside the height.
     const w = W / 3;
-    const steps = [[w, 8, '2'], [2 * w, H, '1'], [3 * w, 5, '3']];
+    const steps = [[w, 8, '2'], [2 * w, H - 0.6, '1'], [3 * w, 5, '3']];
     const bits = steps.map(([x1, h], i) => box(i * w, 0, 0, x1, D, h));
     for (const [x1, h, n] of steps) bits.push(own(raisedText(wasm, own, n, 6, [0, 0], -0.1, 0.6).translate([x1 - w / 2, D / 2, h])));
     add('', prop.name, union(...bits));

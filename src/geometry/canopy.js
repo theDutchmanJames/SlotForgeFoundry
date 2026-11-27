@@ -49,6 +49,7 @@ export const CANOPY = Object.freeze({
   screen: 2, // a screen, thick
   board: [3, 14], // the sign board: thick, high
   piece: 180, // a piece at most this long
+  across: 190, // and the slab or the roof at most this deep, front to back
 });
 const LABELS = { width: 'Width', depth: 'Depth', height: 'Height', bays: 'Bays', pitch: 'Pitch', overhang: 'Overhang' };
 const SCREENS = ['none', 'ends', 'back', 'three'];
@@ -106,6 +107,9 @@ export function validateCanopy(input) {
   // Long pieces are cut at the middle of a bay: there must be bays to cut at.
   const reach = c.width + 2 * Math.max(c.overhang, CANOPY.margin);
   if (cutsOf(c, -reach / 2 + c.width / 2, reach / 2 + c.width / 2) === null) throw Error('A canopy ' + Math.round(c.width) + ' mm wide is cut into pieces at the middle of its bays: give it more bays.');
+  // The slab and the roof are cut along the front only: from front to back each piece is whole.
+  const across = c.depth + 2 * Math.max(c.overhang, c.base ? CANOPY.margin : 0);
+  if (across > CANOPY.across) throw Error((c.base && CANOPY.margin > c.overhang ? 'The slab' : 'The roof') + ' would be ' + Math.round(across) + ' mm from front to back, in one piece: at most ' + CANOPY.across + ' mm, make the canopy less deep or the overhang smaller.');
   const bay = (c.width - CANOPY.post) / c.bays;
   if (bay < CANOPY.post + 10) throw Error('Too many bays for a canopy ' + c.width + ' mm wide.');
   c.props = checkCanopyProps(c);
@@ -123,6 +127,11 @@ function checkCanopyProps(c) {
     const [fw, fd] = propFootprint(p.type, p.rotation);
     const box = [p.x, p.y, p.x + fw, p.y + fd];
     if (box[0] < 0 || box[1] < 0 || box[2] > c.width || box[3] > c.depth) throw Error(name + ' stands under the canopy, inside its posts.');
+    // Screens across the ends stand in the line of the end posts, from the front row to the back.
+    if (c.screens === 'ends' || c.screens === 'three') {
+      const S = CANOPY.screen / 2 + PROP_GAP;
+      if (box[0] < xs[0] + S || box[2] > xs[xs.length - 1] - S) throw Error(name + ' stands in a screen at the end: keep it ' + PROP_GAP + ' mm clear.');
+    }
     for (const x of xs) for (const y of ys) if (box[0] < x + P && box[2] > x - P && box[1] < y + P && box[3] > y - P) throw Error(name + ' stands on a post: keep it ' + PROP_GAP + ' mm clear.');
     if (propOf(p.type).size[2] > c.height - 2) throw Error(name + ' is too tall for the canopy.');
     for (const q of placed)

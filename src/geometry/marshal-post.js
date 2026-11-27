@@ -57,7 +57,14 @@ export const MARSHAL = Object.freeze({
   disc: [9, 1.5], // the number disc: radius, thick
   pergola: [5, 5, 4], // a pergola roof: its slats wide, the gap between them; the rail over the posts wider than a post by this
   ladder: { width: 16, rail: 4.5, rung: 3, pitch: 9, thick: 3, angle: 75, above: 8 },
+  most: 190, // the ladder, and the legs' base, at most this long on the plate
 });
+/** How long the ladder lies on the plate: up its slope from the base to above the floor, and its thickness at the cut ends. */
+const ladderLength = (L) => {
+  const Q = MARSHAL.ladder,
+    a = (Q.angle * Math.PI) / 180;
+  return (L.rise + Q.above) / Math.sin(a) + Q.thick / Math.tan(a);
+};
 const LABELS = {
   width: 'Width',
   depth: 'Depth',
@@ -87,6 +94,21 @@ export function validateMarshalPost(input) {
   if (m.roomHeight - m.fall < m.wallHeight + 8) throw Error('The roof must stand at least 8 mm above the wall at the back: make it higher, or the wall lower.');
   if (m.ladder && m.deckHeight > 0 && m.entrance < MARSHAL.ladder.width + 4)
     throw Error('The ladder needs an opening of at least ' + (MARSHAL.ladder.width + 4) + ' mm in the back wall.');
+  // The ladder lies flat to print, and so do the legs on their base: each must lie on the plate.
+  const L = marshalLevels(m);
+  if (L.ladder) {
+    const long = ladderLength(L),
+      Q = MARSHAL.ladder,
+      a = (Q.angle * Math.PI) / 180;
+    // The floor at which the ladder is as long as that.
+    const most = Math.floor((MARSHAL.most - Q.thick / Math.tan(a)) * Math.sin(a) - Q.above + MARSHAL.base);
+    if (long > MARSHAL.most) throw Error('The ladder would be ' + Math.round(long) + ' mm long to print: at most ' + MARSHAL.most + ' mm, a floor at most ' + most + ' mm up, or leave the ladder off.');
+  }
+  if (L.raised) {
+    const wide = m.width + 2 * MARSHAL.margin,
+      deep = L.back + MARSHAL.margin;
+    if (wide > MARSHAL.most || deep > MARSHAL.most) throw Error('The legs and their base would print ' + Math.round(wide) + ' × ' + Math.round(deep) + ' mm: at most ' + MARSHAL.most + ' mm each way. Make the post narrower or less deep' + (L.ladder ? ', the floor lower, or leave the ladder off.' : '.'));
+  }
   return m;
 }
 

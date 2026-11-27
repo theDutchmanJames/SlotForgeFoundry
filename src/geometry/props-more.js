@@ -135,7 +135,7 @@ export const MORE_PARTS = Object.freeze({
  * prop's size W, D, H and box, sweep, turned, minus, union, add, own, wasm, onBack.
  */
 export function buildMoreProp(type, ctx) {
-  const { W, D, H, box, sweep, turned, minus, union, add, onBack, name } = ctx;
+  const { W, D, H, box, sweep, turned, minus, union, add, onBack, name, own } = ctx;
   // A profile seen from the front [x, z], swept back from y0 to y1; and one seen from the side [y, z], swept across from x0 to x1.
   const front = (pts, y0 = 0, y1 = D) => sweep(pts, [1, 0, 0], [0, 0, 1], [0, y0, 0], [0, 1, 0], 0, y1 - y0);
   const side = (pts, x0 = 0, x1 = W) => sweep(pts, [0, 1, 0], [0, 0, 1], [x0, 0, 0], [1, 0, 0], 0, x1 - x0);
@@ -455,8 +455,9 @@ export function buildMoreProp(type, ctx) {
       add('', name, union(box(0, 0, 0, W, D, 3), box(0, 0, 2.99, W, 2, 9), ...[2, 14, 26, 38].map((x) => box(x - 1, 2, 2.99, x + 1, D, H))));
       return true;
     case 'tyre-wall':
-      // Stacks of tyres in a row, each a V between the tyres, touching the next.
-      add('', name, union(...[5, 15, 25, 35].map((x) => turned([[0, 0], [5.3, 0], [5.3, 4], [4.6, 4.7], [5.3, 5.4], [5.3, 8.6], [4.6, 9.3], [5.3, 10], [5.3, 13.2], [4.6, 13.9], [5.3, 14.6], [5.3, H], [0, H]], x, D / 2))));
+      // Stacks of tyres in a row, each a V between the tyres, touching the next; drawn
+      // 0.3 mm proud all round, then squeezed a hair to keep inside its size.
+      add('', name, own(own(union(...[5, 15, 25, 35].map((x) => turned([[0, 0], [5.3, 0], [5.3, 4], [4.6, 4.7], [5.3, 5.4], [5.3, 8.6], [4.6, 9.3], [5.3, 10], [5.3, 13.2], [4.6, 13.9], [5.3, 14.6], [5.3, H], [0, H]], x, D / 2))).translate([0.3, 0.3, 0])).scale([W / (W + 0.6), D / (D + 0.6), 1])));
       return true;
     case 'catch-fence':
       // Posts and a mesh across them, its holes through it.
