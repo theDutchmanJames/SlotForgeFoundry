@@ -132,7 +132,9 @@ export function kitNotes(name, b, parts, sizes) {
     ...(b.rooflights?.length ? ['Glue clear sheet under each rooflight, 3 mm bigger than its hole all round, before the roof goes on.'] : []),
     ...(framed2 ? ['Push the roof frame' + (sloped && ['gable', 'hip'].includes(b.roof) ? 's' : '') + ' onto the underside of the roof, each tab into its pocket, with a drop of glue.'] : []),
     sloped
-      ? b.roof === 'sawtooth'
+      ? b.roof === 'gambrel' || b.roof === 'mansard'
+        ? 'Lay the steep lower panels on the walls, their feet on the tops of the walls, and glue them to the walls' + (b.roof === 'mansard' ? ' and to each other along the hips' : '') + '. Then lay the upper panels on their mitred tops so they meet ' + (b.roof === 'mansard' ? 'along the hips and at the top' : 'at the ridge, their ends on the gables of the end walls') + ', and glue them.'
+        : b.roof === 'sawtooth'
         ? 'Glue each north light upright on the end walls where they step down, its panes facing the way the roof rises, its foot under the eaves. Lay roof panel 1 on the low wall and the end walls, its high edge on north light 1; then each next panel, its low edge against the foot of the north light before it. Glue them along the tops of the walls and the lights.'
         : b.roof === 'vault'
         ? 'Lay the vault on the walls, its flat edges on the tops of the side walls, the end walls rising inside the arch' + (parts.some((p) => /^roof-\d/.test(p.id)) ? '; its pieces end to end, in order' : '') + '. Glue it along the tops of the walls' + (parts.some((p) => /^roof-\d/.test(p.id)) ? ' and its pieces to each other' : '') + '.'
@@ -144,6 +146,7 @@ export function kitNotes(name, b, parts, sizes) {
       : framed2
         ? 'Drop the roof on: its frame fits inside the walls and keeps them square. Glue it, or leave it loose to look inside.'
         : 'Lay the roof on the walls and glue it along their tops, or leave it loose to look inside.',
+    ...(b.dormers?.length ? ['Stand each dormer over its opening in the roof, facing down the roof, its cheeks and roof ending on the roof, and glue it. Glue clear sheet behind its window first.'] : []),
     ...(b.chimney ? ['Stand the chimney on the roof, its cap up, its foot fitting the roof under it, ' + fmt(b.chimney.x) + ' mm from the left wall and ' + fmt(b.chimney.y) + ' mm from the front wall to its middle, and glue it.'] : []),
     ...(b.gutters ? ['Glue each gutter along its eave, open side up, against the edge of the roof, its top just under the top of the roof.'] : []),
     ...(b.downpipes && b.downpipes !== 'none' ? ['Push the top of each downpipe up into the hole in its gutter, its foot on the base, and glue it to the wall.'] : []),
@@ -169,6 +172,7 @@ export function kitNotes(name, b, parts, sizes) {
       (parts.some((p) => /^(railing|roofrail)/.test(p.id)) ? ' A railing lies flat, its tabs in its own plane.' : ''),
     ...(b.roof === 'vault' ? ['- The barrel vault prints standing on its end, every face upright' + (b.roofTexture === 'metal' ? ', its corrugations V-grooves with steep sides' : '') + '.'] : []),
     ...(b.roof === 'sawtooth' ? ['- Each north light lies flat, its glazed face up. Add clear sheet behind its panes.'] : []),
+    ...(b.dormers?.length ? ['- Each dormer prints standing on its front, its window on the plate, open at the back and underneath.'] : []),
     ...(b.chimney ? ['- The chimney prints upside down, standing on its cap; its flue is a pointed pocket.'] : []),
     ...(b.gutters ? ['- The gutters print as they hang, open side up' + (b.downpipes && b.downpipes !== 'none' ? '; each downpipe on its side, its swan neck flat on the plate' : '') + '.'] : []),
     '',

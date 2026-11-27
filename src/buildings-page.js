@@ -452,11 +452,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <p class="bd-hint">Each storey stands on a floor laid on the one below, its walls in a groove of the floor. It can be smaller than the storey below and set back, leaving a terrace. Windows and doors and the wall texture are set for the storey chosen here; the roof sits on the top storey.</p></section>
     <section class="bd-box" data-bd-card="roof"><h3>Roof</h3>
       <div class="bd-seg bd-wide" role="group" aria-label="Roof">${ROOFS.map(([id, label]) => `<button type="button" data-bd-roof="${id}">${label}</button>`).join('')}</div>
-      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip sawtooth"')}
+      ${field('pitch', 'Pitch', building.pitch, BUILDING_LIMITS.pitch, '°', ' data-bd-for="slope gable hip sawtooth gambrel mansard"')}
+      ${field('lowerPitch', 'Lower pitch', building.lowerPitch, BUILDING_LIMITS.lowerPitch, '°', ' data-bd-for="gambrel mansard"')}
+      ${field('breakAt', 'Break, in from the walls', building.breakAt, BUILDING_LIMITS.breakAt, 'mm', ' data-bd-for="gambrel mansard"')}
       ${field('teeth', 'Teeth', building.teeth, BUILDING_LIMITS.teeth, '', ' data-bd-for="sawtooth"')}
       ${field('rise', 'Rise over the eaves', building.rise, BUILDING_LIMITS.rise, 'mm', ' data-bd-for="vault"')}
       ${field('arch', 'Arched, higher in the middle', building.arch, BUILDING_LIMITS.arch, 'mm', ' data-bd-for="flat"')}
-      <label class="bd-row" data-bd-for="gable flat vault"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
+      <label class="bd-row" data-bd-for="gable flat vault gambrel"><span>Ridge runs</span><select name="ridge"><option value="depth">Front to back</option><option value="width">Side to side</option></select></label>
       <label class="bd-row" data-bd-for="slope sawtooth"><span>Rises towards</span><select name="rises">${WALLS.map((w) => `<option value="${w}">The ${w}</option>`).join('')}</select></label>
       <label class="bd-check" data-bd-for="flat"><input type="checkbox" name="roofRailing"><span>A railing round the roof, for a terrace</span></label>
       <label class="bd-row"><span>Railings</span><select name="railingStyle"><option value="bars">Bars</option><option value="mesh">Mesh</option><option value="lattice">Lattice, an X between posts</option><option value="solid">Solid, a parapet</option></select></label>
@@ -465,11 +467,12 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <label class="bd-check"><input type="checkbox" name="hasChimney"><span>A chimney</span></label>
       <div class="bd-chimney"></div>
       <div class="bd-lights"></div>
+      <div class="bd-dormers"></div>
       <label class="bd-check" data-bd-for="slope gable hip"><input type="checkbox" name="gutters"><span>Gutters along the eaves</span></label>
       <label class="bd-row" data-bd-pipes><span>Downpipes</span><select name="downpipes"><option value="none">None</option><option value="left">At the left end</option><option value="right">At the right end</option></select></label>
       <div class="bd-sub">Overhang</div>
       <div class="bd-sides">${SIDES.map(([k, label]) => field(k, label, building[k], BUILDING_LIMITS[k])).join('')}</div>
-      <p class="bd-hint">A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
+      <p class="bd-hint">A gambrel has two panels a side, steep from the eaves to the break and shallower above it; a mansard has them on all four sides. Their panels meet mitred, and lie on the walls without a frame. A dormer stands on a sloped panel, facing down it: a front wall with a window, two cheeks and a two-sided roof, one hollow piece over an opening in the panel; it prints standing on its front. A chimney stands on the roof, its foot following it, and prints upside down; it is placed by its middle, from the left and front walls of the top storey. A rooflight is a hole through a roof panel with a frame round it, square to the panel; glue clear sheet under it. Gutters hang along the eaves, open side up, and a downpipe comes down from each to the base, at the end you choose as you look at the wall. How far the roof reaches past each wall. A sloped or two-sided roof lies on the walls, which follow it. A sawtooth is a row of single slopes, a glazed north light standing between each two; it lies on its end walls and the lights, with no frame under it. A barrel vault prints standing on its end and is cut into lengths that fit the plate; its end walls rise into the arch. Under the roof a frame drops inside the walls and holds them square; small tabs on it push into pockets in the roof's underside, so the roof prints the right way up with its texture on top. With nothing under it, the roof is glued along the tops of the walls.</p></section>
     <section class="bd-box" data-bd-card="surface"><h3>Surface</h3>
       <div class="bd-sub" data-bd-walls-of>Walls</div>
       ${swatches(WALL_TEXTURES, 'data-bd-wall-texture')}
@@ -1143,6 +1146,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       pitch: num(e.pitch),
       teeth: num(e.teeth),
       rise: num(e.rise),
+      lowerPitch: num(e.lowerPitch),
+      breakAt: num(e.breakAt),
+      dormers: (building.dormers ?? []).map((d, i) => (e['dormer-x-' + i] ? { x: num(e['dormer-x-' + i]), y: num(e['dormer-y-' + i]), width: num(e['dormer-w-' + i]), height: num(e['dormer-h-' + i]) } : d)),
       overhangFront: num(e.overhangFront),
       overhangBack: num(e.overhangBack),
       overhangLeft: num(e.overhangLeft),
@@ -1246,7 +1252,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       // The fittings' fields as the building has them: redrawn only when one comes or goes, not while typing.
-      const fits = [!!building.chimney, building.rooflights?.length ?? 0, building.gutters, building.roof].join();
+      const fits = [!!building.chimney, building.rooflights?.length ?? 0, building.dormers?.length ?? 0, building.gutters, building.roof].join();
       if (fits !== fitted2) {
         fitted2 = fits;
         drawFittings();
@@ -1573,7 +1579,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     form.elements.railingStyle.value = b.railingStyle;
     for (const k of ['access', 'accessWall', 'accessAt', 'accessTo']) form.elements[k].value = b[k];
     for (const k of ['standType', 'standShape']) form.elements[k].value = b[k];
-    for (const k of ['standHeight', 'standSize', 'standTaper', 'arch', 'teeth', 'rise']) form.elements[k].value = b[k];
+    for (const k of ['standHeight', 'standSize', 'standTaper', 'arch', 'teeth', 'rise', 'lowerPitch', 'breakAt']) form.elements[k].value = b[k];
     form.elements.standBraces.checked = b.standBraces;
     form.elements.signWidth.value = b.signWidth;
     form.elements.signHeight.value = b.signHeight;
@@ -1588,7 +1594,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // The chimney's place and size, and a row for each rooflight.
   function drawFittings() {
     const b = building;
-    fitted2 = [!!b.chimney, b.rooflights?.length ?? 0, b.gutters, b.roof].join();
+    fitted2 = [!!b.chimney, b.rooflights?.length ?? 0, b.dormers?.length ?? 0, b.gutters, b.roof].join();
     if (!form.elements.hasChimney) return;
     const F = FITTINGS;
     form.elements.hasChimney.checked = !!b.chimney;
@@ -1604,6 +1610,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
             `<div class="bd-sub">Rooflight ${i + 1}<button type="button" class="bd-remove" data-bd-remove-light="${i}" title="Remove" aria-label="Remove rooflight ${i + 1}">${icon('close')}</button></div><div class="bd-sides">${field('light-x-' + i, 'From the left', l.x, [0, 1500])}${field('light-y-' + i, 'From the front', l.y, [0, 1500])}${field('light-w-' + i, 'Width', l.width, F.light)}${field('light-d-' + i, 'Depth', l.depth, F.light)}</div>`,
         )
         .join('') + (lights.length < F.lightsMost && b.roof !== 'vault' ? `<div class="bd-adds"><button type="button" class="bd-add" data-bd-add-light>${icon('plus')}Rooflight</button></div>` : '');
+    const dormers = b.dormers ?? [];
+    const sloped = ['slope', 'gable', 'hip', 'gambrel', 'mansard'].includes(b.roof);
+    $('.bd-dormers').innerHTML =
+      dormers
+        .map(
+          (d, i) =>
+            `<div class="bd-sub">Dormer ${i + 1}<button type="button" class="bd-remove" data-bd-remove-dormer="${i}" title="Remove" aria-label="Remove dormer ${i + 1}">${icon('close')}</button></div><div class="bd-sides">${field('dormer-x-' + i, 'From the left', d.x, [0, 1500])}${field('dormer-y-' + i, 'From the front', d.y, [0, 1500])}${field('dormer-w-' + i, 'Width', d.width, F.dormerWide)}${field('dormer-h-' + i, 'Front, over the roof', d.height, F.dormerHigh)}</div>`,
+        )
+        .join('') + (dormers.length < F.dormersMost && sloped ? `<div class="bd-adds"><button type="button" class="bd-add" data-bd-add-dormer>${icon('plus')}Dormer</button></div>` : '');
     form.elements.gutters.checked = b.gutters;
     form.elements.downpipes.value = b.downpipes;
     $('[data-bd-pipes]').hidden = !b.gutters || !['slope', 'gable', 'hip'].includes(b.roof);
@@ -1613,6 +1628,26 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     const u = b.upper.at(-1);
     return { width: u?.width ?? b.width, depth: u?.depth ?? b.depth };
   };
+  // A dormer where one fits: down a sloped panel, the first place that passes the checks.
+  function freeDormer(b) {
+    const { width: W, depth: D } = topOf(b);
+    // Up the middle of each face of the roof, from its eaves: front, left, back, right.
+    const spots = [];
+    for (let v = 0; v <= D / 2; v++) spots.push([W / 2, v], [W / 2, D - v]);
+    for (let u = 0; u <= W / 2; u++) spots.push([u, D / 2], [W - u, D / 2]);
+    for (const [width, height] of [[28, 18], [22, 14], [20, 12]])
+      for (const [x, y] of spots) {
+          const d = { x: Math.round(x), y: Math.round(y), width, height };
+          try {
+            validateBuilding({ ...b, dormers: [...b.dormers, d] });
+            return d;
+          } catch (err) {
+            // Not here: the next place. The reason at the last place tried is told if none fits.
+            freeDormer.why = err.message;
+          }
+        }
+    return null;
+  }
   // A rooflight where one fits: the first place on a grid of the top storey that passes the checks.
   function freeRooflight(b) {
     const { width: W, depth: D } = topOf(b);
@@ -1804,6 +1839,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         // Gutters only along eaves; no rooflights in a vault.
         if (!['slope', 'gable', 'hip'].includes(next.roof)) Object.assign(next, { gutters: false, downpipes: 'none' });
         if (next.roof === 'vault') next.rooflights = [];
+        // Dormers stand on sloped panels only.
+        if (!['slope', 'gable', 'hip', 'gambrel', 'mansard'].includes(next.roof)) next.dormers = [];
+        // A gambrel or mansard: the upper pitch shallower than the lower.
+        if (['gambrel', 'mansard'].includes(next.roof)) next.pitch = Math.min(next.pitch, next.lowerPitch - 10);
         // A vault is plain or corrugated, and at most a half round over its span.
         if (next.roof === 'vault') {
           if (!['plain', 'metal'].includes(next.roofTexture)) next.roofTexture = 'plain';
@@ -1875,6 +1914,18 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
         await rebuild(next);
         drawRooms();
         form.elements.doorWidth.value = building.doorWidth;
+      } else if (b.dataset.bdAddDormer !== undefined) {
+        const base = readForm();
+        const dormer = freeDormer(base);
+        if (!dormer) showError('There is no room for a dormer on this roof. ' + (freeDormer.why ?? ''));
+        else {
+          await rebuild({ ...base, dormers: [...base.dormers, dormer] });
+          drawFittings();
+        }
+      } else if (b.dataset.bdRemoveDormer !== undefined) {
+        const base = readForm();
+        await rebuild({ ...base, dormers: base.dormers.filter((_, i) => i !== Number(b.dataset.bdRemoveDormer)) });
+        drawFittings();
       } else if (b.dataset.bdAddLight !== undefined) {
         const base = readForm();
         const light = freeRooflight(base);

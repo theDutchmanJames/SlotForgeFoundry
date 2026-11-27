@@ -35,6 +35,8 @@ export const ROOFS = Object.freeze([
   ['slope', 'Single slope'],
   ['gable', 'Two-sided'],
   ['hip', 'Hip'],
+  ['gambrel', 'Gambrel'],
+  ['mansard', 'Mansard'],
   ['sawtooth', 'Sawtooth'],
   ['vault', 'Barrel vault'],
 ]);
@@ -46,7 +48,34 @@ export const FITTINGS = Object.freeze({
   cap: 1, capHigh: 2, size: [6, 40], high: [5, 60],
   light: [8, 80], lightFrame: 1.5, lightUp: 1.5, lightsMost: 6, clear: 3, apart: 2,
   gutter: 6, gutterHigh: 4, gutterWall: 1, pipe: 3,
+  dormerWide: [20, 80], dormerHigh: [12, 60], dormersMost: 4, dormerPitch: 40, dormerRoof: 2, dormerSill: 2,
 });
+/**
+ * A dormer's shape on its panel p: d along the slope from the panel's line,
+ * a across it, front at df, middle at ac; its eave and ridge over the top of
+ * the roof at its front, and where they meet the roof going back.
+ */
+export function dormerShape(shape, d, roofThick = KIT.roof) {
+  const p = roofPanelAt(shape, d.x, d.y);
+  if (!p) return null;
+  const [dx, dy] = p.dir,
+    A = [-dy, dx];
+  const df = dx * d.x + dy * d.y - p.s0,
+    ac = A[0] * d.x + A[1] * d.y;
+  const k = Math.tan((FITTINGS.dormerPitch * Math.PI) / 180),
+    hw = d.width / 2;
+  // Over the top of the roof at its front: the eave, the ridge.
+  const eave = d.height,
+    ridge = d.height + k * hw;
+  const back = df + ridge / p.t,
+    valley = df + eave / p.t;
+  // A box on the plan from (a0, d0) to (a1, d1) in its frame.
+  const plan = (a0, d0, a1, d1) => {
+    const pts = [[a0, d0], [a1, d1]].map(([a, dd]) => (dx ? [dx * (dd + p.s0), dx * a] : [-dy * a, dy * (dd + p.s0)]));
+    return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
+  };
+  return { p, A, df, ac, k, hw, eave, ridge, back, valley, plan, foot: plan(ac - hw, df, ac + hw, back), thick: roofThick };
+}
 // A sawtooth roof: each tooth at least this wide along its slope, and its
 // glazed face this high, for windows in its north light.
 export const SAWTOOTH = Object.freeze({ least: 30, face: 12, pane: 18, bar: 2, edge: 2 });
@@ -67,6 +96,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   teeth: 3,
   // A barrel vault: a half-round or flatter arch, its axis along the ridge, this high over the eaves.
   rise: 40,
+  // A gambrel (two sides) or a mansard (four): steep at lowerPitch from the
+  // eaves to a break breakAt in from the outside of the walls, then at pitch.
+  lowerPitch: 65,
+  breakAt: 25,
   // Fittings on the roof. A chimney: { x, y } its middle on the plan of the
   // top storey, from its left and front walls, its size, and how high it
   // stands over the highest point of the roof under it. Rooflights: each
@@ -76,6 +109,10 @@ export const BUILDING_DEFAULTS = Object.freeze({
   // look at the wall under it, or 'none'.
   chimney: null,
   rooflights: Object.freeze([]),
+  // Dormers: each { x, y } the middle of the foot of its front wall on the
+  // plan of the top storey, its width, and the height of its front wall over
+  // the roof; on a sloped panel, facing down it.
+  dormers: Object.freeze([]),
   gutters: false,
   downpipes: 'none',
   ridge: 'depth', // two-sided: the ridge runs front to back ('depth') or side to side ('width')
@@ -181,6 +218,8 @@ export const BUILDING_LIMITS = Object.freeze({
   arch: [0, 30],
   teeth: [2, 8],
   rise: [10, 150],
+  lowerPitch: [45, 80],
+  breakAt: [8, 100],
   play: [0.1, 0.5],
   ...TEXTURE_LIMITS,
 });
@@ -372,13 +411,15 @@ const LABELS = {
   arch: 'Arch',
   teeth: 'Teeth',
   rise: 'Rise of the vault',
+  lowerPitch: 'Lower pitch',
+  breakAt: 'Break',
   play: 'Joint clearance',
   waist: 'Waist wall',
   textureScale: 'Texture size',
   textureJoint: 'Joint width',
   textureDepth: 'Joint depth',
 };
-const UNITS = { pitch: '°', textureScale: ' %', standTaper: ' %', teeth: '' };
+const UNITS = { pitch: '°', lowerPitch: '°', textureScale: ' %', standTaper: ' %', teeth: '' };
 const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle'];
 // Panes in a framed window, at most so many each way and at least so big.
 export const PANES = Object.freeze({ most: 6, least: 4 });
@@ -488,10 +529,10 @@ export function validateBuilding(input) {
   if (!Number.isInteger(b.firstNumber) || b.firstNumber < 0 || b.firstNumber > 99 - 23) throw Error('The first bay number must be a whole number from 0 to 76.');
   if (!ROOFS.some(([id]) => id === b.roof)) throw Error('Choose a roof from the list.');
   if (!['depth', 'width'].includes(b.ridge)) throw Error('Choose which way the ridge runs.');
-  if (b.roof === 'hip') {
+  if (b.roof === 'hip' || b.roof === 'mansard') {
     const top = b.upper.at(-1) ?? b;
     const across = Math.max((top.width ?? b.width) + b.overhangLeft + b.overhangRight, (top.depth ?? b.depth) + b.overhangFront + b.overhangBack);
-    if (across > HIP_ACROSS) throw Error('A hip roof is not cut to fit the plate: the top storey with its overhangs can be at most ' + HIP_ACROSS + ' mm across, not ' + fmtMm(across) + '.');
+    if (across > HIP_ACROSS) throw Error('A ' + (b.roof === 'hip' ? 'hip' : 'mansard') + ' roof is not cut to fit the plate: the top storey with its overhangs can be at most ' + HIP_ACROSS + ' mm across, not ' + fmtMm(across) + '.');
   }
   if (!WALLS.includes(b.rises)) throw Error('Choose the side the roof rises towards.');
   Object.assign(b, checkFinish(b, WALLS, b.height));
@@ -703,11 +744,38 @@ function checkFittings(b) {
           const room = F.clear + (shape.saw && n[0] * shape.saw.dir[0] + n[1] * shape.saw.dir[1] < 0 ? KIT.wall : 0);
           if (corners.some(([x, y]) => n[0] * x + n[1] * y - off < room)) throw Error(name + ' reaches over the ' + (shape.saw ? 'top of its tooth' : b.roof === 'hip' ? 'hip or the ridge' : 'ridge') + ': keep it ' + room + ' mm clear, on one side of the roof.');
         }
+        // A gambrel or a mansard: on one panel, clear of its break, its hips and its ridge.
+        if (shape.mitred && !onePanel(shape, p, box, F.clear)) throw Error(name + ' reaches over the break, a hip or the ridge: keep it ' + F.clear + ' mm clear, on one panel of the roof.');
       }
       for (const q of boxes)
         if (box[0] < q.box[2] + F.apart && q.box[0] < box[2] + F.apart && box[1] < q.box[3] + F.apart && q.box[1] < box[3] + F.apart) throw Error(name + ' runs into ' + q.name + ': keep them ' + F.apart + ' mm apart.');
       boxes.push({ name: name.toLowerCase(), box });
       return { x: l.x, y: l.y, width: l.width, depth: l.depth };
+    });
+  }
+  if (!Array.isArray(b.dormers) || b.dormers.length > F.dormersMost) throw Error('A roof has at most ' + F.dormersMost + ' dormers.');
+  if (b.dormers.length) {
+    if (!plain || !['slope', 'gable', 'hip', 'gambrel', 'mansard'].includes(b.roof)) throw Error('Dormers stand on a sloped, two-sided, hip, gambrel or mansard roof.');
+    const shape = roofShape(b);
+    const inner = KIT.wall + b.play + KIT.lip + 4;
+    b.dormers = b.dormers.map((d, i) => {
+      const name = 'Dormer ' + (i + 1);
+      if (!d || typeof d !== 'object' || Object.keys(d).some((k) => !['x', 'y', 'width', 'height'].includes(k)) || !['x', 'y', 'width', 'height'].every((k) => num(d[k])))
+        throw Error(name + ' has a place, a width and a height.');
+      if (d.width < F.dormerWide[0] || d.width > F.dormerWide[1]) throw Error(name + ' is ' + F.dormerWide[0] + ' to ' + F.dormerWide[1] + ' mm wide.');
+      if (d.height < F.dormerHigh[0] || d.height > F.dormerHigh[1]) throw Error('The front of ' + name.toLowerCase() + ' is ' + F.dormerHigh[0] + ' to ' + F.dormerHigh[1] + ' mm high over the roof.');
+      const g = dormerShape(shape, d);
+      if (!g) throw Error(name + ' stands on a sloped panel of the roof.');
+      // The opening under it, inside the walls and clear of the frame under the roof.
+      const hole = g.plan(g.ac - g.hw + KIT.wall, g.df + KIT.wall, g.ac + g.hw - KIT.wall, Math.max(g.df + KIT.wall, g.valley - 1));
+      if (hole[0] < inner || hole[1] < inner || hole[2] > W - inner || hole[3] > D - inner) throw Error(name + ' opens into the roof ' + fmtMm(inner) + ' mm inside the outside of the walls, clear of the frame under the roof: move it up the roof or in from the end.');
+      if (!onePanel(shape, g.p, g.foot, F.clear)) throw Error(name + ' reaches over a ridge, a hip or a break of the roof: make it lower or narrower, or move it down the roof.');
+      // A single slope has no ridge: it ends at the high wall.
+      if (g.foot[0] < 0 || g.foot[1] < 0 || g.foot[2] > W || g.foot[3] > D) throw Error(name + ' reaches back past the top of the roof: make it lower, or move it down the roof.');
+      for (const q of boxes)
+        if (g.foot[0] < q.box[2] + F.apart && q.box[0] < g.foot[2] + F.apart && g.foot[1] < q.box[3] + F.apart && q.box[1] < g.foot[3] + F.apart) throw Error(name + ' runs into ' + q.name + ': keep them ' + F.apart + ' mm apart.');
+      boxes.push({ name: name.toLowerCase(), box: g.foot });
+      return { x: d.x, y: d.y, width: d.width, height: d.height };
     });
   }
   if (typeof b.gutters !== 'boolean') throw Error('Choose whether the roof has gutters.');
@@ -725,6 +793,19 @@ function checkFittings(b) {
   }
 }
 
+/** Whether a box on the plan, and a margin round it, lies all on one panel p of the roof. */
+function onePanel(shape, p, [x0, y0, x1, y1], margin) {
+  const N = 8;
+  for (let i = 0; i <= N; i++)
+    for (let j = 0; j <= N; j++) {
+      if (i && j && i < N && j < N) continue;
+      const x = x0 - margin + ((x1 - x0 + 2 * margin) * i) / N,
+        y = y0 - margin + ((y1 - y0 + 2 * margin) * j) / N;
+      if (roofPanelAt(shape, x, y) !== p) return false;
+    }
+  return true;
+}
+
 /** The eaves a gutter runs along: the wall under the low edge of a panel of a sloped, two-sided or hip roof. */
 const eaveOf = (p) => ({ '1,0': 'left', '-1,0': 'right', '0,1': 'front', '0,-1': 'back' })[p.dir.join(',')];
 
@@ -736,7 +817,7 @@ function roofPanelAt(shape, x, y) {
   }
   let best = null;
   for (const p of shape.panels) {
-    const z = shape.t * (p.dir[0] * x + p.dir[1] * y - p.s0);
+    const z = p.t * (p.dir[0] * x + p.dir[1] * y - p.s0);
     if (!best || z < best.z) best = { p, z };
   }
   return best?.p ?? null;
@@ -746,8 +827,13 @@ function roofPanelAt(shape, x, y) {
 function checkRoof(b) {
   if (!Number.isInteger(b.teeth)) throw Error('The teeth must be a whole number from 2 to 8.');
   checkFittings(b);
-  if (!['sawtooth', 'vault'].includes(b.roof)) return;
+  if (!['sawtooth', 'vault', 'gambrel', 'mansard'].includes(b.roof)) return;
   const top = storeyStack(b).at(-1);
+  if (b.roof === 'gambrel' || b.roof === 'mansard') {
+    if (b.pitch > b.lowerPitch - 10) throw Error('The upper pitch of a ' + b.roof + ' is at least 10° shallower than the lower: at most ' + (b.lowerPitch - 10) + '°.');
+    const half = (b.roof === 'mansard' ? Math.min(top.width, top.depth) : b.ridge === 'depth' ? top.width : top.depth) / 2;
+    if (b.breakAt > half - 10) throw Error('The break of the ' + b.roof + ' is at most ' + fmtMm(half - 10) + ' mm in from the walls, 10 mm short of the ridge.');
+  }
   if (b.roof === 'sawtooth') {
     const run = ['front', 'back'].includes(b.rises) ? top.depth : top.width;
     const w = run / b.teeth,
@@ -1014,7 +1100,7 @@ export function roofShape(b) {
   if (b.roof === 'slope') {
     const dir = { back: [0, 1], front: [0, -1], right: [1, 0], left: [-1, 0] }[b.rises];
     const run = dir[1] ? D : W;
-    return { t, panels: [{ dir, s0: dir[0] < 0 ? -W : dir[1] < 0 ? -D : 0, id: 'roof', name: 'Roof panel' }], rise: run * t };
+    return { t, panels: [{ dir, s0: dir[0] < 0 ? -W : dir[1] < 0 ? -D : 0, t, id: 'roof', name: 'Roof panel' }], rise: run * t };
   }
   if (b.roof === 'gable') {
     const half = (b.ridge === 'depth' ? W : D) / 2;
@@ -1028,7 +1114,7 @@ export function roofShape(b) {
             { dir: [0, 1], s0: 0, keeps: [[[0, -1, 0], -D / 2]], id: 'roof-front', name: 'Roof panel, front' },
             { dir: [0, -1], s0: -D, keeps: [[[0, 1, 0], D / 2]], id: 'roof-back', name: 'Roof panel, back' },
           ];
-    return { t, panels, rise: half * t };
+    return { t, panels: panels.map((p) => ({ ...p, t })), rise: half * t };
   }
   if (b.roof === 'hip') {
     // Four panels at one pitch, each kept to its side of the hips (where it
@@ -1040,7 +1126,26 @@ export function roofShape(b) {
       { dir: [1, 0], s0: 0, keeps: [[[-r, r, 0], 0], [[-r, -r, 0], -D * r], [[-1, 0, 0], -W / 2]], id: 'roof-left', name: 'Roof panel, left' },
       { dir: [-1, 0], s0: -W, keeps: [[[r, r, 0], W * r], [[r, -r, 0], (W - D) * r], [[1, 0, 0], W / 2]], id: 'roof-right', name: 'Roof panel, right' },
     ];
-    return { t, panels, rise: (Math.min(W, D) / 2) * t };
+    return { t, panels: panels.map((p) => ({ ...p, t })), rise: (Math.min(W, D) / 2) * t };
+  }
+  if (b.roof === 'gambrel' || b.roof === 'mansard') {
+    // On each side two panels: a steep one from the eaves up to the break,
+    // breakAt in from the outside of the wall, then a shallower one; on two
+    // sides about a ridge (a gambrel), or on all four (a mansard).
+    const tL = Math.tan((b.lowerPitch * Math.PI) / 180),
+      k = b.breakAt;
+    const sides = b.roof === 'mansard' ? ['front', 'back', 'left', 'right'] : b.ridge === 'depth' ? ['left', 'right'] : ['front', 'back'];
+    const DIRS = { left: [1, 0], right: [-1, 0], front: [0, 1], back: [0, -1] },
+      S0 = { left: 0, right: -W, front: 0, back: -D };
+    // The upper panel's plane meets the lower one's at the break.
+    const sigma = k - (tL * k) / t;
+    const panels = sides.flatMap((side) => [
+      // Apart in the exploded view: the lower panel out, the upper one up.
+      { dir: DIRS[side], s0: S0[side], t: tL, id: 'roof-' + side + '-lower', name: 'Roof panel, ' + side + ', lower', apart: [-DIRS[side][0] * APART.ridge, -DIRS[side][1] * APART.ridge, 0] },
+      { dir: DIRS[side], s0: S0[side] + sigma, t, id: 'roof-' + side + '-upper', name: 'Roof panel, ' + side + ', upper', apart: [-DIRS[side][0] * APART.ridge / 2, -DIRS[side][1] * APART.ridge / 2, APART.ridge] },
+    ]);
+    const half = (b.roof === 'mansard' ? Math.min(W, D) : b.ridge === 'depth' ? W : D) / 2;
+    return { t, panels, rise: tL * k + t * (half - k), mitred: true };
   }
   if (b.roof === 'sawtooth') {
     // Single slopes side by side along `dir`, each over a strip w wide; d
@@ -1052,6 +1157,7 @@ export function roofShape(b) {
       w = run / n;
     const panels = Array.from({ length: n }, (_, k) => ({
       dir,
+      t,
       s0: s0 + k * w,
       keeps: [...(k ? [[[dir[0], dir[1], 0], s0 + k * w]] : []), ...(k < n - 1 ? [[[-dir[0], -dir[1], 0], -(s0 + (k + 1) * w)]] : [])],
       id: 'roof-' + (k + 1),
@@ -1091,7 +1197,7 @@ export function roofAt(shape, x, y) {
     return Math.abs(u) >= R ? 0 : Math.max(0, Math.sqrt(R * R - u * u) - below);
   }
   if (!shape.panels.length) return 0;
-  return Math.min(...shape.panels.map((p) => shape.t * (p.dir[0] * x + p.dir[1] * y - p.s0)));
+  return Math.min(...shape.panels.map((p) => p.t * (p.dir[0] * x + p.dir[1] * y - p.s0)));
 }
 
 /**
@@ -1149,7 +1255,7 @@ export function tabSpots(W, D, avoid = () => false, play = KIT.play) {
 }
 const frameIds = (b, storeys) => {
   const out = [];
-  if (b.roofLip === 'none' || ['sawtooth', 'vault'].includes(b.roof)) return out;
+  if (b.roofLip === 'none' || ['sawtooth', 'vault', 'gambrel', 'mansard'].includes(b.roof)) return out;
   if (b.roof === 'flat') out.push({ id: 'roof-frame', name: 'Roof frame', role: 'lip' });
   else for (const p of roofShape(b).panels) out.push({ id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip' });
   return out;
@@ -1290,6 +1396,7 @@ export function buildingLayout(input) {
   else for (const p of roofShape(b).panels) parts.push({ id: p.id, name: p.name, role: 'roof' });
   for (let k = 1; b.roof === 'sawtooth' && k < b.teeth; k++) parts.push({ id: 'light-' + k, name: 'North light ' + k, role: 'wall' });
   if (b.chimney) parts.push({ id: 'chimney', name: 'Chimney', role: 'frame' });
+  b.dormers.forEach((_, i) => parts.push({ id: 'dormer-' + (i + 1), name: 'Dormer ' + (i + 1), role: 'wall' }));
   if (b.gutters)
     for (const p of roofShape(b).panels) {
       const side = eaveOf(p);
@@ -1409,10 +1516,10 @@ export function buildingCuts(input, plate) {
   const roofExtent = [top.width + ov[0], top.depth + ov[1]];
   let scale = [1, 1];
   if (b.roof === 'slope') scale = b.rises === 'left' || b.rises === 'right' ? [slope, 1] : [1, slope];
-  if (b.roof === 'gable') roofExtent[b.ridge === 'depth' ? 0 : 1] = 0;
+  if (b.roof === 'gable' || b.roof === 'gambrel') roofExtent[b.ridge === 'depth' ? 0 : 1] = 0;
   // A hip roof's panels are not cut: the building is checked to be small enough.
   // A vault is cut across its axis by itself, each piece standing on its end.
-  if (b.roof === 'hip' || b.roof === 'vault') roofExtent.fill(0);
+  if (b.roof === 'hip' || b.roof === 'mansard' || b.roof === 'vault') roofExtent.fill(0);
   // A sawtooth's panels and north lights are cut along their length only.
   if (b.roof === 'sawtooth') roofExtent[['front', 'back'].includes(b.rises) ? 1 : 0] = 0;
   return planCuts(b, plate, {
@@ -1477,6 +1584,32 @@ export function buildGarage(wasm, input, plate = null) {
     const drum = own(Manifold.cylinder(4000, r, r, 256));
     return along ? own(own(drum.rotate([-90, 0, 0])).translate([half, -2000, z1 - below])) : own(own(drum.rotate([0, 90, 0])).translate([-2000, half, z1 - below]));
   };
+  /**
+   * Where a panel is kept against the others. Between two panels of a
+   * gambrel or a mansard the joint is mitred: the plane through the line
+   * where their undersides meet and the line where their tops meet, so a
+   * steep panel and a shallow one each end square enough to print. Others
+   * keep the half-planes of their roof.
+   */
+  function keepsOf(p, z1) {
+    if (!shape.mitred) return p.keeps ?? [];
+    const plane = (q) => [q.t * q.dir[0], q.t * q.dir[1], z1 - q.t * q.s0];
+    const thick = (q) => rt * Math.hypot(q.t, 1);
+    const [ap, bp, cp] = plane(p),
+      hp = thick(p);
+    const out = [];
+    for (const q of shape.panels) {
+      if (q === p) continue;
+      const [aq, bq, cq] = plane(q),
+        hq = thick(q);
+      // hq (z - plane p) - hp (z - plane q) >= 0 on p's side.
+      const n = [-hq * ap + hp * aq, -hq * bp + hp * bq, hq - hp],
+        len = Math.hypot(...n);
+      if (len < 1e-9) continue;
+      out.push([n.map((v) => v / len), (hq * cp - hp * cq) / len]);
+    }
+    return out;
+  }
   // The part of a solid between d0 and d1 along a sawtooth's slopes (null: no end).
   const sawStrip = (solid, { dir: [dx, dy], s0 }, d0, d1) => {
     let q = solid;
@@ -1582,20 +1715,64 @@ export function buildGarage(wasm, input, plate = null) {
       const u = (along ? x : y) - half;
       return Math.abs(u) >= R + rt ? 0 : Math.sqrt((R + rt) ** 2 - u * u) - below;
     }
-    return roofAt(shape, x, y) + rt * Math.hypot(shape.t, 1);
+    if (shape.saw) return roofAt(shape, x, y) + rt * Math.hypot(shape.t, 1);
+    // The lowest of the panels' tops, each as thick as the roof square to it.
+    return Math.min(...shape.panels.map((p) => p.t * (p.dir[0] * x + p.dir[1] * y - p.s0) + rt * Math.hypot(p.t, 1)));
   };
+  /**
+   * A dormer: a front wall with a window, two cheeks and a two-sided roof
+   * over them, one hollow piece standing on the roof, open underneath over
+   * an opening in the panel; going back, its cheeks and roof end on the roof.
+   * It prints standing on its front, so every face is upright or faces up.
+   */
+  function dormerPart(d, i, z1, apart) {
+    const F = FITTINGS;
+    const g = dormerShape(shape, d);
+    const { p, A, df, ac, k, hw } = g;
+    const [dx, dy] = p.dir,
+      T = p.t,
+      len = Math.hypot(T, 1);
+    const top = (dd) => z1 + T * dd + rt * len; // the top of the roof, d along the slope
+    const zf = top(df),
+      ze = zf + g.eave;
+    const slab = (a0, d0, a1, d1, za, zb) => {
+      const r = g.plan(a0, d0, a1, d1);
+      return box(r[0], r[1], za, r[2], r[3], zb);
+    };
+    const norm = (n, off) => {
+      const l = Math.hypot(...n);
+      return [n.map((v) => v / l), off / l];
+    };
+    // Above the top of the roof, by `by`.
+    const above = (by) => norm([-T * dx, -T * dy, 1], z1 - T * p.s0 + rt * len + by);
+    // Under its two-sided roof: eave at e, the planes sloping down from the middle.
+    const under = (e) => [norm([-k * A[0], -k * A[1], -1], -(e + k * hw) - k * ac), norm([k * A[0], k * A[1], -1], -(e + k * hw) + k * ac)];
+    const zTop = ze + k * hw + 1;
+    let outer = slab(ac - hw, df, ac + hw, g.back + 2, zf - 40, zTop);
+    for (const [n, off] of [above(0), ...under(ze)]) outer = trim(outer, n, off);
+    const roofIn = F.dormerRoof * Math.hypot(k, 1);
+    let inner = slab(ac - hw + t, df + t, ac + hw - t, g.back + 10, zf - 60, zTop);
+    for (const [n, off] of [above(-5), ...under(ze - roofIn)]) inner = trim(inner, n, off);
+    // The window in its front, over the roof and under the ceiling at the cheeks.
+    const ww = d.width - 2 * t - 2 * F.dormerSill,
+      w0 = zf + F.dormerSill + 1,
+      w1 = Math.min(ze - F.dormerSill, ze - roofIn + k * t - 1);
+    const pane = slab(ac - ww / 2, df - 1, ac + ww / 2, df + t + 1, w0, w1);
+    const solid = whole(minus(outer, inner, ...(w1 - w0 > 2 ? [pane] : [])));
+    return { id: 'dormer-' + (i + 1), name: 'Dormer ' + (i + 1), role: 'wall', solid, outward: [dx, dy, 0], apart: add3(apart, [-dx * 12, -dy * 12, 15]) };
+  }
   /** Everything up to the top of the roof, for a fitting to stand on it. */
   function roofBody(W, D, z1, ov) {
     const big = () => box(-ov.left - 60, -ov.front - 60, z1 - 300, W + ov.right + 60, D + ov.back + 60, z1 + shape.rise + 300);
     if (b.roof === 'flat') return trim(big(), [0, 0, -1], -(z1 + rt));
     if (shape.vault) return own(Manifold.union([trim(big(), [0, 0, -1], -z1), vaultDrum(shape.vault, W, z1, shape.vault.R + rt)]));
-    const len = Math.hypot(shape.t, 1);
     return own(
       Manifold.union(
         shape.panels.map((p) => {
           const [dx, dy] = p.dir;
-          let q = trim(big(), [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0 + rt * len) / len);
-          for (const [n, off] of p.keeps ?? []) q = trim(q, n, off);
+          const len = Math.hypot(p.t, 1);
+          let q = trim(big(), [p.t * dx, p.t * dy, -1], -(z1 - p.t * p.s0 + rt * len) / len);
+          for (const [n, off] of keepsOf(p, z1)) q = trim(q, n, off);
           return q;
         }),
       ),
@@ -1610,8 +1787,9 @@ export function buildGarage(wasm, input, plate = null) {
   function withRooflights(panel, p, z1) {
     const F = FITTINGS;
     const mine = b.rooflights.filter((l) => (p ? roofPanelAt(shape, l.x, l.y) === p : true));
-    if (!mine.length) return panel;
-    const T = p ? shape.t : 0,
+    const dormers = p ? b.dormers.map((d) => dormerShape(shape, d)).filter((g) => g.p === p) : [];
+    if (!mine.length && !dormers.length) return panel;
+    const T = p ? p.t : 0,
       [dx, dy] = p ? p.dir : [0, 0],
       s0 = p ? p.s0 : 0;
     const len = Math.hypot(T, 1),
@@ -1629,7 +1807,9 @@ export function buildGarage(wasm, input, plate = null) {
       const sink = b.roofTexture === 'plain' ? 0.2 : Math.min(rt - 0.6, 1.5 * b.textureDepth + 0.3);
       frames.push(prism([r[0] - f, r[1] - f, r[2] + f, r[3] + f], rt - sink, rt + F.lightUp));
     }
-    return whole(minus(own(Manifold.union([panel, ...frames])), ...holes));
+    // Under a dormer, an opening as wide as the inside of its cheeks, to where its eaves meet the roof.
+    for (const g of dormers) if (g.valley - 1 > g.df + t + 0.5) holes.push(prism(g.plan(g.ac - g.hw + t + 0.5, g.df + t + 0.5, g.ac + g.hw - t - 0.5, g.valley - 1), -1, rt + 1));
+    return whole(frames.length ? minus(own(Manifold.union([panel, ...frames])), ...holes) : minus(panel, ...holes));
   }
   /**
    * A chimney: a stack with a cap round its top, its foot following the roof
@@ -1677,7 +1857,7 @@ export function buildGarage(wasm, input, plate = null) {
     for (const p of shape.panels) {
       const side = eaveOf(p);
       const o = ov[side];
-      const zTop = z1 - shape.t * o + rt * Math.hypot(shape.t, 1) - 0.5,
+      const zTop = z1 - p.t * o + rt * Math.hypot(p.t, 1) - 0.5,
         zBot = zTop - H;
       // In the frame of the eave: u along the wall (x for front and back, y for the sides), w out from the wall's outside.
       const alongX = side === 'front' || side === 'back';
@@ -1965,8 +2145,8 @@ export function buildGarage(wasm, input, plate = null) {
         }
         for (const p of shape.panels) {
           const [dx, dy] = p.dir;
-          const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
-          solid = trim(solid, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0) / len);
+          const len = Math.hypot(p.t * dx, p.t * dy, 1);
+          solid = trim(solid, [p.t * dx, p.t * dy, -1], -(z1 - p.t * p.s0) / len);
         }
         return solid;
       };
@@ -2205,14 +2385,16 @@ export function buildGarage(wasm, input, plate = null) {
         } else {
           // Each panel lies on the walls at the pitch, as thick as the roof, and
           // reaches past the walls by the overhang of each side.
-          const cosA = 1 / Math.hypot(shape.t, 1);
           for (const p of shape.panels) {
             const [dx, dy] = p.dir;
-            const len = Math.hypot(shape.t * dx, shape.t * dy, 1);
-            let panel = box(-ov.left, -ov.front, z1 - 60, W + ov.right, D + ov.back, z1 + shape.rise + 60);
-            panel = trim(panel, [-shape.t * dx, -shape.t * dy, 1], (z1 - shape.t * p.s0) / len);
-            panel = trim(panel, [shape.t * dx, shape.t * dy, -1], -(z1 - shape.t * p.s0 + rt / cosA) / len);
-            for (const [n, off] of p.keeps ?? []) panel = trim(panel, n, off);
+            const T = p.t,
+              cosA = 1 / Math.hypot(T, 1);
+            const len = Math.hypot(T * dx, T * dy, 1);
+            // Low enough for a steep panel's overhang.
+            let panel = box(-ov.left, -ov.front, z1 - 60 - 6 * BUILDING_LIMITS.overhangFront[1], W + ov.right, D + ov.back, z1 + shape.rise + 60);
+            panel = trim(panel, [-T * dx, -T * dy, 1], (z1 - T * p.s0) / len);
+            panel = trim(panel, [T * dx, T * dy, -1], -(z1 - T * p.s0 + rt / cosA) / len);
+            for (const [n, off] of keepsOf(p, z1)) panel = trim(panel, n, off);
             // Tiles or corrugations in its top, starting at the eave.
             if (b.roofTexture !== 'plain') {
               const joints = roofJoints(
@@ -2221,9 +2403,9 @@ export function buildGarage(wasm, input, plate = null) {
                 panel,
                 {
                   dir: p.dir,
-                  t: shape.t,
+                  t: T,
                   eave: [dx * p.s0, dy * p.s0],
-                  topAt: (x, y) => z1 + shape.t * (dx * x + dy * y - p.s0) + rt / cosA,
+                  topAt: (x, y) => z1 + T * (dx * x + dy * y - p.s0) + rt / cosA,
                   bounds: panel.boundingBox(),
                 },
                 b,
@@ -2231,14 +2413,14 @@ export function buildGarage(wasm, input, plate = null) {
               );
               if (joints) panel = whole(own(panel.subtract(joints)));
             }
-            const deg = (Math.atan(shape.t) * 180) / Math.PI;
+            const deg = (Math.atan(T) * 180) / Math.PI;
             // The two panels of a two-sided roof also part at the ridge.
             const ridge = p.apart ?? (p.keeps ? [-dx * APART.ridge, -dy * APART.ridge, 0] : [0, 0, 0]);
             const lie = [-deg * dy, deg * dx, 0];
             // Under it a frame, as under a flat roof, following the pitch: its
             // tabs stand square to the panel, in pockets in its underside.
-            if (b.roofLip !== 'none' && !shape.saw) {
-              const { frame, holes } = lipFrame(W, D, { z1, T: shape.t, dir: p.dir, s0: p.s0 }, { keeps: p.keeps, avoid: clearOfDividers(s), high: KIT.tabRoof });
+            if (b.roofLip !== 'none' && !shape.saw && !shape.mitred) {
+              const { frame, holes } = lipFrame(W, D, { z1, T, dir: p.dir, s0: p.s0 }, { keeps: p.keeps, avoid: clearOfDividers(s), high: KIT.tabRoof });
               panel = minus(panel, ...holes);
               const part = { id: p.id + '-frame', name: p.name.replace('Roof panel', 'Roof frame'), role: 'lip', solid: frame, lie, apart: add3([0, 0, lift + APART.up + APART.roof / 2], ridge) };
               local(...cutFlat(part, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
@@ -2251,6 +2433,7 @@ export function buildGarage(wasm, input, plate = null) {
           if (shape.saw) for (const light of northLights(W, D, z1, roofApart)) local(...cutFlat(light, plan && [plan.roofX, plan.roofY], [-ov.left, -ov.front]));
         }
         if (b.chimney) local(chimneyPart(W, D, z1, ov, roofApart));
+        b.dormers.forEach((d, i) => local(dormerPart(d, i, z1, roofApart)));
         if (b.gutters) local(...gutterParts(W, D, z1, ov, roofApart));
       }
 
@@ -2535,9 +2718,9 @@ export function buildGarage(wasm, input, plate = null) {
       });
     }
     // A fitting runs into nothing: it says what it meets.
-    for (const f of parts.filter((q) => /^(chimney|gutter|downpipe)/.test(q.id)))
+    for (const f of parts.filter((q) => /^(chimney|gutter|downpipe|dormer)/.test(q.id)))
       for (const q of parts) {
-        if (q === f || /^(chimney|gutter|downpipe)/.test(q.id) && q.id <= f.id) continue;
+        if (q === f || /^(chimney|gutter|downpipe|dormer)/.test(q.id) && q.id <= f.id) continue;
         const both = f.solid.intersect(q.solid);
         const v = both.volume();
         both.delete();

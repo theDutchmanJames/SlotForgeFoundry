@@ -108,8 +108,36 @@ try {
   await host.locator('[data-bd-remove-light="0"]').click();
   await idle();
   assert.equal((await saved()).rooflights.length, 0);
+  // A gambrel with a dormer; then a mansard, the dormer kept where it fits.
+  await host.locator('[data-bd-roof="gambrel"]').click();
+  await idle();
+  await noError('gambrel');
+  assert.ok(await setting('lowerPitch').isVisible());
+  assert.ok(await setting('breakAt').isVisible());
+  await setting('hasChimney').uncheck();
+  await idle();
+  await host.locator('[data-bd-add-dormer]').click();
+  await idle();
+  await noError('dormer on a gambrel');
+  b = await saved();
+  assert.equal(b.dormers.length, 1);
+  assert.ok(await setting('dormer-w-0').isVisible());
+  await snap('gambrel-dormer');
+  await host.locator('[data-bd-remove-dormer="0"]').click();
+  await idle();
+  await host.locator('[data-bd-roof="mansard"]').click();
+  await idle();
+  await noError('mansard');
+  await host.locator('[data-bd-add-dormer]').click();
+  await idle();
+  await host.locator('[data-bd-add-dormer]').click();
+  await idle();
+  await noError('two dormers on a mansard');
+  assert.equal((await saved()).dormers.length, 2);
+  assert.match(await host.locator('.bd-col').innerText(), /Dormer 2/);
+  await snap('mansard-dormers');
   assert.deepEqual(errors, []);
-  console.log('PASS: a sawtooth with its north lights, a corrugated barrel vault, and a chimney, rooflight, gutters and downpipes, set on the Buildings page, checked and drawn.');
+  console.log('PASS: sawtooth, barrel vault, gambrel and mansard roofs; a chimney, rooflight, gutters, downpipes and dormers, set on the Buildings page, checked and drawn.');
 } finally {
   await browser.close();
 }
