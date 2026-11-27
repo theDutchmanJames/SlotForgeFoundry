@@ -5,7 +5,8 @@
 // top is flat, or with no inside corners a hip roof, a cone on a round plan.
 // This generator is deliberately separate from the existing rectangular/storey schema.
 import { kitShapes } from './kit-shapes.js';
-import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellFrame, trimOf } from './shell-details.js';
+import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellExtras, shellFrame, shellHole, trimOf } from './shell-details.js';
+import { overOf, sideOf, underOf } from './opening-shapes.js';
 
 export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [] });
 export const SHAPES = Object.freeze(['rectangle', 'L', 'U', 'T', 'octagon', 'round', 'custom']);
@@ -138,14 +139,15 @@ function checkOpenings(openings, walls, height, where) {
     const p = checkShellOpening(q, w.name);
     // A frame reaches past the sides and top of its opening: it keeps the same room.
     const t = trimOf(p);
-    if (p.at - p.width / 2 - t < 9 || p.at + p.width / 2 + t > w.length - 9) throw Error(w.name + where + ': keep the opening' + (t ? ' and its frame' : '') + ' at least 9 mm from each corner.');
-    if (p.sill + p.height + t > height - 6) throw Error(w.name + where + ': leave at least 6 mm above the opening' + (t ? ' and its frame' : '') + '.');
+    const side = sideOf(p);
+    if (p.at - p.width / 2 - t - side < 9 || p.at + p.width / 2 + t + side > w.length - 9) throw Error(w.name + where + ': keep the opening' + (t ? ' and its frame' : '') + (side ? (p.shutters ? ' and its shutters' : ' and its sill and lintel') : '') + ' at least 9 mm from each corner.');
+    if (p.sill + p.height + t + overOf(p) > height - 6 + (p.lintel ? 4 : 0)) throw Error(w.name + where + ': leave at least 6 mm above the opening' + (t ? ' and its frame' : '') + (p.lintel ? ', 2 mm above its lintel' : '') + '.');
     return p;
   });
   out.forEach((o, i) => out.slice(i + 1).forEach(p => {
     if (p.wall !== o.wall) return;
-    const across = Math.abs(p.at - o.at) - (p.width + o.width) / 2;
-    const vertical = Math.max(p.sill - o.sill - o.height, o.sill - p.sill - p.height);
+    const across = Math.abs(p.at - o.at) - (p.width + o.width) / 2 - sideOf(p) - sideOf(o);
+    const vertical = Math.max(p.sill - o.sill - o.height - overOf(o) - underOf(p), o.sill - p.sill - p.height - overOf(p) - underOf(o));
     const t = trimOf(o) + trimOf(p);
     if (across < 6 + t && vertical < 6 + t) throw Error('Keep at least 6 mm between openings' + (t ? ' and their frames' : '') + where + '.');
   }));
@@ -281,17 +283,18 @@ export function buildFootprint(wasm, input, plate = null) {
         const mine = s.openings.filter(o => o.wall === w.id);
         for (const o of mine) {
           const z0 = o.type === 'door' ? s.floor - FLOORS.groove - 0.01 : s.floor + o.sill;
-          const hole = sweep([[o.at - o.width / 2, z0], [o.at + o.width / 2, z0], [o.at + o.width / 2, s.floor + o.sill + o.height], [o.at - o.width / 2, s.floor + o.sill + o.height]], [...w.dir, 0], [0, 0, 1], [...w.a, 0], [...w.inward, 0], -1, b.wall + 1);
+          const hole = o.shape && o.shape !== 'square' ? shellHole(wasm, own, o, w, s.floor, b.wall, sweep) : sweep([[o.at - o.width / 2, z0], [o.at + o.width / 2, z0], [o.at + o.width / 2, s.floor + o.sill + o.height], [o.at - o.width / 2, s.floor + o.sill + o.height]], [...w.dir, 0], [0, 0, 1], [...w.a, 0], [...w.inward, 0], -1, b.wall + 1);
           solid = own(solid.subtract(hole));
         }
         solid = finishShellWall(wasm, own, solid, w, { floor: s.floor, top: s.top, openings: mine }, b, s);
+        solid = shellExtras(wasm, own, solid, w, { floor: s.floor, wall: b.wall, openings: mine }, b, s, sweep);
         tiles(solid, { id: w.id + s.suffix, name: w.name + s.label, role: 'wall', ...lay(w), apart: [-w.inward[0] * 20, -w.inward[1] * 20, 8 + lift] }, w, [s.floor - FLOORS.groove, s.top]);
       });
       // A frame prints face up, glued on round its opening.
       s.openings.forEach((o, i) => {
         if (!o.frame) return;
         const w = walls.find((x) => x.id === o.wall);
-        tiles(shellFrame(o, w, s.floor, { sweep, own, Manifold }), { id: 'frame-' + (i + 1) + s.suffix, name: frameName(o, i, s), role: 'frame', ...lay(w), apart: [-w.inward[0] * 28, -w.inward[1] * 28, 8 + lift] });
+        tiles(shellFrame(o, w, s.floor, { sweep, own, Manifold, wasm }), { id: 'frame-' + (i + 1) + s.suffix, name: frameName(o, i, s), role: 'frame', ...lay(w), apart: [-w.inward[0] * 28, -w.inward[1] * 28, 8 + lift] });
       });
     }
     const roofLift = (storeys.length - 1) * 40 + 30;

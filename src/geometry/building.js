@@ -24,6 +24,7 @@ import { buildWalkway, validateWalkway, walkwayLayout } from './walkway.js';
 import { buildPitBays, pitBaysLayout, validatePitBays } from './pit-bays.js';
 import { checkContainer, containerWall, containerRoof } from './container-details.js';
 import { kitShapes } from './kit-shapes.js';
+import { TRIM, checkOpeningShape, openingShapes, outlineOf, overOf, sideOf, underOf } from './opening-shapes.js';
 import { LETTERING, checkText, fitHeight, letterDepth, raisedText, textShape, textWidth } from './lettering.js';
 import { validateConnected, connectedLayout, buildConnected } from './connected-building.js';
 import { validateFootprint, footprintLayout, buildFootprint } from './footprint-building.js';
@@ -420,7 +421,7 @@ const LABELS = {
   textureDepth: 'Joint depth',
 };
 const UNITS = { pitch: '°', lowerPitch: '°', textureScale: ' %', standTaper: ' %', teeth: '' };
-const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle'];
+const OPENING_KEYS = ['wall', 'type', 'at', 'width', 'height', 'sill', 'frame', 'across', 'up', 'step', 'counter', 'flap', 'flapAngle', 'shape', 'ledge', 'lintel', 'shutters', 'leaf'];
 // Panes in a framed window, at most so many each way and at least so big.
 export const PANES = Object.freeze({ most: 6, least: 4 });
 const UPPER_KEYS = Object.keys(UPPER_DEFAULTS);
@@ -456,6 +457,9 @@ function checkOpening(o, i, dims, where) {
     throw Error('The flap of window ' + (i + 1) + where + ' leans out between ' + lo + '° (level) and ' + hi + '°.');
   const L = wallLength(dims, full.wall);
   if (full.at === undefined) full.at = L / 2;
+  // Its shape and what goes round it: a round window as high as it is wide.
+  Object.assign(full, checkOpeningShape(full, 'The ' + kind + ' on the ' + full.wall + ' wall' + where));
+  if ((full.counter || full.flap) && (full.shape !== 'square' || full.shutters)) throw Error('A serving hatch, with its counter or flap, is a square window without shutters.');
   for (const [key, min, max] of [
     ['width', 8, L],
     ['height', 8, dims.height],
@@ -477,10 +481,16 @@ function checkOpenings(list, dims, blocks, where) {
   for (const o of named) {
     const L = wallLength(dims, o.wall);
     const edge = KIT.wall + KIT.frame;
-    if (o.at - o.width / 2 < edge || o.at + o.width / 2 > L - edge)
-      throw Error('The ' + o.name.toLowerCase() + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
+    const side = sideOf(o);
+    if (o.at - o.width / 2 - side < edge || o.at + o.width / 2 + side > L - edge)
+      throw Error('The ' + o.name.toLowerCase() + (side ? ' with its ' + (o.shutters ? 'shutters' : 'sill and lintel') : '') + ' reaches into a corner: keep it ' + edge + ' mm from both ends of the ' + fmtMm(L) + ' mm wall.');
     if (o.sill + o.height > dims.height - KIT.frame)
       throw Error('The ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + (dims.height - KIT.frame) + ' mm above the floor.');
+    // A lintel over it, on its frame: under the top of the wall.
+    if (o.lintel && o.sill + o.height + (o.frame ? KIT.trim : 0) + TRIM.lintel > dims.height - 2)
+      throw Error('The lintel over the ' + o.name.toLowerCase() + ' reaches too high: its top can be at most ' + fmtMm(dims.height - 2 - TRIM.lintel - (o.frame ? KIT.trim : 0)) + ' mm above the floor.');
+    if (o.ledge && o.sill < (o.frame ? KIT.trim : 0) + TRIM.ledge + 1)
+      throw Error('The sill under the ' + o.name.toLowerCase() + ' needs the window at least ' + ((o.frame ? KIT.trim : 0) + TRIM.ledge + 1) + ' mm up from the floor.');
     if (o.type === 'window' && o.frame && (o.width / o.across < PANES.least + KIT.bar || o.height / o.up < PANES.least + KIT.bar))
       throw Error('The panes of the ' + o.name.toLowerCase() + ' are too small: each at least ' + PANES.least + ' mm.');
     if ((o.counter || o.flap) && o.width > HATCH.longest)
@@ -494,9 +504,9 @@ function checkOpenings(list, dims, blocks, where) {
       // One above the other, with wall (and room for their frames) between them.
       if (Number.isFinite(a.sill) && Number.isFinite(c.sill) && a.height && c.height) {
         const [lo, hi] = a.sill < c.sill ? [a, c] : [c, a];
-        if (hi.sill - (lo.sill + lo.height) >= KIT.frame + (lo.frame ? KIT.trim : 0) + (hi.frame ? KIT.trim : 0)) continue;
+        if (hi.sill - (lo.sill + lo.height) >= KIT.frame + (lo.frame ? KIT.trim : 0) + (hi.frame ? KIT.trim : 0) + overOf(lo) + underOf(hi)) continue;
       }
-      if (Math.abs(a.at - c.at) - (a.width + c.width) / 2 < KIT.frame)
+      if (Math.abs(a.at - c.at) - (a.width + c.width) / 2 - sideOf(a) - sideOf(c) < KIT.frame)
         throw Error('The ' + a.name.toLowerCase() + ' is too close to the ' + c.name.toLowerCase() + ': keep at least ' + KIT.frame + ' mm of wall between them.');
     }
   return openings;
@@ -1443,8 +1453,8 @@ function wallOpenings(s, doors) {
     }
   for (const o of s.openings) {
     const extra = o.frame ? KIT.trim : 0;
-    along[o.wall].push([o.at - o.width / 2 - extra, o.at + o.width / 2 + extra]);
-    up[o.wall].push([KIT.groove + o.sill - (o.type === 'window' ? extra : 0), KIT.groove + o.sill + o.height + extra]);
+    along[o.wall].push([o.at - o.width / 2 - extra - sideOf(o), o.at + o.width / 2 + extra + sideOf(o)]);
+    up[o.wall].push([KIT.groove + o.sill - (o.type === 'window' ? extra : 0) - underOf(o), KIT.groove + o.sill + o.height + extra + overOf(o)]);
   }
   return { along, up };
 }
@@ -2103,6 +2113,13 @@ export function buildGarage(wasm, input, plate = null) {
         const shape = own(textShape(wasm, own, text, height).translate([u - textWidth(text, height) / 2, z - height / 2]));
         return sweep(shape, frame[1], [0, 0, 1], [...frame[0], 0], OUTWARD[wall].map((v) => -v), -n1, -n0);
       };
+      // A cross-section drawn in a wall's plane (u along it as seen from outside, z up), from n0 to n1 out from its face.
+      const onWallShape = (wall, section, n0, n1) => {
+        const frame = { front: [[0, 0], [1, 0, 0]], back: [[W, D], [-1, 0, 0]], left: [[0, D], [0, -1, 0]], right: [[W, 0], [0, 1, 0]] }[wall];
+        return sweep(section, frame[1], [0, 0, 1], [...frame[0], 0], OUTWARD[wall].map((v) => -v), -n1, -n0);
+      };
+      // An opening's shapes: its hole, frame, trims and leaf.
+      const shapesOf = (o, sink = 0.1) => openingShapes(wasm, own, o, { u: o.at, z0: top + o.sill, wall: t, k: KIT.trim, depth: KIT.trimDepth, bar: KIT.bar, sink });
       const onWall = (wall, u0, u1, n0, n1, za, zb) => {
         if (wall === 'front') return box(u0, -n0, za, u1, -n1, zb);
         if (wall === 'back') return box(W - u0, D + n0, za, W - u1, D + n1, zb);
@@ -2161,7 +2178,7 @@ export function buildGarage(wasm, input, plate = null) {
       // Over a pit bay the door reaches down through the foot of the wall, so nothing crosses the track.
       const holes = { front: s.garage ? doors.map((door) => box(door.x, -1, b.lane ? z0 - 1 : top, door.x + door.width, t + 1, top + door.height)) : [], back: [], left: [], right: [] };
       for (const o of s.openings)
-        holes[o.wall].push(onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height));
+        holes[o.wall].push(o.shape === 'square' ? onWall(o.wall, o.at - o.width / 2, o.at + o.width / 2, -t - 1, 1, top + o.sill, top + o.sill + o.height) : onWallShape(o.wall, shapesOf(o).hole, -t - 1, 1));
       // Frame walls: open between posts at the corners and between bays, a
       // chord at the foot and a beam under the eaves; in each bay an X of
       // braces, or a diamond lattice. Holes straight through a flat wall.
@@ -2207,7 +2224,9 @@ export function buildGarage(wasm, input, plate = null) {
         const keepOut = { front: s.garage ? doors.map((door) => [door.x, top, door.x + door.width, top + door.height]) : [], back: [], left: [], right: [] };
         for (const o of s.openings) {
           const extra = o.frame ? KIT.trim : 0;
-          keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
+          // An arch keeps its own shape clear, and its frame round it.
+          if (o.shape !== 'square') keepOut[o.wall].push({ poly: outlineOf(o).map(([a, c]) => [o.at + a, top + o.sill + c]), grow: extra });
+          else keepOut[o.wall].push([o.at - o.width / 2 - extra, top + o.sill - (o.type === 'window' ? extra : 0), o.at + o.width / 2 + extra, top + o.sill + o.height + extra]);
         }
         // Behind lettering the wall is smooth, like a painted panel, so the letters read.
         for (const l of s.lettering) {
@@ -2248,7 +2267,7 @@ export function buildGarage(wasm, input, plate = null) {
           for (const o of s.openings) {
             if (o.wall !== w) continue;
             const k = o.frame ? KIT.trim : 0;
-            clear.push([o.at - o.width / 2 - KIT.trim, top + o.sill - (o.type === 'window' ? k : 0) - (o.counter ? HATCH.counter[1] + HATCH.counter[0] : 0), o.at + o.width / 2 + KIT.trim, top + o.sill + o.height + k + (o.flap ? HATCH.flapClear : 0)]);
+            clear.push([o.at - o.width / 2 - KIT.trim - sideOf(o), top + o.sill - (o.type === 'window' ? k : 0) - underOf(o) - (o.counter ? HATCH.counter[1] + HATCH.counter[0] : 0), o.at + o.width / 2 + KIT.trim + sideOf(o), top + o.sill + o.height + k + overOf(o) + (o.flap ? HATCH.flapClear : 0)]);
           }
           if (s.garage && w === 'front') for (const door of doors) clear.push([door.x - KIT.trim, top - 1, door.x + door.width + KIT.trim, top + door.height + KIT.trim]);
           const meets = (u0, z0b, u1, z1b) => clear.some(([a0, c0, a1, c1]) => u0 < a1 && a0 < u1 && z0b < c1 && c0 < z1b);
@@ -2299,6 +2318,25 @@ export function buildGarage(wasm, input, plate = null) {
         for (const l of s.lettering) {
           const letters = l.cut ? lettersOn(l.wall, l.text, l.height, l.at, top + l.up, -LETTERING.depth, 1) : lettersOn(l.wall, l.text, l.height, l.at, top + l.up, -sink, LETTERING.depth);
           walls[l.wall] = own(l.cut ? walls[l.wall].subtract(letters) : walls[l.wall].add(letters));
+        }
+      }
+      // Sills, lintels and shutters standing out of the face; a door's leaf in the back of its doorway.
+      {
+        const sink = isTextured(s) ? b.textureDepth + 0.1 : 0.01;
+        for (const o of s.openings) {
+          if (!o.ledge && !o.lintel && !o.shutters && (o.type !== 'door' || o.leaf === 'open')) continue;
+          const shapes = shapesOf(o, sink);
+          const add = shapes.relief.filter((r) => !r.cut).map((r) => onWallShape(o.wall, r.section, r.from, r.to));
+          const cut = shapes.relief.filter((r) => r.cut).map((r) => onWallShape(o.wall, r.section, r.from, r.to));
+          if (shapes.leaf) {
+            const L = shapes.leaf;
+            add.push(onWallShape(o.wall, L.section, L.from, L.to));
+            // Panels and planks sunk into its front; glass through its top.
+            for (const c of L.cuts) cut.push(onWallShape(o.wall, c, L.to - TRIM.deep, L.to + 0.5));
+            if (L.glass) cut.push(onWallShape(o.wall, L.glass, L.from - 0.5, L.to + 0.5));
+          }
+          if (add.length) walls[o.wall] = own(walls[o.wall].add(own(Manifold.union(add))));
+          if (cut.length) walls[o.wall] = minus(walls[o.wall], ...cut);
         }
       }
       for (const w of ['front', 'back', 'left', 'right'])
@@ -2562,8 +2600,8 @@ export function buildGarage(wasm, input, plate = null) {
           za = top + o.sill,
           zb = za + o.height;
         const bottom = o.type === 'window' ? za - k : za;
-        let frame = minus(onWall(o.wall, u0 - k, u1 + k, 0, fd, bottom, zb + k), onWall(o.wall, u0, u1, -1, fd + 1, za, zb));
-        if (o.type === 'window' && o.across * o.up > 1) {
+        let frame = o.shape === 'square' ? minus(onWall(o.wall, u0 - k, u1 + k, 0, fd, bottom, zb + k), onWall(o.wall, u0, u1, -1, fd + 1, za, zb)) : onWallShape(o.wall, shapesOf(o).frame.section, 0, fd);
+        if (o.shape === 'square' && o.type === 'window' && o.across * o.up > 1) {
           const bars = [];
           for (let j = 1; j < o.across; j++) {
             const u = u0 + (j * (u1 - u0)) / o.across;

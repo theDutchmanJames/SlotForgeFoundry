@@ -4,7 +4,8 @@
 // window or past the end of the wall.
 import { buildingLayout, leanGrow, validateBuilding, WALL_NAMES } from './geometry/building.js';
 import { sectionPositions, sectionWalls } from './geometry/connected-building.js';
-import { footprintWalls } from './geometry/footprint-building.js';
+import { footprintStoreys, footprintWalls } from './geometry/footprint-building.js';
+import { TRIM, outlineOf } from './geometry/opening-shapes.js';
 
 export const GLAZING = Object.freeze({ overlap: 2, apart: 0.5, page: 180, gap: 4, margin: 10, text: 2.6 });
 
@@ -36,6 +37,13 @@ export function glazingSheets(input) {
   const b = validateBuilding(input);
   const add = (name, o, others, length, height, warp = null) => {
     const [l, r, d, u] = reaches(o, others, length, height);
+    // An arched or round window: its own shape, as far past it all round as it may reach on its narrowest side.
+    if ((o.shape ?? 'square') !== 'square') {
+      const m = Math.min(l, r, d, u);
+      const pts = outlineOf({ shape: o.shape, width: o.width + 2 * m, height: o.height + 2 * m });
+      out.push({ name, points: pts.map(([a, c]) => [a + o.width / 2 + m, c]) });
+      return;
+    }
     const w0 = o.width + l + r, z0 = o.sill - d, z1 = o.sill + o.height + u;
     // A leaning wall: wider at the top, and longer up its face than it stands.
     const [b0, b1, rise] = warp ? [w0 * warp.at(z0), w0 * warp.at(z1), (z1 - z0) * warp.slope] : [w0, w0, z1 - z0];
@@ -44,13 +52,27 @@ export function glazingSheets(input) {
     out.push({ name, points: [[inset, 0], [inset + b0, 0], [b1, rise], [0, rise]] });
   };
   const windows = (list, wall) => list.filter((o) => o.wall === wall && o.type === 'window' && !o.counter && !o.flap);
+  // A half-glazed door: a sheet over its glass, glued on the back of its leaf.
+  const doors = (list, wall, label) =>
+    list.filter((o) => o.wall === wall && o.type === 'door' && o.leaf === 'glazed').forEach((o, i) => {
+      const w = o.width - 2 * TRIM.border + 2 * GLAZING.overlap,
+        h = o.height / 2 - TRIM.border + 2 * GLAZING.overlap;
+      out.push({ name: label + ' glazed door ' + (i + 1), points: [[0, 0], [w, 0], [w, h], [0, h]] });
+    });
   if (b.kind === 'sections') {
     for (const s of sectionPositions(b))
-      for (const w of sectionWalls(s)) windows(s.openings, w.id).forEach((o, i, all) => add(s.name + ', ' + w.id + ' window ' + (i + 1), o, all.filter((p) => p !== o), w.length, s.height));
+      for (const w of sectionWalls(s)) {
+        windows(s.openings, w.id).forEach((o, i, all) => add(s.name + ', ' + w.id + ' window ' + (i + 1), o, all.filter((p) => p !== o), w.length, s.height));
+        doors(s.openings, w.id, s.name + ', ' + w.id);
+      }
     return out;
   }
   if (b.kind === 'footprint') {
-    for (const w of footprintWalls(b)) windows(b.openings, w.id).forEach((o, i, all) => add(w.name + ', window ' + (i + 1), o, all.filter((p) => p !== o), w.length, b.height));
+    for (const st of footprintStoreys(b))
+      for (const w of footprintWalls(b)) {
+        windows(st.openings, w.id).forEach((o, i, all) => add(w.name + st.label + ', window ' + (i + 1), o, all.filter((p) => p !== o), w.length, st.height));
+        doors(st.openings, w.id, w.name + st.label + ',');
+      }
     return out;
   }
   const { storeys } = buildingLayout(b);
@@ -61,6 +83,7 @@ export function glazingSheets(input) {
       const across = wall === 'front' || wall === 'back' ? s.depth : s.width;
       const warp = f ? { at: (z) => 1 + (f * Math.min(Math.max(z, 0), s.height)) / s.height, slope: Math.hypot(1, ((across / 2) * f) / s.height) } : null;
       windows(s.openings, wall).forEach((o, i, all) => add(WALL_NAMES[wall] + ' window ' + (i + 1) + s.label, o, all.filter((p) => p !== o), length, s.height, warp));
+      doors(s.openings, wall, WALL_NAMES[wall] + s.label);
     }
   return out;
 }

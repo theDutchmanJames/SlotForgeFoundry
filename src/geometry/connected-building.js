@@ -2,7 +2,8 @@
 // All coordinates are derived from attachments; a join is an open connection, not two closed kits.
 import polygonClipping from 'polygon-clipping';
 import { kitShapes } from './kit-shapes.js';
-import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellFrame, trimOf } from './shell-details.js';
+import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellExtras, shellFrame, shellHole, trimOf } from './shell-details.js';
+import { overOf, sideOf, underOf } from './opening-shapes.js';
 
 export const SECTION_DEFAULTS = Object.freeze({ id: 's1', name: 'Main hall', parent: null, side: 'back', offset: 0, width: 220, depth: 120, height: 80, roofType: 'gable', pitch: 25, ridge: 'width', rises: 'back', overhang: 4, ...SHELL_FINISH_DEFAULTS, openings: [] });
 export const CONNECTED_DEFAULTS = Object.freeze({ kind: 'sections', baseHeight: 6, wall: 3, roof: 3, play: 0.2, ...SHELL_TEXTURE_DEFAULTS, sections: [SECTION_DEFAULTS, { ...SECTION_DEFAULTS, id: 's2', name: 'Wing', parent: 's1', width: 100, depth: 100, height: 60, roofType: 'slope', rises: 'front' }] });
@@ -98,15 +99,15 @@ export function validateConnected(input) {
       if (!w || !['door','window'].includes(o.type) || ![o.at,o.width,o.height,o.type==='door'?0:o.sill].every(Number.isFinite) || o.width<8 || o.height<8 || o.sill<0) throw Error('Choose a wall and positive opening dimensions.');
       const p = checkShellOpening({...o,sill:o.type==='door'?0:o.sill}, s.name+' '+w.id+' wall');
       // A frame reaches past the sides and top of its opening: it keeps the same room.
-      const t = trimOf(p), lo = p.at-p.width/2-t, hi=p.at+p.width/2+t;
-      if (lo<9 || hi>w.length-9) throw Error(s.name+': keep openings'+(t?' and their frames':'')+' 9 mm from corners.');
-      if (p.sill+p.height+t>s.height-6) throw Error(s.name+': keep openings'+(t?' and their frames':'')+' 6 mm below the eaves.');
+      const t = trimOf(p), lo = p.at-p.width/2-t-sideOf(p), hi=p.at+p.width/2+t+sideOf(p);
+      if (lo<9 || hi>w.length-9) throw Error(s.name+': keep openings'+(t?' and their frames':'')+(p.shutters?' and shutters':'')+' 9 mm from corners.');
+      if (p.sill+p.height+t+overOf(p)>s.height-6+(p.lintel?4:0)) throw Error(s.name+': keep openings'+(t?' and their frames':'')+' 6 mm below the eaves'+(p.lintel?', their lintels 2 mm':'')+'.');
       if (contacts.some(c=>c.wall===p.wall && hi>c.lo-6 && lo<c.hi+6)) throw Error(s.name+': this wall connects to another section. Keep openings at least 6 mm clear of the connection.');
       return p;
     });
     b.sections[i].openings.forEach((o,j,all)=>all.slice(j+1).forEach(p=>{
       const t = trimOf(o)+trimOf(p);
-      if(o.wall===p.wall && Math.abs(p.at-o.at)-(p.width+o.width)/2<6+t && Math.max(p.sill-o.sill-o.height,o.sill-p.sill-p.height)<6+t) throw Error('Keep openings'+(t?' and their frames':'')+' at least 6 mm apart.');
+      if(o.wall===p.wall && Math.abs(p.at-o.at)-(p.width+o.width)/2-sideOf(o)-sideOf(p)<6+t && Math.max(p.sill-o.sill-o.height-overOf(o)-underOf(p),o.sill-p.sill-p.height-overOf(p)-underOf(o))<6+t) throw Error('Keep openings'+(t?' and their frames':'')+' at least 6 mm apart.');
     }));
   }
   const outline=connectedOutline(b), xs=outline.map(p=>p[0]), ys=outline.map(p=>p[1]);
@@ -189,18 +190,19 @@ export function buildConnected(wasm,input,plate=null) {
         }
         for(const o of s.openings.filter(o=>o.wall===w.id)) {
           const z0=b.baseHeight+(o.type==='door'?-2.01:o.sill), z1=b.baseHeight+o.sill+o.height;
-          solid=own(solid.subtract(sweep([[o.at-o.width/2,z0],[o.at+o.width/2,z0],[o.at+o.width/2,z1],[o.at-o.width/2,z1]],[...w.dir,0],[0,0,1],[...w.a,0],[...w.inward,0],-1,b.wall+1)));
+          solid=own(solid.subtract(o.shape&&o.shape!=='square'?shellHole(wasm,own,o,w,b.baseHeight,b.wall,sweep):sweep([[o.at-o.width/2,z0],[o.at+o.width/2,z0],[o.at+o.width/2,z1],[o.at-o.width/2,z1]],[...w.dir,0],[0,0,1],[...w.a,0],[...w.inward,0],-1,b.wall+1)));
         }
         // The texture, clear of the openings, their frames and the joins to other sections; up to the ridge.
         const rise=s.roofType==='flat'?0:Math.tan(s.pitch*Math.PI/180)*Math.max(s.width,s.depth);
         solid=finishShellWall(wasm,own,solid,w,{floor:b.baseHeight,top:b.baseHeight+s.height+rise,openings:s.openings.filter(o=>o.wall===w.id),avoid:contacts.filter(c=>c.wall===w.id).map(c=>[c.lo,c.hi])},b,s);
+        solid=shellExtras(wasm,own,solid,w,{floor:b.baseHeight,wall:b.wall,openings:s.openings.filter(o=>o.wall===w.id)},b,s,sweep);
         for(const r of roofs) solid=own(solid.subtract(r.solid));
         const lie=w.inward[1]>0?[-90,0,0]:w.inward[1]<0?[90,0,0]:w.inward[0]>0?[0,90,0]:[0,-90,0];
         wallParts.push({solid,id:s.id+'-'+w.id,name:s.name+' '+w.name.toLowerCase()+' wall',role:'wall',lie,apart:[-w.inward[0]*20,-w.inward[1]*20,8]});
         // A frame prints face up, like its wall, glued on round its opening.
         s.openings.forEach((o,n)=>{
           if(o.wall!==w.id || !o.frame) return;
-          frames.push({solid:shellFrame(o,w,b.baseHeight,{sweep,own,Manifold}),id:s.id+'-frame-'+(n+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(n+1)+' frame',role:'frame',lie,apart:[-w.inward[0]*28,-w.inward[1]*28,8]});
+          frames.push({solid:shellFrame(o,w,b.baseHeight,{sweep,own,Manifold,wasm}),id:s.id+'-frame-'+(n+1),name:s.name+' '+(o.type==='door'?'door':'window')+' '+(n+1)+' frame',role:'frame',lie,apart:[-w.inward[0]*28,-w.inward[1]*28,8]});
         });
       }
     }

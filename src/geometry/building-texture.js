@@ -15,6 +15,8 @@ export const WALL_TEXTURES = Object.freeze([
   ['metal', 'Corrugated metal'],
   ['planks', 'Wooden planks'],
   ['boards', 'Upright boards'],
+  ['stone', 'Stone'],
+  ['timber', 'Half-timbered'],
 ]);
 export const ROOF_TEXTURES = Object.freeze([
   ['plain', 'Plain'],
@@ -44,6 +46,8 @@ export const DRAWN = {
   crack: { cell: [40, 30] },
   planks: { course: 4, length: [28, 64] }, // a plank shows 4 mm; its ends are 28 to 64 mm apart
   boards: { width: 6 },
+  stone: { course: [4, 6, 8], length: [7, 15] }, // rows of these heights, stones of these lengths
+  timber: { bay: 16, beam: 2.4, rail: 22 }, // posts this far apart, beams this wide, a rail this far up from each
   shingle: { course: 5, length: [4, 8] },
   seam: { pitch: 14, ridge: 1.4 }, // sheets between raised seams running down the roof
 };
@@ -126,6 +130,46 @@ export function jointPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJ
   } else if (kind === 'boards') {
     const bw = DRAWN.boards.width * k;
     for (let x = Math.floor(x0 / bw) * bw; x < x1; x += bw) if (x > x0) out.push(rect(x - w / 2, y0 - 1, x + w / 2, y1 + 1));
+  } else if (kind === 'stone') {
+    // Coursed stone: rows of differing heights, the stones in each of differing lengths, the joints staggered.
+    const { course, length: [lo, hi] } = DRAWN.stone;
+    let yb = yOrigin,
+      row = 0;
+    while (yb < y1) {
+      const random = seeded(seed * 6151 + row * 92821 + 3);
+      const c = course[Math.floor(random() * course.length)] * k;
+      if (yb + c > y0) {
+        if (yb > y0) out.push(rect(x0 - 1, yb - w / 2, x1 + 1, yb + w / 2));
+        for (let x = x0 - random() * hi * k; x < x1; x += (lo + random() * (hi - lo)) * k)
+          if (x > x0) out.push(rect(x - w / 2, Math.max(yb, y0), x + w / 2, Math.min(yb + c, y1)));
+      }
+      yb += c;
+      row++;
+    }
+  } else if (kind === 'timber') {
+    // Half-timbering: the panels between the posts and rails sunk, the timbers standing proud;
+    // in every other panel a brace from corner to corner stays proud too.
+    const { bay, beam, rail } = DRAWN.timber;
+    const p = bay * k,
+      bw = beam * k,
+      r = rail * k;
+    const rows = [];
+    for (let yb = yOrigin; yb < y1; yb += r) rows.push([yb + bw / 2, Math.min(yb + r, y1) - bw / 2]);
+    let col = 0;
+    for (let x = Math.floor(x0 / p) * p; x < x1; x += p, col++) {
+      const a0 = x + bw / 2,
+        a1 = x + p - bw / 2;
+      rows.forEach(([b0, b1], j) => {
+        if (b1 - b0 < 2 * bw || a1 - a0 < 2 * bw) return;
+        if ((col + j) % 2) {
+          out.push(rect(a0, b0, a1, b1));
+          return;
+        }
+        // Two triangles, one each side of the brace.
+        const d = bw * Math.hypot(a1 - a0, b1 - b0) / Math.min(a1 - a0, b1 - b0) / 2;
+        out.push([[a0 + d, b0], [a1, b0], [a1, b1 - d]], [[a0, b0 + d], [a1 - d, b1], [a0, b1]]);
+      });
+    }
   } else if (kind === 'crack') {
     const [cw, ch] = DRAWN.crack.cell.map((v) => v * k);
     const random = seeded(seed);
@@ -229,7 +273,12 @@ export function wallJoints(wasm, own, wall, { W, D, length, bottom, top: zTop, f
         own(new wasm.CrossSection([rect(-1, bottom + 0.3, length + 1, ceil)], 'Positive')),
       ))));
   }
-  const clear = keepOut.length ? own(new wasm.CrossSection(keepOut.map(([a, b, c, d]) => rect(a - CLEAR, b - CLEAR, c + CLEAR, d + CLEAR)), 'Positive')) : null;
+  // Each kept clear: a rectangle [u0, z0, u1, z1], or an outline { poly, grow } (an arch and its frame).
+  const clearOf = (e) =>
+    Array.isArray(e)
+      ? own(new wasm.CrossSection([rect(e[0] - CLEAR, e[1] - CLEAR, e[2] + CLEAR, e[3] + CLEAR)], 'Positive'))
+      : own(own(new wasm.CrossSection([e.poly], 'Positive')).offset(CLEAR + (e.grow ?? 0), 'Round', 2, 64));
+  const clear = keepOut.length ? own(wasm.CrossSection.union(keepOut.map(clearOf))) : null;
   if (clear) section = own(section.subtract(clear));
   // A wall of a rectangular storey, or any straight wall: its start, its
   // direction along it and inward, and the face 1 mm outside it.

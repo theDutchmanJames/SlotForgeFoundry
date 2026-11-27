@@ -34,6 +34,13 @@ function letteringNote(b) {
 }
 // The glazing template, when there are windows to glaze.
 const glazingNote = (b) => (glazingSheets(b).length ? ['Glazing: glazing.svg has the clear sheet for each window, full size. Print it at 100 %, cut the sheets from clear plastic 0.3 to 0.5 mm thick, and glue each behind its window on the inside of its wall before the walls go together.'] : []);
+// Sills, lintels, shutters and door leaves: part of their walls, on any kind of building.
+const trimsNote = (b) => {
+  const all = b.kind === 'sections' ? b.sections.flatMap((s) => s.openings) : [b, ...(b.upper ?? [])].flatMap((s) => s.openings ?? []);
+  return all.some((o) => o.ledge || o.lintel || o.shutters || (o.leaf && o.leaf !== 'open'))
+    ? ['Sills, lintels, shutters and doors are part of their walls: they print with them, standing up from the outside face, a door in the back of its doorway. Paint them before the walls go together.']
+    : [];
+};
 const hasFrames = (parts) => parts.some((p) => /(^|-)frame-\d/.test(p.id));
 export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'sections') return [
@@ -43,6 +50,7 @@ export function kitNotes(name, b, parts, sizes) {
     'Parts are supplied in print orientation. Assemble numbered tiles flat using straight glue seams, then dry-fit wall feet into the base grooves and glue. Groove clearance: '+b.play+' mm per side.',
     'Roof panels print flat on their undersides. Join panels at their mitred ridges/hips at the specified pitch, then glue along the shaped wall tops. Eaves are trimmed at attached sections; roof junctions are stepped joins, not continuous valleys. There is no locating frame or flashing.',
     ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
+    ...trimsNote(b),
     ...glazingNote(b),
     'Sections and wall directions are included in part names. Keep matching pieces together. Dry-fit each section and its roof before gluing; perform a printer fit trial before a complete kit.',
     '', 'Parts:', ...parts.map(p => '- '+p.name+(sizes[p.id] ? ': '+sizes[p.id].join(' × ')+' mm' : '')),
@@ -60,6 +68,7 @@ export function kitNotes(name, b, parts, sizes) {
       ? 'Lay the roof panels on the tops of the walls, each over its own wall, numbered as the walls; they meet along the hips at the top. Glue them to the walls and to each other.'
       : 'Assemble the roof flat, then glue it along the wall tops, or leave it loose for access. This version has no locating frame under a shaped roof.',
     ...(hasFrames(parts) ? [FRAMES_NOTE] : []),
+    ...trimsNote(b),
     ...glazingNote(b),
     'Check fit on your printer before printing the complete kit. The groove clearance is ' + b.play + ' mm per side.',
     '', 'Parts:', ...parts.map(p => '- ' + p.name + (sizes[p.id] ? ': ' + sizes[p.id].join(' × ') + ' mm' : '')),
@@ -185,6 +194,7 @@ export function kitNotes(name, b, parts, sizes) {
     ...steps.map((s, i) => i + 1 + '. ' + s),
     '',
     ...(b.container && b.container !== 'none' ? ['Container details: the corner posts, rails, cargo-door hardware and roof ribs are integrated into their panels. Cargo doors and corner-casting recesses are decorative, not working hinges or stacking connectors. Keep the roof loose for interior access. Add clear sheet behind the windows and your own graphics to the sign.'] : []),
+    ...trimsNote(b),
     ...glazingNote(b),
     ...letteringNote(b),
     'Paint the parts before you glue them, or print them in different colours.',

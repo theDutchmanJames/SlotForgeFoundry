@@ -16,6 +16,9 @@
 .bd-drawing-opening .bd-resize { fill: var(--accent); cursor: nesw-resize; }
 .bd-fixed-opening { fill: var(--panel); stroke: var(--muted); stroke-dasharray: 3 2; }
 .bd-drawing-opening .bd-drawing-frame { fill: var(--panel); stroke: var(--muted); stroke-width: 1; cursor: grab; }
+.bd-drawing-opening .bd-drawing-shape { fill: var(--box); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.bd-drawing-opening.selected .bd-drawing-shape { fill: var(--accent-fill); stroke-width: 3; }
+.bd-drawing-opening .bd-drawing-trim { fill: var(--panel); stroke: var(--muted); stroke-width: 0.8; pointer-events: none; }
 .bd-drawing-opening.selected .bd-drawing-frame { fill: var(--panel); stroke-width: 1; }
 .bd-drawing-bars { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .bd-shape-handle { fill: var(--accent); stroke: var(--ink); stroke-width: 1; cursor: nwse-resize; }
