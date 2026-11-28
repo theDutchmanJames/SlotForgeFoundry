@@ -1,7 +1,7 @@
 import { esc } from './ui.js';
 import { SIDES } from './geometry/connected-building.js';
 import { finishFields, readFinish } from './building-finish.js';
-import { TEXTURE_LIMITS } from './geometry/building-texture.js';
+import { FLOOR_TEXTURES, TEXTURE_LIMITS } from './geometry/building-texture.js';
 
 const FOUR = SIDES.map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) }));
 
@@ -19,13 +19,14 @@ export function sectionFields(b,index) {
     <h3>Section walls</h3>${finishFields('cs', s, FOUR, { main: true })}
     <div class="bd-section-actions">${SIDES.map(side=>`<button type="button" data-bd-section-add="${side}"${b.sections.length>=8?' disabled':''}>Attach ${side}</button>`).join('')}<button type="button" data-bd-section-remove${index===0?' disabled':''}>Remove section + children</button></div>
     <p class="bd-hint">Up to eight sections. Attachments stay on their parent edge; offset is measured from the parent's left/front corner. Shared wall areas open into the next section. Roofs meet with trimmed eaves and vertical steps. Use Draw to resize sections and arrange exterior openings. Removing a section removes its children; Undo restores them. Each section's walls take their own texture, a wall of its own and a band along the foot; in Draw a window or door can have a frame and panes.</p>
-    <h3>Whole kit</h3>${[['baseHeight','Base height',4,20,1],['wall','Wall thickness',2,5,0.1],['roof','Roof thickness',2,5,0.1],['play','Groove clearance',0.1,0.5,0.05],['textureScale','Texture size',...TEXTURE_LIMITS.textureScale,1],['textureJoint','Joint width',...TEXTURE_LIMITS.textureJoint,0.05],['textureDepth','Joint depth',...TEXTURE_LIMITS.textureDepth,0.05]].map(([k,l,a,z,t])=>number(k,l,b[k],a,z,t)).join('')}
-    <p class="bd-hint">Panels split to fit the plate, including pitched roof panels laid flat. Join numbered pieces with straight glue seams. No roof locating frame. Sections share one floor level; roof intersections use stepped joins rather than continuous valleys. Frames print face up and are glued on round their openings.</p>`;
+    <h3>Whole kit</h3>${select('floorTexture','Floors',FLOOR_TEXTURES,b.floorTexture??'plain')}${[['baseHeight','Base height',4,20,1],['wall','Wall thickness',2,5,0.1],['roof','Roof thickness',2,5,0.1],['play','Groove clearance',0.1,0.5,0.05],['textureScale','Texture size',...TEXTURE_LIMITS.textureScale,1],['textureJoint','Joint width',...TEXTURE_LIMITS.textureJoint,0.05],['textureDepth','Joint depth',...TEXTURE_LIMITS.textureDepth,0.05]].map(([k,l,a,z,t])=>number(k,l,b[k],a,z,t)).join('')}
+    <p class="bd-hint">Panels split to fit the plate, including pitched roof panels laid flat. Join numbered pieces with straight glue seams. No roof locating frame. Sections share one floor level, and a floor texture runs through the open joins between them; roof intersections use stepped joins rather than continuous valleys. Frames print face up and are glued on round their openings.</p>`;
 }
 export function readSectionFields(form,b,index) {
   const s={...b.sections[index], ...readFinish(form, 'cs', b.sections[index], FOUR)}, next={...b};
   for(const key of ['name','parent','side','roofType','ridge','rises']) if(form.elements['cs-'+key]) s[key]=form.elements['cs-'+key].value;
   for(const key of ['width','depth','height','offset','pitch','overhang']) if(form.elements['cs-'+key]) {const v=form.elements['cs-'+key].value;s[key]=v===''?NaN:Number(v);}
+  if(form.elements['cs-floorTexture']) next.floorTexture=form.elements['cs-floorTexture'].value;
   for(const key of ['baseHeight','wall','roof','play','textureScale','textureJoint','textureDepth']) {const v=form.elements['cs-'+key].value;next[key]=v===''?NaN:Number(v);}
   return {...next,sections:b.sections.map((p,i)=>i===index?s:p)};
 }

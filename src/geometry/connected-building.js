@@ -4,9 +4,10 @@ import polygonClipping from 'polygon-clipping';
 import { kitShapes } from './kit-shapes.js';
 import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellExtras, shellFrame, shellHole, trimOf } from './shell-details.js';
 import { overOf, sideOf, underOf } from './opening-shapes.js';
+import { checkFloor, floorFinish } from './building-texture.js';
 
 export const SECTION_DEFAULTS = Object.freeze({ id: 's1', name: 'Main hall', parent: null, side: 'back', offset: 0, width: 220, depth: 120, height: 80, roofType: 'gable', pitch: 25, ridge: 'width', rises: 'back', overhang: 4, ...SHELL_FINISH_DEFAULTS, openings: [] });
-export const CONNECTED_DEFAULTS = Object.freeze({ kind: 'sections', baseHeight: 6, wall: 3, roof: 3, play: 0.2, ...SHELL_TEXTURE_DEFAULTS, sections: [SECTION_DEFAULTS, { ...SECTION_DEFAULTS, id: 's2', name: 'Wing', parent: 's1', width: 100, depth: 100, height: 60, roofType: 'slope', rises: 'front' }] });
+export const CONNECTED_DEFAULTS = Object.freeze({ kind: 'sections', baseHeight: 6, wall: 3, roof: 3, play: 0.2, ...SHELL_TEXTURE_DEFAULTS, floorTexture: 'plain', sections: [SECTION_DEFAULTS, { ...SECTION_DEFAULTS, id: 's2', name: 'Wing', parent: 's1', width: 100, depth: 100, height: 60, roofType: 'slope', rises: 'front' }] });
 export const SIDES = ['front', 'right', 'back', 'left'];
 export function sectionPositions(b) {
   const placed = [];
@@ -65,6 +66,7 @@ export function validateConnected(input) {
   if (b.kind !== 'sections') throw Error('Invalid connected building kind.');
   for (const [key,lo,hi] of [['baseHeight',4,20],['wall',2,5],['roof',2,5],['play',0.1,0.5]]) range(b[key],lo,hi,key);
   checkShellTexture(b);
+  b.floorTexture = checkFloor(b.floorTexture);
   if (!Array.isArray(b.sections) || !b.sections.length || b.sections.length > 8) throw Error('Use between one and eight connected sections.');
   const ids = new Set();
   b.sections = b.sections.map((input,i) => {
@@ -240,12 +242,20 @@ export function buildConnected(wasm,input,plate=null) {
     // One base for the whole building. Grooves follow only surviving wall feet; joins have no trench.
     const outer=own(wasm.CrossSection.union(sections.map(s=>poly(sectionRect(s,3)))));
     let base=own(outer.extrude(b.baseHeight));
+    const feet=[];
     for(const w of wallParts) {
       const foot=own(w.solid.slice(b.baseHeight-1));
       if (foot.isEmpty()) continue;
       const clearance=own(foot.offset(b.play,'Miter'));
+      feet.push(clearance);
       const groove=own(own(clearance.extrude(2.01)).translate([0,0,b.baseHeight-2]));
       base=own(base.subtract(groove));
+    }
+    // A floor texture over all the sections, through the open joins between them, clear of every wall's groove.
+    if(b.floorTexture!=='plain') {
+      let floor=own(wasm.CrossSection.union(sections.map(s=>poly(sectionRect(s)))));
+      if(feet.length) floor=own(floor.subtract(own(wasm.CrossSection.union(feet))));
+      base=floorFinish(wasm,own,base,floor,b.baseHeight,b,b.floorTexture);
     }
     tiles(base,{id:'base',name:'Connected base',role:'buildingBase',lie:[0,0,0],apart:[0,0,-12]});
     for(const p of [...wallParts,...frames,...roofs]) if(p.solid.volume()>0.001) tiles(p.solid,p);

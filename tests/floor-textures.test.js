@@ -6,6 +6,7 @@ import test from 'node:test';
 import Module from 'manifold-3d';
 import { buildGarage, validateBuilding } from '../src/geometry/building.js';
 import { buildFootprint, validateFootprint } from '../src/geometry/footprint-building.js';
+import { buildConnected, validateConnected } from '../src/geometry/connected-building.js';
 import { FLOOR_TEXTURES, checkFloor, floorPolygons, jointMarks } from '../src/geometry/building-texture.js';
 import { FLOOR_MATERIALS, buildingPaint, checkColours, paintList, partColours, setColours } from '../src/building-colours.js';
 import { floorCreases } from '../src/viewport.js';
@@ -92,6 +93,32 @@ test('a shaped building: its base and each floor between storeys, round a courty
       for (const [x, y] of f.tri(i)) assert.ok(!(x > 70 - 3 && x < 130 + 3 && y > 50 - 3 && y < 110 + 3), f.id + ' in the courtyard: ' + [x, y]);
     });
   }
+});
+
+test('halls and wings: one floor over all the sections, through the open join between them', () => {
+  assert.equal(validateConnected({}).floorTexture, 'plain');
+  assert.throws(() => validateConnected({ floorTexture: 'marble' }), /floor texture/);
+  assert.equal(floorsOf(buildConnected(wasm, {}, null))[0].joints, null, 'plain as it was');
+  // The main hall 220 × 120, the wing 100 × 100 on its back from its left corner: the join runs along y = 120 from x 0 to 100.
+  const built = buildConnected(wasm, { floorTexture: 'tiles' }, null);
+  // The feet of the walls as they stand in the base, and 1.6 mm round them (the groove's 0.2 mm and the 1.5 mm kept clear, less a hair).
+  const near = built.filter((p) => p.role === 'wall').map((p) => p.solid.slice(6 - 1).offset(1.6, 'Miter').toPolygons()).flat();
+  const inside = ([x, y], ring) => ring.reduce((odd, [x0, y0], k) => { const [x1, y1] = ring[(k + 1) % ring.length]; return (y0 > y) !== (y1 > y) && x < x0 + ((y - y0) * (x1 - x0)) / (y1 - y0) ? !odd : odd; }, false);
+  assert.ok(near.length >= 7, 'every wall standing: ' + near.length);
+  const [base] = floorsOf(built);
+  assert.equal(base.joints.kind, 'tiles');
+  assert.equal(base.pieces, 1);
+  let across = false;
+  base.joints.marks.forEach((m, i) => {
+    if (m !== 4) return;
+    for (const [x, y] of base.tri(i)) {
+      // Clear of every wall's groove, within the sections.
+      assert.ok(!near.some((ring) => inside([x, y], ring)), 'by a wall: ' + [x, y]);
+      assert.ok((x > 0 && x < 220 && y > 0 && y < 120) || (x > 0 && x < 100 && y >= 120 && y < 220), 'within the sections: ' + [x, y]);
+      if (Math.abs(y - 120) < 1 && x > 10 && x < 90) across = true;
+    }
+  });
+  assert.ok(across, 'the tiles run on through the join');
 });
 
 test('the floor is coloured by its texture or a colour of its own, the base round it in its own colour', () => {

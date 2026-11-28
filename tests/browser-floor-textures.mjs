@@ -54,6 +54,14 @@ try {
   const b = await saved();
   assert.equal(b.kind, 'footprint');
   assert.equal(b.floorTexture, 'flags');
+  // Halls and wings: floorboards, chosen under Whole kit.
+  await bd.locator('[data-bd-preset="connected"]').click();
+  await idle();
+  await bd.locator('[name="cs-floorTexture"]').selectOption('boards');
+  await idle();
+  assert.equal((await saved()).kind, 'sections');
+  assert.equal((await saved()).floorTexture, 'boards');
+  assert.equal(await bd.locator('[name="cs-floorTexture"]').inputValue(), 'boards', 'kept when the card is drawn again');
   // Back to a standard building: as it was drawn, plain.
   await bd.locator('[data-bd-preset="footprint-u"]').click();
   await idle();
