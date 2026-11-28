@@ -7,7 +7,7 @@
 // proportions for 1:32 by default: a one-car garage is about 120 × 180 mm
 // and 75 mm high and takes practically any slot car.
 
-import { DRAWN, FINISH_DEFAULTS, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, bandTop, checkFinish, finishJoints, isTextured, roofJoints, textureOf } from './building-texture.js';
+import { DRAWN, FINISH_DEFAULTS, ROOF_TEXTURES, TEXTURE_DEFAULTS, TEXTURE_LIMITS, bandTop, checkFinish, checkFloor, finishJoints, floorFinish, isTextured, roofJoints, textureOf } from './building-texture.js';
 import { JOINT, planCuts, plateRoom, seamRegion, tabPlaces, validateCuts } from './building-cuts.js';
 import { buildGrandstand, grandstandLayout, validateGrandstand } from './grandstand.js';
 import { buildGantry, gantryLayout, validateGantry } from './gantry.js';
@@ -158,6 +158,8 @@ export const BUILDING_DEFAULTS = Object.freeze({
   wallTextures: FINISH_DEFAULTS.wallTextures,
   lowerTexture: 'none',
   lowerHeight: 20,
+  // Joints in the top of the base inside the walls and of each floor: tiles, floorboards, flagstones.
+  floorTexture: 'plain',
   // Clearance each side of a wall in its groove, and round the frame under the roof: more for a printer that prints wide.
   play: 0.2,
   upper: Object.freeze([]), // the storeys above the ground floor, at most two
@@ -585,6 +587,7 @@ export function validateBuilding(input) {
   if (typeof b.braces !== 'boolean') throw Error('Choose whether the corners get braces.');
   if (!['frame', 'none'].includes(b.roofLip)) throw Error('Choose a frame under the roof, or none.');
   if (!ROOF_TEXTURES.some(([id]) => id === b.roofTexture)) throw Error('Choose a roof texture from the list.');
+  b.floorTexture = checkFloor(b.floorTexture);
   // Rooms: their sizes make the width or the depth of the building.
   if (b.rooms !== null) {
     const r = b.rooms;
@@ -1997,6 +2000,15 @@ export function buildGarage(wasm, input, plate = null) {
   const minus = (a, ...cuts) => (cuts.length ? own(a.subtract(own(Manifold.union(cuts)))) : a);
   const trim = (s, n, offset) => own(s.trimByPlane(n, offset));
   const { sweep } = kitShapes(wasm, own);
+  // The floor inside walls standing in a groove: a rectangle [x0, y0, x1, y1] on
+  // the plan, less any strips where a dividing wall stands, its texture cut into its top.
+  const rectCs = ([x0, y0, x1, y1]) => own(new CrossSection([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]], 'Positive'));
+  const floored = (solid, inside, strips, zTop) => {
+    if (b.floorTexture === 'plain') return solid;
+    let area = rectCs(inside);
+    if (strips.length) area = own(area.subtract(own(CrossSection.union(strips.map(rectCs)))));
+    return floorFinish(wasm, own, solid, area, zTop, b, b.floorTexture);
+  };
   // A part after its texture is cut: where a grain line meets a joint or a
   // step it can leave a speck of nothing loose. Only the part itself is kept.
   const whole = (solid) => {
@@ -2504,7 +2516,10 @@ export function buildGarage(wasm, input, plate = null) {
         cuts[0] = hollow = minus(hollow, box(W / 2 - half - shell, -m - 1, -2, W / 2 + half + shell, end + shell, top + 2));
         cuts.push(box(W / 2 - half, -m - 1, -1, W / 2 + half, end, top + 1));
       }
-      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid: minus(outer, ...cuts), flip: true, apart: [0, 0, 0] };
+      // A floor texture inside the walls, clear of the dividing walls' grooves.
+      const strips = dividers(b).map((at) => (b.rooms.along === 'width' ? [at - t / 2 - c, 0, at + t / 2 + c, D] : [0, at - t / 2 - c, W, at + t / 2 + c]));
+      const solid = floored(minus(outer, ...cuts), [t + c, t + c, W - t - c, D - t - c], strips, top);
+      const base = { id: 'base', name: 'Base plate', role: 'buildingBase', solid, flip: true, apart: [0, 0, 0] };
       parts.push(...cutFlat(base, plan && [plan.baseX, plan.baseY], [-m, -m]));
     }
 
@@ -2994,7 +3009,10 @@ export function buildGarage(wasm, input, plate = null) {
         const floorApart = [0, 0, lift + APART.storey - APART.up];
         // It prints the right way up, the groove open on top, the slots straight through.
         // Over walls that lean out it is made in its shape: it does not lean with them.
-        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid: minus(slab, groove, ...holes), lie: [0, 0, 0], apart: floorApart, ...(grow && { shaped: true }) };
+        // Its texture inside the walls above; a floor that leans with walls leaning out stays plain.
+        const inside = [ax + t + c, ay + t + c, ax + above.width - t - c, ay + above.depth - t - c];
+        const solid = grow ? minus(slab, groove, ...holes) : floored(minus(slab, groove, ...holes), inside, [], slabTop);
+        const floor = { id: 'floor' + above.n, name: 'Floor of storey ' + above.n, role: 'floor', solid, lie: [0, 0, 0], apart: floorApart, ...(grow && { shaped: true }) };
         const floorPlan = plan && [plan['floor' + above.n + 'X'], plan['floor' + above.n + 'Y']];
         local(...cutFlat(floor, floorPlan, [-side - (W / 2) * grow, -bal - (D / 2) * grow]));
         local(...cutFlat({ id: 'floor' + above.n + '-frame', name: 'Floor frame, storey ' + above.n, role: 'lip', solid: grow ? warpedOn(frame) : frame, lie: [0, 0, 0], apart: [0, 0, lift + APART.storey - APART.up - 10], ...(grow && { shaped: true }) }, floorPlan, [0, 0]));

@@ -12,6 +12,7 @@ export const SURFACES = Object.freeze([
   ['trim', 'Windows and trim'],
   ['doors', 'Doors'],
   ['base', 'Base and floors'],
+  ['floor', 'Floor texture'],
 ]);
 // What each wall texture is made of, its colour and its joints'.
 export const WALL_MATERIALS = Object.freeze({
@@ -32,6 +33,14 @@ export const ROOF_MATERIALS = Object.freeze({
   shingle: { face: 0x6f5b49, joint: 0x3e3228 },
   seam: { face: 0x56636c, joint: 0x3b454c },
 });
+// The top of a floor with a texture, inside the walls.
+export const FLOOR_MATERIALS = Object.freeze({
+  tiles: { face: 0xd8d2c4, joint: 0x8c877d },
+  boards: { face: 0x9a7048, joint: 0x4a3524 },
+  flags: { face: 0x9e978a, joint: 0x6b665d },
+  slabs: { face: 0xaaa8a2, joint: 0x77756f },
+  brick: { face: 0x9c4f3a, joint: 0xc9c2b4 },
+});
 // Joints in a colour chosen for the walls: mortar stays light round bricks
 // and stones, every other joint is a shade of the colour.
 const MORTAR = new Set(['brick', 'stone']);
@@ -47,9 +56,9 @@ export const COLOUR_SETS = Object.freeze([
   ['marshal', 'Marshal orange', { walls: 0xf0ece2, roof: 0xe2762f, trim: 0xe2762f, doors: 0xe2762f, base: 0x6f757b }],
   ['industrial', 'Industrial', { walls: 0x8c97a0, roof: 0x6f7880, trim: 0xd9a441, doors: 0x4a5561, base: 0x5b626c }],
 ]);
-export const COLOURS_DEFAULT = Object.freeze({ set: 'material', walls: null, band: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b });
+export const COLOURS_DEFAULT = Object.freeze({ set: 'material', walls: null, band: null, roof: null, trim: 0xece7dc, doors: 0x3f6b4f, base: 0x6f757b, floor: null });
 // The surfaces that may follow their textures (null); the rest always have a colour.
-const BY_TEXTURE = new Set(['walls', 'band', 'roof']);
+export const BY_TEXTURE = new Set(['walls', 'band', 'roof', 'floor']);
 
 const isHex = (v) => Number.isInteger(v) && v >= 0 && v <= 0xffffff;
 /** Colours as kept: a set by name and its five colours; anything else is put right. */
@@ -99,6 +108,8 @@ export function buildingPaint(colours, parts = []) {
   const walls = [...most].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'plain';
   return (part) => {
     const j = part.joints ?? (/gable/.test(part.id) && part.role === 'wall' ? { surface: 'wall', kind: walls } : null);
+    // A base or a floor with a texture: the part in the base's colour, its floor in the texture's.
+    if (j?.surface === 'floor') return { face: c.base, floor: surface(c.floor, FLOOR_MATERIALS[j.kind] ?? FLOOR_MATERIALS.tiles, j.kind) };
     if (part.role === 'roof' || j?.surface === 'roof') {
       const kind = j?.surface === 'roof' ? j.kind : 'plain';
       return surface(c.roof, ROOF_MATERIALS[kind] ?? ROOF_MATERIALS.plain, kind);
@@ -124,8 +135,10 @@ export const textHex = (s) => (/^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 
 // The names of the textures, for the paint list.
 const WALL_WORDS = { plain: 'smooth', brick: 'bricks', block: 'concrete blocks', crack: 'concrete', metal: 'corrugated metal', planks: 'planks', boards: 'boards', stone: 'stone', timber: 'half-timbered' };
 const ROOF_WORDS = { plain: 'smooth', tile: 'tiles', metal: 'corrugated sheet', shingle: 'shingles', seam: 'standing seams' };
+const FLOOR_WORDS = { tiles: 'square tiles', boards: 'floorboards', flags: 'flagstones', slabs: 'concrete slabs', brick: 'brick paving' };
 const SURFACE_OF = (part) => {
   const j = part.joints;
+  if (j?.surface === 'floor') return 'base';
   if (part.role === 'roof' || j?.surface === 'roof') return 'roof';
   if (part.role === 'wall' || part.role === 'divider' || j) return 'walls';
   if (part.role === 'door') return 'doors';
@@ -152,7 +165,8 @@ export function partColours(colours, parts) {
     const words = surface === 'walls' ? WALL_WORDS[kind] : surface === 'roof' ? ROOF_WORDS[kind] : null;
     const label = SURFACES.find(([k]) => k === surface)[1];
     const band = c.lower && { surface: 'band', kind: j.band.kind, name: 'Lower walls, ' + WALL_WORDS[j.band.kind], face: c.lower.face, joint: c.lower.joint };
-    out.set(p.id, { surface, kind, name: words && kind !== 'plain' ? label + ', ' + words : label, face: c.face, joint: kind && kind !== 'plain' ? c.joint : null, ...(band && { band }) });
+    const floor = c.floor && { surface: 'floor', kind: j.kind, name: 'Floors, ' + (FLOOR_WORDS[j.kind] ?? j.kind), face: c.floor.face, joint: c.floor.joint };
+    out.set(p.id, { surface, kind, name: words && kind !== 'plain' ? label + ', ' + words : label, face: c.face, joint: kind && kind !== 'plain' ? c.joint : null, ...(band && { band }), ...(floor && { floor }) });
   }
   return out;
 }
@@ -169,6 +183,7 @@ export function paintList(colours, parts) {
   for (const c of partColours(colours, parts).values()) {
     count(c);
     if (c.band) count(c.band);
+    if (c.floor) count(c.floor);
   }
   if (!groups.size) return [];
   const order = SURFACES.map(([k]) => k);

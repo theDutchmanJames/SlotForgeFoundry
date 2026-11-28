@@ -7,10 +7,11 @@
 import { kitShapes } from './kit-shapes.js';
 import { SHELL_FINISH_DEFAULTS, SHELL_OPENING_KEYS, SHELL_TEXTURE_DEFAULTS, checkShellFinish, checkShellOpening, checkShellTexture, finishShellWall, shellExtras, shellFrame, shellHole, trimOf } from './shell-details.js';
 import { overOf, sideOf, underOf } from './opening-shapes.js';
+import { checkFloor, floorFinish } from './building-texture.js';
 import polygonClipping from 'polygon-clipping';
 import { PROP_GAP, checkPropList, placeProp, propFootprint, propOf, propPartIds } from './props.js';
 
-export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, domeRise: 40, teeth: 3, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, openings: [], upper: [], props: [], courtyards: [] });
+export const FOOTPRINT_DEFAULTS = Object.freeze({ kind: 'footprint', shape: 'L', width: 220, depth: 180, wing: 80, sides: 16, height: 75, baseHeight: 6, wall: 3, play: 0.2, roof: 3, overhang: 3, roofShape: 'flat', pitch: 30, domeRise: 40, teeth: 3, points: null, ...SHELL_FINISH_DEFAULTS, ...SHELL_TEXTURE_DEFAULTS, floorTexture: 'plain', openings: [], upper: [], props: [], courtyards: [] });
 export const SHAPES = Object.freeze(['rectangle', 'L', 'U', 'T', 'octagon', 'round', 'custom']);
 /** A drawn outline: its walls at least this long, its corners at most this many, each turning at least `least` and at most `most` degrees. */
 export const OUTLINE = Object.freeze({ shortest: 10, most: 48, size: [40, 1200], least: 3, turn: 90 });
@@ -250,6 +251,7 @@ export function validateFootprint(input) {
   // A round building's walls are drawn too: their lengths and corners are checked as any outline's.
   if (b.shape === 'round' || b.shape === 'octagon') checkOutline(footprintPoints(b), b.wall);
   if (!['flat', 'hip', 'dome', 'sawtooth'].includes(b.roofShape)) throw Error('Choose a flat roof, a hip roof, a dome or a sawtooth.');
+  b.floorTexture = checkFloor(b.floorTexture);
   if (b.roofShape === 'sawtooth') {
     if (!Number.isInteger(b.teeth) || b.teeth < 1 || b.teeth > 8) throw Error('A sawtooth roof has 1 to 8 teeth.');
     if (b.pitch > SAW.most) throw Error('A sawtooth\u2019s slopes are at most ' + SAW.most + '\u00b0, so its north lights stay low enough.');
@@ -516,7 +518,9 @@ export function buildFootprint(wasm, input, plate = null) {
   try {
     const outer = poly(footprintOffset(b, BASE_OUT));
     const groove = ring(b.play, -b.wall - b.play, b.baseHeight - FLOORS.groove, b.baseHeight + 0.01);
-    const base = own(own(outer.extrude(b.baseHeight)).subtract(groove));
+    // A floor texture inside the walls, round any courtyard; the same in each floor between storeys.
+    const floored = (solid, out, zTop) => floorFinish(wasm, own, solid, region(out - b.wall - b.play), zTop, b, b.floorTexture);
+    const base = floored(own(own(outer.extrude(b.baseHeight)).subtract(groove)), 0, b.baseHeight);
     tiles(base, { id: 'base', name: 'Shaped base', role: 'buildingBase', lie: [0, 0, 0], apart: [0, 0, -12] });
     for (const s of storeys) {
       const lift = (s.n - 1) * 40;
@@ -526,7 +530,7 @@ export function buildFootprint(wasm, input, plate = null) {
         const under = s.floor - FLOORS.slab;
         // Out to its own walls, which stand out past those below by its jetty; its frame inside the walls below.
         const below = storeys[s.n - 2].out;
-        const slab = own(own(own(region(s.out).extrude(FLOORS.slab)).translate([0, 0, under])).subtract(ring(s.out + b.play, s.out - b.wall - b.play, s.floor - FLOORS.groove, s.floor + 0.01)));
+        const slab = floored(own(own(own(region(s.out).extrude(FLOORS.slab)).translate([0, 0, under])).subtract(ring(s.out + b.play, s.out - b.wall - b.play, s.floor - FLOORS.groove, s.floor + 0.01))), s.out, s.floor);
         tiles(slab, { id: 'floor' + s.suffix, name: 'Floor' + s.label, role: 'floor', lie: [0, 0, 0], apart: [0, 0, lift - 8] });
         const frame = ring(below - b.wall - b.play, below - b.wall - b.play - FLOORS.lip, under - FLOORS.lipDepth, under);
         tiles(frame, { id: 'floor' + s.suffix + '-frame', name: 'Floor frame' + s.label, role: 'lip', lie: [0, 0, 0], apart: [0, 0, lift - 16] });

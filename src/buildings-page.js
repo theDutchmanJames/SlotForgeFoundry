@@ -64,11 +64,11 @@ import {
   validateBuilding,
   wallLength,
 } from './geometry/building.js';
-import { ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-texture.js';
+import { FLOOR_TEXTURES, ROOF_TEXTURES, WALL_TEXTURES, isTextured } from './geometry/building-texture.js';
 import { LETTERING, textWidth } from './geometry/lettering.js';
 import { finishFields, fillFinish, readFinish, showBands } from './building-finish.js';
 import { CUT_KEYS, cutLabel } from './geometry/building-cuts.js';
-import { COLOUR_SETS, SURFACES, buildingPaint, checkColours, hexText, paintList, partColours, setColours, textHex } from './building-colours.js';
+import { BY_TEXTURE, COLOUR_SETS, FLOOR_MATERIALS, SURFACES, WALL_MATERIALS, buildingPaint, checkColours, hexText, paintList, partColours, setColours, textHex } from './building-colours.js';
 
 const KEY = 'foundry.building';
 // Whether the model shows its colours or each part by its role, remembered in this browser.
@@ -112,8 +112,9 @@ const textureSize = (prefix, b) =>
 const field = (name, label, value, [min, max], unit = 'mm', extra = '') =>
   `<label class="bd-row"${extra}><span>${esc(label)}</span><span class="bd-input"><input type="number" name="${name}" value="${esc(String(value))}" min="${min}" max="${max}" step="1"><small>${unit}</small></span></label>`;
 // A small picture of each texture for its swatch.
-const SWATCH_LINES = {
+export const SWATCH_LINES = {
   plain: '',
+  seam: 'M6 0V28M8 0V28M20 0V28M22 0V28M34 0V28M36 0V28M48 0V28M50 0V28',
   brick: 'M0 7H60M0 14H60M0 21H60M8 0V7M24 0V7M40 0V7M56 0V7M16 7V14M32 7V14M48 7V14M8 14V21M24 14V21M40 14V21M56 14V21M16 21V28M32 21V28M48 21V28',
   block: 'M0 10H60M0 20H60M15 0V10M45 0V10M30 10V20M15 20V28M45 20V28',
   crack: 'M6 4l5 5 2 7 6 3M34 3l-3 6 4 5-2 7 5 3M46 16l5 3 1 7',
@@ -259,9 +260,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   <form class="bd-form" autocomplete="off">
     <section class="bd-box" data-bd-card="colours" data-bd-colours><h3>Colours</h3>
       <label class="bd-row"><span>Colour set</span><select name="col-set">${COLOUR_SETS.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}<option value="custom">Your own</option></select></label>
-      ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${key === 'walls' || key === 'band' || key === 'roof' ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
-      <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls and roof by their textures</span></label>
-      <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta; or pick a colour of your own for each. The kit carries them in its 3MF, for a printer with several filaments, and as a paint list in its notes.</p></section>
+      ${SURFACES.map(([key, label]) => `<label class="bd-row"><span>${esc(label)}</span><span class="bd-input">${BY_TEXTURE.has(key) ? `<small data-bd-col-auto="${key}">by texture</small>` : ''}<input type="color" name="col-${key}" class="bd-colour"></span></label>`).join('')}
+      <label class="bd-check"><input type="checkbox" name="col-auto"><span>Walls, roof and floors by their textures</span></label>
+      <p class="bd-hint">Bricks red with light mortar, planks brown, tiles terracotta, floorboards brown; or pick a colour of your own for each. A floor texture colours the floors inside the walls; the rest of the base keeps its own colour. The kit carries them in its 3MF, for a printer with several filaments, and as a paint list in its notes.</p></section>
     <section class="bd-box" data-bd-card="sections" data-bd-sections hidden></section>
     <section class="bd-box" data-bd-card="footprint" data-bd-footprint hidden><h3>Footprint</h3>
       <label class="bd-row"><span>Shape</span><select name="fpShape"><option value="rectangle">Rectangle</option><option value="L">L-shaped</option><option value="U">U-shaped</option><option value="T">T-shaped</option><option value="octagon">Octagon</option><option value="round">Round</option><option value="custom" disabled>Drawn outline</option></select></label>
@@ -279,6 +280,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div class="bd-adds"><button type="button" class="bd-add" data-bd-fp-add-court>${icon('plus')}Courtyard</button></div>
       <div class="bd-sub" data-bd-fp-walls-of>Walls</div>
       <div data-bd-fp-finish></div>
+      <label class="bd-row"><span>Floors</span><select name="fpFloorTexture">${FLOOR_TEXTURES.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}</select></label>
       ${textureSize('fp-', FOOTPRINT_DEFAULTS)}
       <p class="bd-hint">Choose Draw to drag the footprint handles and add windows or doors to any wall, with a frame and panes. An octagon has eight equal sides on a square; a round building so many sides round its width and depth. Walls may run at any angle, each corner turning at most 90° so its mitre prints without supports. A shaped building has up to three storeys above the ground floor, each on a floor with a frame under it, with its own windows, doors and finish: choose the storey here, then its walls in Draw. Its roof is flat, or on an outline without inside corners a hip roof, a panel over each wall printing flat, a cone on a round building; a hip roof prints whole, so each panel must fit the plate. The walls take textures like any building, each wall its own if you like, and a band along their foot. Oversized panels split into numbered pieces with straight glue seams. Changing shape keeps openings only if their numbered walls still fit; remove or move them first otherwise. In Draw → Footprint, drag any wall in or out, pull out a bay, push in a recess, cut a corner or curve a wall: the shape becomes a drawn outline, its width and depth set by its walls. Choose a shape here to start again from it.</p>
     </section>
@@ -582,12 +584,13 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       <div data-bd-finish>${finishFields('fw', building, FOUR)}</div>
       <div data-bd-roof-texture-box><div class="bd-sub">Roof</div>
       ${swatches(ROOF_TEXTURES, 'data-bd-roof-texture')}</div>
+      <label class="bd-row"><span>Floors</span><select name="floorTexture">${FLOOR_TEXTURES.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('')}</select></label>
       <div data-bd-texture-size>
       ${field('textureScale', 'Size', building.textureScale, BUILDING_LIMITS.textureScale, '%')}
       <label class="bd-row"><span>Joint width</span><span class="bd-input"><input type="number" name="textureJoint" value="${building.textureJoint}" min="${BUILDING_LIMITS.textureJoint[0]}" max="${BUILDING_LIMITS.textureJoint[1]}" step="0.05"><small>mm</small></span></label>
       <label class="bd-row"><span>Joint depth</span><span class="bd-input"><input type="number" name="textureDepth" value="${building.textureDepth}" min="${BUILDING_LIMITS.textureDepth[0]}" max="${BUILDING_LIMITS.textureDepth[1]}" step="0.05"><small>mm</small></span></label>
       </div>
-      <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain. A wall can have a texture of its own, and the walls a band of another along their foot, brick below and boards above, with a smooth strip between.</p></section>
+      <p class="bd-hint">Joints cut into the outside of the walls and the top of a sloped roof, which print face up. They keep clear of windows, doors and frames; the rows of bricks run on round the corners. A flat roof stays plain. A wall can have a texture of its own, and the walls a band of another along their foot, brick below and boards above, with a smooth strip between. Floors take a texture too, cut into the top of the base inside the walls and of each floor between storeys: square tiles, floorboards, flagstones, concrete slabs or brick paving.</p></section>
     <section class="bd-box" data-bd-card="garage"><h3>Garage door</h3>
       ${field('doorWidth', 'Width', building.doorWidth, BUILDING_LIMITS.doorWidth)}
       ${field('doorHeight', 'Height', building.doorHeight, BUILDING_LIMITS.doorHeight)}
@@ -682,7 +685,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const fpWalls = (b) => footprintWalls(b).map((w) => ({ id: w.id, name: w.name }));
   function readFootprint() {
     const finish = readFinish(form, 'ff', storeyOf(building, storey), fpWalls(building));
-    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, ...(storey ? {} : finish), props: readBuildingProps(), courtyards: readCourtyards() };
+    const next = { ...building, shape: form.elements.fpShape.value, roofShape: form.elements.fpRoofShape.value, floorTexture: form.elements.fpFloorTexture.value, ...(storey ? {} : finish), props: readBuildingProps(), courtyards: readCourtyards() };
     for (const key of Object.keys(FOOTPRINT_DEFAULTS)) if (form.elements['fp-' + key]) {
       const value = form.elements['fp-' + key].value;
       next[key] = value === '' ? NaN : Number(value);
@@ -1555,6 +1558,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       rises: e.rises.value,
       braces: e.braces.checked,
       roofLip: e.roofLip.value,
+      floorTexture: e.floorTexture.value,
       roofRailing: e.roofRailing.checked,
       numbers: e.numbers.checked,
       firstNumber: num(e.firstNumber),
@@ -1682,7 +1686,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       $('[data-bd-roof-texture-box]').hidden = building.roof === 'flat';
       for (const b of host.querySelectorAll('[data-bd-roof-texture]')) b.hidden = building.roof === 'vault' && !['plain', 'metal'].includes(b.dataset.bdRoofTexture);
       const textured = [building, ...building.upper].some(isTextured);
-      $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain');
+      $('[data-bd-texture-size]').hidden = !textured && (building.roof === 'flat' || building.roofTexture === 'plain') && building.floorTexture === 'plain';
     }
     $('.bd-model').hidden = view !== 'model';
     $('[data-bd-viewbar]').hidden = view !== 'model';
@@ -2050,6 +2054,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       // A drawn outline sets its own width and depth, and has no wing: its walls are drawn in Draw.
       for (const key of ['width', 'depth', 'wing']) form.elements['fp-' + key].disabled = b.shape === 'custom';
       form.elements.fpRoofShape.value = b.roofShape;
+      form.elements.fpFloorTexture.value = b.floorTexture ?? 'plain';
       // Its walls change with its shape: their fields are drawn afresh, for the storey chosen.
       drawFpStoreys();
       drawFpCourts();
@@ -2078,7 +2083,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'pitbays') return fillBays(b);
     for (const k of ['width', 'depth', 'height', 'doorWidth', 'doorHeight', 'baseHeight', 'pitch', 'overhangFront', 'overhangBack', 'overhangLeft', 'overhangRight', 'textureScale', 'textureJoint', 'textureDepth', 'play'])
       form.elements[k].value = b[k];
-    for (const k of ['door', 'ridge', 'rises', 'roofLip', 'container']) form.elements[k].value = b[k];
+    for (const k of ['door', 'ridge', 'rises', 'roofLip', 'container', 'floorTexture']) form.elements[k].value = b[k];
     form.elements.braces.checked = b.braces;
     form.elements.roofRailing.checked = b.roofRailing;
     form.elements.numbers.checked = b.numbers;
@@ -2289,7 +2294,10 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (t.name === 'col-set') setPaint(t.value === 'custom' ? { ...colours, set: 'custom' } : setColours(t.value));
     else if (t.name === 'col-auto') {
       const base = setColours(colours.set === 'custom' ? 'redbrick' : colours.set);
-      setPaint(t.checked ? { ...colours, walls: null, band: null, roof: null } : { ...colours, set: 'custom', walls: colours.walls ?? base.walls ?? 0xa4533c, roof: colours.roof ?? base.roof ?? 0x4b5058 });
+      // Unticked, each takes a colour to change: the band and the floors their textures' own.
+      const band = WALL_MATERIALS[building.lowerTexture]?.face ?? WALL_MATERIALS.stone.face,
+        floor = FLOOR_MATERIALS[building.floorTexture]?.face ?? FLOOR_MATERIALS.tiles.face;
+      setPaint(t.checked ? { ...colours, walls: null, band: null, roof: null, floor: null } : { ...colours, set: 'custom', walls: colours.walls ?? base.walls ?? 0xa4533c, roof: colours.roof ?? base.roof ?? 0x4b5058, band: colours.band ?? band, floor: colours.floor ?? floor });
     } else if (t.name?.startsWith('col-')) {
       const v = textHex(t.value);
       if (v !== null) setPaint({ ...colours, set: 'custom', [t.name.slice(4)]: v });

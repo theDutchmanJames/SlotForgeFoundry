@@ -289,7 +289,8 @@ function paintedGeometry(part, paint) {
     colours = new Float32Array(n * 3);
   const c = new THREE.Color();
   const rgbOf = (p) => [p.face, p.joint ?? p.face, p.grain ?? p.face].map((hex) => c.setHex(hex).toArray());
-  const rgb = rgbOf(paint);
+  // A floor with a texture: its top, joints and grain (marks 3, 4, 5) in its own colours.
+  const rgb = [...rgbOf(paint), ...(paint.floor ? rgbOf(paint.floor) : [])];
   // A band along the foot of a wall: its triangles below the height it reaches up to, in its colours.
   const lower = paint.lower ? rgbOf(paint.lower) : null;
   let palette = rgb;
@@ -314,6 +315,19 @@ function paintedGeometry(part, paint) {
   else geometry.computeBoundingBox();
   geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
   return geometry;
+}
+
+// A floor's joints and grain are its colours, not edges: lines along them
+// would darken a small piece of floor and leave a large one (drawn without
+// edges) as it is. Lines with both ends on them are left out.
+export function floorCreases(part, lines) {
+  const marks = part.joints?.marks;
+  if (part.joints?.surface !== 'floor' || !marks || !lines.length) return lines;
+  const on = new Uint8Array(part.positions.length / 3);
+  for (let t = 0; t < marks.length; t++) if (marks[t] === 4 || marks[t] === 5) for (let k = 0; k < 3; k++) on[part.indices[t * 3 + k]] = 1;
+  const kept = [];
+  for (let i = 0; i < lines.length; i += 2) if (!(on[lines[i]] && on[lines[i + 1]])) kept.push(lines[i], lines[i + 1]);
+  return kept.length === lines.length ? lines : lines.constructor.from(kept);
 }
 
 function partGeometry(part) {
@@ -752,7 +766,7 @@ export class Viewport {
       if (p.kerbMarkings?.length)
         mesh.userData.kerbPaint = paintMesh(p.kerbMarkings);
     } else if (isTrackSurface(p) || p.indices.length / 3 <= budget) {
-      const lines = p.creaseLines ?? creaseLineIndices(p);
+      const lines = floorCreases(p, p.creaseLines ?? creaseLineIndices(p));
       if (lines.length) {
         const edgeGeo = new THREE.BufferGeometry();
         // A painted part has a corner of its own for each triangle: its edges keep the part's corners.

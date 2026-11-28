@@ -80,7 +80,8 @@ export function jointMarks(mesh) {
   if (!ids?.length || !JOINT_TAGS.size) return null;
   let marks = null;
   const count = new Map(),
-    bands = new Map();
+    bands = new Map(),
+    floors = new Map();
   for (let r = 0; r < ids.length; r++) {
     const tag = JOINT_TAGS.get(ids[r]);
     if (!tag) continue;
@@ -88,8 +89,14 @@ export function jointMarks(mesh) {
       z = runs[r + 1] / 3;
     if (z <= a) continue;
     marks ??= new Uint8Array(mesh.triVerts.length / 3);
-    marks.fill(tag.mark, a, z);
+    // A floor's top, joints and grain: 3, 4 and 5, apart from the part's own.
+    const floor = tag.surface === 'floor';
+    marks.fill(tag.mark + (floor ? 3 : 0), a, z);
     const weight = (z - a) * (tag.mark === 1 ? 1 : 0.25);
+    if (floor) {
+      floors.set(tag.kind, (floors.get(tag.kind) ?? 0) + weight);
+      continue;
+    }
     if (tag.below !== undefined) {
       const key = tag.kind + ':' + tag.below;
       bands.set(key, (bands.get(key) ?? 0) + weight);
@@ -100,6 +107,8 @@ export function jointMarks(mesh) {
   }
   if (!marks) return null;
   const most = (m) => [...m].sort((p, q) => q[1] - p[1])[0]?.[0];
+  // A base or a floor between storeys: its floor's texture, the rest of it smooth.
+  if (!count.size && !bands.size) return { marks, surface: 'floor', kind: most(floors) };
   // Joints only in the band: the wall above it is plain.
   const [surface, kind] = (most(count) ?? 'wall:plain').split(':');
   const band = most(bands);
@@ -413,6 +422,97 @@ export function roofJoints(wasm, own, panel, { dir: [dx, dy], t, eave: [ex, ey],
   }
   if (!cuts.length) return null;
   return cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0];
+}
+
+/**
+ * Floors: joints cut into the top of the base inside the walls, and into
+ * the top of each floor between storeys. One texture for all the floors of
+ * a building. Sizes as drawn at 1:32, scaled with the walls' texture.
+ */
+export const FLOOR_TEXTURES = Object.freeze([
+  ['plain', 'Plain'],
+  ['tiles', 'Square tiles'],
+  ['boards', 'Floorboards'],
+  ['flags', 'Flagstones'],
+  ['slabs', 'Concrete slabs'],
+  ['brick', 'Brick paving'],
+]);
+export const FLOOR_DRAWN = Object.freeze({
+  tiles: { size: 8 }, // 25 cm tiles
+  slabs: { size: 20 }, // 60 cm slabs
+  boards: { course: 5, length: [30, 70] }, // boards 5 mm wide, their ends 30 to 70 mm apart
+  flags: { course: [8, 11, 14], length: [10, 22] },
+});
+const FLOOR_CLEAR = 1.5; // the joints keep this far inside the walls' groove
+export const isFloorTexture = (t) => FLOOR_TEXTURES.some(([id]) => id === t);
+/** Checks a building's floor texture: plain when it has none. */
+export function checkFloor(t = 'plain') {
+  if (!isFloorTexture(t)) throw Error('Choose a floor texture from the list.');
+  return t;
+}
+// Rows across y of a height or one of several, each cut at random lengths along x, the ends staggered.
+function rowsOf(courses, [lo, hi], [x0, x1], [y0, y1], k, w, seed) {
+  const out = [];
+  let yb = Math.floor(y0 / 100) * 100,
+    row = 0;
+  while (yb < y1) {
+    const random = seeded(seed * 6151 + row * 92821 + 3);
+    const c = courses[Math.floor(random() * courses.length)] * k;
+    if (yb + c > y0) {
+      if (yb > y0) out.push(rect(x0 - 1, yb - w / 2, x1 + 1, yb + w / 2));
+      for (let x = x0 - random() * hi * k; x < x1; x += (lo + random() * (hi - lo)) * k)
+        if (x > x0) out.push(rect(x - w / 2, Math.max(yb, y0), x + w / 2, Math.min(yb + c, y1)));
+    }
+    yb += c;
+    row++;
+  }
+  return out;
+}
+/** The joints of a floor over a region of the plan, as polygons in x, y. */
+export function floorPolygons(kind, [x0, x1], [y0, y1], { textureScale, textureJoint: w }, seed = 1) {
+  const k = textureScale / 100;
+  if (kind === 'tiles' || kind === 'slabs') {
+    const s = FLOOR_DRAWN[kind].size * k,
+      out = [];
+    for (let x = Math.ceil(x0 / s) * s; x < x1; x += s) out.push(rect(x - w / 2, y0 - 1, x + w / 2, y1 + 1));
+    for (let y = Math.ceil(y0 / s) * s; y < y1; y += s) out.push(rect(x0 - 1, y - w / 2, x1 + 1, y + w / 2));
+    return out;
+  }
+  if (kind === 'boards') return rowsOf([FLOOR_DRAWN.boards.course], FLOOR_DRAWN.boards.length, [x0, x1], [y0, y1], k, w, seed);
+  if (kind === 'flags') return rowsOf(FLOOR_DRAWN.flags.course, FLOOR_DRAWN.flags.length, [x0, x1], [y0, y1], k, w, seed);
+  if (kind === 'brick') return jointPolygons('brick', [x0, x1], [y0, y1], { textureScale, textureJoint: w }, seed, Math.floor(y0 / 100) * 100);
+  return [];
+}
+/**
+ * A part with a textured floor: its top inside `area` (a CrossSection of
+ * the plan where nothing stands on it), at height zTop, keeps an id of its
+ * own, so the view can colour the floor apart from the rest of the part;
+ * the joints are cut into it, and floorboards get a grain. Returns the
+ * solid as it is when the floor is plain or there is no room.
+ */
+export function floorFinish(wasm, own, solid, area, zTop, settings, kind, seed = 1) {
+  if (!kind || kind === 'plain') return solid;
+  const inside = own(area.offset(-FLOOR_CLEAR, 'Miter', 2));
+  if (inside.isEmpty()) return solid;
+  const d = settings.textureDepth;
+  // The floor's top, a skin a little deeper than its joints, given its own id.
+  const skin = own(own(inside.extrude(d + 0.3)).translate([0, 0, zTop - d - 0.3]));
+  const top = own(solid.intersect(skin));
+  if (top.isEmpty()) return solid;
+  let out = own(own(solid.subtract(skin)).add(tagged(own, top, kind, 0, 'floor')));
+  const { min, max } = inside.bounds();
+  const cuts = [];
+  const polys = floorPolygons(kind, [min[0], max[0]], [min[1], max[1]], settings, seed);
+  if (polys.length) {
+    const joints = own(own(new wasm.CrossSection(polys, 'Positive')).intersect(inside));
+    if (!joints.isEmpty()) cuts.push(tagged(own, own(own(joints.extrude(d + 1)).translate([0, 0, zTop - d])), kind, 1, 'floor'));
+  }
+  if (kind === 'boards') {
+    const grain = own(own(new wasm.CrossSection(grainPolygons('planks', [min[0], max[0]], [min[1], max[1]], settings, seed), 'NonZero')).intersect(inside));
+    if (!grain.isEmpty()) cuts.push(tagged(own, own(own(grain.extrude(d / 3 + 1)).translate([0, 0, zTop - d / 3])), kind, 2, 'floor'));
+  }
+  if (cuts.length) out = own(out.subtract(cuts.length > 1 ? own(wasm.Manifold.union(cuts)) : cuts[0]));
+  return out;
 }
 
 /**
