@@ -181,6 +181,44 @@ export function buildConnected(wasm,input,plate=null) {
     }
     pieces.forEach((solid,i)=>result.push({...part,solid,id:part.id+(pieces.length>1?'-'+(i+1):''),name:part.name+(pieces.length>1?' '+(i+1)+' of '+pieces.length:'')}));
   };
+  // Where a join takes away the end of a wall, the wall meeting it there is still
+  // cut at 45° for a corner that is gone: the walls touch along an edge and leave a
+  // notch. The walls of the building should make one ring round its outline; each
+  // gap in it is filled, as part of the wall it lies against, as high as the lower
+  // of the roofs over it (above that the wall the join left closes it already).
+  function wallFills(sections) {
+    const out=new Map(), feet=[];
+    sections.forEach((s,i)=>{
+      const pts=sectionRect(s), inner=sectionRect(s,-b.wall), contacts=sectionContacts(b,i);
+      sectionWalls(s).forEach((w,k)=>{
+        let foot=poly([pts[k],pts[(k+1)%4],inner[(k+1)%4],inner[k]]);
+        const at=(u,v)=>[w.a[0]+w.dir[0]*u+w.inward[0]*v,w.a[1]+w.dir[1]*u+w.inward[1]*v];
+        for(const c of contacts.filter(c=>c.wall===w.id)) foot=own(foot.subtract(poly([at(c.lo,-0.01),at(c.hi,-0.01),at(c.hi,b.wall+0.01),at(c.lo,b.wall+0.01)])));
+        feet.push({s,w,foot});
+      });
+    });
+    const outline=poly(connectedOutline(b));
+    const ring=own(outline.subtract(own(outline.offset(-b.wall,'Miter',2))));
+    const gaps=own(ring.subtract(own(wasm.CrossSection.union(feet.map(f=>f.foot)))));
+    if(gaps.isEmpty()) return out;
+    for(const s of sections) {
+      for(const piece of own(gaps.intersect(poly(sectionRect(s)))).decompose()) {
+        own(piece);
+        if(piece.area()<0.05) continue;
+        // The wall of this section it lies against the most.
+        let best=null, most=0;
+        for(const f of feet) if(f.s===s) { const touch=own(own(f.foot.offset(0.05,'Miter',2)).intersect(piece)).area(); if(touch>most) { most=touch; best=f; } }
+        if(!best) continue;
+        let solid=own(own(piece.extrude(1900)).translate([0,0,b.baseHeight-2]));
+        // Under every roof it reaches, the lower one is the one it stops at.
+        const box2=piece.bounds();
+        for(const o of sections) if(box2.max[0]>=o.x-b.wall && box2.min[0]<=o.x+o.width+b.wall && box2.max[1]>=o.y-b.wall && box2.min[1]<=o.y+o.depth+b.wall) solid=cap(solid,o);
+        const id=s.id+'-'+best.w.id;
+        out.set(id,[...(out.get(id)??[]),solid]);
+      }
+    }
+    return out;
+  }
   try {
     const roofs=[];
     for(const s of sections) {
@@ -207,6 +245,7 @@ export function buildConnected(wasm,input,plate=null) {
       }
     }
     const wallParts=[], frames=[];
+    const fills=wallFills(sections);
     for(let i=0;i<sections.length;i++) {
       const s=sections[i], pts=sectionRect(s), inner=sectionRect(s,-b.wall), contacts=sectionContacts(b,i);
       for(const [k,w] of sectionWalls(s).entries()) {
@@ -229,6 +268,7 @@ export function buildConnected(wasm,input,plate=null) {
         const finished=finishShellWall(wasm,own,solid,w,{floor:b.baseHeight,top:b.baseHeight+s.height+rise,openings:s.openings.filter(o=>o.wall===w.id),avoid:contacts.filter(c=>c.wall===w.id).map(c=>[c.lo,c.hi])},b,s);
         if(!(finished.isEmpty() && !solid.isEmpty())) solid=finished;
         solid=shellExtras(wasm,own,solid,w,{floor:b.baseHeight,wall:b.wall,openings:s.openings.filter(o=>o.wall===w.id)},b,s,sweep);
+        for(const fill of fills.get(s.id+'-'+w.id)??[]) solid=own(solid.add(fill));
         for(const r of roofs) solid=own(solid.subtract(r.solid));
         const lie=w.inward[1]>0?[-90,0,0]:w.inward[1]<0?[90,0,0]:w.inward[0]>0?[0,90,0]:[0,-90,0];
         wallParts.push({solid,id:s.id+'-'+w.id,name:s.name+' '+w.name.toLowerCase()+' wall',role:'wall',lie,apart:[-w.inward[0]*20,-w.inward[1]*20,8]});
