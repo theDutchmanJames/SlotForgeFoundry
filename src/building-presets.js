@@ -1451,6 +1451,10 @@ const COLOURS_OF = new Map(Object.entries(COLOURED).flatMap(([set, ids]) => ids.
 /** The colours a standard building starts in. */
 export const presetColours = (id) => setColours(COLOURS_OF.get(id) ?? 'material');
 export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
+/** Home's Draw a shape: not a standard building but a plain one to draw, its
+ * walls plain, no doors or windows yet, opened in Draw on its plan. */
+export const DRAW_A_SHAPE = 'draw';
+export const BLANK_SHAPE = Object.freeze({ kind: 'footprint', shape: 'rectangle', width: 160, depth: 120 });
 
 /** The standard buildings in groups, for the Start from list: every preset in one. */
 export const PRESET_GROUPS = Object.freeze([

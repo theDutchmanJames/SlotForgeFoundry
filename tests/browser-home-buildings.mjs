@@ -36,11 +36,23 @@ try {
   assert.equal(await page.locator('[data-action="mode-buildings"]').first().getAttribute('aria-pressed'), 'true');
   assert.equal((await saved()).upper.length, 3, 'the race control tower');
   assert.equal(await bd.locator('[data-bd-preset="race-control"]').getAttribute('aria-pressed'), 'true');
-  // From scratch: a shape to draw.
+  // From scratch: a plain shape to draw, not a standard building, opened in
+  // Draw on its plan, no card marked.
   await goHome();
-  await home.locator('[data-home="building"][data-preset="footprint-l"]').click();
+  await home.locator('[data-home="building"][data-preset="draw"]').click();
   await idle();
-  assert.equal((await saved()).kind, 'footprint');
+  const blank = await saved();
+  assert.equal(blank.kind, 'footprint');
+  assert.equal(blank.shape, 'rectangle');
+  assert.deepEqual([blank.width, blank.depth], [160, 120]);
+  assert.equal(blank.openings.length, 0, 'no doors or windows');
+  assert.equal(blank.lowerTexture ?? 'none', 'none', 'no band');
+  assert.equal(await bd.locator('[name="buildingName"]').inputValue(), 'Building');
+  assert.equal(await bd.locator('[data-bd-view="draw"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await bd.locator('.bd-canvas').isVisible(), true);
+  assert.equal(await bd.locator('.bd-drawing').getAttribute('aria-label'), 'Building footprint editor');
+  assert.equal(await bd.locator('[data-bd-preset][aria-pressed="true"]').count(), 0);
+  await bd.screenshot({ path: fileURLToPath(new URL('draw-a-shape.png', output)) });
   // Saved, it is on Home, and opens from there.
   await bd.locator('[name="buildingName"]').fill('Home test shed');
   await bd.locator('[data-bd="save"]').click();

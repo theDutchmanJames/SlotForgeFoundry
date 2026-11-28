@@ -5,7 +5,7 @@ import { esc, fmt, icon } from './ui.js';
 import { trackThumbnail } from './library-view.js';
 import { partStale } from './library-page.js';
 import { plateDrawing } from './plate-drawing.js';
-import { BUILDING_PRESETS } from './building-presets.js';
+import { BUILDING_PRESETS, DRAW_A_SHAPE } from './building-presets.js';
 import { presetThumb } from './preset-thumbs.js';
 
 // A standard building to start from, as its picture.
@@ -114,7 +114,7 @@ export function renderHome({ packs, layouts, stlParts, buildings = [], plate, er
     ${tile('building', 'From a standard building', 'Ready to print, or to change: every setting stays open.',
       '<div class="home-builds">' + [['garage', 'Pit garage'], ['race-control', 'Tower'], ['marshal', 'Marshal hut']].map(buildingPick).join('') + '</div><button type="button" class="sf-btn sm" data-home="buildings">All standard buildings…</button>')}
     ${tile('plus', 'From scratch', 'A plain garage to build up, a shape to draw wall by wall, or halls and wings.',
-      '<button type="button" class="sf-btn sm" data-home="building" data-preset="garage">Plain garage</button><button type="button" class="sf-btn sm" data-home="building" data-preset="footprint-l">Draw a shape</button><button type="button" class="sf-btn sm" data-home="building" data-preset="connected">Halls and wings</button>')}
+      '<button type="button" class="sf-btn sm" data-home="building" data-preset="garage">Plain garage</button><button type="button" class="sf-btn sm" data-home="building" data-preset="' + DRAW_A_SHAPE + '">Draw a shape</button><button type="button" class="sf-btn sm" data-home="building" data-preset="connected">Halls and wings</button>')}
     ${tile('trackside', 'Trackside', 'Stands, gantries over the track and boards beside it.',
       '<div class="home-builds">' + [['stand', 'Grandstand'], ['gantry-lattice', 'Gantry'], ['billboard', 'Billboard']].map(buildingPick).join('') + '</div>')}
   </div>

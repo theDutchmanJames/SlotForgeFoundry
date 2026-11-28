@@ -240,5 +240,7 @@ export function createBuildingCanvas(host, { getState, commit, onWall, onSection
     if (e.key === 'Delete') { chosen = new Set(); selected = null; act(() => removeOpenings(b, level, list)); return; }
     act(() => moveOpenings(b, level, list, e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0));
   });
-  return { render, cancel };
+  // The plan (its footprint) or a wall's elevation, as its own buttons do.
+  function setMode(next) { mode = next === 'plan' ? 'plan' : 'wall'; selected = null; chosen = new Set(); render(); }
+  return { render, cancel, setMode };
 }

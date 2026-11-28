@@ -16,7 +16,7 @@ import { fileSafe, kitNotes, kitStlName } from './building-kit.js';
 import { glazingSheets, glazingSvg } from './building-glazing.js';
 import { footprintSheets, kit3mf, stlMesh } from './kit-extras.js';
 import { footprint as tableFootprint } from './planner-buildings.js';
-import { BUILDING_PRESETS, PRESET_GROUPS, presetColours } from './building-presets.js';
+import { BLANK_SHAPE, BUILDING_PRESETS, DRAW_A_SHAPE, PRESET_GROUPS, presetColours } from './building-presets.js';
 import { presetThumb } from './preset-thumbs.js';
 import { GRANDSTAND_LIMITS, sizeLine, standDepth, standExtent } from './geometry/grandstand.js';
 import { GANTRY_LIMITS, GANTRY_TYPES, gantrySize } from './geometry/gantry.js';
@@ -2700,12 +2700,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       notice(err.message);
     }
   });
-  // A new building: the plain garage, or one of the standard buildings.
+  // A new building: the plain garage, one of the standard buildings, or a
+  // plain shape to draw (Home's Draw a shape), opened in Draw on its plan.
   async function startFrom(id) {
-    const preset = BUILDING_PRESETS.find((p) => p.id === id);
-    for (const card of host.querySelectorAll('[data-bd-preset]')) card.setAttribute('aria-pressed', String(card.dataset.bdPreset === (preset?.id ?? 'garage')));
-    building = validateBuilding(preset?.building ?? {});
-    name = preset?.name ?? 'Garage';
+    const drawing = id === DRAW_A_SHAPE;
+    const preset = drawing ? null : BUILDING_PRESETS.find((p) => p.id === id);
+    for (const card of host.querySelectorAll('[data-bd-preset]')) card.setAttribute('aria-pressed', String(!drawing && card.dataset.bdPreset === (preset?.id ?? 'garage')));
+    building = validateBuilding(drawing ? BLANK_SHAPE : preset?.building ?? {});
+    name = drawing ? 'Building' : preset?.name ?? 'Garage';
+    if (drawing) view = 'draw';
     savedId = null;
     // A standard building starts in its own colours; New building by material.
     colours = presetColours(preset?.id);
@@ -2716,6 +2719,8 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     // Its parts are at the top of the list: back up to them.
     host.querySelector('.bd-col').scrollTo({ top: 0, behavior: 'smooth' });
     await rebuild(building);
+    // Its walls known, the drawing on its plan.
+    if (drawing) canvas.setMode('plan');
     await listSaved();
   }
   async function open(id) {
