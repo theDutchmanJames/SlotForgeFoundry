@@ -25,6 +25,8 @@ export const WALL_MATERIALS = Object.freeze({
   boards: { face: 0x7f5d3d, joint: 0x45321f },
   stone: { face: 0xa59c8b, joint: 0xd2ccc0 },
   timber: { face: 0xe9e2d2, joint: 0x4b3a2c },
+  // A wall laid without mortar: grey stone, the gaps between them dark.
+  drystone: { face: 0x9a958a, joint: 0x4f4c46 },
 });
 export const ROOF_MATERIALS = Object.freeze({
   plain: { face: 0x585e66 },
@@ -133,7 +135,7 @@ export const hexText = (v) => '#' + (v >>> 0).toString(16).padStart(6, '0');
 export const textHex = (s) => (/^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 16) : null);
 
 // The names of the textures, for the paint list.
-const WALL_WORDS = { plain: 'smooth', brick: 'bricks', block: 'concrete blocks', crack: 'concrete', metal: 'corrugated metal', planks: 'planks', boards: 'boards', stone: 'stone', timber: 'half-timbered' };
+const WALL_WORDS = { plain: 'smooth', brick: 'bricks', block: 'concrete blocks', crack: 'concrete', metal: 'corrugated metal', planks: 'planks', boards: 'boards', stone: 'stone', timber: 'half-timbered', drystone: 'dry stone' };
 const ROOF_WORDS = { plain: 'smooth', tile: 'tiles', metal: 'corrugated sheet', shingle: 'shingles', seam: 'standing seams' };
 const FLOOR_WORDS = { tiles: 'square tiles', boards: 'floorboards', flags: 'flagstones', slabs: 'concrete slabs', brick: 'brick paving' };
 const SURFACE_OF = (part) => {

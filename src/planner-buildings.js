@@ -18,6 +18,7 @@ import { canopyFootprint } from './geometry/canopy.js';
 import { stageFootprint } from './geometry/stage.js';
 import { switchbackFootprint } from './geometry/switchback.js';
 import { benchFootprint } from './geometry/bench.js';
+import { RALLY_KINDS } from './geometry/rally-kinds.js';
 import { propsFootprint } from './geometry/props-kit.js';
 import { FIT, fitFootprint } from './geometry/fit-test.js';
 import { tyreFeet, tyreFootprint, tyreHeadroom } from './geometry/tyre-bridge.js';
@@ -223,6 +224,11 @@ export function shapeOf(b) {
     const [x0, y0, x1, y1] = propsFootprint(b);
     outline = rect(x0, y0, x1, y1);
     front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
+  } else if (Object.hasOwn(RALLY_KINDS, b.kind ?? '')) {
+    // A rally kind out to all it has on the table, its front (the road) at its low y.
+    const [x0, y0, x1, y1] = RALLY_KINDS[b.kind].footprint(b);
+    outline = rect(x0, y0, x1, y1);
+    front = { p: [(x0 + x1) / 2, y0], f: [0, -1] };
   } else if (b.kind === 'bench') {
     // The row along the track, the seats' fronts towards it.
     const [x0, y0, x1, y1] = benchFootprint(b);
@@ -365,7 +371,7 @@ export function planShapes(entry) {
     // The deck over its frames.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };
   }
-  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'props', 'fittest', 'canopy', 'stage'].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
+  if (['flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'props', 'fittest', 'canopy', 'stage', ...Object.keys(RALLY_KINDS)].includes(b.kind)) return { base: footprint(entry), storeys: [], dividers: [], doors: [] };
   if (b.kind === 'marshalpost') {
     // Its base, and the cabin on it.
     return { base: footprint(entry), storeys: [rect(0, 0, b.width, b.depth).map((p) => toPlan(entry, p))], dividers: [], doors: [] };

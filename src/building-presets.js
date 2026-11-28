@@ -2,6 +2,7 @@
 // most often have beside the track. Each is an ordinary building, so every
 // setting can be changed afterwards. Toy proportions for 1:32.
 import { setColours } from './building-colours.js';
+import { RALLY_COLOURS, RALLY_GROUP, RALLY_PRESETS } from './building-presets-rally.js';
 
 const window = (wall, at, width, height, sill, frame = true) => ({ wall, type: 'window', at, width, height, sill, frame });
 const door = (wall, at, frame = true) => ({ wall, type: 'door', at, width: 28, height: 48, frame });
@@ -1440,9 +1441,9 @@ export const COLOURED = {
   racing: ['pitrow', 'pit-modern', 'pit-building', 'pit-row-modern', 'pit-boxes', 'starter-tower', 'vip', 'camera-tower', 'press-tower', 'tower-pyramid', 'booth-column',
     'stand', 'stand-covered', 'stand-raised', 'stand-mini', 'stand-curved', 'stand-bleachers', 'stand-terrace', 'stand-double', 'platform', 'platform-both', 'platform-plain',
     'finish-bridge', 'gantry-lattice', 'gantry-half', 'gantry-sign', 'footbridge', 'tyre-bridge', 'walkway-towers', 'crosswalk', 'stairs-switchback', 'banner-bridge',
-    'billboard', 'hoarding', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane'],
+    'billboard', 'hoarding', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane', ...RALLY_COLOURS.racing],
   marshal: ['marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-legs', 'post-box', 'flag-post'],
-  timber: ['picnic-pergola', 'benches', 'picnic', 'gantry-timber', 'carport', 'carport-twin'],
+  timber: ['picnic-pergola', 'benches', 'picnic', 'gantry-timber', 'carport', 'carport-twin', ...RALLY_COLOURS.timber],
   whitewash: ['townhouse', 'motor-court', 'drive-in-box-office', 'car-wash', 'motor-showroom'],
   yellowbrick: ['ruined-townhouse'],
   industrial: ['paint-body-shop', 'auction-hall', 'weighbridge-office', 'auto-parts-store', 'drive-in-screen'],
@@ -1450,7 +1451,7 @@ export const COLOURED = {
 const COLOURS_OF = new Map(Object.entries(COLOURED).flatMap(([set, ids]) => ids.map((id) => [id, set])));
 /** The colours a standard building starts in. */
 export const presetColours = (id) => setColours(COLOURS_OF.get(id) ?? 'material');
-export const BUILDING_PRESETS = Object.freeze(PRESETS.map(lettered));
+export const BUILDING_PRESETS = Object.freeze([...PRESETS, ...RALLY_PRESETS].map(lettered));
 /** Home's Draw a shape: not a standard building but a plain one to draw, its
  * walls plain, no doors or windows yet, opened in Draw on its plan. */
 export const DRAW_A_SHAPE = 'draw';
@@ -1468,6 +1469,7 @@ export const PRESET_GROUPS = Object.freeze([
   ['Circuit buildings', ['scrutineering', 'tyre-depot', 'briefing-hall', 'recovery-garage', 'paddock-club', 'podium-pavilion', 'parc-ferme', 'paddock-diner', 'timing-rotunda', 'timber-pavilion', 'score-beacon', 'ticket-office']],
   // Scaleform town and car groups
   ['Town buildings', ['corner-shop', 'village-station', 'canal-house', 'engineering-works', 'watchtower', 'trackside-garage', 'research-habitat', 'timber-cottage', 'townhouse', 'ruined-townhouse']],
-  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane', 'drive-in-screen', 'carport', 'carport-twin']],
+  ['Car buildings', ['drag-timing-booth', 'hillclimb-lodge', 'crash-test-hall', 'paint-body-shop', 'car-assembly-hall', 'drive-in-box-office', 'motor-court', 'toll-booth', 'auto-parts-store', 'auction-hall', 'salvage-yard', 'hot-rod-shop', 'car-wash', 'transporter-depot', 'weighbridge-office', 'motor-showroom', 'inspection-lane', 'car-storage-tower', 'carhop-diner', 'filling-station', 'forecourt-canopy', 'victory-lane', 'drive-in-screen', 'carport', 'carport-twin']],
+  RALLY_GROUP,
   ['Props', ['props-pit', 'props-trackside', 'props-paddock', 'props-braking', 'props-garage', 'props-pitcrew', 'props-grid', 'props-scrutineering', 'props-slotcars', 'props-circuit', 'props-interiors', 'props-architecture', 'props-street', 'props-shapes', 'props-moving', 'props-machinery']],
 ]);

@@ -2,6 +2,7 @@
 // how they go together.
 import { glazingSheets } from './building-glazing.js';
 import { fmt } from './ui.js';
+import { RALLY_KINDS } from './geometry/rally-kinds.js';
 import { propOf } from './geometry/props.js';
 import { fitClearances } from './geometry/fit-test.js';
 import { marshalLevels } from './geometry/marshal-post.js';
@@ -100,6 +101,7 @@ export function kitNotes(name, b, parts, sizes) {
   if (b.kind === 'billboard') return billboardNotes(name, b, parts, sizes);
   if (b.kind === 'switchback') return switchbackNotes(name, b, parts, sizes);
   if (b.kind === 'bench') return benchNotes(name, b, parts, sizes);
+  if (Object.hasOwn(RALLY_KINDS, b.kind ?? '')) return RALLY_KINDS[b.kind].notes(name, b, parts, sizes, fmt);
   if (b.kind === 'props') return propsNotes(name, b, parts, sizes);
   if (b.kind === 'fittest') return fitNotes(name, b, parts, sizes);
   if (b.kind === 'tyrebridge') return tyreNotes(name, b, parts, sizes);

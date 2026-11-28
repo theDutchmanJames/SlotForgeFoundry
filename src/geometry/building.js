@@ -19,6 +19,7 @@ import { buildCanopy, canopyLayout, validateCanopy } from './canopy.js';
 import { buildStage, stageLayout, validateStage } from './stage.js';
 import { buildSwitchback, switchbackLayout, validateSwitchback } from './switchback.js';
 import { benchLayout, buildBench, validateBench } from './bench.js';
+import { RALLY_KINDS } from './rally-kinds.js';
 import { buildTyreBridge, tyreBridgeLayout, validateTyreBridge } from './tyre-bridge.js';
 import { buildPicnic, picnicLayout, validatePicnic } from './picnic.js';
 import { buildPlatform, platformLayout, validatePlatform } from './viewing-platform.js';
@@ -565,6 +566,7 @@ export function validateBuilding(input) {
   if (input?.kind === 'stage') return validateStage(input);
   if (input?.kind === 'switchback') return validateSwitchback(input);
   if (input?.kind === 'bench') return validateBench(input);
+  if (Object.hasOwn(RALLY_KINDS, input?.kind ?? '')) return RALLY_KINDS[input.kind].validate(input);
   if (input?.kind === 'tyrebridge') return validateTyreBridge(input);
   if (input?.kind === 'picnic') return validatePicnic(input);
   if (input?.kind === 'platform') return validatePlatform(input);
@@ -1774,6 +1776,7 @@ export function buildingLayout(input) {
   if (input?.kind === 'stage') return { ...stageLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'switchback') return { ...switchbackLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'bench') return { ...benchLayout(input), storeys: [], doors: [] };
+  if (Object.hasOwn(RALLY_KINDS, input?.kind ?? '')) return { ...RALLY_KINDS[input.kind].layout(input), storeys: [], doors: [] };
   if (input?.kind === 'tyrebridge') return { ...tyreBridgeLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'picnic') return { ...picnicLayout(input), storeys: [], doors: [] };
   if (input?.kind === 'platform') return { ...platformLayout(input), storeys: [], doors: [] };
@@ -1867,7 +1870,7 @@ export function buildingCuts(input, plate) {
   if (input?.kind === 'sections') return {};
   if (input?.kind === 'footprint') return {};
   // A grandstand comes in sections already, each no longer than set; a pit building in bays; a marshal post is small.
-  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props', 'fittest', 'canopy', 'stage'].includes(input?.kind)) return {};
+  if (['grandstand', 'gantry', 'pitmodule', 'marshalpost', 'flagpost', 'billboard', 'switchback', 'bench', 'tyrebridge', 'picnic', 'platform', 'walkway', 'pitbays', 'props', 'fittest', 'canopy', 'stage', ...Object.keys(RALLY_KINDS)].includes(input?.kind)) return {};
   const { building: b, storeys, doors } = buildingLayout(input);
   const shape = roofShape(b);
   const rise = shape.rise;
@@ -1982,6 +1985,7 @@ export function buildGarage(wasm, input, plate = null) {
   if (input?.kind === 'stage') return buildStage(wasm, input);
   if (input?.kind === 'switchback') return buildSwitchback(wasm, input);
   if (input?.kind === 'bench') return buildBench(wasm, input);
+  if (Object.hasOwn(RALLY_KINDS, input?.kind ?? '')) return RALLY_KINDS[input.kind].build(wasm, input, plate);
   if (input?.kind === 'tyrebridge') return buildTyreBridge(wasm, input);
   if (input?.kind === 'picnic') return buildPicnic(wasm, input);
   if (input?.kind === 'platform') return buildPlatform(wasm, input);

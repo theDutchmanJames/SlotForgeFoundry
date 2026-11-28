@@ -62,7 +62,7 @@ const CLEAR = 1; // joints keep this far from an opening and from a frame
 // A band along the foot of the walls is tagged with the height it reaches up to (below).
 export const JOINT_TAGS = new Map(); // id → { kind, mark: 1 joint | 2 grain, surface: 'wall' | 'roof', below? }
 const MOST_TAGS = 20000;
-function tagged(own, solid, kind, mark, surface = 'wall', below = null) {
+export function tagged(own, solid, kind, mark, surface = 'wall', below = null) {
   const s = own(solid.asOriginal());
   JOINT_TAGS.set(s.originalID(), { kind, mark, surface, ...(below !== null && { below }) });
   if (JOINT_TAGS.size > MOST_TAGS) JOINT_TAGS.delete(JOINT_TAGS.keys().next().value);

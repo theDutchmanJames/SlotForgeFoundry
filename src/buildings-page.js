@@ -26,6 +26,7 @@ import { FLAG_POST_LIMITS, flagDepth } from './geometry/flag-post.js';
 import { BILLBOARD_LIMITS, billboardPieces, billboardPosts } from './geometry/billboard.js';
 import { SWITCHBACK_LIMITS, switchbackPlan } from './geometry/switchback.js';
 import { BENCH_LIMITS } from './geometry/bench.js';
+import { RALLY_KINDS, isRallyKind } from './geometry/rally-kinds.js';
 import { PROPS, propOf } from './geometry/props.js';
 import { PROPS_KIT } from './geometry/props-kit.js';
 import { FIT_LIMITS, fitClearances } from './geometry/fit-test.js';
@@ -133,6 +134,15 @@ const swatches = (list, attr) =>
         `<button type="button" ${attr}="${id}"><svg viewBox="0 0 60 28" aria-hidden="true"><rect width="60" height="28" rx="3"/><path d="${SWATCH_LINES[id]}"/></svg><span>${esc(label)}</span></button>`,
     )
     .join('')}</div>`;
+// The card of a rally kind, from the fields it lists.
+const rallyCard = (kind, r) =>
+  `<section class="bd-box" data-bd-card="rally-${kind}" data-bd-rally="${kind}" hidden><h3>${esc(r.title)}</h3>${r.fields.map(([key, label, type, limits]) => {
+    const name = 'rk-' + kind + '-' + key;
+    if (type === 'number') return field(name, label, 0, limits);
+    if (type === 'check') return `<label class="bd-check"><input type="checkbox" name="${name}"><span>${esc(label)}</span></label>`;
+    if (type === 'text') return `<label class="bd-row"><span>${esc(label)}</span><input name="${name}" maxlength="${LETTERING.longest}" placeholder="None"></label>`;
+    return `<label class="bd-row"><span>${esc(label)}</span><select name="${name}">${type.map(([id, text]) => `<option value="${id}">${esc(text)}</option>`).join('')}</select></label>`;
+  }).join('')}<p class="bd-hint">${esc(r.hint)}</p></section>`;
 const SIDES = [
   ['overhangFront', 'Front'],
   ['overhangBack', 'Back'],
@@ -450,6 +460,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
       ${field('sRail', 'Railing height', 14, SWITCHBACK_LIMITS.railHeight)}
       <label class="bd-row"><span>Railings</span><select name="sStyle"><option value="mesh">Mesh</option><option value="bars">Bars</option></select></label>
       <p class="bd-hint" data-bd-switchback-size></p></section>
+    ${Object.entries(RALLY_KINDS).map(([kind, r]) => rallyCard(kind, r)).join('')}
     <section class="bd-box" data-bd-card="billboard" data-bd-billboard hidden><h3>Billboard</h3>
       <label class="bd-row"><span>Kind</span><select name="kStyle"><option value="board">A billboard on two posts</option><option value="hoarding">A hoarding along the track</option></select></label>
       ${field('kLength', 'Length', 120, BILLBOARD_LIMITS.length)}
@@ -670,6 +681,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   const isPlatform = () => building.kind === 'platform';
   const isWalkway = () => building.kind === 'walkway';
   const isBays = () => building.kind === 'pitbays';
+  const isRally = () => isRallyKind(building.kind);
   let section = 0;
   const isSections = () => building.kind === 'sections';
   const fillSections = () => { section = Math.min(section, building.sections.length - 1); $('[data-bd-sections]').innerHTML = sectionFields(building, section); foldCards(); };
@@ -762,10 +774,15 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
   // A garage's cards, a grandstand's, a gantry's or a pit building's.
   function showKind() {
     foldCards();
-    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isCanopy() ? 'canopy' : isDeck() ? 'deck' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : 'garage';
+    const kind = isSections() ? 'sections' : isFootprint() ? 'footprint' : isStand() ? 'stand' : isGantry() ? 'gantry' : isPits() ? 'pits' : isMarshal() ? 'marshal' : isFlag() ? 'flag' : isBillboard() ? 'billboard' : isSwitchback() ? 'switchback' : isBench() ? 'bench' : isProps() ? 'props' : isFitTest() ? 'fittest' : isTyre() ? 'tyre' : isPicnic() ? 'picnic' : isCanopy() ? 'canopy' : isDeck() ? 'deck' : isPlatform() ? 'platform' : isWalkway() ? 'walkway' : isBays() ? 'bays' : isRally() ? 'rally' : 'garage';
     for (const box of form.querySelectorAll('section.bd-box')) {
       // Fittings show as the roof has them; colours for every kind.
       if (box.hasAttribute('data-bd-fitting') || box.hasAttribute('data-bd-colours')) continue;
+      // A rally kind's card, for that kind only.
+      if (box.dataset.bdRally) {
+        box.hidden = box.dataset.bdRally !== building.kind;
+        continue;
+      }
       // A card for more than one kind.
       if (box.dataset.bdKinds) {
         box.hidden = !box.dataset.bdKinds.split(' ').includes(kind);
@@ -782,6 +799,24 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isBillboard()) drawBillboard();
     if (isSwitchback()) drawSwitchback();
     if (isPlatform()) drawPlatform();
+  }
+  // A rally kind's card: each of its fields as the building has it, and read back.
+  function fillRally(b) {
+    const e = form.elements;
+    for (const [key, , type] of RALLY_KINDS[b.kind].fields) {
+      const el = e['rk-' + b.kind + '-' + key];
+      if (type === 'check') el.checked = b[key];
+      else el.value = b[key];
+    }
+  }
+  function readRally() {
+    const e = form.elements;
+    const k = { kind: building.kind };
+    for (const [key, , type] of RALLY_KINDS[building.kind].fields) {
+      const el = e['rk-' + building.kind + '-' + key];
+      k[key] = type === 'check' ? el.checked : type === 'number' ? (el.value === '' ? NaN : Number(el.value)) : el.value;
+    }
+    return k;
   }
   const PICNIC_FIELDS = [['qCount', 'count'], ['qLength', 'length'], ['qGap', 'gap']];
   const CANOPY_FIELDS = [['cWidth', 'width'], ['cDepth', 'depth'], ['cHeight', 'height'], ['cBays', 'bays'], ['cPitch', 'pitch'], ['cOverhang', 'overhang']];
@@ -1496,6 +1531,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (isPlatform()) return readPlatform();
     if (isWalkway()) return readWalkway();
     if (isBays()) return readBays();
+    if (isRally()) return readRally();
     const e = form.elements;
     const num = (el) => (el.value === '' ? NaN : Number(el.value));
     const openings = storeyOf(building, storey).openings.map((o, i) => {
@@ -1658,6 +1694,9 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isPlatform()) drawPlatform();
     else if (isWalkway()) drawWalkway();
     else if (isBays()) drawBays();
+    else if (isRally()) {
+      // Nothing of its own to redraw: its card is all fields.
+    }
     else {
       for (const b of host.querySelectorAll('[data-bd-roof]')) b.setAttribute('aria-pressed', String(b.dataset.bdRoof === building.roof));
       // The fittings' fields as the building has them: redrawn only when one comes or goes, not while typing.
@@ -1983,6 +2022,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     else if (isWalkway()) card = 'walkway';
     else if (isBays()) card = /^(door|number)/.test(id) ? 'baysDoors' : /rail|roof|podium/.test(id) ? 'baysUpper' : 'bays';
     else if (isPlatform()) card = /^stair/.test(id) ? 'platformStair' : /^rail|^board/.test(id) ? 'platformRail' : 'platform';
+    else if (isRally()) card = 'rally-' + building.kind;
     else if (wallOf) {
       k = wallOf[2] ? Number(wallOf[2]) - 1 : 0;
       w = wallOf[1];
@@ -2078,6 +2118,7 @@ export function createBuildingsPage({ host, call, store, download, notice, plate
     if (b.kind === 'picnic') return fillPicnic(b);
     if (b.kind === 'canopy') return fillCanopy(b);
     if (b.kind === 'stage') return fillDeck(b);
+    if (isRallyKind(b.kind)) return fillRally(b);
     if (b.kind === 'platform') return fillPlatform(b);
     if (b.kind === 'walkway') return fillWalkway(b);
     if (b.kind === 'pitbays') return fillBays(b);
