@@ -25,7 +25,7 @@ try {
   await idle();
   // The group, with the service tent and the start ramp in it.
   assert.match(await bd.textContent(), /Rally/);
-  for (const id of ['rally-timing-caravan', 'rally-stone-wall', 'rally-hunting-tower', 'rally-start-ramp', 'rally-service-tent']) assert.equal(await bd.locator('[data-bd-preset="' + id + '"] img').count(), 1, id + ' has its picture');
+  for (const id of ['rally-timing-caravan', 'rally-stone-wall', 'rally-hunting-tower', 'rally-arch-house', 'rally-tunnel-portal', 'rally-rock-gallery', 'rally-level-crossing', 'rally-start-ramp', 'rally-service-tent']) assert.equal(await bd.locator('[data-bd-preset="' + id + '"] img').count(), 1, id + ' has its picture');
   // The caravan: its card alone, its eleven parts; longer.
   await bd.locator('[data-bd-preset="rally-timing-caravan"]').click();
   await idle();
@@ -69,6 +69,24 @@ try {
   await idle();
   assert.equal(await bd.locator('[name="rk-huntingtower-ladder"]').isChecked(), true);
   assert.equal(await parts(), 7);
+  // The drive-through pieces: each its own card; a change on it makes it again.
+  for (const [id, kind, name, value, count] of [['rally-arch-house', 'archhouse', 'balcony', false, 12], ['rally-tunnel-portal', 'tunnelportal', 'house', 'none', 4], ['rally-rock-gallery', 'rockgallery', 'length', '100', 4], ['rally-level-crossing', 'levelcrossing', 'cottage', false, 8]]) {
+    await bd.locator('[data-bd-preset="' + id + '"]').click();
+    await idle();
+    assert.equal(await card(kind).isVisible(), true, kind);
+    const field = bd.locator('[name="rk-' + kind + '-' + name + '"]');
+    if (value === false) await field.uncheck();
+    else if ((await field.evaluate((e) => e.tagName)) === 'SELECT') await field.selectOption(value);
+    else {
+      await field.fill(value);
+      await field.dispatchEvent('change');
+    }
+    await idle();
+    assert.equal(await parts(), count, kind + ' parts');
+  }
+  // Back to the tower for its kit.
+  await bd.locator('[data-bd-preset="rally-hunting-tower"]').click();
+  await idle();
   // Its kit: a part file for each part, the notes of a hunting tower kit with their colours, a 3MF.
   const [download] = await Promise.all([page.waitForEvent('download'), bd.locator('[data-bd="export"]').click()]);
   const zip = unzipSync(new Uint8Array(await readFile(await download.path())));
@@ -79,7 +97,7 @@ try {
   assert.match(readme, /hunting tower kit/);
   assert.match(readme, /Colours/);
   assert.deepEqual(errors, []);
-  console.log('PASS: the rally group: a timing caravan, a dry-stone wall and a hunting tower, each on its own card, changed, undone, its limits kept.');
+  console.log('PASS: the rally group: a timing caravan, a dry-stone wall, a hunting tower and the four drive-through pieces, each on its own card, changed, undone, its limits kept.');
 } finally {
   await browser.close();
 }

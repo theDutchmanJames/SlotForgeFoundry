@@ -1444,7 +1444,7 @@ export const COLOURED = {
     'billboard', 'hoarding', 'forecourt-canopy', 'rally-service-tent', 'rally-start-ramp', 'victory-lane', ...RALLY_COLOURS.racing],
   marshal: ['marshal-lookout', 'marshal-low', 'marshal-shelter', 'marshal-tall', 'hut-legs', 'post-box', 'flag-post'],
   timber: ['picnic-pergola', 'benches', 'picnic', 'gantry-timber', 'carport', 'carport-twin', ...RALLY_COLOURS.timber],
-  whitewash: ['townhouse', 'motor-court', 'drive-in-box-office', 'car-wash', 'motor-showroom'],
+  whitewash: ['townhouse', 'motor-court', 'drive-in-box-office', 'car-wash', 'motor-showroom', ...RALLY_COLOURS.whitewash],
   yellowbrick: ['ruined-townhouse'],
   industrial: ['paint-body-shop', 'auction-hall', 'weighbridge-office', 'auto-parts-store', 'drive-in-screen'],
 };
